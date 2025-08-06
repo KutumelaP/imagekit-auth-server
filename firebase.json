@@ -1,0 +1,53 @@
+{
+  "firestore": {
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes"
+  },
+  "storage": {
+    "rules": "storage.rules"
+  },
+  "functions": {
+    "source": "functions"
+  },
+  "hosting": {
+    "public": "build/web",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "rewrites": [
+      {
+        "source": "/admin_dashboard/**",
+        "destination": "/admin_dashboard/index.html"
+      },
+      {
+        "source": "**",
+        "destination": "/index.html"
+      }
+    ]
+  },
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "marketplace-8d6bd",
+          "appId": "1:578732094610:android:e3d33c8d33a21bdbea624b",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "marketplace-8d6bd",
+          "configurations": {
+            "android": "1:578732094610:android:e3d33c8d33a21bdbea624b",
+            "ios": "1:578732094610:ios:559ba8ba1329223dea624b",
+            "macos": "1:578732094610:ios:559ba8ba1329223dea624b",
+            "web": "1:578732094610:web:d11867f5b450935dea624b",
+            "windows": "1:578732094610:web:0d1bdf0e5fb7f54dea624b"
+          }
+        }
+      }
+    }
+  }
+}

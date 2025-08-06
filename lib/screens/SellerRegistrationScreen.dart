@@ -1,0 +1,2747 @@
+import 'dart:convert';
+import 'dart:io';
+import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:http/http.dart' as http;
+import 'package:path/path.dart' as path;
+import 'package:geolocator/geolocator.dart';
+import 'package:geocoding/geocoding.dart';
+import 'package:provider/provider.dart';
+import 'product_upload_screen.dart';
+import '../theme/app_theme.dart';
+import '../providers/user_provider.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
+import '../services/imagekit_service.dart';
+import '../widgets/home_navigation_button.dart';
+import 'seller_onboarding_screen.dart';
+
+class SellerRegistrationScreen extends StatefulWidget {
+  const SellerRegistrationScreen({super.key});
+
+  @override
+  State<SellerRegistrationScreen> createState() => _SellerRegistrationScreenState();
+}
+
+class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> with TickerProviderStateMixin {
+  final _formKey = GlobalKey<FormState>();
+  final _storeNameController = TextEditingController();
+  final _contactController = TextEditingController();
+  final _locationController = TextEditingController();
+  String? _selectedStoreCategory;
+  final _deliveryFeeController = TextEditingController();
+  final _minOrderController = TextEditingController();
+  final TextEditingController _storyController = TextEditingController();
+  final TextEditingController _specialtiesController = TextEditingController();
+  final TextEditingController _passionController = TextEditingController();
+  final TextEditingController _customRangeController = TextEditingController();
+  List<String> _selectedPaymentMethods = [];
+  final List<String> _paymentMethodOptions = ['cash', 'card', 'snapscan', 'eft'];
+  
+  // Store category options
+  final List<String> _storeCategoryOptions = [
+    'Food',
+    'Electronics', 
+    'Clothes',
+    'Other'
+  ];
+
+  bool _isLoading = false;
+  bool _isStoreOpen = true;
+  bool _isDeliveryAvailable = false;
+  bool _deliverEverywhere = false;
+  double _visibilityRadius = 5.0;
+  
+  // New delivery range variables
+  double _deliveryRange = 50.0; // Default 50km range (0-1000 range slider)
+  
+  // Hybrid delivery mode variables
+  String _deliveryMode = 'hybrid'; // 'platform', 'seller', 'hybrid', 'pickup'
+  bool _sellerDeliveryEnabled = false;
+  bool _platformDeliveryEnabled = true;
+  double _sellerDeliveryBaseFee = 25.0;
+  double _sellerDeliveryFeePerKm = 2.0;
+  double _sellerDeliveryMaxFee = 50.0;
+  String _sellerDeliveryTime = '30-45 minutes';
+  
+  // Delivery hours variables
+  TimeOfDay _deliveryStartTime = const TimeOfDay(hour: 8, minute: 0);
+  TimeOfDay _deliveryEndTime = const TimeOfDay(hour: 18, minute: 0);
+
+  // Operating hours variables
+  TimeOfDay _storeOpenTime = const TimeOfDay(hour: 8, minute: 0);
+  TimeOfDay _storeCloseTime = const TimeOfDay(hour: 18, minute: 0);
+
+  dynamic? _storeImage; // Can be File or XFile
+  String? _storeImageUrl;
+  List<dynamic> _extraPhotos = []; // Can contain File or XFile
+  List<String> _extraPhotoUrls = [];
+  dynamic? _introVideo; // Can be File or XFile
+  String? _introVideoUrl;
+
+  final picker = ImagePicker();
+  final videoPicker = ImagePicker();
+
+  // To store current latitude and longitude
+  double? _latitude;
+  double? _longitude;
+
+  double? _platformFeePercent;
+
+  // Animation controllers
+  late AnimationController _fadeController;
+  late AnimationController _slideController;
+  late Animation<double> _fadeAnimation;
+  late Animation<Offset> _slideAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchPlatformFee();
+    
+    // Initialize animations
+    _fadeController = AnimationController(
+      duration: const Duration(milliseconds: 1200),
+      vsync: this,
+    );
+    _slideController = AnimationController(
+      duration: const Duration(milliseconds: 800),
+      vsync: this,
+    );
+    
+    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _fadeController, curve: Curves.easeOut),
+    );
+    _slideAnimation = Tween<Offset>(begin: const Offset(0, 0.3), end: Offset.zero).animate(
+      CurvedAnimation(parent: _slideController, curve: Curves.easeOut),
+    );
+    
+    // Start animations
+    _fadeController.forward();
+    _slideController.forward();
+  }
+
+  // Show approval notice dialog
+  Future<void> _showApprovalNoticeDialog() async {
+    return showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: Row(
+            children: [
+              Icon(
+                Icons.check_circle,
+                color: AppTheme.primaryGreen,
+                size: 28,
+              ),
+              const SizedBox(width: 12),
+              const Text(
+                'Registration Complete!',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 20,
+                ),
+              ),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Your seller registration has been submitted successfully!',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: AppTheme.primaryGreen.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: AppTheme.primaryGreen.withOpacity(0.3),
+                    width: 1,
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.info_outline,
+                          color: AppTheme.primaryGreen,
+                          size: 20,
+                        ),
+                        const SizedBox(width: 8),
+                        const Text(
+                          'Important Notice',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                            color: Colors.black87,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Your store will be visible to customers after admin approval. This process typically takes 24-48 hours.',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.black87,
+                        height: 1.4,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'What happens next:',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                ),
+              ),
+              const SizedBox(height: 8),
+              _buildNextStepItem('1', 'Admin reviews your store information'),
+              _buildNextStepItem('2', 'You\'ll receive an email notification'),
+              _buildNextStepItem('3', 'Your store becomes visible to customers'),
+              _buildNextStepItem('4', 'You can start adding products'),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+              child: Text(
+                'Got it!',
+                style: TextStyle(
+                  color: AppTheme.primaryGreen,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 16,
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildNextStepItem(String number, String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 24,
+            height: 24,
+            decoration: BoxDecoration(
+              color: AppTheme.primaryGreen,
+              shape: BoxShape.circle,
+            ),
+            child: Center(
+              child: Text(
+                number,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 12,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              text,
+              style: const TextStyle(
+                fontSize: 14,
+                color: Colors.black87,
+                height: 1.3,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _fadeController.dispose();
+    _slideController.dispose();
+    _storeNameController.dispose();
+    _contactController.dispose();
+    _locationController.dispose();
+    _deliveryFeeController.dispose();
+    _minOrderController.dispose();
+    _storyController.dispose();
+    _specialtiesController.dispose();
+    _passionController.dispose();
+    _customRangeController.dispose();
+
+    super.dispose();
+  }
+
+  Future<void> _fetchPlatformFee() async {
+    final configDoc = await FirebaseFirestore.instance.collection('config').doc('platform').get();
+    final configData = configDoc.data();
+    if (configData != null && configData['platformFee'] != null) {
+      setState(() {
+        _platformFeePercent = (configData['platformFee'] as num).toDouble();
+      });
+    }
+  }
+
+  Future<void> _pickStoreImage() async {
+    try {
+      print('🔍 DEBUG: Starting store image picker...');
+      
+      // Show source selection dialog
+      final ImageSource? source = await showDialog<ImageSource>(
+        context: context,
+        builder: (BuildContext context) {
+          return AlertDialog(
+            title: const Text('Select Image Source'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.photo_library),
+                  title: const Text('Gallery'),
+                  onTap: () => Navigator.pop(context, ImageSource.gallery),
+                ),
+                if (!kIsWeb) // Only show camera option on mobile apps
+                  ListTile(
+                    leading: const Icon(Icons.camera_alt),
+                    title: const Text('Camera'),
+                    onTap: () => Navigator.pop(context, ImageSource.camera),
+                  ),
+              ],
+            ),
+          );
+        },
+      );
+      
+      if (source == null) {
+        print('🔍 DEBUG: No image source selected');
+        return;
+      }
+      
+      final pickedFile = await picker.pickImage(
+        source: source,
+        maxWidth: 1920,
+        maxHeight: 1080,
+        imageQuality: 85,
+      );
+      
+      if (pickedFile != null) {
+        print('🔍 DEBUG: Store image selected: ${pickedFile.path}');
+        
+        // Handle mobile web vs mobile app
+        if (kIsWeb) {
+          // For mobile web, we need to handle the file differently
+          print('🔍 DEBUG: Mobile web detected, handling file upload');
+          // Store the XFile directly for web
+          setState(() {
+            _storeImage = pickedFile;
+          });
+        } else {
+          // For mobile apps, convert to File
+          setState(() {
+            _storeImage = File(pickedFile.path);
+          });
+        }
+        print('🔍 DEBUG: Store image set successfully');
+      } else {
+        print('🔍 DEBUG: No store image selected');
+      }
+    } catch (e) {
+      print('🔍 DEBUG: Error picking store image: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error picking image: $e')),
+      );
+    }
+  }
+
+  void _removeStoreImage() {
+    setState(() {
+      _storeImage = null;
+    });
+  }
+
+  void _handleStoreImagePick() {
+    _pickStoreImage();
+  }
+
+  void _handleExtraPhotoPick() {
+    _pickExtraPhoto();
+  }
+
+  Future<void> _pickExtraPhoto() async {
+    if (_extraPhotos.length >= 2) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Maximum 2 extra photos allowed')),
+      );
+      return;
+    }
+    
+    try {
+      print('🔍 DEBUG: Starting extra photo picker...');
+      
+      // Show source selection dialog
+      final ImageSource? source = await showDialog<ImageSource>(
+        context: context,
+        builder: (BuildContext context) {
+          return AlertDialog(
+            title: const Text('Select Image Source'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.photo_library),
+                  title: const Text('Gallery'),
+                  onTap: () => Navigator.pop(context, ImageSource.gallery),
+                ),
+                if (!kIsWeb) // Only show camera option on mobile apps
+                  ListTile(
+                    leading: const Icon(Icons.camera_alt),
+                    title: const Text('Camera'),
+                    onTap: () => Navigator.pop(context, ImageSource.camera),
+                  ),
+              ],
+            ),
+          );
+        },
+      );
+      
+      if (source == null) {
+        print('🔍 DEBUG: No image source selected');
+        return;
+      }
+      
+      final pickedFile = await picker.pickImage(
+        source: source,
+        maxWidth: 1920,
+        maxHeight: 1080,
+        imageQuality: 85,
+      );
+      
+      if (pickedFile != null) {
+        print('🔍 DEBUG: Extra photo selected: ${pickedFile.path}');
+        
+        // Handle mobile web vs mobile app
+        if (kIsWeb) {
+          print('🔍 DEBUG: Mobile web detected, handling extra photo upload');
+          // Store the XFile directly for web
+          setState(() {
+            _extraPhotos.add(pickedFile);
+          });
+        } else {
+          // For mobile apps, convert to File
+          setState(() {
+            _extraPhotos.add(File(pickedFile.path));
+          });
+        }
+        print('🔍 DEBUG: Extra photo added successfully. Total: ${_extraPhotos.length}');
+      } else {
+        print('🔍 DEBUG: No extra photo selected');
+      }
+    } catch (e) {
+      print('🔍 DEBUG: Error picking extra photo: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error picking photo: $e')),
+      );
+    }
+  }
+
+  void _removeExtraPhoto(int index) {
+    setState(() {
+      _extraPhotos.removeAt(index);
+    });
+  }
+
+  Future<void> _pickIntroVideo() async {
+    try {
+      print('🔍 DEBUG: Starting intro video picker...');
+      final pickedFile = await videoPicker.pickVideo(
+        source: ImageSource.gallery,
+        maxDuration: const Duration(minutes: 5), // Limit to 5 minutes
+      );
+      
+      if (pickedFile != null) {
+        print('🔍 DEBUG: Intro video selected: ${pickedFile.path}');
+        
+        // Handle mobile web vs mobile app
+        if (kIsWeb) {
+          // Store the XFile directly for web
+          setState(() {
+            _introVideo = pickedFile;
+          });
+        } else {
+          // For mobile apps, convert to File
+          setState(() {
+            _introVideo = File(pickedFile.path);
+          });
+        }
+        print('🔍 DEBUG: Intro video set successfully');
+      } else {
+        print('🔍 DEBUG: No intro video selected');
+      }
+    } catch (e) {
+      print('🔍 DEBUG: Error picking intro video: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error picking video: $e')),
+      );
+    }
+  }
+
+  void _removeIntroVideo() {
+    setState(() {
+      _introVideo = null;
+    });
+  }
+
+  Future<void> _selectDeliveryStartTime() async {
+    final TimeOfDay? picked = await showTimePicker(
+      context: context,
+      initialTime: _deliveryStartTime,
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: ColorScheme.light(
+              primary: AppTheme.deepTeal,
+              onPrimary: AppTheme.angel,
+              surface: AppTheme.angel,
+              onSurface: AppTheme.deepTeal,
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+    if (picked != null && picked != _deliveryStartTime) {
+      setState(() {
+        _deliveryStartTime = picked;
+      });
+    }
+  }
+
+  Future<void> _selectDeliveryEndTime() async {
+    final TimeOfDay? picked = await showTimePicker(
+      context: context,
+      initialTime: _deliveryEndTime,
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: ColorScheme.light(
+              primary: AppTheme.deepTeal,
+              onPrimary: AppTheme.angel,
+              surface: AppTheme.angel,
+              onSurface: AppTheme.deepTeal,
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+    if (picked != null && picked != _deliveryEndTime) {
+      setState(() {
+        _deliveryEndTime = picked;
+      });
+    }
+  }
+
+  Future<void> _selectStoreOpenTime() async {
+    final TimeOfDay? picked = await showTimePicker(
+      context: context,
+      initialTime: _storeOpenTime,
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: ColorScheme.light(
+              primary: AppTheme.deepTeal,
+              onPrimary: AppTheme.angel,
+              surface: AppTheme.angel,
+              onSurface: AppTheme.deepTeal,
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+    if (picked != null && picked != _storeOpenTime) {
+      setState(() {
+        _storeOpenTime = picked;
+      });
+    }
+  }
+
+  Future<void> _selectStoreCloseTime() async {
+    final TimeOfDay? picked = await showTimePicker(
+      context: context,
+      initialTime: _storeCloseTime,
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: ColorScheme.light(
+              primary: AppTheme.deepTeal,
+              onPrimary: AppTheme.angel,
+              surface: AppTheme.angel,
+              onSurface: AppTheme.deepTeal,
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+    if (picked != null && picked != _storeCloseTime) {
+      setState(() {
+        _storeCloseTime = picked;
+      });
+    }
+  }
+
+  String _formatTimeOfDay(TimeOfDay time) {
+    final hour = time.hour.toString().padLeft(2, '0');
+    final minute = time.minute.toString().padLeft(2, '0');
+    return '$hour:$minute';
+  }
+
+  Future<String?> _uploadImageToImageKit(dynamic file) async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) return null;
+      
+      print('🔍 DEBUG: Uploading image using ImageKitService...');
+      
+      // Use the centralized ImageKitService
+      final imageUrl = await ImageKitService.uploadStoreImage(
+        file: file,
+        userId: user.uid,
+      );
+      
+      if (imageUrl != null) {
+        print('🔍 DEBUG: Image upload successful: $imageUrl');
+        return imageUrl;
+      } else {
+        print('🔍 DEBUG: Image upload failed');
+        return null;
+      }
+    } catch (e) {
+      print('❌ ImageKit upload error: $e');
+      return null;
+    }
+  }
+
+  Future<String?> _uploadVideoToImageKit(dynamic file) async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) return null;
+      
+      print('🔍 DEBUG: Uploading video using ImageKitService...');
+      
+      // Use the centralized ImageKitService
+      final videoUrl = await ImageKitService.uploadStoreVideo(
+        file: file,
+        userId: user.uid,
+      );
+      
+      if (videoUrl != null) {
+        print('🔍 DEBUG: Video upload successful: $videoUrl');
+        return videoUrl;
+      } else {
+        print('🔍 DEBUG: Video upload failed');
+        return null;
+      }
+    } catch (e) {
+      print('❌ ImageKit video upload error: $e');
+      return null;
+    }
+  }
+
+  Future<void> _getCurrentLocation() async {
+    bool serviceEnabled;
+    LocationPermission permission = await Geolocator.checkPermission();
+
+    serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Location services are disabled')),
+      );
+      return;
+    }
+
+    permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.deniedForever) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Location permissions are denied forever')),
+      );
+      return;
+    }
+
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+      if (permission != LocationPermission.whileInUse &&
+          permission != LocationPermission.always) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Location permission denied')),
+        );
+        return;
+      }
+    }
+
+    try {
+      Position position = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
+      setState(() {
+        _latitude = position.latitude;
+        _longitude = position.longitude;
+      });
+
+      List<Placemark> placemarks = await placemarkFromCoordinates(
+        position.latitude,
+        position.longitude,
+      );
+
+      final placemark = placemarks.first;
+      final address = '${placemark.locality}, ${placemark.country}';
+      _locationController.text = address;
+    } catch (e) {
+      print('Error getting address: $e');
+    }
+  }
+
+  Future<void> _registerSeller() async {
+    if (!_formKey.currentState!.validate()) return;
+    
+    // Additional validation for store category
+    if (_selectedStoreCategory == null || _selectedStoreCategory!.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please select a store category'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    setState(() => _isLoading = true);
+    final user = FirebaseAuth.instance.currentUser;
+
+    if (user == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please log in first')),
+      );
+      setState(() => _isLoading = false);
+      return;
+    }
+
+    try {
+      String? storeImageUrl;
+      if (_storeImage != null) {
+        print('🔍 DEBUG: Uploading store image...');
+        storeImageUrl = await _uploadImageToImageKit(_storeImage!);
+        if (storeImageUrl != null) {
+          print('🔍 DEBUG: Store image uploaded successfully: $storeImageUrl');
+        } else {
+          print('🔍 DEBUG: Store image upload failed');
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Failed to upload store image. Please try again.')),
+          );
+          return;
+        }
+      }
+      
+      List<String> extraPhotoUrls = [];
+      for (int i = 0; i < _extraPhotos.length; i++) {
+        print('🔍 DEBUG: Uploading extra photo ${i + 1}/${_extraPhotos.length}...');
+        String? photoUrl = await _uploadImageToImageKit(_extraPhotos[i]);
+        if (photoUrl != null) {
+          extraPhotoUrls.add(photoUrl);
+          print('🔍 DEBUG: Extra photo ${i + 1} uploaded successfully: $photoUrl');
+        } else {
+          print('🔍 DEBUG: Extra photo ${i + 1} upload failed');
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Failed to upload extra photo ${i + 1}. Please try again.')),
+          );
+          return;
+        }
+      }
+
+      String? introVideoUrl;
+      if (_introVideo != null) {
+        print('🔍 DEBUG: Uploading intro video...');
+        introVideoUrl = await _uploadVideoToImageKit(_introVideo!);
+        if (introVideoUrl != null) {
+          print('🔍 DEBUG: Intro video uploaded successfully: $introVideoUrl');
+        } else {
+          print('🔍 DEBUG: Intro video upload failed');
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Failed to upload intro video. Please try again.')),
+          );
+          return;
+        }
+      }
+
+      // Save to users collection (as per the existing data structure)
+      await FirebaseFirestore.instance.collection('users').doc(user.uid).update({
+        'email': user.email, // Add the logged-in user's email
+        'storeName': _storeNameController.text.trim(),
+        'storeCategory': _selectedStoreCategory,
+        'contact': _contactController.text.trim(),
+        'location': _locationController.text.trim(),
+        'isStoreOpen': _isStoreOpen,
+        'deliveryAvailable': _isDeliveryAvailable,
+        'deliveryFeePerKm': _deliveryFeeController.text.isNotEmpty ? double.parse(_deliveryFeeController.text) : 0.0,
+        'minOrderForDelivery': _minOrderController.text.isNotEmpty ? double.parse(_minOrderController.text) : 0.0,
+        // Hybrid delivery settings
+        'deliveryMode': _deliveryMode,
+        'sellerDeliveryEnabled': _sellerDeliveryEnabled,
+        'platformDeliveryEnabled': _platformDeliveryEnabled,
+        'sellerDeliveryBaseFee': _sellerDeliveryBaseFee,
+        'sellerDeliveryFeePerKm': _sellerDeliveryFeePerKm,
+        'sellerDeliveryMaxFee': _sellerDeliveryMaxFee,
+        'sellerDeliveryTime': _sellerDeliveryTime,
+        'deliveryStartHour': _formatTimeOfDay(_deliveryStartTime),
+        'deliveryEndHour': _formatTimeOfDay(_deliveryEndTime),
+        'storeOpenHour': _formatTimeOfDay(_storeOpenTime),
+        'storeCloseHour': _formatTimeOfDay(_storeCloseTime),
+        'deliverEverywhere': _deliverEverywhere,
+        'visibilityRadius': _visibilityRadius,
+        'deliveryRange': _deliveryRange,
+        'useCustomRange': false, // No longer needed since we use slider
+        'paymentMethods': _selectedPaymentMethods,
+        'profileImageUrl': storeImageUrl ?? '',
+        'extraPhotoUrls': extraPhotoUrls,
+        'introVideoUrl': introVideoUrl ?? '',
+        'story': _storyController.text.trim(),
+        'specialties': _specialtiesController.text.split(',').map((e) => e.trim()).toList(),
+        'passion': _passionController.text.trim(),
+        'latitude': _latitude,
+        'longitude': _longitude,
+        'status': 'pending',
+        'verified': false,
+        'paused': false,
+        'platformFeeExempt': false,
+      });
+
+      await FirebaseFirestore.instance.collection('users').doc(user.uid).update({
+        'role': 'seller',
+      });
+
+      // Refresh user data in provider to reflect the role change
+      if (mounted) {
+        final userProvider = Provider.of<UserProvider>(context, listen: false);
+        await userProvider.loadUserData();
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Seller registration successful! Your store will be visible after admin approval.'),
+            duration: Duration(seconds: 4),
+            backgroundColor: Colors.green,
+          ),
+        );
+        
+        // Show approval notice dialog
+        if (mounted) {
+          await _showApprovalNoticeDialog();
+        }
+        
+        Navigator.pop(context);
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to register as seller: $e')),
+      );
+    } finally {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  Widget _buildHeader() {
+    return Container(
+      margin: EdgeInsets.all(ResponsiveUtils.getHorizontalPadding(context)),
+      padding: EdgeInsets.all(ResponsiveUtils.getHorizontalPadding(context) * 1.5),
+      decoration: BoxDecoration(
+        gradient: AppTheme.cardBackgroundGradient,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: AppTheme.complementaryElevation,
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: EdgeInsets.all(ResponsiveUtils.getHorizontalPadding(context)),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [AppTheme.deepTeal, AppTheme.cloud],
+              ),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Icon(
+              Icons.store_outlined,
+              size: ResponsiveUtils.getIconSize(context, baseSize: 32),
+              color: AppTheme.angel,
+            ),
+          ),
+          SizedBox(width: ResponsiveUtils.getHorizontalPadding(context)),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SafeUI.safeText(
+                  'Become a Seller',
+                  style: TextStyle(
+                    fontSize: ResponsiveUtils.getTitleSize(context) + 4,
+                    fontWeight: FontWeight.bold,
+                    color: AppTheme.deepTeal,
+                  ),
+                  maxLines: 1,
+                ),
+                SizedBox(height: ResponsiveUtils.getVerticalPadding(context) * 0.2),
+                SafeUI.safeText(
+                  'Join our marketplace and start selling your amazing products',
+                  style: TextStyle(
+                    fontSize: ResponsiveUtils.getTitleSize(context) - 4,
+                    color: AppTheme.breeze,
+                  ),
+                  maxLines: 2,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSectionCard({
+    required String title,
+    required IconData icon,
+    required List<Widget> children,
+  }) {
+    return Container(
+      margin: EdgeInsets.symmetric(
+        horizontal: ResponsiveUtils.getHorizontalPadding(context),
+        vertical: ResponsiveUtils.getVerticalPadding(context) * 0.5,
+      ),
+      decoration: BoxDecoration(
+        gradient: AppTheme.cardBackgroundGradient,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: AppTheme.complementaryElevation,
+        border: Border.all(
+          color: AppTheme.breeze.withOpacity(0.2),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Section Header
+          Container(
+            padding: EdgeInsets.all(ResponsiveUtils.getHorizontalPadding(context)),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [AppTheme.whisper, AppTheme.angel],
+              ),
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(20),
+                topRight: Radius.circular(20),
+              ),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [AppTheme.deepTeal.withOpacity(0.2), AppTheme.cloud.withOpacity(0.1)],
+                    ),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(
+                    icon,
+                    color: AppTheme.deepTeal,
+                    size: ResponsiveUtils.getIconSize(context, baseSize: 20),
+                  ),
+                ),
+                SizedBox(width: ResponsiveUtils.getHorizontalPadding(context) * 0.5),
+                SafeUI.safeText(
+                  title,
+                  style: TextStyle(
+                    fontSize: ResponsiveUtils.getTitleSize(context),
+                    fontWeight: FontWeight.w600,
+                    color: AppTheme.deepTeal,
+                  ),
+                  maxLines: 1,
+                ),
+              ],
+            ),
+          ),
+          // Section Content
+          Padding(
+            padding: EdgeInsets.all(ResponsiveUtils.getHorizontalPadding(context)),
+            child: Column(children: children),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEnhancedTextField({
+    required TextEditingController controller,
+    required String label,
+    required String hint,
+    IconData? prefixIcon,
+    TextInputType? keyboardType,
+    String? Function(String?)? validator,
+    int maxLines = 1,
+    String? helperText,
+    void Function(String)? onChanged,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SafeUI.safeText(
+          label,
+          style: TextStyle(
+            fontSize: ResponsiveUtils.getTitleSize(context) - 2,
+            fontWeight: FontWeight.w600,
+            color: AppTheme.deepTeal,
+          ),
+          maxLines: 1,
+        ),
+        SizedBox(height: ResponsiveUtils.getVerticalPadding(context) * 0.3),
+        Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            boxShadow: [
+              BoxShadow(
+                color: AppTheme.cloud.withOpacity(0.1),
+                blurRadius: 4,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: TextFormField(
+            controller: controller,
+            keyboardType: keyboardType,
+            validator: validator,
+            maxLines: maxLines,
+            enabled: !_isLoading,
+            onChanged: onChanged,
+            style: TextStyle(
+              fontSize: ResponsiveUtils.getTitleSize(context) - 2,
+              color: AppTheme.deepTeal,
+            ),
+            decoration: InputDecoration(
+              hintText: hint,
+              hintStyle: TextStyle(
+                color: AppTheme.breeze,
+                fontSize: ResponsiveUtils.getTitleSize(context) - 2,
+              ),
+              prefixIcon: prefixIcon != null ? Icon(
+                prefixIcon,
+                color: AppTheme.breeze,
+                size: ResponsiveUtils.getIconSize(context, baseSize: 20),
+              ) : null,
+              filled: true,
+              fillColor: AppTheme.angel,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: AppTheme.breeze.withOpacity(0.3)),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: AppTheme.breeze.withOpacity(0.3)),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: AppTheme.deepTeal, width: 2),
+              ),
+              contentPadding: EdgeInsets.symmetric(
+                horizontal: ResponsiveUtils.getHorizontalPadding(context),
+                vertical: ResponsiveUtils.getVerticalPadding(context),
+              ),
+              helperText: helperText,
+              helperStyle: TextStyle(
+                color: AppTheme.cloud,
+                fontSize: 12,
+              ),
+            ),
+          ),
+        ),
+        SizedBox(height: ResponsiveUtils.getVerticalPadding(context)),
+      ],
+    );
+  }
+
+  Widget _buildImageUploadCard({
+    required String title,
+    required IconData icon,
+    required dynamic imageFile,
+    VoidCallback? onTap,
+    required String subtitle,
+    VoidCallback? onRemove,
+  }) {
+    return Container(
+      margin: EdgeInsets.only(bottom: ResponsiveUtils.getVerticalPadding(context)),
+      padding: EdgeInsets.all(ResponsiveUtils.getHorizontalPadding(context)),
+      decoration: BoxDecoration(
+        gradient: AppTheme.cardBackgroundGradient,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: AppTheme.complementaryElevation,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header
+          Row(
+            children: [
+              Container(
+                padding: EdgeInsets.all(ResponsiveUtils.getHorizontalPadding(context) * 0.5),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [AppTheme.deepTeal, AppTheme.cloud],
+                  ),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(
+                  icon,
+                  size: ResponsiveUtils.getIconSize(context, baseSize: 20),
+                  color: AppTheme.angel,
+                ),
+              ),
+              SizedBox(width: ResponsiveUtils.getHorizontalPadding(context) * 0.5),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SafeUI.safeText(
+                      title,
+                      style: TextStyle(
+                        fontSize: ResponsiveUtils.getTitleSize(context),
+                        fontWeight: FontWeight.bold,
+                        color: AppTheme.deepTeal,
+                      ),
+                      maxLines: 1,
+                    ),
+                    SafeUI.safeText(
+                      subtitle,
+                      style: TextStyle(
+                        fontSize: ResponsiveUtils.getTitleSize(context) - 4,
+                        color: AppTheme.breeze,
+                      ),
+                      maxLines: 2,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          SizedBox(height: ResponsiveUtils.getVerticalPadding(context)),
+          
+          // Image Preview or Upload Button
+          if (imageFile != null) ...[
+            // Image Preview
+            Container(
+              width: double.infinity,
+              height: ResponsiveUtils.isMobile(context) ? 150 : 200,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppTheme.deepTeal.withOpacity(0.2)),
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Stack(
+                  children: [
+                    // Image
+                    Positioned.fill(
+                      child: kIsWeb 
+                        ? Image.network(
+                            imageFile.path,
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) {
+                              return Container(
+                                color: AppTheme.cloud,
+                                child: Icon(
+                                  Icons.image,
+                                  color: AppTheme.deepTeal,
+                                  size: 48,
+                                ),
+                              );
+                            },
+                          )
+                        : Image.file(
+                            imageFile,
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) {
+                              return Container(
+                                color: AppTheme.cloud,
+                                child: Icon(
+                                  Icons.image,
+                                  color: AppTheme.deepTeal,
+                                  size: 48,
+                                ),
+                              );
+                            },
+                          ),
+                    ),
+                    // Remove button
+                    if (onRemove != null)
+                      Positioned(
+                        top: 8,
+                        right: 8,
+                        child: GestureDetector(
+                          onTap: onRemove,
+                          child: Container(
+                            padding: const EdgeInsets.all(4),
+                            decoration: BoxDecoration(
+                              color: Colors.red.withOpacity(0.8),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(
+                              Icons.close,
+                              color: Colors.white,
+                              size: 16,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+            SizedBox(height: ResponsiveUtils.getVerticalPadding(context) * 0.5),
+            // Replace button
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: onTap,
+                icon: Icon(Icons.edit, size: ResponsiveUtils.getIconSize(context, baseSize: 16)),
+                label: Text('Replace Image'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppTheme.deepTeal,
+                  side: BorderSide(color: AppTheme.deepTeal),
+                  padding: EdgeInsets.symmetric(
+                    vertical: ResponsiveUtils.getVerticalPadding(context) * 0.6,
+                  ),
+                ),
+              ),
+            ),
+          ] else ...[
+            // Upload Button
+            GestureDetector(
+              onTap: onTap ?? () {},
+              child: Container(
+                width: double.infinity,
+                height: ResponsiveUtils.isMobile(context) ? 120 : 150,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: AppTheme.deepTeal.withOpacity(0.3),
+                    style: BorderStyle.solid,
+                    width: 2,
+                  ),
+                  gradient: LinearGradient(
+                    colors: [
+                      AppTheme.deepTeal.withOpacity(0.05),
+                      AppTheme.cloud.withOpacity(0.02),
+                    ],
+                  ),
+                ),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.add_photo_alternate_outlined,
+                      size: ResponsiveUtils.getIconSize(context, baseSize: 32),
+                      color: AppTheme.deepTeal,
+                    ),
+                    SizedBox(height: ResponsiveUtils.getVerticalPadding(context) * 0.3),
+                    Text(
+                      'Tap to upload',
+                      style: TextStyle(
+                        fontSize: ResponsiveUtils.getTitleSize(context) - 2,
+                        color: AppTheme.deepTeal,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    SizedBox(height: ResponsiveUtils.getVerticalPadding(context) * 0.2),
+                    Text(
+                      'JPG, PNG (Max 5MB)',
+                      style: TextStyle(
+                        fontSize: ResponsiveUtils.getTitleSize(context) - 6,
+                        color: AppTheme.breeze,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildVideoUploadCard({
+    required String title,
+    required IconData icon,
+    dynamic videoFile,
+    VoidCallback? onTap,
+    String? subtitle,
+    VoidCallback? onRemove,
+  }) {
+    return GestureDetector(
+      onTap: (_isLoading || onTap == null) ? null : onTap,
+      child: Container(
+        height: 120,
+        margin: EdgeInsets.only(bottom: ResponsiveUtils.getVerticalPadding(context)),
+        decoration: BoxDecoration(
+          gradient: videoFile != null 
+            ? null 
+            : LinearGradient(
+                colors: [AppTheme.whisper, AppTheme.angel],
+              ),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: AppTheme.breeze.withOpacity(0.3),
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: AppTheme.cloud.withOpacity(0.1),
+              blurRadius: 4,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: videoFile != null
+          ? Stack(
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: Container(
+                    color: AppTheme.deepTeal.withOpacity(0.1),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.videocam,
+                          size: 48,
+                          color: AppTheme.deepTeal,
+                        ),
+                        SizedBox(height: 8),
+                        Text(
+                          'Video Selected',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: AppTheme.deepTeal,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        Text(
+                          'Tap to change',
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: AppTheme.breeze,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                // Remove button
+                if (onRemove != null)
+                  Positioned(
+                    top: 8,
+                    right: 8,
+                    child: GestureDetector(
+                      onTap: onRemove,
+                      child: Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: BoxDecoration(
+                          color: AppTheme.error.withOpacity(0.9),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          Icons.close,
+                          size: 16,
+                          color: AppTheme.angel,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            )
+          : Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  icon,
+                  size: ResponsiveUtils.getIconSize(context, baseSize: 32),
+                  color: AppTheme.breeze,
+                ),
+                SizedBox(height: ResponsiveUtils.getVerticalPadding(context) * 0.3),
+                SafeUI.safeText(
+                  title,
+                  style: TextStyle(
+                    fontSize: ResponsiveUtils.getTitleSize(context) - 2,
+                    fontWeight: FontWeight.w600,
+                    color: AppTheme.deepTeal,
+                  ),
+                  maxLines: 1,
+                ),
+                if (subtitle != null) ...[
+                  SizedBox(height: ResponsiveUtils.getVerticalPadding(context) * 0.1),
+                  SafeUI.safeText(
+                    subtitle,
+                    style: TextStyle(
+                      fontSize: ResponsiveUtils.getTitleSize(context) - 6,
+                      color: AppTheme.breeze,
+                    ),
+                    maxLines: 1,
+                  ),
+                ],
+              ],
+            ),
+      ),
+    );
+  }
+
+  Widget _buildSwitchTile({
+    required String title,
+    required bool value,
+    required ValueChanged<bool> onChanged,
+    String? subtitle,
+  }) {
+    return Container(
+      margin: EdgeInsets.only(bottom: ResponsiveUtils.getVerticalPadding(context)),
+      padding: EdgeInsets.all(ResponsiveUtils.getHorizontalPadding(context)),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [AppTheme.whisper, AppTheme.angel],
+        ),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: AppTheme.breeze.withOpacity(0.2),
+        ),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SafeUI.safeText(
+                  title,
+                  style: TextStyle(
+                    fontSize: ResponsiveUtils.getTitleSize(context) - 2,
+                    fontWeight: FontWeight.w600,
+                    color: AppTheme.deepTeal,
+                  ),
+                  maxLines: 1,
+                ),
+                if (subtitle != null) ...[
+                  SizedBox(height: ResponsiveUtils.getVerticalPadding(context) * 0.2),
+                  SafeUI.safeText(
+                    subtitle,
+                    style: TextStyle(
+                      fontSize: ResponsiveUtils.getTitleSize(context) - 4,
+                      color: AppTheme.breeze,
+                    ),
+                    maxLines: 2,
+                  ),
+                ],
+              ],
+            ),
+          ),
+          Switch(
+            value: value,
+            onChanged: _isLoading ? null : onChanged,
+            activeColor: AppTheme.deepTeal,
+            activeTrackColor: AppTheme.cloud,
+            inactiveThumbColor: AppTheme.breeze,
+            inactiveTrackColor: AppTheme.whisper,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSubmitButton() {
+    return Container(
+      margin: EdgeInsets.all(ResponsiveUtils.getHorizontalPadding(context)),
+      width: double.infinity,
+      height: 56,
+      decoration: BoxDecoration(
+        gradient: _isLoading 
+          ? LinearGradient(colors: [AppTheme.breeze, AppTheme.cloud])
+          : AppTheme.primaryButtonGradient,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: _isLoading ? [] : AppTheme.complementaryElevation,
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: _isLoading ? null : _registerSeller,
+          child: Container(
+            padding: EdgeInsets.symmetric(
+              horizontal: ResponsiveUtils.getHorizontalPadding(context),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                if (_isLoading) ...[
+                  SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation<Color>(AppTheme.angel),
+                    ),
+                  ),
+                  SizedBox(width: ResponsiveUtils.getHorizontalPadding(context) * 0.5),
+                ] else ...[
+                  Icon(
+                    Icons.store_outlined,
+                    color: AppTheme.angel,
+                    size: ResponsiveUtils.getIconSize(context, baseSize: 22),
+                  ),
+                  SizedBox(width: ResponsiveUtils.getHorizontalPadding(context) * 0.5),
+                ],
+                SafeUI.safeText(
+                  _isLoading ? 'Registering...' : 'Register as Seller',
+                  style: TextStyle(
+                    fontSize: ResponsiveUtils.getTitleSize(context),
+                    fontWeight: FontWeight.w600,
+                    color: AppTheme.angel,
+                  ),
+                  maxLines: 1,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppTheme.angel,
+      appBar: AppBar(
+        title: SafeUI.safeText(
+          'Seller Registration',
+          style: TextStyle(
+            fontWeight: FontWeight.w600,
+            color: AppTheme.angel,
+            fontSize: ResponsiveUtils.getTitleSize(context),
+          ),
+          maxLines: 1,
+        ),
+        backgroundColor: AppTheme.deepTeal,
+        foregroundColor: AppTheme.angel,
+        elevation: 0,
+        centerTitle: false,
+      ),
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: AppTheme.screenBackgroundGradient,
+        ),
+        child: FadeTransition(
+          opacity: _fadeAnimation,
+          child: SlideTransition(
+            position: _slideAnimation,
+            child: Form(
+                key: _formKey,
+                child: ListView(
+                  children: [
+                  SizedBox(height: ResponsiveUtils.getVerticalPadding(context)),
+                  
+                  // Header
+                  _buildHeader(),
+                  
+                  // Store Information Section
+                  _buildSectionCard(
+                    title: 'Store Information',
+                    icon: Icons.store,
+                    children: [
+                      _buildEnhancedTextField(
+                      controller: _storeNameController,
+                        label: 'Store Name',
+                        hint: 'Enter your store name',
+                        prefixIcon: Icons.storefront,
+                      validator: (value) => value == null || value.isEmpty ? 'Enter store name' : null,
+                    ),
+                      // Store Category Dropdown
+                      Container(
+                        width: double.infinity,
+                        margin: EdgeInsets.only(bottom: ResponsiveUtils.getVerticalPadding(context)),
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [AppTheme.cloud.withOpacity(0.3), AppTheme.whisper],
+                          ),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: AppTheme.breeze.withOpacity(0.3)),
+                          boxShadow: [
+                            BoxShadow(
+                              color: AppTheme.cloud.withOpacity(0.1),
+                              blurRadius: 4,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: DropdownButtonFormField<String>(
+                          value: _selectedStoreCategory,
+                          isExpanded: true,
+                          decoration: InputDecoration(
+                            labelText: 'Store Category *',
+                            hintText: 'Select your store category (Required)',
+                            prefixIcon: Icon(
+                              Icons.category,
+                              color: AppTheme.breeze,
+                              size: ResponsiveUtils.getIconSize(context, baseSize: 20),
+                            ),
+                            filled: true,
+                            fillColor: AppTheme.angel,
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(color: AppTheme.breeze.withOpacity(0.3)),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(color: AppTheme.breeze.withOpacity(0.3)),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(color: AppTheme.deepTeal, width: 2),
+                            ),
+                            errorBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(color: Colors.red, width: 2),
+                            ),
+                            focusedErrorBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(color: Colors.red, width: 2),
+                            ),
+                            contentPadding: EdgeInsets.symmetric(
+                              horizontal: ResponsiveUtils.getHorizontalPadding(context) * 0.8,
+                              vertical: ResponsiveUtils.getVerticalPadding(context),
+                            ),
+                            helperText: 'This field is required',
+                            helperStyle: TextStyle(
+                              color: AppTheme.cloud,
+                              fontSize: 12,
+                            ),
+                          ),
+                          items: _storeCategoryOptions.map((String category) {
+                            return DropdownMenuItem<String>(
+                              value: category,
+                              child: Container(
+                                width: double.infinity,
+                                child: Text(
+                                  category,
+                                  style: TextStyle(
+                                    fontSize: ResponsiveUtils.getTitleSize(context) - 2,
+                                    color: AppTheme.deepTeal,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                  maxLines: 1,
+                                ),
+                              ),
+                            );
+                          }).toList(),
+                          onChanged: _isLoading ? null : (String? newValue) {
+                            setState(() {
+                              _selectedStoreCategory = newValue;
+                            });
+                          },
+                          validator: (value) {
+                            if (value == null || value.isEmpty) {
+                              return 'Store category is required. Please select a category.';
+                            }
+                            return null;
+                          },
+                          icon: Icon(
+                            Icons.arrow_drop_down,
+                            color: AppTheme.deepTeal,
+                          ),
+                          dropdownColor: AppTheme.angel,
+                        ),
+                    ),
+                      _buildEnhancedTextField(
+                      controller: _contactController,
+                        label: 'Contact Information',
+                        hint: 'Phone number or email',
+                        prefixIcon: Icons.contact_phone,
+                        keyboardType: TextInputType.phone,
+                        validator: (value) => value == null || value.isEmpty ? 'Enter contact info' : null,
+                      ),
+                      _buildEnhancedTextField(
+                      controller: _locationController,
+                        label: 'Store Location',
+                        hint: 'Enter your address',
+                        prefixIcon: Icons.location_on,
+                        validator: (value) => value == null || value.isEmpty ? 'Enter store location' : null,
+                      ),
+                      Container(
+                        width: double.infinity,
+                        height: 48,
+                        margin: EdgeInsets.only(bottom: ResponsiveUtils.getVerticalPadding(context)),
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [AppTheme.cloud.withOpacity(0.3), AppTheme.whisper],
+                          ),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: AppTheme.breeze.withOpacity(0.3)),
+                        ),
+                        child: Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(12),
+                            onTap: _isLoading ? null : _getCurrentLocation,
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                                Icon(
+                                  Icons.my_location,
+                                  color: AppTheme.deepTeal,
+                                  size: ResponsiveUtils.getIconSize(context, baseSize: 20),
+                                ),
+                                SizedBox(width: ResponsiveUtils.getHorizontalPadding(context) * 0.5),
+                                SafeUI.safeText(
+                                  'Use Current Location',
+                                  style: TextStyle(
+                                    fontSize: ResponsiveUtils.getTitleSize(context) - 2,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppTheme.deepTeal,
+                                  ),
+                                  maxLines: 1,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  
+                  // Store Media Section
+                  _buildSectionCard(
+                    title: 'Store Media',
+                    icon: Icons.photo_camera,
+                    children: [
+                      _buildImageUploadCard(
+                        title: 'Store Image',
+                        icon: Icons.store,
+                        imageFile: _storeImage,
+                        onTap: _handleStoreImagePick,
+                        subtitle: 'Main store photo',
+                        onRemove: _removeStoreImage,
+                      ),
+                    ],
+                  ),
+                  
+                  // Store Settings Section
+                  _buildSectionCard(
+                    title: 'Store Settings',
+                    icon: Icons.settings,
+                    children: [
+                      _buildSwitchTile(
+                        title: 'Store Currently Open',
+                        subtitle: 'Customers can see and order from your store',
+                        value: _isStoreOpen,
+                        onChanged: (value) => setState(() => _isStoreOpen = value),
+                      ),
+                      _buildSwitchTile(
+                        title: 'Offer Delivery',
+                        subtitle: 'Provide delivery service to customers',
+                        value: _isDeliveryAvailable,
+                        onChanged: (value) => setState(() => _isDeliveryAvailable = value),
+                      ),
+                      if (_isDeliveryAvailable) ...[
+                        _buildEnhancedTextField(
+                          controller: _deliveryFeeController,
+                          label: 'Delivery Fee (R)',
+                          hint: 'Enter delivery fee per kilometer',
+                          prefixIcon: Icons.delivery_dining,
+                          keyboardType: TextInputType.number,
+                          helperText: 'This is the amount you charge per kilometer',
+                        ),
+                        _buildEnhancedTextField(
+                          controller: _minOrderController,
+                          label: 'Minimum Order (R)',
+                          hint: 'Minimum order amount',
+                          prefixIcon: Icons.shopping_cart,
+                          keyboardType: TextInputType.number,
+                        ),
+                        
+                        // Hybrid Delivery Mode Section
+                        Container(
+                          margin: const EdgeInsets.only(bottom: 16),
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: AppTheme.angel,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: AppTheme.breeze.withOpacity(0.3),
+                            ),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Icon(
+                                    Icons.delivery_dining,
+                                    color: AppTheme.deepTeal,
+                                    size: 20,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    'Delivery Mode',
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w600,
+                                      color: AppTheme.deepTeal,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 12),
+                              Text(
+                                'Choose how you want to handle deliveries. You can use platform drivers, handle delivery yourself, or offer both options.',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: AppTheme.mediumGrey,
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                              
+                              // Delivery Mode Dropdown
+                              DropdownButtonFormField<String>(
+                                value: _deliveryMode,
+                                decoration: InputDecoration(
+                                  labelText: 'Delivery Mode',
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  prefixIcon: Icon(Icons.settings),
+                                ),
+                                items: [
+                                  DropdownMenuItem(
+                                    value: 'platform',
+                                    child: Text('Platform Only - Use platform drivers'),
+                                  ),
+                                  DropdownMenuItem(
+                                    value: 'seller',
+                                    child: Text('Seller Only - Handle delivery yourself'),
+                                  ),
+                                  DropdownMenuItem(
+                                    value: 'hybrid',
+                                    child: Text('Hybrid - Offer both options'),
+                                  ),
+                                  DropdownMenuItem(
+                                    value: 'pickup',
+                                    child: Text('Pickup Only - Customers collect'),
+                                  ),
+                                ],
+                                onChanged: (value) {
+                                  setState(() {
+                                    _deliveryMode = value!;
+                                    // Auto-configure based on mode
+                                    switch (value) {
+                                      case 'platform':
+                                        _sellerDeliveryEnabled = false;
+                                        _platformDeliveryEnabled = true;
+                                        break;
+                                      case 'seller':
+                                        _sellerDeliveryEnabled = true;
+                                        _platformDeliveryEnabled = false;
+                                        break;
+                                      case 'hybrid':
+                                        _sellerDeliveryEnabled = true;
+                                        _platformDeliveryEnabled = true;
+                                        break;
+                                      case 'pickup':
+                                        _sellerDeliveryEnabled = false;
+                                        _platformDeliveryEnabled = false;
+                                        break;
+                                    }
+                                  });
+                                },
+                              ),
+                              
+                              const SizedBox(height: 16),
+                              
+                              // Delivery Options
+                              if (_deliveryMode != 'pickup') ...[
+                                Text(
+                                  'Delivery Options',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppTheme.deepTeal,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                CheckboxListTile(
+                                  title: Text('Enable Seller Delivery'),
+                                  subtitle: Text('Handle deliveries yourself'),
+                                  value: _sellerDeliveryEnabled,
+                                  onChanged: _deliveryMode == 'platform' ? null : (value) {
+                                    setState(() => _sellerDeliveryEnabled = value!);
+                                  },
+                                ),
+                                CheckboxListTile(
+                                  title: Text('Enable Platform Delivery'),
+                                  subtitle: Text('Use platform drivers'),
+                                  value: _platformDeliveryEnabled,
+                                  onChanged: _deliveryMode == 'seller' ? null : (value) {
+                                    setState(() => _platformDeliveryEnabled = value!);
+                                  },
+                                ),
+                              ],
+                              
+                              // Seller Delivery Settings
+                              if (_sellerDeliveryEnabled) ...[
+                                const SizedBox(height: 16),
+                                Text(
+                                  'Seller Delivery Settings',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppTheme.deepTeal,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: _buildEnhancedTextField(
+                                        controller: TextEditingController(
+                                          text: _sellerDeliveryBaseFee.toString(),
+                                        ),
+                                        label: 'Base Fee (R)',
+                                        hint: '25.0',
+                                        prefixIcon: Icons.attach_money,
+                                        keyboardType: TextInputType.number,
+                                        onChanged: (value) {
+                                          if (value.isNotEmpty) {
+                                            _sellerDeliveryBaseFee = double.tryParse(value) ?? 25.0;
+                                          }
+                                        },
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: _buildEnhancedTextField(
+                                        controller: TextEditingController(
+                                          text: _sellerDeliveryFeePerKm.toString(),
+                                        ),
+                                        label: 'Fee per km (R)',
+                                        hint: '2.0',
+                                        prefixIcon: Icons.trending_up,
+                                        keyboardType: TextInputType.number,
+                                        onChanged: (value) {
+                                          if (value.isNotEmpty) {
+                                            _sellerDeliveryFeePerKm = double.tryParse(value) ?? 2.0;
+                                          }
+                                        },
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 8),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: _buildEnhancedTextField(
+                                        controller: TextEditingController(
+                                          text: _sellerDeliveryMaxFee.toString(),
+                                        ),
+                                        label: 'Max Fee (R)',
+                                        hint: '50.0',
+                                        prefixIcon: Icons.attach_money,
+                                        keyboardType: TextInputType.number,
+                                        onChanged: (value) {
+                                          if (value.isNotEmpty) {
+                                            _sellerDeliveryMaxFee = double.tryParse(value) ?? 50.0;
+                                          }
+                                        },
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: _buildEnhancedTextField(
+                                        controller: TextEditingController(
+                                          text: _sellerDeliveryTime,
+                                        ),
+                                        label: 'Delivery Time',
+                                        hint: '30-45 minutes',
+                                        prefixIcon: Icons.access_time,
+                                        onChanged: (value) {
+                                          _sellerDeliveryTime = value;
+                                        },
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                        
+                        // Delivery Range Section
+                        Container(
+                          margin: const EdgeInsets.only(bottom: 16),
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: AppTheme.angel,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: AppTheme.breeze.withOpacity(0.3),
+                            ),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Icon(
+                                    Icons.radar,
+                                    color: AppTheme.deepTeal,
+                                    size: 20,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    'Delivery Range',
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w600,
+                                      color: AppTheme.deepTeal,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 12),
+                              Text(
+                                'Set the maximum distance you\'re willing to deliver. Your store won\'t be visible to customers outside this range.',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: AppTheme.mediumGrey,
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                              
+                              // Range Slider
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Text(
+                                        'Range: ${_deliveryRange.toStringAsFixed(0)} km',
+                                        style: TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w600,
+                                          color: AppTheme.deepTeal,
+                                        ),
+                                      ),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                        decoration: BoxDecoration(
+                                          color: AppTheme.primaryGreen.withOpacity(0.1),
+                                          borderRadius: BorderRadius.circular(8),
+                                          border: Border.all(
+                                            color: AppTheme.primaryGreen,
+                                            width: 1,
+                                          ),
+                                        ),
+                                        child: Text(
+                                          '${_deliveryRange.toStringAsFixed(0)} km',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w600,
+                                            color: AppTheme.primaryGreen,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 16),
+                                  SliderTheme(
+                                    data: SliderTheme.of(context).copyWith(
+                                      activeTrackColor: AppTheme.deepTeal,
+                                      inactiveTrackColor: AppTheme.cloud,
+                                      thumbColor: AppTheme.primaryGreen,
+                                      overlayColor: AppTheme.primaryGreen.withOpacity(0.2),
+                                      valueIndicatorColor: AppTheme.deepTeal,
+                                      valueIndicatorTextStyle: TextStyle(
+                                        color: AppTheme.angel,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                      trackHeight: 4,
+                                      thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8),
+                                      overlayShape: const RoundSliderOverlayShape(overlayRadius: 16),
+                                    ),
+                                    child: Slider(
+                                      value: _deliveryRange.clamp(0.0, 1000.0),
+                                      min: 0.0,
+                                      max: 1000.0,
+                                      divisions: 100, // 10km increments
+                                      label: '${_deliveryRange.toStringAsFixed(0)} km',
+                                      onChanged: (value) {
+                                        setState(() {
+                                          _deliveryRange = value;
+                                        });
+                                      },
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Text(
+                                        '0 km',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: AppTheme.mediumGrey,
+                                        ),
+                                      ),
+                                      Text(
+                                        '1000 km',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: AppTheme.mediumGrey,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 16),
+                                  
+                                  // Manual Range Input
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: Text(
+                                          'Need more than 1000km?',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: AppTheme.mediumGrey,
+                                            fontStyle: FontStyle.italic,
+                                          ),
+                                        ),
+                                      ),
+                                      Container(
+                                        width: 100,
+                                        child: TextFormField(
+                                          controller: _customRangeController,
+                                          keyboardType: TextInputType.number,
+                                          enabled: !_isLoading,
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: AppTheme.deepTeal,
+                                          ),
+                                          decoration: InputDecoration(
+                                            hintText: 'Custom km',
+                                            hintStyle: TextStyle(
+                                              color: AppTheme.breeze,
+                                              fontSize: 12,
+                                            ),
+                                            filled: true,
+                                            fillColor: AppTheme.whisper,
+                                            border: OutlineInputBorder(
+                                              borderRadius: BorderRadius.circular(8),
+                                              borderSide: BorderSide(color: AppTheme.breeze.withOpacity(0.3)),
+                                            ),
+                                            enabledBorder: OutlineInputBorder(
+                                              borderRadius: BorderRadius.circular(8),
+                                              borderSide: BorderSide(color: AppTheme.breeze.withOpacity(0.3)),
+                                            ),
+                                            focusedBorder: OutlineInputBorder(
+                                              borderRadius: BorderRadius.circular(8),
+                                              borderSide: BorderSide(color: AppTheme.deepTeal, width: 1),
+                                            ),
+                                            contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                                          ),
+                                          onChanged: (value) {
+                                            if (value.isNotEmpty) {
+                                              final customRange = double.tryParse(value);
+                                              if (customRange != null && customRange > 1000) {
+                                                setState(() {
+                                                  _deliveryRange = customRange;
+                                                });
+                                              }
+                                            }
+                                          },
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                                                  ],
+                                ),
+                                const SizedBox(height: 12),
+                                Container(
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    color: AppTheme.primaryGreen.withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(
+                                      color: AppTheme.primaryGreen.withOpacity(0.3),
+                                    ),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        Icons.info_outline,
+                                        size: 16,
+                                        color: AppTheme.primaryGreen,
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          'Important: Your store will only be visible to customers within your delivery range. Customers outside this range won\'t see your store in search results.',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            color: AppTheme.primaryGreen,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        
+                        // Delivery Hours Section
+                        Container(
+                          margin: const EdgeInsets.only(bottom: 16),
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: AppTheme.angel,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: AppTheme.breeze.withOpacity(0.3),
+                            ),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Icon(
+                                    Icons.access_time,
+                                    color: AppTheme.deepTeal,
+                                    size: 20,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    'Delivery Hours',
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w600,
+                                      color: AppTheme.deepTeal,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 12),
+                              Text(
+                                'Set the hours when you\'re available for delivery.',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: AppTheme.mediumGrey,
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                              
+                              // Delivery Start Time
+                              GestureDetector(
+                                onTap: _isLoading ? null : _selectDeliveryStartTime,
+                                child: Container(
+                                  padding: const EdgeInsets.all(16),
+                                  decoration: BoxDecoration(
+                                    color: AppTheme.whisper,
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(
+                                      color: AppTheme.breeze.withOpacity(0.3),
+                                    ),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        Icons.wb_sunny,
+                                        color: AppTheme.deepTeal,
+                                        size: 20,
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              'Start Time',
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                color: AppTheme.mediumGrey,
+                                              ),
+                                            ),
+                                            Text(
+                                              _formatTimeOfDay(_deliveryStartTime),
+                                              style: TextStyle(
+                                                fontSize: 16,
+                                                fontWeight: FontWeight.w600,
+                                                color: AppTheme.deepTeal,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      Icon(
+                                        Icons.arrow_forward_ios,
+                                        color: AppTheme.breeze,
+                                        size: 16,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              
+                              const SizedBox(height: 12),
+                              
+                              // Delivery End Time
+                              GestureDetector(
+                                onTap: _isLoading ? null : _selectDeliveryEndTime,
+                                child: Container(
+                                  padding: const EdgeInsets.all(16),
+                                  decoration: BoxDecoration(
+                                    color: AppTheme.whisper,
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(
+                                      color: AppTheme.breeze.withOpacity(0.3),
+                                    ),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        Icons.nightlight_round,
+                                        color: AppTheme.deepTeal,
+                                        size: 20,
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              'End Time',
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                color: AppTheme.mediumGrey,
+                                              ),
+                                            ),
+                                            Text(
+                                              _formatTimeOfDay(_deliveryEndTime),
+                                              style: TextStyle(
+                                                fontSize: 16,
+                                                fontWeight: FontWeight.w600,
+                                                color: AppTheme.deepTeal,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      Icon(
+                                        Icons.arrow_forward_ios,
+                                        color: AppTheme.breeze,
+                                        size: 16,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        
+                        // Operating Hours Section
+                        Container(
+                          margin: const EdgeInsets.only(bottom: 16),
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: AppTheme.angel,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: AppTheme.breeze.withOpacity(0.3),
+                            ),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Icon(
+                                    Icons.store,
+                                    color: AppTheme.deepTeal,
+                                    size: 20,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    'Store Operating Hours',
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w600,
+                                      color: AppTheme.deepTeal,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 12),
+                              Text(
+                                'Set the hours when your store is open for business.',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: AppTheme.mediumGrey,
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                              
+                              // Store Open Time
+                              GestureDetector(
+                                onTap: _isLoading ? null : _selectStoreOpenTime,
+                                child: Container(
+                                  padding: const EdgeInsets.all(16),
+                                  decoration: BoxDecoration(
+                                    color: AppTheme.whisper,
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(
+                                      color: AppTheme.breeze.withOpacity(0.3),
+                                    ),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        Icons.wb_sunny,
+                                        color: AppTheme.deepTeal,
+                                        size: 20,
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              'Store Opens',
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                color: AppTheme.mediumGrey,
+                                              ),
+                                            ),
+                                            Text(
+                                              _formatTimeOfDay(_storeOpenTime),
+                                              style: TextStyle(
+                                                fontSize: 16,
+                                                fontWeight: FontWeight.w600,
+                                                color: AppTheme.deepTeal,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      Icon(
+                                        Icons.arrow_forward_ios,
+                                        color: AppTheme.breeze,
+                                        size: 16,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              
+                              const SizedBox(height: 12),
+                              
+                              // Store Close Time
+                              GestureDetector(
+                                onTap: _isLoading ? null : _selectStoreCloseTime,
+                                child: Container(
+                                  padding: const EdgeInsets.all(16),
+                                  decoration: BoxDecoration(
+                                    color: AppTheme.whisper,
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(
+                                      color: AppTheme.breeze.withOpacity(0.3),
+                                    ),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        Icons.nightlight_round,
+                                        color: AppTheme.deepTeal,
+                                        size: 20,
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              'Store Closes',
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                color: AppTheme.mediumGrey,
+                                              ),
+                                            ),
+                                            Text(
+                                              _formatTimeOfDay(_storeCloseTime),
+                                              style: TextStyle(
+                                                fontSize: 16,
+                                                fontWeight: FontWeight.w600,
+                                                color: AppTheme.deepTeal,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      Icon(
+                                        Icons.arrow_forward_ios,
+                                        color: AppTheme.breeze,
+                                        size: 16,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                  
+                  // Behind the Brand Section
+                  _buildSectionCard(
+                    title: 'Behind the Brand',
+                    icon: Icons.business,
+                    children: [
+                      Container(
+                        margin: const EdgeInsets.only(bottom: 16),
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: AppTheme.deepTeal.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: AppTheme.deepTeal.withOpacity(0.3),
+                            width: 1,
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.lightbulb_outline,
+                              color: AppTheme.deepTeal,
+                              size: 20,
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'Use this feature to tell your brand story and connect with customers. Share your journey, values, and what makes your products unique.',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: AppTheme.deepTeal,
+                                  height: 1.3,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      _buildEnhancedTextField(
+                        controller: _storyController,
+                        label: 'Behind the Brand',
+                        hint: 'Tell customers about your brand journey, values, and what makes your products unique...',
+                        prefixIcon: Icons.business,
+                        maxLines: 4,
+                      ),
+                      _buildEnhancedTextField(
+                        controller: _specialtiesController,
+                        label: 'Specialties',
+                        hint: 'Your best products or services (comma separated)',
+                        prefixIcon: Icons.star,
+                      ),
+                      _buildEnhancedTextField(
+                        controller: _passionController,
+                        label: 'Your Passion Statement',
+                        hint: 'What drives your love for your business?',
+                        prefixIcon: Icons.favorite,
+                        maxLines: 2,
+                      ),
+                      
+                      // Brand Media Section
+                      Container(
+                        margin: const EdgeInsets.only(top: 16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Brand Media',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                                color: AppTheme.deepTeal,
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            Column(
+                              children: [
+                                // Brand Photos Row
+                                Row(
+                                  children: [
+                                    // First photo slot
+                                    Expanded(
+                                      child: _buildImageUploadCard(
+                                        title: 'Brand Photo 1',
+                                        icon: Icons.add_photo_alternate,
+                                        imageFile: _extraPhotos.isNotEmpty ? _extraPhotos[0] : null,
+                                        onTap: _pickExtraPhoto,
+                                        subtitle: _extraPhotos.isEmpty ? 'Add first brand photo' : 'Photo 1 added',
+                                        onRemove: _extraPhotos.isNotEmpty ? () => _removeExtraPhoto(0) : null,
+                                      ),
+                                    ),
+                                    SizedBox(width: ResponsiveUtils.getHorizontalPadding(context) * 0.5),
+                                    // Second photo slot
+                                    Expanded(
+                                      child: _buildImageUploadCard(
+                                        title: 'Brand Photo 2',
+                                        icon: Icons.add_photo_alternate,
+                                        imageFile: _extraPhotos.length > 1 ? _extraPhotos[1] : null,
+                                        onTap: _pickExtraPhoto,
+                                        subtitle: _extraPhotos.length < 2 ? 'Add second brand photo' : 'Photo 2 added',
+                                        onRemove: _extraPhotos.length > 1 ? () => _removeExtraPhoto(1) : null,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                SizedBox(height: ResponsiveUtils.getVerticalPadding(context)),
+                                // Brand Video Row
+                                _buildVideoUploadCard(
+                                  title: 'Brand Video',
+                                  icon: Icons.videocam,
+                                  videoFile: _introVideo,
+                                  onTap: _pickIntroVideo,
+                                  subtitle: 'Tell your story (60s max)',
+                                  onRemove: _introVideo != null ? () => _removeIntroVideo() : null,
+                                ),
+                              ],
+                            ),
+                            
+                            // Show all selected extra photos
+                            if (_extraPhotos.isNotEmpty) ...[
+                              SizedBox(height: ResponsiveUtils.getVerticalPadding(context)),
+                              Text(
+                                'Selected Brand Photos',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppTheme.deepTeal,
+                                ),
+                              ),
+                              SizedBox(height: ResponsiveUtils.getVerticalPadding(context) * 0.5),
+                              Wrap(
+                                spacing: ResponsiveUtils.getHorizontalPadding(context) * 0.5,
+                                runSpacing: ResponsiveUtils.getVerticalPadding(context) * 0.5,
+                                children: _extraPhotos.asMap().entries.map((entry) {
+                                  final index = entry.key;
+                                  final photo = entry.value;
+                                  return Container(
+                                    width: 100,
+                                    height: 100,
+                                    decoration: BoxDecoration(
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(
+                                        color: AppTheme.breeze.withOpacity(0.3),
+                                      ),
+                                    ),
+                                    child: Stack(
+                                      children: [
+                                        ClipRRect(
+                                          borderRadius: BorderRadius.circular(8),
+                                          child: kIsWeb
+                                            ? Image.network(
+                                                photo.path,
+                                                width: 100,
+                                                height: 100,
+                                                fit: BoxFit.cover,
+                                              )
+                                            : Image.file(
+                                                photo,
+                                                width: 100,
+                                                height: 100,
+                                                fit: BoxFit.cover,
+                                              ),
+                                        ),
+                                        Positioned(
+                                          top: 4,
+                                          right: 4,
+                                          child: GestureDetector(
+                                            onTap: () => _removeExtraPhoto(index),
+                                            child: Container(
+                                              padding: const EdgeInsets.all(4),
+                                              decoration: BoxDecoration(
+                                                color: AppTheme.error.withOpacity(0.9),
+                                                shape: BoxShape.circle,
+                                              ),
+                                              child: Icon(
+                                                Icons.close,
+                                                size: 12,
+                                                color: AppTheme.angel,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                }).toList(),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  
+                  SizedBox(height: ResponsiveUtils.getVerticalPadding(context)),
+                  
+                  // Submit Button
+                  _buildSubmitButton(),
+                  
+                  SizedBox(height: ResponsiveUtils.getVerticalPadding(context) * 2),
+                ],
+              ),
+            ),
+                ),
+              ),
+      ),
+    );
+  }
+}
+

@@ -1,0 +1,1048 @@
+import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:intl/intl.dart';
+import '../theme/app_theme.dart';
+import '../utils/order_utils.dart';
+
+class OrderTrackingScreen extends StatefulWidget {
+  final String orderId;
+  const OrderTrackingScreen({super.key, required this.orderId});
+
+  @override
+  State<OrderTrackingScreen> createState() => _OrderTrackingScreenState();
+}
+
+class _OrderTrackingScreenState extends State<OrderTrackingScreen>
+    with TickerProviderStateMixin {
+  late AnimationController _fadeController;
+  late Animation<double> _fadeAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _fadeController = AnimationController(
+      duration: const Duration(milliseconds: 800),
+      vsync: this,
+    );
+    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _fadeController, curve: Curves.easeOut),
+    );
+    _fadeController.forward();
+  }
+
+  @override
+  void dispose() {
+    _fadeController.dispose();
+    super.dispose();
+  }
+
+  DateTime? _parseTimestamp(dynamic timestamp) {
+    if (timestamp == null) return null;
+    
+    if (timestamp is Timestamp) {
+      return timestamp.toDate();
+    } else if (timestamp is String) {
+      try {
+        return DateTime.parse(timestamp);
+      } catch (e) {
+        print('🔍 DEBUG: Error parsing timestamp string: $timestamp');
+        return null;
+      }
+    } else if (timestamp is DateTime) {
+      return timestamp;
+    }
+    
+    return null;
+  }
+
+  Color _statusColor(String status) {
+    return AppTheme.getStatusColor(status);
+  }
+
+  IconData _statusIcon(String status) {
+    switch (status.toLowerCase()) {
+      case 'pending': return Icons.pending_actions;
+      case 'confirmed': return Icons.check_circle_outline;
+      case 'preparing': return Icons.restaurant;
+      case 'ready': return Icons.local_shipping;
+      case 'shipped': return Icons.local_shipping;
+      case 'delivered': return Icons.check_circle;
+      case 'cancelled': return Icons.cancel;
+      default: return Icons.help_outline;
+    }
+  }
+
+  List<Map<String, dynamic>> _getOrderStatusSteps() {
+    return [
+      {
+        'status': 'pending',
+        'title': 'Order Placed',
+        'description': 'Your order has been received',
+        'icon': Icons.receipt_long,
+      },
+      {
+        'status': 'confirmed',
+        'title': 'Order Confirmed',
+        'description': 'Seller has confirmed your order',
+        'icon': Icons.check_circle_outline,
+      },
+      {
+        'status': 'preparing',
+        'title': 'Preparing',
+        'description': 'Your order is being prepared',
+        'icon': Icons.restaurant,
+      },
+      {
+        'status': 'ready',
+        'title': 'Ready for Pickup/Delivery',
+        'description': 'Your order is ready',
+        'icon': Icons.local_shipping,
+      },
+      {
+        'status': 'shipped',
+        'title': 'On the Way',
+        'description': 'Your order is being delivered',
+        'icon': Icons.directions_car,
+      },
+      {
+        'status': 'delivered',
+        'title': 'Delivered',
+        'description': 'Order has been delivered',
+        'icon': Icons.check_circle,
+      },
+    ];
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final orderRef = FirebaseFirestore.instance.collection('orders').doc(widget.orderId);
+
+    return Scaffold(
+      backgroundColor: AppTheme.whisper,
+      body: FadeTransition(
+        opacity: _fadeAnimation,
+        child: StreamBuilder<DocumentSnapshot>(
+          stream: orderRef.snapshots(),
+          builder: (context, snapshot) {
+            if (snapshot.hasError) return _buildErrorState();
+            if (!snapshot.hasData || snapshot.data == null) return _buildLoadingState();
+
+            final data = snapshot.data!.data()! as Map<String, dynamic>;
+            
+            final currentStatus = data['status'] ?? 'pending';
+            final updates = List<Map<String, dynamic>>.from(data['trackingUpdates'] ?? []);
+            final orderItems = (data['items'] as List?) ?? [];
+            final total = data['totalPrice'] ?? data['total'] ?? 0.0;
+            final timestamp = _parseTimestamp(data['timestamp']);
+
+            updates.sort((a, b) {
+              final ta = _parseTimestamp(a['timestamp']) ?? DateTime.now();
+              final tb = _parseTimestamp(b['timestamp']) ?? DateTime.now();
+              return tb.compareTo(ta); // Most recent first
+            });
+
+            return CustomScrollView(
+              slivers: [
+                // Beautiful App Bar
+                _buildSliverAppBar(currentStatus),
+                
+                // Order Summary Card
+                SliverToBoxAdapter(
+                  child: FutureBuilder<Widget>(
+                    future: _buildOrderSummaryCard(data, timestamp, orderItems, total),
+                    builder: (context, snapshot) {
+                      if (snapshot.connectionState == ConnectionState.waiting) {
+                        return const Center(child: CircularProgressIndicator());
+                      }
+                      return snapshot.data ?? const SizedBox.shrink();
+                    },
+                  ),
+                ),
+                
+                // Driver Status Card (if driver is assigned)
+                if (data['driverAssigned'] == true && data['assignedDriverId'] != null)
+                  SliverToBoxAdapter(
+                    child: FutureBuilder<Widget>(
+                      future: _buildDriverStatusCard(data['assignedDriverId']),
+                      builder: (context, snapshot) {
+                        if (snapshot.connectionState == ConnectionState.waiting) {
+                          return const Center(child: CircularProgressIndicator());
+                        }
+                        return snapshot.data ?? const SizedBox.shrink();
+                      },
+                    ),
+                  ),
+                
+                // Progress Timeline
+                SliverToBoxAdapter(
+                  child: _buildProgressTimeline(currentStatus),
+                ),
+                
+                // Tracking Updates
+                if (updates.isNotEmpty)
+                  SliverToBoxAdapter(
+                    child: _buildTrackingUpdates(updates),
+                  ),
+                
+                // Contact Support
+                SliverToBoxAdapter(
+                  child: _buildContactSupportCard(),
+                ),
+                
+                SliverToBoxAdapter(
+                  child: const SizedBox(height: 100), // Bottom padding
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSliverAppBar(String status) {
+    final color = _statusColor(status);
+    
+    return SliverAppBar(
+      expandedHeight: 180,
+      floating: false,
+      pinned: true,
+      backgroundColor: color,
+      leading: Container(
+        margin: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.2),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: IconButton(
+          icon: Icon(Icons.arrow_back_ios, color: Colors.white, size: 20),
+          onPressed: () => Navigator.pop(context),
+        ),
+      ),
+      flexibleSpace: FlexibleSpaceBar(
+        background: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                color,
+                color.withOpacity(0.8),
+              ],
+            ),
+          ),
+          child: Stack(
+                children: [
+              // Background Icon
+              Positioned(
+                top: 60,
+                right: -20,
+                child: Opacity(
+                  opacity: 0.1,
+                  child: Icon(
+                    _statusIcon(status),
+                    size: 150,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+              
+              // Content
+              Positioned(
+                bottom: 60,
+                left: 20,
+                right: 20,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(_statusIcon(status), color: Colors.white, size: 16),
+                          const SizedBox(width: 4),
+                  Text(
+                            status.toUpperCase(),
+                    style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                      'Order ${OrderUtils.formatShortOrderNumber(widget.orderId)}',
+                      style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        shadows: [
+                          Shadow(
+                            color: Colors.black.withOpacity(0.3),
+                            offset: const Offset(0, 2),
+                            blurRadius: 4,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<Widget> _buildOrderSummaryCard(Map<String, dynamic> data, DateTime? timestamp, List orderItems, dynamic total) async {
+    return Container(
+      margin: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Colors.white,
+            Colors.grey.shade50,
+          ],
+        ),
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.08),
+            blurRadius: 15,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.info_outline, color: AppTheme.primaryGreen, size: 24),
+              const SizedBox(width: 8),
+              Text(
+                'Order Details',
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: Theme.of(context).colorScheme.onSurface,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          if (timestamp != null)
+            _buildInfoRow(
+              Icons.schedule,
+              'Placed on',
+              DateFormat('MMMM dd, yyyy • HH:mm').format(timestamp),
+            ),
+          _buildInfoRow(
+            Icons.store,
+            'Store',
+            await _getStoreName(data['sellerId']),
+          ),
+          _buildInfoRow(
+            Icons.shopping_bag,
+            'Items',
+            '${orderItems.length} item${orderItems.length != 1 ? 's' : ''}',
+          ),
+          _buildInfoRow(
+            Icons.receipt,
+            'Total',
+            'R${(total is num ? total.toDouble() : 0.0).toStringAsFixed(2)}',
+          ),
+          // Add driver information if available
+          if (data['driverAssigned'] == true && data['assignedDriverId'] != null)
+            await _buildDriverInfoRow(data['assignedDriverId']),
+        ],
+      ),
+    );
+  }
+
+  Future<Widget> _buildDriverStatusCard(String driverId) async {
+    try {
+      final driverDoc = await FirebaseFirestore.instance
+          .collection('drivers')
+          .doc(driverId)
+          .get();
+      
+      if (driverDoc.exists) {
+        final driverData = driverDoc.data();
+        final driverName = driverData?['name'] ?? 'Unknown Driver';
+        final driverPhone = driverData?['phone'] ?? 'No phone available';
+        final driverRating = driverData?['rating'] ?? 0.0;
+        final isOnline = driverData?['isOnline'] ?? false;
+        final currentLocation = driverData?['currentLocation'];
+        
+        return Container(
+          margin: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                Colors.blue.shade50,
+                Colors.blue.shade100,
+              ],
+            ),
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.08),
+                blurRadius: 15,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.delivery_dining, color: Colors.blue.shade700, size: 24),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Driver Status',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.blue.shade700,
+                    ),
+                  ),
+                  const Spacer(),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: isOnline ? Colors.green : Colors.grey,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      isOnline ? 'Online' : 'Offline',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              _buildInfoRow(
+                Icons.person,
+                'Driver',
+                '$driverName (${driverRating.toStringAsFixed(1)}⭐)',
+              ),
+              if (driverPhone != 'No phone available')
+                _buildInfoRow(
+                  Icons.phone,
+                  'Contact',
+                  driverPhone,
+                ),
+              if (currentLocation != null)
+                _buildInfoRow(
+                  Icons.location_on,
+                  'Location',
+                  'Driver is on the way',
+                ),
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade100,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.info_outline, color: Colors.blue.shade700, size: 16),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Your driver will contact you when they arrive at the pickup location.',
+                        style: TextStyle(
+                          color: Colors.blue.shade700,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      } else {
+        return Container(
+          margin: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: Colors.grey.shade100,
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Row(
+            children: [
+              Icon(Icons.delivery_dining, color: Colors.grey.shade600, size: 24),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Driver assigned - details loading...',
+                  style: TextStyle(
+                    color: Colors.grey.shade600,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      }
+    } catch (e) {
+      print('🔍 DEBUG: Error building driver status card: $e');
+      return Container(
+        margin: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: Colors.grey.shade100,
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.delivery_dining, color: Colors.grey.shade600, size: 24),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'Driver assigned - unable to load details',
+                style: TextStyle(
+                  color: Colors.grey.shade600,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+  }
+
+  Future<Widget> _buildDriverInfoRow(String driverId) async {
+    try {
+      final driverDoc = await FirebaseFirestore.instance
+          .collection('drivers')
+          .doc(driverId)
+          .get();
+      
+      if (driverDoc.exists) {
+        final driverData = driverDoc.data();
+        final driverName = driverData?['name'] ?? 'Unknown Driver';
+        final driverPhone = driverData?['phone'] ?? 'No phone available';
+        final driverRating = driverData?['rating'] ?? 0.0;
+        
+        return _buildInfoRow(
+          Icons.delivery_dining,
+          'Driver',
+          '$driverName (${driverRating.toStringAsFixed(1)}⭐)',
+        );
+      } else {
+        return _buildInfoRow(
+          Icons.delivery_dining,
+          'Driver',
+          'Driver assigned (ID: ${driverId.substring(0, 8)}...)',
+        );
+      }
+    } catch (e) {
+      print('🔍 DEBUG: Error fetching driver info: $e');
+      return _buildInfoRow(
+        Icons.delivery_dining,
+        'Driver',
+        'Driver assigned',
+      );
+    }
+  }
+
+  Future<String> _getStoreName(String? sellerId) async {
+    print('🔍 DEBUG: Getting store name for sellerId: $sellerId');
+    
+    if (sellerId == null || sellerId.isEmpty) {
+      print('🔍 DEBUG: sellerId is null or empty');
+      return 'Unknown Store';
+    }
+    
+    try {
+      // First try to get the store name from the users collection
+      final sellerDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(sellerId)
+          .get();
+      
+      print('🔍 DEBUG: Seller document exists: ${sellerDoc.exists}');
+      
+      if (sellerDoc.exists) {
+        final sellerData = sellerDoc.data();
+        final storeName = sellerData?['storeName'] ?? 'Unknown Store';
+        print('🔍 DEBUG: Store name from document: $storeName');
+        return storeName;
+      }
+      
+      print('🔍 DEBUG: Seller document does not exist');
+      
+      // If not found in users collection, try to find by email or other fields
+      final usersQuery = await FirebaseFirestore.instance
+          .collection('users')
+          .where('email', isEqualTo: sellerId) // In case sellerId is actually an email
+          .limit(1)
+          .get();
+      
+      if (usersQuery.docs.isNotEmpty) {
+        final userData = usersQuery.docs.first.data();
+        final storeName = userData['storeName'] ?? 'Unknown Store';
+        print('🔍 DEBUG: Found store by email query: $storeName');
+        return storeName;
+      }
+      
+      // If still not found, return a more descriptive name
+      return 'Store ID: $sellerId';
+    } catch (e) {
+      print('🔍 DEBUG: Error fetching store name: $e');
+      return 'Store ID: $sellerId';
+    }
+  }
+
+  Widget _buildProgressTimeline(String currentStatus) {
+    final steps = _getOrderStatusSteps();
+    final currentIndex = steps.indexWhere((step) => step['status'] == currentStatus);
+    
+    // Handle case where current status is not in predefined steps
+    final effectiveCurrentIndex = currentIndex >= 0 ? currentIndex : 0;
+    
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: AppTheme.deepTeal.withOpacity(0.08),
+            blurRadius: 15,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.timeline, color: AppTheme.deepTeal, size: 24),
+              const SizedBox(width: 8),
+              Text(
+                'Order Progress',
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: Theme.of(context).colorScheme.onSurface,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          
+          ...steps.asMap().entries.map((entry) {
+            final index = entry.key;
+            final step = entry.value;
+            final isCompleted = index <= effectiveCurrentIndex;
+            final isCurrent = index == effectiveCurrentIndex;
+            final isLast = index == steps.length - 1;
+            
+            return Container(
+              margin: EdgeInsets.only(bottom: isLast ? 0 : 20),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Timeline indicator
+                  Column(
+                    children: [
+                      Container(
+                        width: 40,
+                        height: 40,
+                        decoration: BoxDecoration(
+                          color: isCompleted
+                              ? _statusColor(step['status'])
+                              : AppTheme.cloud.withOpacity(0.3),
+                          shape: BoxShape.circle,
+                          boxShadow: isCurrent
+                              ? [
+                                  BoxShadow(
+                                    color: _statusColor(step['status']).withOpacity(0.4),
+                                    blurRadius: 8,
+                                    spreadRadius: 2,
+                                  ),
+                                ]
+                              : null,
+                        ),
+                        child: Icon(
+                          isCompleted ? Icons.check : step['icon'],
+                          color: isCompleted ? AppTheme.angel : AppTheme.cloud,
+                          size: 20,
+                        ),
+                      ),
+                      if (!isLast)
+                        Container(
+                          width: 2,
+                          height: 40,
+                          color: isCompleted ? _statusColor(step['status']) : AppTheme.cloud.withOpacity(0.3),
+                        ),
+                    ],
+                  ),
+                  
+                  const SizedBox(width: 16),
+                  
+                  // Step content
+                  Expanded(
+                    child: Container(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            step['title'],
+                            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                              fontWeight: isCurrent ? FontWeight.bold : FontWeight.w600,
+                              color: isCompleted
+                                  ? Theme.of(context).colorScheme.onSurface
+                                  : AppTheme.cloud,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            step['description'],
+                            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                              color: isCompleted
+                                  ? AppTheme.cloud
+                                  : AppTheme.cloud.withOpacity(0.7),
+                            ),
+                          ),
+                          if (isCurrent) ...[
+                            const SizedBox(height: 8),
+                  Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                                color: _statusColor(step['status']).withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                                'Current Status',
+                      style: TextStyle(
+                                  color: _statusColor(step['status']),
+                        fontWeight: FontWeight.bold,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }).toList(),
+                ],
+              ),
+            );
+          }
+
+  Widget _buildTrackingUpdates(List<Map<String, dynamic>> updates) {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.08),
+            blurRadius: 15,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.update, color: AppTheme.success, size: 24),
+              const SizedBox(width: 8),
+              Text(
+                'Live Updates',
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: Theme.of(context).colorScheme.onSurface,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          
+          ...updates.asMap().entries.map((entry) {
+            final index = entry.key;
+            final update = entry.value;
+            final timestamp = update['timestamp'];
+            DateTime? dateTime;
+            
+            if (timestamp != null) {
+              if (timestamp is Timestamp) {
+                dateTime = timestamp.toDate();
+              } else if (timestamp is String) {
+                try {
+                  dateTime = DateTime.parse(timestamp);
+                } catch (e) {
+                  print('🔍 DEBUG: Error parsing timestamp string: $timestamp');
+                }
+              } else if (timestamp is DateTime) {
+                dateTime = timestamp;
+              }
+            }
+            
+            final formattedTime = dateTime != null
+                ? DateFormat('MMM dd, yyyy • HH:mm').format(dateTime)
+                : 'Unknown time';
+            
+            return Container(
+              margin: EdgeInsets.only(bottom: index < updates.length - 1 ? 16 : 0),
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    Colors.green.withOpacity(0.05),
+                    Colors.white,
+                  ],
+                ),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.green.withOpacity(0.2)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: BoxDecoration(
+                          color: Colors.green.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Icon(Icons.access_time, size: 16, color: Colors.green),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        formattedTime,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Colors.green,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const Spacer(),
+                      if (update['by'] != null)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Colors.blue.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            update['by'],
+                            style: TextStyle(
+                              color: Colors.blue,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    update['description'] ?? 'No description',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      height: 1.4,
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }).toList(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildContactSupportCard() {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Colors.blue.withOpacity(0.05),
+            Colors.white,
+          ],
+        ),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.blue.withOpacity(0.2)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.support_agent, color: AppTheme.deepTeal, size: 24),
+              const SizedBox(width: 8),
+              Text(
+                'Need Help?',
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: Theme.of(context).colorScheme.onSurface,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(
+            'Have questions about your order? Our support team is here to help!',
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: Colors.grey[700],
+            ),
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: () {
+                // TODO: Implement contact support
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Contact support feature coming soon!'),
+                    backgroundColor: Colors.blue,
+                  ),
+                );
+              },
+              icon: Icon(Icons.chat),
+              label: Text('Contact Support'),
+              style: ElevatedButton.styleFrom(
+                                        backgroundColor: AppTheme.deepTeal,
+                        foregroundColor: AppTheme.angel,
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInfoRow(IconData icon, String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+                                        Icon(icon, size: 18, color: AppTheme.deepTeal),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: AppTheme.deepTeal,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  value,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLoadingState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          CircularProgressIndicator(color: AppTheme.deepTeal),
+          const SizedBox(height: 16),
+          Text(
+            'Loading order details...',
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: AppTheme.deepTeal,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildErrorState() {
+    return Center(
+      child: Container(
+        margin: const EdgeInsets.all(20),
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: Colors.red.withOpacity(0.05),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.red.withOpacity(0.2)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+                          Icon(Icons.error_outline, color: Colors.red, size: 48),
+            const SizedBox(height: 16),
+            Text(
+              'Error Loading Order',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                color: Colors.red,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Unable to load order details. Please try again.',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: AppTheme.deepTeal,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
