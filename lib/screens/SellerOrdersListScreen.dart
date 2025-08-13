@@ -270,7 +270,7 @@ class _SellerOrdersListScreenState extends State<SellerOrdersListScreen>
       // Use direct Firestore query instead of OptimizedFirestoreQuery for now
       Query query = _firestore.collection('orders')
           .where('sellerId', isEqualTo: sellerId)
-          .orderBy('timestamp', descending: true)
+          // .orderBy('timestamp', descending: true) // Temporarily removed for testing
           .limit(15);
 
       final snapshot = await query.get().timeout(
@@ -282,6 +282,12 @@ class _SellerOrdersListScreenState extends State<SellerOrdersListScreen>
       final orders = snapshot.docs;
 
       print('🔍 DEBUG: Found ${orders.length} orders for seller $sellerId');
+      
+      // Debug: Print order details
+      for (final doc in orders) {
+        final data = doc.data() as Map<String, dynamic>?;
+        print('🔍 DEBUG: Order ${doc.id} - sellerId: ${data?['sellerId']}, timestamp: ${data?['timestamp']}, orderNumber: ${data?['orderNumber']}');
+      }
 
       // Process orders with customer names
       final processedOrders = await _processOrders(orders);
@@ -333,12 +339,15 @@ class _SellerOrdersListScreenState extends State<SellerOrdersListScreen>
       final user = _auth.currentUser;
       if (user == null) return;
 
+      // Use sellerId from widget if provided, otherwise use current user
+      final sellerId = widget.sellerId ?? user.uid;
+
       // Get last order timestamp for pagination
       final currentOrders = _pagination.getCurrentPage();
       final lastOrder = currentOrders.isNotEmpty ? currentOrders.last : null;
       
       Query query = _firestore.collection('orders')
-          .where('sellerId', isEqualTo: user.uid)
+          .where('sellerId', isEqualTo: sellerId)
           .orderBy('timestamp', descending: true)
           .limit(15);
 

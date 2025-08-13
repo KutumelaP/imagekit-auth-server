@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:async';
+import 'package:flutter/foundation.dart';
+import '../utils/safari_optimizer.dart';
 
 class ChatBadge extends StatefulWidget {
   final Widget child;
@@ -22,6 +24,8 @@ class _ChatBadgeState extends State<ChatBadge> {
   StreamSubscription<QuerySnapshot>? _subscription;
   StreamSubscription<User?>? _authSubscription;
   bool _isInitialized = false;
+  Timer? _debounceTimer;
+  int _lastCount = 0;
 
   @override
   void initState() {
@@ -34,6 +38,7 @@ class _ChatBadgeState extends State<ChatBadge> {
   void dispose() {
     _subscription?.cancel();
     _authSubscription?.cancel();
+    _debounceTimer?.cancel();
     super.dispose();
   }
 
@@ -77,13 +82,13 @@ class _ChatBadgeState extends State<ChatBadge> {
             Filter('buyerId', isEqualTo: currentUserId),
             Filter('sellerId', isEqualTo: currentUserId),
           ))
-          .snapshots();
+          .snapshots(includeMetadataChanges: false); // Reduce metadata changes
 
       _subscription = chatsStream.listen(
         (snapshot) {
           if (mounted) {
             print('🔍 DEBUG: Chat badge stream update - ${snapshot.docs.length} chats');
-            _updateBadgeCount(currentUserId);
+            _debouncedUpdateBadgeCount(currentUserId);
           }
         },
         onError: (error) {
@@ -98,88 +103,39 @@ class _ChatBadgeState extends State<ChatBadge> {
               });
             }
           } else {
-            // Fallback: try to get count once for other errors
+            // Fallback: try to get count once
             _getUnreadCountOnce(currentUserId);
           }
         },
       );
       
-      // Initial count
-      _updateBadgeCount(currentUserId);
+      _isInitialized = true;
+      print('💬 Chat badge initialized for user: $currentUserId');
     } catch (e) {
       print('❌ Error initializing chat badge: $e');
-      // Don't retry on permission errors
-      if (e.toString().contains('permission-denied')) {
-        print('🔍 DEBUG: Permission denied for chat badge initialization');
-        if (mounted) {
-          setState(() {
-            _unreadCount = 0;
-            _isInitialized = true;
-          });
-        }
-      } else {
-        // Fallback: try to get count once for other errors
-        _getUnreadCountOnce(currentUserId);
-      }
+      // Fallback: try to get count once
+      _getUnreadCountOnce(currentUserId);
     }
   }
 
-  Future<void> _updateBadgeCount(String currentUserId) async {
-    try {
-      int unreadCount = 0;
-
-      // Count unread chat messages
-      final chatsSnapshot = await FirebaseFirestore.instance
-          .collection('chats')
-          .where(Filter.or(
-            Filter('buyerId', isEqualTo: currentUserId),
-            Filter('sellerId', isEqualTo: currentUserId),
-          ))
-          .get();
-
-      print('🔍 DEBUG: Found ${chatsSnapshot.docs.length} chats for user: $currentUserId');
-
-      for (var chat in chatsSnapshot.docs) {
-        final data = chat.data() as Map<String, dynamic>;
-        final chatId = chat.id;
-        final chatUnreadCount = data['unreadCount'] as int? ?? 0;
-        final buyerId = data['buyerId'] as String?;
-        final sellerId = data['sellerId'] as String?;
-        final lastMessageBy = data['lastMessageBy'] as String?;
-        
-        print('🔍 DEBUG: Chat $chatId - unreadCount: $chatUnreadCount, buyerId: $buyerId, sellerId: $sellerId, lastMessageBy: $lastMessageBy');
-        
-        // Only count unread messages if the last message was from someone else
-        if (chatUnreadCount > 0 && lastMessageBy != null && lastMessageBy != currentUserId) {
-          unreadCount += chatUnreadCount;
-          print('🔍 DEBUG: Adding $chatUnreadCount to total (last message from other user)');
-        } else if (chatUnreadCount > 0) {
-          print('🔍 DEBUG: Skipping $chatUnreadCount (last message from current user or no last message)');
-        }
-      }
-      
-      print('🔍 DEBUG: Chat badge count - Total unread messages: $unreadCount');
-
+  void _debouncedUpdateBadgeCount(String userId) {
+    _debounceTimer?.cancel();
+    _debounceTimer = Timer(const Duration(milliseconds: 500), () {
       if (mounted) {
-        setState(() {
-          _unreadCount = unreadCount;
-          _isInitialized = true;
-        });
-        
-        print('💬 Chat badge updated: $_unreadCount unread messages');
+        _updateBadgeCount(userId);
       }
-    } catch (e) {
-      print('❌ Error updating chat badge count: $e');
-      // Handle permission errors gracefully
-      if (e.toString().contains('permission-denied')) {
-        print('🔍 DEBUG: Permission denied for chat badge count update');
-        if (mounted) {
-          setState(() {
-            _unreadCount = 0;
-            _isInitialized = true;
-          });
-        }
-      }
+    });
+  }
+
+  void _updateBadgeCount(String userId) {
+    // Safari optimization: check memory pressure
+    SafariOptimizer.checkMemoryPressure();
+    
+    // Only update if count actually changed
+    if (_unreadCount != _lastCount) {
+      setState(() {
+        _lastCount = _unreadCount;
+      });
     }
   }
 
@@ -203,15 +159,38 @@ class _ChatBadgeState extends State<ChatBadge> {
         final buyerId = data['buyerId'] as String?;
         final sellerId = data['sellerId'] as String?;
         final lastMessageBy = data['lastMessageBy'] as String?;
+        final lastMessageTime = data['lastMessageTime'] as Timestamp?;
+        final lastViewedTime = data['lastViewed_$userId'] as Timestamp?;
         
         print('🔍 DEBUG: Chat $chatId - unreadCount: $chatUnreadCount, buyerId: $buyerId, sellerId: $sellerId, lastMessageBy: $lastMessageBy (fallback)');
         
-        // Only count unread messages if the last message was from someone else
+        // Only count unread messages if:
+        // 1. There are unread messages
+        // 2. The last message was from someone else
+        // 3. The user hasn't viewed the chat since the last message
+        bool hasUnreadMessages = false;
+        
         if (chatUnreadCount > 0 && lastMessageBy != null && lastMessageBy != userId) {
+          // Check if user has viewed the chat since the last message
+          if (lastMessageTime != null) {
+            if (lastViewedTime == null) {
+              // User has never viewed this chat, so all messages are unread
+              hasUnreadMessages = true;
+            } else if (lastMessageTime.toDate().isAfter(lastViewedTime.toDate())) {
+              // Last message is newer than last viewed time
+              hasUnreadMessages = true;
+            }
+          } else {
+            // No last message time, but there are unread messages
+            hasUnreadMessages = true;
+          }
+        }
+        
+        if (hasUnreadMessages) {
           unreadCount += chatUnreadCount;
-          print('🔍 DEBUG: Adding $chatUnreadCount to total (last message from other user) (fallback)');
+          print('🔍 DEBUG: Adding $chatUnreadCount to total (truly unread messages) (fallback)');
         } else if (chatUnreadCount > 0) {
-          print('🔍 DEBUG: Skipping $chatUnreadCount (last message from current user or no last message) (fallback)');
+          print('🔍 DEBUG: Skipping $chatUnreadCount (already viewed or last message from current user) (fallback)');
         }
       }
 

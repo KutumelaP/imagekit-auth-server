@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Shopping bag body with enhanced design -->
+    <path
+        android:fillColor="#1F4654"
+        android:pathData="M25,20 L83,20 L83,88 L25,88 Z" />
+    <!-- Shopping bag handle with stroke -->
+    <path
+        android:fillColor="#1F4654"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="1.5"
+        android:pathData="M32,20 Q54,12 76,20" />
+    <!-- Africa continent silhouette (enhanced) -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M38,35 L47,30 L56,32 L65,30 L74,35 L78,40 L74,45 L69,50 L64,55 L59,60 L54,65 L49,70 L44,65 L38,60 L44,55 L49,50 L54,45 L49,40 Z" />
+    <!-- Madagascar dot -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M74,55 Q78,55 78,59 Q78,63 74,63 Q70,63 70,59 Q70,55 74,55 Z" />
+    <!-- Horn of Africa -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M78,40 L82,36 L86,40 L82,44 Z" />
+    <!-- Decorative elements -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M42,80 Q50,76 58,80 Q50,84 42,80 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M65,85 Q72,82 79,85 Q72,88 65,85 Z" />
+    <!-- Subtle highlight -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:fillAlpha="0.3"
+        android:pathData="M25,20 L83,20 L83,30 L25,30 Z" />
+</vector> 

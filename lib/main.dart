@@ -1,48 +1,65 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:provider/provider.dart';
+import 'package:firebase_analytics/firebase_analytics.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import 'firebase_options.dart';
+import 'theme/app_theme.dart';
 import 'providers/cart_provider.dart';
 import 'providers/user_provider.dart';
 import 'providers/optimized_provider.dart';
+import 'services/notification_service.dart';
+import 'services/error_tracking_service.dart';
+import 'services/global_message_listener.dart';
+import 'widgets/in_app_notification_widget.dart';
+import 'widgets/notification_badge.dart';
+import 'widgets/simple_splash_screen.dart';
 import 'screens/simple_home_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/CartScreen.dart';
-import 'screens/CheckoutScreen.dart';
 import 'screens/OrderHistoryScreen.dart';
 import 'screens/ProfileEditScreen.dart';
-import 'screens/SellerOrdersListScreen.dart';
-import 'screens/SellerOrderDetailScreen.dart';
 import 'screens/AdminReviewModerationScreen.dart';
-import 'screens/AdminRoute.dart';
 import 'screens/CacheManagementScreen.dart';
 import 'screens/seller_product_management.dart';
+import 'screens/SellerOrderDetailScreen.dart';
+import 'screens/SellerOrdersListScreen.dart';
+import 'screens/CheckoutScreen.dart';
+import 'screens/AdminRoute.dart';
 
 import 'services/error_handler.dart';
-import 'services/error_tracking_service.dart';
-import 'services/notification_service.dart';
-import 'utils/cache_utils.dart';
-import 'utils/performance_utils.dart';
-import 'utils/memory_optimizer.dart';
-import 'utils/advanced_memory_optimizer.dart';
-import 'services/bulletproof_service.dart';
-import 'services/advanced_security_service.dart';
-import 'services/enterprise_performance_service.dart';
 import 'widgets/popup_notification.dart';
-import 'widgets/simple_splash_screen.dart';
-import 'firebase_options.dart';
 import 'dart:async';
-import 'theme/app_theme.dart';
-import 'package:geolocator/geolocator.dart';
+import 'utils/safari_optimizer.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  
+  // Initialize Safari optimizations
+  SafariOptimizer.initialize();
+  
+  // Safari-specific optimizations
+  if (kIsWeb) {
+    // Reduce memory pressure for Safari
+    PaintingBinding.instance.imageCache.maximumSize = 200; // Reduced from default
+    PaintingBinding.instance.imageCache.maximumSizeBytes = 25 << 20; // 25MB
+    
+    // Disable some features that cause issues in Safari
+    debugPrintRebuildDirtyWidgets = false;
+  }
   
   // Initialize Firebase with options
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
   
-  // Initialize notification service
+  // Initialize notification service with reduced frequency for Safari
   await NotificationService().initialize();
   
   // Request notification permissions
@@ -65,55 +82,11 @@ void main() async {
   // Initialize error tracking
   ErrorTrackingService.initialize();
   
-  // Initialize cache management
-  await CacheUtils.autoClearCorruptedCache();
+  // Initialize global message listener for notifications with reduced frequency
+  if (!kIsWeb) { // Only start on mobile to reduce Safari memory pressure
+    await GlobalMessageListener().startListening();
+  }
   
-  // Initialize performance optimizations
-  PerformanceUtils.initializeLargeImageCache();
-  
-  // Initialize memory optimization instead of large cache
-  MemoryOptimizer.initialize();
-  
-  // Initialize advanced memory optimization
-  AdvancedMemoryOptimizer.initialize();
-
-  // 🛡️ Initialize bulletproof protection system
-  await BulletproofService.initialize();
-  
-  // 🛡️ Initialize advanced security system
-  AdvancedSecurityService.sanitizeInput('init'); // Initialize security service
-  
-  // 🚀 Initialize enterprise performance system
-  await EnterprisePerformanceService.initialize();
-
-  // Set up periodic memory cleanup with bulletproof protection
-  Timer.periodic(const Duration(minutes: 2), (timer) {
-    try {
-      MemoryOptimizer.smartCleanup();
-      MemoryOptimizer.monitorMemory();
-      
-      // Record performance metric
-      EnterprisePerformanceService.recordPerformanceMetric('memory_cleanup', 100.0);
-    } catch (e) {
-      print('❌ Memory cleanup failed: $e');
-      BulletproofService.recordSecurityViolation('memory_cleanup', e.toString());
-    }
-  });
-
-  // Set up advanced memory monitoring with enterprise protection
-  Timer.periodic(const Duration(minutes: 1), (timer) {
-    try {
-      final stats = AdvancedMemoryOptimizer.getComprehensiveStats();
-      if (stats['imageCache']['usagePercent'] > 80) {
-        AdvancedMemoryOptimizer.emergencyCleanup();
-        EnterprisePerformanceService.recordPerformanceMetric('emergency_cleanup', 500.0);
-      }
-    } catch (e) {
-      print('❌ Advanced memory monitoring failed: $e');
-      BulletproofService.recordSecurityViolation('memory_monitoring', e.toString());
-    }
-  });
-
   runApp(MyApp());
 }
 
@@ -130,7 +103,20 @@ class MyApp extends StatelessWidget {
         title: 'Food Marketplace',
         debugShowCheckedModeBanner: false,
         theme: AppTheme.lightTheme,
-        home: SplashWrapper(),
+        home: InAppNotificationWidget(
+          child: NotificationBadge(
+            child: SplashWrapper(),
+          ),
+        ),
+        builder: (context, child) {
+          // Handle keyboard properly to prevent blank page issues
+          return MediaQuery(
+            data: MediaQuery.of(context).copyWith(
+              viewInsets: MediaQuery.of(context).viewInsets,
+            ),
+            child: child!,
+          );
+        },
         routes: {
           '/home': (context) => SimpleHomeScreen(),
           '/login': (context) => LoginScreen(),
@@ -140,7 +126,6 @@ class MyApp extends StatelessWidget {
           '/admin-review-moderation': (context) => AdminReviewModerationScreen(),
           '/cache-management': (context) => CacheManagementScreen(),
           '/my-products': (context) => SellerProductManagement(),
-
         },
         onGenerateRoute: (settings) {
           // Handle routes with parameters
@@ -198,6 +183,6 @@ class _SplashWrapperState extends State<SplashWrapper> {
 
   @override
   Widget build(BuildContext context) {
-            return SimpleSplashScreen();
+    return SimpleSplashScreen();
   }
 }

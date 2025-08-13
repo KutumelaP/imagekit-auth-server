@@ -317,7 +317,7 @@ class _EnhancedOrderManagementState extends State<EnhancedOrderManagement>
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: AdminTheme.whisper,
+        color: AdminTheme.breeze,
         border: Border(
           bottom: BorderSide(color: AdminTheme.silverGray.withOpacity(0.3)),
         ),

@@ -293,27 +293,41 @@ class NotificationService {
       final options = js.JsObject.jsify({
         'body': body,
         'icon': icon ?? '/icons/Icon-192.png',
-        'tag': tag ?? 'notification_${DateTime.now().millisecondsSinceEpoch}',
+        'tag': tag ?? 'marketplace_notification',
+        'data': payload ?? {},
         'requireInteraction': false,
         'silent': false,
-        'data': payload,
       });
 
-      // Create and show notification using 'new' operator
-      final notification = js.context.callMethod('eval', [
-        'new Notification("$title", ${js.JsObject.fromBrowserObject(options).toString()})'
+      // Create notification using the correct constructor
+      final notification = js.JsObject.fromBrowserObject(
+        js.context.callMethod('eval', [
+          'new Notification("$title", ${js.JsObject.jsify(options).toString()})'
+        ])
+      );
+
+      // Add click event listener
+      notification.callMethod('addEventListener', [
+        'click',
+        js.allowInterop((event) {
+          print('🔔 Web notification clicked');
+          // Handle notification click
+          if (payload != null && payload['orderId'] != null) {
+            // Navigate to order details
+            print('🔔 Navigating to order: ${payload['orderId']}');
+          }
+        })
       ]);
-      
-      // Auto-close notification after 5 seconds
-      Timer(const Duration(seconds: 5), () {
-        try {
-          js.context.callMethod('eval', ['${notification.toString()}.close()']);
-        } catch (e) {
-          // Ignore errors when closing
-        }
-      });
 
-      print('🔔 Web notification shown: $title');
+      // Auto-close after 5 seconds
+      js.context.callMethod('setTimeout', [
+        js.allowInterop(() {
+          notification.callMethod('close');
+        }),
+        5000
+      ]);
+
+      print('✅ Web notification shown: $title');
     } catch (e) {
       print('❌ Error showing web notification: $e');
     }
@@ -563,6 +577,13 @@ class NotificationService {
     required String sellerName,
   }) async {
     try {
+      print('🔍 DEBUG: sendNewOrderNotificationToSeller called');
+      print('🔍 DEBUG: sellerId: $sellerId');
+      print('🔍 DEBUG: orderId: $orderId');
+      print('🔍 DEBUG: buyerName: $buyerName');
+      print('🔍 DEBUG: orderTotal: $orderTotal');
+      print('🔍 DEBUG: sellerName: $sellerName');
+      
       // Validate seller ID
       if (sellerId.isEmpty) {
         print('❌ ERROR: Cannot send notification - sellerId is empty');
@@ -570,6 +591,7 @@ class NotificationService {
       }
 
       // Verify seller exists and is actually a seller
+      print('🔍 DEBUG: Verifying seller exists...');
       final sellerDocCheck = await _firestore
           .collection('users')
           .doc(sellerId)
@@ -590,6 +612,7 @@ class NotificationService {
       print('🔔 Order details: ID=$orderId, Buyer=$buyerName, Total=R$orderTotal');
       
       // Store notification in Firestore database
+      print('🔍 DEBUG: Storing notification in database...');
       await _storeNotificationInDatabase(
         userId: sellerId,
         title: 'New Order Received',
@@ -602,6 +625,7 @@ class NotificationService {
           'sellerName': sellerName,
         },
       );
+      print('🔍 DEBUG: Notification stored in database');
       
       // Show local notification
       final notificationTitle = 'New Order Received';
@@ -613,6 +637,7 @@ class NotificationService {
       // Show system notification if enabled
       if (_systemNotificationsEnabled) {
         if (kIsWeb) {
+          print('🔍 DEBUG: Showing web notification...');
           _showWebNotification(
             title: notificationTitle,
             body: notificationBody,
@@ -623,11 +648,13 @@ class NotificationService {
               'orderId': orderId,
             },
           );
+          print('🔍 DEBUG: Web notification shown');
         }
       }
 
       // Add to notification stream for in-app display
       if (_inAppNotificationsEnabled) {
+        print('🔍 DEBUG: Adding to notification stream...');
         _notificationController.add({
           'type': 'new_order_seller',
           'title': notificationTitle,
@@ -635,15 +662,21 @@ class NotificationService {
           'orderId': orderId,
           'timestamp': DateTime.now().millisecondsSinceEpoch,
         });
+        print('🔍 DEBUG: Added to notification stream');
       }
       
       // Play notification sound
       if (_audioNotificationsEnabled) {
+        print('🔍 DEBUG: Playing notification sound...');
         await _soundService.playNotificationSound();
+        print('🔍 DEBUG: Notification sound played');
       }
+      
+      print('✅ New order notification to seller completed successfully');
       
     } catch (e) {
       print('❌ Error sending new order notification to seller: $e');
+      print('❌ Error stack trace: ${StackTrace.current}');
     }
   }
 
@@ -657,6 +690,14 @@ class NotificationService {
     Map<String, dynamic>? data,
   }) async {
     try {
+      print('🔍 DEBUG: _storeNotificationInDatabase called');
+      print('🔍 DEBUG: userId: $userId');
+      print('🔍 DEBUG: title: $title');
+      print('🔍 DEBUG: body: $body');
+      print('🔍 DEBUG: type: $type');
+      print('🔍 DEBUG: orderId: $orderId');
+      print('🔍 DEBUG: data: $data');
+      
       // Validate user ID is not empty
       if (userId.isEmpty) {
         print('❌ ERROR: Cannot store notification - userId is empty');
@@ -664,6 +705,7 @@ class NotificationService {
       }
 
       // Verify the user exists in the database
+      print('🔍 DEBUG: Verifying user exists in database...');
       final userDoc = await _firestore
           .collection('users')
           .doc(userId)
@@ -673,6 +715,7 @@ class NotificationService {
         print('❌ ERROR: Cannot store notification - user $userId does not exist in database');
         return;
       }
+      print('🔍 DEBUG: User exists in database');
 
       final notificationData = {
         'title': title,
@@ -685,14 +728,19 @@ class NotificationService {
         'userId': userId,
       };
 
+      print('🔍 DEBUG: Notification data prepared: $notificationData');
+      print('🔍 DEBUG: Adding to notifications collection...');
+
       final docRef = await _firestore
           .collection('notifications')
           .add(notificationData);
       
       print('✅ Notification stored in database for user: $userId with ID: ${docRef.id}');
       print('📋 Notification data: $notificationData');
+      
     } catch (e) {
       print('❌ Error storing notification in database: $e');
+      print('❌ Error stack trace: ${StackTrace.current}');
     }
   }
 
@@ -722,6 +770,7 @@ class NotificationService {
       }
 
       print('🔔 Sending order status notification to buyer: $buyerId');
+      print('🔔 Order ID: $orderId, Status: $status, Seller: $sellerName');
       
       // Store notification in Firestore database
       await _storeNotificationInDatabase(
@@ -736,19 +785,26 @@ class NotificationService {
         },
       );
       
+      print('✅ Notification stored in database for buyer: $buyerId');
+      
       // Show system notification if enabled
       if (_systemNotificationsEnabled) {
         if (kIsWeb) {
-          _showWebNotification(
-            title: 'Order Status Updated',
-            body: 'Your order status has been updated to: $status',
-            icon: '/icons/Icon-192.png',
-            tag: 'order_$orderId',
-            payload: {
-              'type': 'order_status',
-              'orderId': orderId,
-            },
-          );
+          try {
+            _showWebNotification(
+              title: 'Order Status Updated',
+              body: 'Your order status has been updated to: $status',
+              icon: '/icons/Icon-192.png',
+              tag: 'order_$orderId',
+              payload: {
+                'type': 'order_status',
+                'orderId': orderId,
+              },
+            );
+            print('✅ Web notification sent');
+          } catch (e) {
+            print('❌ Web notification failed: $e');
+          }
         }
       }
 
@@ -761,15 +817,38 @@ class NotificationService {
           'orderId': orderId,
           'timestamp': DateTime.now().millisecondsSinceEpoch,
         });
+        print('✅ In-app notification added to stream');
       }
       
       // Play notification sound
       if (_audioNotificationsEnabled) {
-        await _soundService.playNotificationSound();
+        try {
+          await _soundService.playNotificationSound();
+          print('✅ Notification sound played');
+        } catch (e) {
+          print('❌ Notification sound failed: $e');
+        }
       }
+      
+      print('✅ Order status notification sent successfully to buyer: $buyerId');
       
     } catch (e) {
       print('❌ Error sending order status notification to buyer: $e');
+      print('❌ Stack trace: ${StackTrace.current}');
+      
+      // Fallback: Try to send a simple in-app notification
+      try {
+        _notificationController.add({
+          'type': 'order_status',
+          'title': 'Order Update',
+          'body': 'Your order status has been updated to: $status',
+          'orderId': orderId,
+          'timestamp': DateTime.now().millisecondsSinceEpoch,
+        });
+        print('✅ Fallback in-app notification sent');
+      } catch (fallbackError) {
+        print('❌ Fallback notification also failed: $fallbackError');
+      }
     }
   }
 
@@ -783,33 +862,87 @@ class NotificationService {
   }) async {
     try {
       print('🔔 Sending order status notification to user: $userId');
+      print('🔔 Order details: ID=$orderId, Number=$orderNumber, Status=$status, Total=R$totalPrice');
       
-      // Also show local notification
-      await showOrderNotification(
-        title: 'Order Status: $status',
+      // Store notification in database
+      await _storeNotificationInDatabase(
+        userId: userId,
+        title: 'Order Status Updated',
         body: 'Order #$orderNumber status updated to $status',
-        orderId: orderId,
         type: 'order_status',
+        orderId: orderId,
+        data: {
+          'status': status,
+          'orderNumber': orderNumber,
+          'totalPrice': totalPrice.toString(),
+        },
       );
+      
+      print('✅ Notification stored in database for user: $userId');
+      
+      // Show system notification if enabled
+      if (_systemNotificationsEnabled) {
+        if (kIsWeb) {
+          try {
+            _showWebNotification(
+              title: 'Order Status: $status',
+              body: 'Order #$orderNumber status updated to $status',
+              icon: '/icons/Icon-192.png',
+              tag: 'order_$orderId',
+              payload: {
+                'type': 'order_status',
+                'orderId': orderId,
+                'orderNumber': orderNumber,
+              },
+            );
+            print('✅ Web notification sent');
+          } catch (e) {
+            print('❌ Web notification failed: $e');
+          }
+        }
+      }
+
+      // Add to notification stream for in-app display
+      if (_inAppNotificationsEnabled) {
+        _notificationController.add({
+          'type': 'order_status',
+          'title': 'Order Status: $status',
+          'body': 'Order #$orderNumber status updated to $status',
+          'orderId': orderId,
+          'orderNumber': orderNumber,
+          'timestamp': DateTime.now().millisecondsSinceEpoch,
+        });
+        print('✅ In-app notification added to stream');
+      }
       
       // Play notification sound
       if (_audioNotificationsEnabled) {
-        await _soundService.playNotificationSound();
+        try {
+          await _soundService.playNotificationSound();
+          print('✅ Notification sound played');
+        } catch (e) {
+          print('❌ Notification sound failed: $e');
+        }
       }
+      
+      print('✅ Order status notification sent successfully to user: $userId');
       
     } catch (e) {
       print('❌ Error sending order status notification to user: $e');
-      // Fallback to local notification only
-      await showOrderNotification(
-        title: 'Order Status: $status',
-        body: 'Order #$orderNumber status updated to $status',
-        orderId: orderId,
-        type: 'order_status',
-      );
+      print('❌ Stack trace: ${StackTrace.current}');
       
-      // Play notification sound
-      if (_audioNotificationsEnabled) {
-        await _soundService.playNotificationSound();
+      // Fallback: Try to send a simple in-app notification
+      try {
+        _notificationController.add({
+          'type': 'order_status',
+          'title': 'Order Update',
+          'body': 'Order #$orderNumber status updated to $status',
+          'orderId': orderId,
+          'timestamp': DateTime.now().millisecondsSinceEpoch,
+        });
+        print('✅ Fallback in-app notification sent');
+      } catch (fallbackError) {
+        print('❌ Fallback notification also failed: $fallbackError');
       }
     }
   }

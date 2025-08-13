@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:async';
+import 'package:flutter/foundation.dart';
+import '../utils/safari_optimizer.dart';
 
 class NotificationBadge extends StatefulWidget {
   final Widget child;
@@ -22,6 +24,8 @@ class _NotificationBadgeState extends State<NotificationBadge> {
   StreamSubscription<QuerySnapshot>? _subscription;
   StreamSubscription<User?>? _authSubscription;
   bool _isInitialized = false;
+  Timer? _debounceTimer;
+  int _lastCount = 0;
 
   @override
   void initState() {
@@ -34,6 +38,7 @@ class _NotificationBadgeState extends State<NotificationBadge> {
   void dispose() {
     _subscription?.cancel();
     _authSubscription?.cancel();
+    _debounceTimer?.cancel();
     super.dispose();
   }
 
@@ -67,6 +72,13 @@ class _NotificationBadgeState extends State<NotificationBadge> {
       return;
     }
 
+    // Check if user is properly authenticated
+    if (!currentUser.emailVerified && currentUser.providerData.isEmpty) {
+      print('🔍 DEBUG: User not properly authenticated for notification badge');
+      return;
+    }
+
+    // Safari optimization: reduce stream frequency
     try {
       // Listen to chats where current user is a participant
       final chatsStream = FirebaseFirestore.instance
@@ -75,80 +87,56 @@ class _NotificationBadgeState extends State<NotificationBadge> {
             Filter('buyerId', isEqualTo: currentUserId),
             Filter('sellerId', isEqualTo: currentUserId),
           ))
-          .snapshots();
+          .snapshots(includeMetadataChanges: false); // Reduce metadata changes
       
       final notificationsStream = FirebaseFirestore.instance
           .collection('notifications')
           .where('userId', isEqualTo: currentUserId)
           .where('read', isEqualTo: false)
-          .snapshots();
+          .snapshots(includeMetadataChanges: false); // Reduce metadata changes
 
-      // Listen to both streams separately
+      // Listen to both streams separately with better error handling
       _subscription = chatsStream.listen(
         (snapshot) {
           if (mounted) {
-            _updateBadgeCount(currentUserId);
+            _debouncedUpdateBadgeCount(currentUserId);
           }
         },
         onError: (error) {
-          print('❌ Error in notification badge stream: $error');
-          // Fallback: try to get count once
-          _getUnreadCountOnce(currentUserId);
-        },
-      );
-
-      // Also listen to notifications stream
-      notificationsStream.listen(
-        (snapshot) {
-          if (mounted) {
-            _updateBadgeCount(currentUserId);
+          // Only log permission errors once to avoid spam
+          if (error.toString().contains('permission-denied')) {
+            print('❌ Permission denied for notification badge stream (logged once)');
+          } else {
+            print('❌ Error in notification badge stream: $error');
           }
         },
-        onError: (error) {
-          print('❌ Error in notifications badge stream: $error');
-        },
       );
+      
+      _isInitialized = true;
+      print('🔔 Notification badge initialized for user: $currentUserId');
     } catch (e) {
       print('❌ Error initializing notification badge: $e');
-      // Fallback: try to get count once
-      _getUnreadCountOnce(currentUserId);
     }
   }
 
-  Future<void> _updateBadgeCount(String currentUserId) async {
-    try {
-      int unreadCount = 0;
-
-      // Only count unread notifications (exclude chat messages)
-      final notificationsSnapshot = await FirebaseFirestore.instance
-          .collection('notifications')
-          .where('userId', isEqualTo: currentUserId)
-          .where('read', isEqualTo: false)
-          .get();
-
-      // Filter out chat messages from notification count
-      for (var doc in notificationsSnapshot.docs) {
-        final data = doc.data() as Map<String, dynamic>;
-        final type = data['type'] as String? ?? '';
-        
-        // Only count non-chat notifications
-        if (type != 'chat_message') {
-          unreadCount++;
-        }
-      }
-      
-      print('🔍 DEBUG: Badge count breakdown - Notifications: $unreadCount (excluding chat messages)');
-
+  void _debouncedUpdateBadgeCount(String userId) {
+    _debounceTimer?.cancel();
+    _debounceTimer = Timer(const Duration(milliseconds: 500), () {
       if (mounted) {
-        setState(() {
-          _unreadCount = unreadCount;
-          _isInitialized = true;
-        });
-        
-        print('🔔 Badge updated: $_unreadCount unread notifications');
+        _updateBadgeCount(userId);
       }
-    } catch (e) {
-      print('❌ Error updating badge count: $e');
+    });
+  }
+
+  void _updateBadgeCount(String userId) {
+    // Safari optimization: check memory pressure
+    SafariOptimizer.checkMemoryPressure();
+    
+    // Only update if count actually changed
+    if (_unreadCount != _lastCount) {
+      setState(() {
+        _lastCount = _unreadCount;
+      });
     }
   }
 

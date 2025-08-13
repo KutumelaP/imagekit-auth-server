@@ -8,10 +8,6 @@
     ],
     "rewrites": [
       {
-        "source": "/admin_dashboard/**",
-        "destination": "/admin_dashboard/index.html"
-      },
-      {
         "source": "**",
         "destination": "/index.html"
       }

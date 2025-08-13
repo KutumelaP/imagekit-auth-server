@@ -743,7 +743,7 @@ class _ModernSellerDashboardSectionState extends State<ModernSellerDashboardSect
         children: [
           // Compact Sidebar
           Container(
-            width: 80,
+            width: 60,
                 color: Theme.of(context).colorScheme.primary,
             child: _buildCompactSidebar(),
           ),
@@ -762,7 +762,7 @@ class _ModernSellerDashboardSectionState extends State<ModernSellerDashboardSect
         children: [
           // Enhanced Sidebar
           Container(
-            width: 280,
+            width: 220,
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 begin: Alignment.topCenter,
@@ -956,45 +956,45 @@ class _ModernSellerDashboardSectionState extends State<ModernSellerDashboardSect
       children: [
         // Seller Profile Header
         Container(
-          padding: const EdgeInsets.all(24),
+          padding: const EdgeInsets.all(12),
           child: Column(
             children: [
               CircleAvatar(
-                radius: 50,
+                radius: 35,
                 backgroundColor: AdminTheme.angel.withOpacity(0.2),
-                child: Icon(Icons.store, size: 50, color: AdminTheme.angel),
+                child: Icon(Icons.store, size: 35, color: AdminTheme.angel),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 8),
               Text(
                 _sellerData?['storeName'] ?? 'Your Store',
                 style: TextStyle(
                   color: AdminTheme.angel,
-                  fontSize: 20,
+                  fontSize: 16,
                   fontWeight: FontWeight.bold,
                 ),
                 textAlign: TextAlign.center,
               ),
-              const SizedBox(height: 4),
+              const SizedBox(height: 2),
               Text(
                 _sellerData?['category'] ?? 'Store Category',
                 style: TextStyle(
                   color: AdminTheme.angel.withOpacity(0.8),
-                  fontSize: 14,
+                  fontSize: 11,
                 ),
                 textAlign: TextAlign.center,
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 6),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
                   color: _sellerData?['verified'] == true ? AdminTheme.success : AdminTheme.warning,
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(10),
                 ),
                 child: Text(
                   _sellerData?['verified'] == true ? 'Verified' : 'Pending',
                   style: TextStyle(
                     color: AdminTheme.angel,
-                    fontSize: 12,
+                    fontSize: 10,
                     fontWeight: FontWeight.bold,
                   ),
                 ),

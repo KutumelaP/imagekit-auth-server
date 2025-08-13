@@ -36,7 +36,7 @@ class AppConstants {
     'Vegetables': ['Fresh Vegetables', 'Organic Vegetables', 'Root Vegetables'],
     'Snacks': ['Chips', 'Nuts', 'Crackers', 'Popcorn', 'Candy'],
     'Electronics': ['Phones', 'Laptops', 'Tablets', 'Accessories'],
-    'Clothes': ['T-Shirts', 'Jeans', 'Jackets', 'Dresses', 'Shoes'],
+    'Clothing': ['T-Shirts', 'Jeans', 'Jackets', 'Dresses', 'Shoes'],
     'Other': ['Misc', 'Handmade', 'Vintage'],
   };
   
@@ -49,7 +49,7 @@ class AppConstants {
     'Vegetables',
     'Snacks',
     'Electronics',
-    'Clothes',
+    'Clothing',
     'Other',
   ];
   

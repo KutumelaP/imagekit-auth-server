@@ -66,9 +66,10 @@ service cloud.firestore {
       }
     }
 
-    // DRIVERS - Allow drivers to manage their own data
+    // DRIVERS - Allow drivers to manage their own data, and allow reading for delivery assignment
     match /drivers/{driverId} {
-      allow read, write: if isOwner(driverId) || isAdmin();
+      allow read: if isAuthenticated(); // Allow reading for delivery assignment
+      allow write: if isOwner(driverId) || isAdmin();
     }
 
     // STORES - Allow sellers to manage their stores
@@ -89,7 +90,8 @@ service cloud.firestore {
       allow update: if isAuthenticated() && 
         (resource.data.ownerId == request.auth.uid || 
          request.resource.data.ownerId == request.auth.uid);
-      allow delete: if isAdmin();
+      allow delete: if isAuthenticated() && 
+        (resource.data.ownerId == request.auth.uid || isAdmin());
     }
 
     // ORDERS - Allow buyers and sellers to access their orders
@@ -136,7 +138,16 @@ service cloud.firestore {
 
     // NOTIFICATIONS - Allow users to access their notifications
     match /notifications/{notificationId} {
-      allow read, write: if isAuthenticated() && 
+      allow create: if isAuthenticated() && (
+        request.resource.data.userId == request.auth.uid ||
+        // Allow creating notifications for sellers when buyer places order
+        (request.resource.data.type == 'new_order_seller' && 
+         request.resource.data.data.buyerName != null) ||
+        // Allow creating notifications for buyers when seller updates order
+        (request.resource.data.type == 'order_status' && 
+         request.resource.data.data.status != null)
+      );
+      allow read, update, delete: if isAuthenticated() && 
         resource.data.userId == request.auth.uid;
     }
 

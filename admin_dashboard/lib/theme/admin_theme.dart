@@ -38,143 +38,120 @@ class AdminTheme {
   static const List<Color> cardGradient = [paleLinen, antiqueWhite];
   static const List<Color> buttonGradient = [indigo, Color(0xFF2C3550)];
   static const List<Color> accentGradient = [fawn, Color(0xFFD4C4A8)];
-  static const List<Color> warmAccent = [fawn, Color(0xFFD4C4A8)];
-  static const List<Color> coolAccent = [silverGray, Color(0xFFA8A8A8)];
-  static const List<Color> successGradient = [success, Color(0xFF388E3C)];
-  static const List<Color> warningGradient = [warning, Color(0xFFF57C00)];
   
-  // Text Styles using vibrant theme colors
+  // Text Styles
   static TextStyle get displayLarge => GoogleFonts.poppins(
     fontSize: 32,
     fontWeight: FontWeight.bold,
     color: deepTeal,
   );
-  
+
   static TextStyle get displayMedium => GoogleFonts.poppins(
     fontSize: 28,
-    fontWeight: FontWeight.bold,
+    fontWeight: FontWeight.w600,
     color: deepTeal,
   );
-  
+
   static TextStyle get displaySmall => GoogleFonts.poppins(
     fontSize: 24,
-    fontWeight: FontWeight.bold,
+    fontWeight: FontWeight.w600,
     color: deepTeal,
   );
-  
+
   static TextStyle get headlineLarge => GoogleFonts.poppins(
     fontSize: 22,
     fontWeight: FontWeight.w600,
     color: deepTeal,
   );
-  
+
   static TextStyle get headlineMedium => GoogleFonts.poppins(
     fontSize: 20,
     fontWeight: FontWeight.w600,
     color: deepTeal,
   );
-  
+
   static TextStyle get headlineSmall => GoogleFonts.poppins(
     fontSize: 18,
     fontWeight: FontWeight.w600,
     color: deepTeal,
   );
-  
+
   static TextStyle get titleLarge => GoogleFonts.poppins(
     fontSize: 16,
     fontWeight: FontWeight.w600,
     color: deepTeal,
   );
-  
+
   static TextStyle get titleMedium => GoogleFonts.poppins(
     fontSize: 14,
     fontWeight: FontWeight.w500,
     color: deepTeal,
   );
-  
+
   static TextStyle get titleSmall => GoogleFonts.poppins(
     fontSize: 12,
     fontWeight: FontWeight.w500,
     color: deepTeal,
   );
-  
+
   static TextStyle get bodyLarge => GoogleFonts.poppins(
     fontSize: 16,
     fontWeight: FontWeight.normal,
     color: darkGrey,
   );
-  
+
   static TextStyle get bodyMedium => GoogleFonts.poppins(
     fontSize: 14,
     fontWeight: FontWeight.normal,
     color: darkGrey,
   );
-  
+
   static TextStyle get bodySmall => GoogleFonts.poppins(
     fontSize: 12,
     fontWeight: FontWeight.normal,
     color: mediumGrey,
   );
-  
+
   static TextStyle get labelLarge => GoogleFonts.poppins(
     fontSize: 14,
     fontWeight: FontWeight.w500,
     color: deepTeal,
   );
-  
+
   static TextStyle get labelMedium => GoogleFonts.poppins(
     fontSize: 12,
     fontWeight: FontWeight.w500,
     color: deepTeal,
   );
-  
+
   static TextStyle get labelSmall => GoogleFonts.poppins(
     fontSize: 10,
     fontWeight: FontWeight.w500,
     color: mediumGrey,
   );
-  
-  // Helper methods for decorations
+
+  // Card decoration with Angel background
   static BoxDecoration cardDecoration({
+    List<Color>? colors,
     double borderRadius = 16,
     List<BoxShadow>? boxShadow,
-    Color? color,
   }) {
     return BoxDecoration(
-      color: color ?? angel,
+      color: angel, // Use Angel as card background
       borderRadius: BorderRadius.circular(borderRadius),
       boxShadow: boxShadow ?? [
         BoxShadow(
-          color: indigo.withOpacity(0.1),
+          color: deepTeal.withOpacity(0.1),
           blurRadius: 8,
           offset: const Offset(0, 2),
         ),
       ],
     );
   }
-  
-  static BoxDecoration gradientCardDecoration({
-    double borderRadius = 16,
-    List<BoxShadow>? boxShadow,
-  }) {
-    return BoxDecoration(
-      gradient: const LinearGradient(
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-        colors: cardGradient,
-      ),
-      borderRadius: BorderRadius.circular(borderRadius),
-      boxShadow: boxShadow ?? [
-        BoxShadow(
-          color: indigo.withOpacity(0.1),
-          blurRadius: 8,
-          offset: const Offset(0, 2),
-        ),
-      ],
-    );
-  }
-  
+
+  // Primary gradient decoration
   static BoxDecoration primaryGradientDecoration({
+    List<Color>? colors,
     double borderRadius = 16,
     List<BoxShadow>? boxShadow,
   }) {
@@ -199,7 +176,7 @@ class AdminTheme {
   static LinearGradient get cardBackgroundGradient => const LinearGradient(
     begin: Alignment.topCenter,
     end: Alignment.bottomCenter,
-    colors: cardGradient,
+    colors: [whisper, angel], // Whisper to Angel gradient
   );
   
   static LinearGradient get primaryButtonGradient => const LinearGradient(
@@ -211,7 +188,7 @@ class AdminTheme {
   static LinearGradient get screenBackgroundGradient => const LinearGradient(
     begin: Alignment.topCenter,
     end: Alignment.bottomCenter,
-    colors: backgroundGradient,
+    colors: [whisper, angel], // Whisper to Angel gradient
   );
   
   static LinearGradient get heroSectionGradient => const LinearGradient(
@@ -253,38 +230,16 @@ class AdminTheme {
       case 'ready':
         return deepTeal;
       case 'shipped':
-        return info;
-      case 'inactive':
+        return success;
       case 'rejected':
       case 'cancelled':
+      case 'failed':
         return error;
-      default:
+      case 'draft':
+      case 'inactive':
         return silverGray;
-    }
-  }
-  
-  // Category gradients
-  static List<Color> getCategoryGradient(String category) {
-    switch (category.toLowerCase()) {
-      case 'food':
-        return [deepTeal, cloud];
-      case 'beverages':
-        return [breeze, whisper];
-      case 'desserts':
-        return [fawn, antiqueWhite];
-      case 'snacks':
-        return [indigo, silverGray];
       default:
-        return [deepTeal, cloud];
+        return breeze;
     }
-  }
-  
-  // Create gradient helper
-  static LinearGradient createGradient(List<Color> colors, {Alignment? begin, Alignment? end}) {
-    return LinearGradient(
-      begin: begin ?? Alignment.topLeft,
-      end: end ?? Alignment.bottomRight,
-      colors: colors,
-    );
   }
 } 

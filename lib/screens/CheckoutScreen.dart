@@ -58,15 +58,14 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   String? _storeCloseHour;
   List<String> _paymentMethods = [];
   List<String> _excludedZones = [];
-  double? _platformFeePercent;
-  double _platformFee = 0.0;
-  bool _isStoreFeeExempt = false;
+  // Platform fee is charged to seller, not buyer - removed platform fee variables
   int? _deliveryTimeMinutes;
   String? _selectedPaymentMethod;
   // Add delivery type selection
   String _selectedDeliveryType = 'platform'; // 'platform', 'seller', 'pickup'
   bool _isDelivery = true; // Keep for backward compatibility
   bool _sellerDeliveryAvailable = false; // Track if seller offers delivery
+  List<String> _availableDeliveryTypes = ['pickup']; // Start with pickup only, update based on driver availability
 
   // Rural delivery variables
   bool _isRuralArea = false;
@@ -102,6 +101,65 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     if (currentUser != null) {
       _calculateDeliveryFeeAndCheckStore();
     }
+    _checkDriverAvailabilityOnLoad(); // Check driver availability when screen loads
+  }
+
+  // Check driver availability when screen loads
+  Future<void> _checkDriverAvailabilityOnLoad() async {
+    try {
+      print('🔍 DEBUG: Checking driver availability on screen load...');
+      
+      // Query for any available drivers in the system
+      final driversSnapshot = await FirebaseFirestore.instance
+          .collection('drivers')
+          .where('isAvailable', isEqualTo: true)
+          .where('isOnline', isEqualTo: true)
+          .get();
+      
+      if (driversSnapshot.docs.isEmpty) {
+        print('🔍 DEBUG: No drivers available in system - showing pickup only');
+        setState(() {
+          _availableDeliveryTypes = ['pickup'];
+          if (_selectedDeliveryType != 'pickup') {
+            _selectedDeliveryType = 'pickup';
+            _deliveryFee = 0.0;
+            _deliveryDistance = 0.0;
+          }
+        });
+        
+        // Show notification to user
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('ℹ️ No delivery drivers available. Pickup option selected.'),
+              backgroundColor: Colors.blue,
+              duration: const Duration(seconds: 4),
+              action: SnackBarAction(
+                label: 'OK',
+                textColor: Colors.white,
+                onPressed: () {},
+              ),
+            ),
+          );
+        }
+      } else {
+        print('🔍 DEBUG: Found ${driversSnapshot.docs.length} drivers available - showing all delivery options');
+        setState(() {
+          _availableDeliveryTypes = ['pickup', 'platform', 'seller'];
+        });
+      }
+    } catch (e) {
+      print('🔍 DEBUG: Error checking driver availability on load: $e');
+      // Default to pickup only on error
+      setState(() {
+        _availableDeliveryTypes = ['pickup'];
+        if (_selectedDeliveryType != 'pickup') {
+          _selectedDeliveryType = 'pickup';
+          _deliveryFee = 0.0;
+          _deliveryDistance = 0.0;
+        }
+      });
+    }
   }
 
   @override
@@ -118,6 +176,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   // Debounced delivery fee calculation
   void _debouncedCalculateDeliveryFee() {
     final currentAddress = _addressController.text.trim();
+    print('🔍 _debouncedCalculateDeliveryFee called with address: "$currentAddress"');
     
     // Don't recalculate if we already calculated for this address
     if (_hasCalculatedForCurrentAddress && _lastCalculatedAddress == currentAddress) {
@@ -125,154 +184,315 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       return;
     }
     
+    print('🔍 Setting up debounced calculation timer...');
     _deliveryFeeTimer?.cancel();
     _deliveryFeeTimer = Timer(const Duration(milliseconds: 500), () {
+      print('🔍 Timer fired, calling _calculateDeliveryFee...');
       if (!_isCalculatingDeliveryFee) {
         _calculateDeliveryFee();
         _hasCalculatedForCurrentAddress = true;
         _lastCalculatedAddress = currentAddress;
+      } else {
+        print('🔍 Already calculating delivery fee, skipping...');
       }
     });
   }
 
-  // Calculate delivery fee based on selected type
+  // Calculate delivery fee based on selected delivery type
   Future<void> _calculateDeliveryFee() async {
-    if (_isCalculatingDeliveryFee) {
-      print('🔍 DEBUG: Already calculating delivery fee, skipping...');
-      return;
-    }
+    if (_isCalculatingDeliveryFee) return;
+    
+    _isCalculatingDeliveryFee = true;
     
     try {
-      _isCalculatingDeliveryFee = true;
       print('🔍 DEBUG: Starting delivery fee calculation for type: $_selectedDeliveryType');
+      
+      // Only calculate fees for available delivery types
+      if (!_availableDeliveryTypes.contains(_selectedDeliveryType)) {
+        print('🔍 DEBUG: Selected delivery type not available: $_selectedDeliveryType');
+        setState(() {
+          _deliveryFee = 0.0;
+          _deliveryDistance = 0.0;
+        });
+        return;
+      }
       
       switch (_selectedDeliveryType) {
         case 'pickup':
           setState(() {
             _deliveryFee = 0.0;
             _deliveryDistance = 0.0;
-            _platformFee = 0.0;
           });
           break;
-          
-        case 'seller':
-          // Check if seller offers delivery
-          if (!_sellerDeliveryAvailable) {
-            print('🔍 DEBUG: Seller does not offer delivery, switching to pickup');
-            setState(() {
-              _selectedDeliveryType = 'pickup';
-              _deliveryFee = 0.0;
-              _deliveryDistance = 0.0;
-              _platformFee = 0.0;
-            });
-            return;
-          }
-          // Calculate seller delivery fee
-          await _calculateSellerDeliveryFee();
-          break;
-          
         case 'platform':
-        default:
-          // Calculate platform delivery fee
           await _calculatePlatformDeliveryFee();
           break;
+        case 'seller':
+          await _calculateSellerDeliveryFee();
+          break;
+        default:
+          setState(() {
+            _deliveryFee = 0.0;
+            _deliveryDistance = 0.0;
+          });
       }
-      
     } catch (e) {
-      print('❌ Error calculating delivery fee: $e');
+      print('🔍 DEBUG: Error in delivery fee calculation: $e');
+      setState(() {
+        _deliveryFee = 0.0;
+        _deliveryDistance = 0.0;
+      });
     } finally {
       _isCalculatingDeliveryFee = false;
     }
   }
 
-  // Calculate platform delivery fee (existing logic)
+  // Check driver availability for the location
+  Future<bool> _checkDriverAvailability(double latitude, double longitude) async {
+    try {
+      print('🔍 DEBUG: Checking driver availability for location: $latitude, $longitude');
+      
+      // Query for available drivers within 20km radius
+      final driversSnapshot = await FirebaseFirestore.instance
+          .collection('drivers')
+          .where('isAvailable', isEqualTo: true)
+          .where('isOnline', isEqualTo: true)
+          .get();
+      
+      if (driversSnapshot.docs.isEmpty) {
+        print('🔍 DEBUG: No drivers found in database');
+        return false;
+      }
+      
+      // Check if any drivers are within reasonable distance
+      for (var doc in driversSnapshot.docs) {
+        final driverData = doc.data();
+        final driverLat = driverData['latitude'] as double? ?? 0.0;
+        final driverLng = driverData['longitude'] as double? ?? 0.0;
+        final maxDistance = driverData['maxDistance'] as double? ?? 20.0;
+        
+        if (driverLat != 0.0 && driverLng != 0.0) {
+          final distance = Geolocator.distanceBetween(
+            latitude, longitude, driverLat, driverLng,
+          ) / 1000; // Convert to km
+          
+          if (distance <= maxDistance) {
+            print('🔍 DEBUG: Found available driver within ${distance.toStringAsFixed(1)}km');
+            return true;
+          }
+        }
+      }
+      
+      print('🔍 DEBUG: No drivers available within reasonable distance');
+      return false;
+    } catch (e) {
+      print('🔍 DEBUG: Error checking driver availability: $e');
+      return false;
+    }
+  }
+
+  // Show available delivery options based on driver availability
+  void _updateAvailableDeliveryOptions(bool driversAvailable) {
+    setState(() {
+      if (!driversAvailable) {
+        // Only show pickup when no drivers are available
+        _availableDeliveryTypes = ['pickup'];
+        if (_selectedDeliveryType != 'pickup') {
+          _selectedDeliveryType = 'pickup';
+          _deliveryFee = 0.0;
+          _deliveryDistance = 0.0;
+        }
+      } else {
+        // Show all delivery options when drivers are available
+        _availableDeliveryTypes = ['pickup', 'platform', 'seller'];
+      }
+    });
+  }
+
+  // Calculate platform delivery fee
   Future<void> _calculatePlatformDeliveryFee() async {
     final address = _addressController.text.trim();
     if (address.isEmpty) {
       print('🔍 DEBUG: No address provided for delivery fee calculation');
+      setState(() {
+        _deliveryFee = 0.0; // No delivery fee if no address
+        _deliveryDistance = 0.0;
+      });
       return;
     }
     
     print('🔍 DEBUG: Calculating platform delivery fee for address: $address');
     
-    // Get user's location from address
-    final locations = await locationFromAddress(address);
-    if (locations.isEmpty) {
-      print('🔍 DEBUG: Could not geocode address: $address');
-      return;
+    try {
+      // More lenient address validation
+      if (address.length < 3) {
+        print('🔍 DEBUG: Address too short: $address');
+        setState(() {
+          _deliveryFee = 0.0; // No delivery fee for invalid address
+          _deliveryDistance = 0.0;
+        });
+        return;
+      }
+      
+      // Get user's location from address with better error handling
+      List<Location> locations;
+      try {
+        print('🔍 DEBUG: Attempting to geocode address: $address');
+        
+        // Add timeout to prevent hanging
+        locations = await locationFromAddress(address).timeout(
+          const Duration(seconds: 15), // Increased timeout
+          onTimeout: () {
+            print('🔍 DEBUG: Geocoding timeout for address: $address');
+            throw TimeoutException('Geocoding timeout', const Duration(seconds: 15));
+          },
+        );
+        
+        print('🔍 DEBUG: Geocoding successful, found ${locations.length} locations');
+      } catch (e) {
+        print('🔍 DEBUG: Geocoding error for address "$address": $e');
+        
+        // Try with a more specific address format
+        try {
+          final enhancedAddress = '$address, South Africa';
+          print('🔍 DEBUG: Retrying with enhanced address: $enhancedAddress');
+          
+          locations = await locationFromAddress(enhancedAddress).timeout(
+            const Duration(seconds: 10),
+          );
+          print('🔍 DEBUG: Enhanced geocoding successful, found ${locations.length} locations');
+        } catch (retryError) {
+          print('🔍 DEBUG: Enhanced geocoding also failed: $retryError');
+          setState(() {
+            _deliveryFee = 0.0; // No delivery fee if geocoding fails
+            _deliveryDistance = 0.0;
+          });
+          return;
+        }
+      }
+      
+      if (locations.isEmpty) {
+        print('🔍 DEBUG: Could not geocode address: $address');
+        setState(() {
+          _deliveryFee = 0.0; // No delivery fee if no location found
+          _deliveryDistance = 0.0;
+        });
+        return;
+      }
+    
+      final userLocation = locations.first;
+      if (userLocation.latitude == null || userLocation.longitude == null) {
+        print('🔍 DEBUG: Invalid location coordinates from geocoding');
+        setState(() {
+          _deliveryFee = 0.0; // No delivery fee for invalid coordinates
+          _deliveryDistance = 0.0;
+        });
+        return;
+      }
+      
+      print('🔍 DEBUG: User location: ${userLocation.latitude}, ${userLocation.longitude}');
+      
+      // Check driver availability for this location
+      final driversAvailable = await _checkDriverAvailability(
+        userLocation.latitude!, 
+        userLocation.longitude!
+      );
+      
+      if (!driversAvailable) {
+        print('🔍 DEBUG: No drivers available in this location');
+        // Show pickup option only when no drivers are available
+        _updateAvailableDeliveryOptions(false);
+        
+        // Show notification to user
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('⚠️ No delivery drivers available in your area. Pickup option selected.'),
+            backgroundColor: AppTheme.warning,
+            duration: const Duration(seconds: 5),
+            action: SnackBarAction(
+              label: 'OK',
+              textColor: Colors.white,
+              onPressed: () {},
+            ),
+          ),
+        );
+        return;
+      }
+      
+      // Update available delivery options
+      _updateAvailableDeliveryOptions(true);
+      
+      // Calculate distance to a central point (you can adjust this)
+      // For now, using a central point in Johannesburg
+      const double centralLat = -26.2041; // Johannesburg latitude
+      const double centralLng = 28.0473;  // Johannesburg longitude
+      
+      final distance = Geolocator.distanceBetween(
+        userLocation.latitude!,
+        userLocation.longitude!,
+        centralLat,
+        centralLng,
+      );
+      
+      print('🔍 DEBUG: Distance calculated: ${(distance/1000).toStringAsFixed(1)}km');
+    
+      // Calculate delivery fee based on distance
+      double deliveryFee = 0.0;
+      if (distance <= 5000) { // Within 5km
+        deliveryFee = 20.0;
+      } else if (distance <= 10000) { // Within 10km
+        deliveryFee = 35.0;
+      } else if (distance <= 15000) { // Within 15km
+        deliveryFee = 50.0;
+      } else {
+        deliveryFee = 75.0; // Beyond 15km
+      }
+      
+      setState(() {
+        _deliveryDistance = distance;
+        _deliveryFee = deliveryFee;
+      });
+        
+      print('🔍 DEBUG: Platform delivery fee calculated: R${deliveryFee.toStringAsFixed(2)} for ${(distance/1000).toStringAsFixed(1)}km');
+    } catch (e) {
+      print('🔍 DEBUG: Error in platform delivery fee calculation: $e');
+      // Set no delivery fee on error instead of default R25
+      setState(() {
+        _deliveryFee = 0.0; // No delivery fee on error
+        _deliveryDistance = 0.0;
+      });
     }
+  }
+
+  /// Validate address format
+  bool _isValidAddress(String address) {
+    if (address.isEmpty) return false;
     
-    final userLocation = locations.first;
-    print('🔍 DEBUG: User location: ${userLocation.latitude}, ${userLocation.longitude}');
+    // Check for minimum length
+    if (address.length < 5) return false;
     
-    // Get seller's location
-    final currentUser = FirebaseAuth.instance.currentUser;
-    if (currentUser == null) return;
+    // Check for basic address components - more lenient now
+    final hasStreet = address.contains(RegExp(r'\d+')) || 
+                     address.toLowerCase().contains('street') ||
+                     address.toLowerCase().contains('road') ||
+                     address.toLowerCase().contains('avenue') ||
+                     address.toLowerCase().contains('drive') ||
+                     address.toLowerCase().contains('lane') ||
+                     address.toLowerCase().contains('close') ||
+                     address.toLowerCase().contains('way');
     
-    final cartSnapshot = await FirebaseFirestore.instance
-        .collection('users')
-        .doc(currentUser.uid)
-        .collection('cart')
-        .get();
+    final hasCity = address.toLowerCase().contains('brakpan') ||
+                   address.toLowerCase().contains('gauteng') ||
+                   address.toLowerCase().contains('johannesburg') ||
+                   address.toLowerCase().contains('pretoria') ||
+                   address.toLowerCase().contains('cape town') ||
+                   address.toLowerCase().contains('durban') ||
+                   address.toLowerCase().contains('bloemfontein') ||
+                   address.toLowerCase().contains('port elizabeth') ||
+                   address.toLowerCase().contains('kempton park');
     
-    if (cartSnapshot.docs.isEmpty) return;
-    
-    final firstCartItem = cartSnapshot.docs.first.data();
-    final sellerId = firstCartItem['sellerId'] ?? firstCartItem['ownerId'];
-    
-    if (sellerId == null) return;
-    
-    final sellerDoc = await FirebaseFirestore.instance
-        .collection('users')
-        .doc(sellerId)
-        .get();
-    
-    if (!sellerDoc.exists) return;
-    
-    final sellerData = sellerDoc.data()!;
-    final sellerLat = sellerData['latitude'];
-    final sellerLng = sellerData['longitude'];
-    
-    if (sellerLat == null || sellerLng == null) {
-      print('🔍 DEBUG: Seller location not available');
-      return;
-    }
-    
-    // Calculate distance
-    final distance = Geolocator.distanceBetween(
-      userLocation.latitude,
-      userLocation.longitude,
-      sellerLat,
-      sellerLng,
-    );
-    
-    print('🔍 DEBUG: Distance calculated: ${distance.toStringAsFixed(2)} meters');
-    
-    // Calculate delivery fee based on distance
-    double deliveryFee = 0.0;
-    if (distance <= 5000) { // Within 5km
-      deliveryFee = 20.0;
-    } else if (distance <= 10000) { // Within 10km
-      deliveryFee = 35.0;
-    } else if (distance <= 15000) { // Within 15km
-      deliveryFee = 50.0;
-    } else {
-      deliveryFee = 75.0; // Beyond 15km
-    }
-    
-    // Calculate platform fee
-    double platformFee = 0.0;
-    if (!_isStoreFeeExempt && _platformFeePercent != null) {
-      platformFee = (widget.totalPrice * _platformFeePercent! / 100);
-    }
-    
-    setState(() {
-      _deliveryDistance = distance;
-      _deliveryFee = deliveryFee;
-      _platformFee = platformFee;
-    });
-    
-    print('🔍 DEBUG: Platform delivery fee calculated: R${deliveryFee.toStringAsFixed(2)}, Platform fee: R${platformFee.toStringAsFixed(2)}');
+    // More lenient validation - accept if it has either street indicators or city names
+    return hasStreet || hasCity || address.length >= 10; // Accept longer addresses even without specific keywords
   }
 
   // Calculate seller delivery fee
@@ -285,9 +505,23 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     
     print('🔍 DEBUG: Calculating seller delivery fee for address: $address');
     
+    try {
+      // Validate address format before proceeding
+      if (!_isValidAddress(address)) {
+        print('🔍 DEBUG: Invalid address format for seller delivery: $address');
+        setState(() {
+          _deliveryFee = 25.0; // Default delivery fee
+          _deliveryDistance = 0.0;
+        });
+        return;
+      }
+    
     // Get seller data
     final currentUser = FirebaseAuth.instance.currentUser;
-    if (currentUser == null) return;
+      if (currentUser == null) {
+        print('🔍 DEBUG: No current user found');
+        return;
+      }
     
     final cartSnapshot = await FirebaseFirestore.instance
         .collection('users')
@@ -295,19 +529,28 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         .collection('cart')
         .get();
     
-    if (cartSnapshot.docs.isEmpty) return;
+      if (cartSnapshot.docs.isEmpty) {
+        print('🔍 DEBUG: No cart items found');
+        return;
+      }
     
     final firstCartItem = cartSnapshot.docs.first.data();
     final sellerId = firstCartItem['sellerId'] ?? firstCartItem['ownerId'];
     
-    if (sellerId == null) return;
+      if (sellerId == null) {
+        print('🔍 DEBUG: No seller ID found in cart items');
+        return;
+      }
     
     final sellerDoc = await FirebaseFirestore.instance
         .collection('users')
         .doc(sellerId)
         .get();
     
-    if (!sellerDoc.exists) return;
+      if (!sellerDoc.exists) {
+        print('🔍 DEBUG: Seller document not found');
+        return;
+      }
     
     final sellerData = sellerDoc.data()!;
     
@@ -319,12 +562,60 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         _selectedDeliveryType = 'pickup';
         _deliveryFee = 0.0;
         _deliveryDistance = 0.0;
-        _platformFee = 0.0;
       });
       return;
     }
     
-    // Calculate seller delivery fee
+      // Get user location for driver availability check
+      List<Location> locations;
+      try {
+        locations = await locationFromAddress(address).timeout(
+          const Duration(seconds: 10),
+          onTimeout: () {
+            throw TimeoutException('Geocoding timeout', const Duration(seconds: 10));
+          },
+        );
+      } catch (e) {
+        print('🔍 DEBUG: Geocoding error for seller delivery: $e');
+        // If we can't get location, assume no drivers available
+        _updateAvailableDeliveryOptions(false);
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('⚠️ Unable to verify delivery availability. Pickup option selected.'),
+            backgroundColor: AppTheme.warning,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+        return;
+      }
+      
+      if (locations.isNotEmpty) {
+        final userLocation = locations.first;
+        if (userLocation.latitude != null && userLocation.longitude != null) {
+          // Check driver availability for seller delivery
+          final driversAvailable = await _checkDriverAvailability(
+            userLocation.latitude!,
+            userLocation.longitude!
+          );
+          
+          if (!driversAvailable) {
+            print('🔍 DEBUG: No drivers available for seller delivery');
+            _updateAvailableDeliveryOptions(false);
+            
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('⚠️ No delivery drivers available. Pickup option selected.'),
+                backgroundColor: AppTheme.warning,
+                duration: const Duration(seconds: 3),
+              ),
+            );
+            return;
+          }
+        }
+      }
+      
+      // Calculate seller delivery fee with null safety
     final baseFee = (sellerData['sellerDeliveryBaseFee'] ?? 25.0).toDouble();
     final feePerKm = (sellerData['sellerDeliveryFeePerKm'] ?? 2.0).toDouble();
     final maxFee = (sellerData['sellerDeliveryMaxFee'] ?? 50.0).toDouble();
@@ -333,19 +624,20 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     double deliveryFee = baseFee;
     deliveryFee = deliveryFee.clamp(0.0, maxFee).toDouble();
     
-    // Calculate platform fee
-    double platformFee = 0.0;
-    if (!_isStoreFeeExempt && _platformFeePercent != null) {
-      platformFee = (widget.totalPrice * _platformFeePercent! / 100);
-    }
-    
     setState(() {
       _deliveryFee = deliveryFee;
-      _platformFee = platformFee;
       _deliveryDistance = 0.0; // Seller delivery doesn't use distance calculation
     });
     
-    print('🔍 DEBUG: Seller delivery fee calculated: R${deliveryFee.toStringAsFixed(2)}, Platform fee: R${platformFee.toStringAsFixed(2)}');
+      print('🔍 DEBUG: Seller delivery fee calculated: R${deliveryFee.toStringAsFixed(2)}');
+    } catch (e) {
+      print('🔍 DEBUG: Error in seller delivery fee calculation: $e');
+      // Set default values on error
+      setState(() {
+        _deliveryFee = 25.0; // Default delivery fee
+        _deliveryDistance = 0.0;
+      });
+    }
   }
 
   Future<void> _calculateDeliveryFeeAndCheckStore() async {
@@ -419,8 +711,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         _storeCloseHour = sellerData['storeCloseHour'] ?? '20:00';
         _paymentMethods = List<String>.from(sellerData['paymentMethods'] ?? ['Cash on Delivery']);
         _excludedZones = List<String>.from(sellerData['excludedZones'] ?? []);
-        _platformFeePercent = (sellerData['platformFeePercent'] ?? 5.0).toDouble();
-        _isStoreFeeExempt = sellerData['isFeeExempt'] ?? false;
         _deliveryTimeMinutes = sellerData['deliveryTimeMinutes'] ?? 30;
         _sellerDeliveryAvailable = sellerData['sellerDeliveryEnabled'] ?? false;
       });
@@ -462,404 +752,331 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           ),
         ],
       ),
-      body: Form(
-        key: _formKey,
-        child: SingleChildScrollView(
-          padding: EdgeInsets.all(isMobile ? 16 : 24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Customer Information Section
-              _buildCustomerInfoSection(),
-              SizedBox(height: ResponsiveUtils.getVerticalPadding(context)),
+      body: SafeArea(
+        child: Form(
+          key: _formKey,
+          child: SingleChildScrollView(
+            padding: EdgeInsets.all(isMobile ? 16 : 24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Customer Information Section
+                _buildCustomerInfoSection(),
+                SizedBox(height: ResponsiveUtils.getVerticalPadding(context)),
               
-              // Delivery/Pickup Toggle
-              Container(
-                padding: EdgeInsets.all(ResponsiveUtils.getHorizontalPadding(context)),
-                decoration: BoxDecoration(
-                  gradient: AppTheme.cardBackgroundGradient,
-                  borderRadius: BorderRadius.circular(16),
-                  boxShadow: AppTheme.complementaryElevation,
-                  border: Border.all(
-                    color: AppTheme.breeze.withOpacity(0.2),
-                    width: 1,
-                  ),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Icon(
-                          _isDelivery ? Icons.delivery_dining : Icons.store,
-                          color: AppTheme.deepTeal,
-                          size: ResponsiveUtils.getIconSize(context, baseSize: 20),
-                        ),
-                        SizedBox(width: ResponsiveUtils.getHorizontalPadding(context) * 0.5),
-                        SafeUI.safeText(
-                          'Order Type',
-                          style: TextStyle(
-                            fontSize: ResponsiveUtils.getTitleSize(context),
-                            fontWeight: FontWeight.w600,
-                            color: AppTheme.deepTeal,
-                          ),
-                          maxLines: 1,
-                        ),
-                      ],
+                // Delivery/Pickup Toggle
+                Container(
+                  padding: EdgeInsets.all(ResponsiveUtils.getHorizontalPadding(context)),
+                  decoration: BoxDecoration(
+                    gradient: AppTheme.cardBackgroundGradient,
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: AppTheme.complementaryElevation,
+                    border: Border.all(
+                      color: AppTheme.breeze.withOpacity(0.2),
+                      width: 1,
                     ),
-                    SizedBox(height: ResponsiveUtils.getVerticalPadding(context)),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: GestureDetector(
-                            onTap: () {
-                              setState(() => _selectedDeliveryType = 'platform');
-                              // Trigger delivery fee calculation when switching to platform
-                              if (_addressController.text.trim().isNotEmpty) {
-                                _debouncedCalculateDeliveryFee();
-                              }
-                            },
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
-                              decoration: BoxDecoration(
-                                color: _selectedDeliveryType == 'platform' ? AppTheme.deepTeal : Colors.grey.shade200,
-                                borderRadius: BorderRadius.circular(8),
-                                border: Border.all(
-                                  color: _selectedDeliveryType == 'platform' ? AppTheme.deepTeal : Colors.grey.shade300,
-                                ),
-                              ),
-                              child: Column(
-                                children: [
-                                  Icon(
-                                    Icons.delivery_dining,
-                                    color: _selectedDeliveryType == 'platform' ? Colors.white : Colors.grey.shade600,
-                                    size: 20,
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    'Platform',
-                                    style: TextStyle(
-                                      color: _selectedDeliveryType == 'platform' ? Colors.white : Colors.grey.shade600,
-                                      fontWeight: FontWeight.w600,
-                                      fontSize: 12,
-                                    ),
-                                    textAlign: TextAlign.center,
-                                  ),
-                                ],
-                              ),
-                            ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(
+                            _isDelivery ? Icons.delivery_dining : Icons.store,
+                            color: AppTheme.deepTeal,
+                            size: ResponsiveUtils.getIconSize(context, baseSize: 20),
                           ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: GestureDetector(
-                            onTap: _sellerDeliveryAvailable ? () {
-                              setState(() => _selectedDeliveryType = 'seller');
-                              // Trigger delivery fee calculation when switching to seller
-                              if (_addressController.text.trim().isNotEmpty) {
-                                _debouncedCalculateDeliveryFee();
-                              }
-                            } : null,
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
-                              decoration: BoxDecoration(
-                                color: _selectedDeliveryType == 'seller' ? AppTheme.deepTeal : 
-                                       _sellerDeliveryAvailable ? Colors.grey.shade200 : Colors.grey.shade100,
-                                borderRadius: BorderRadius.circular(8),
-                                border: Border.all(
-                                  color: _selectedDeliveryType == 'seller' ? AppTheme.deepTeal : 
-                                         _sellerDeliveryAvailable ? Colors.grey.shade300 : Colors.grey.shade200,
+                          SizedBox(width: ResponsiveUtils.getHorizontalPadding(context) * 0.5),
+                          SafeUI.safeText(
+                            'Order Type',
+                            style: TextStyle(
+                              fontSize: ResponsiveUtils.getTitleSize(context),
+                              fontWeight: FontWeight.w600,
+                              color: AppTheme.deepTeal,
+                            ),
+                            maxLines: 1,
+                          ),
+                        ],
+                      ),
+                      SizedBox(height: ResponsiveUtils.getVerticalPadding(context)),
+                      // Dynamic delivery type selection based on availability
+                      Row(
+                        children: _availableDeliveryTypes.map((deliveryType) {
+                          bool isSelected = _selectedDeliveryType == deliveryType;
+                          bool isAvailable = deliveryType == 'pickup' || 
+                                           (deliveryType == 'platform' && _availableDeliveryTypes.contains('platform')) ||
+                                           (deliveryType == 'seller' && _sellerDeliveryAvailable && _availableDeliveryTypes.contains('seller'));
+                          
+                          return Expanded(
+                            child: GestureDetector(
+                              onTap: isAvailable ? () {
+                                setState(() => _selectedDeliveryType = deliveryType);
+                                // Trigger delivery fee calculation when switching delivery types
+                                if (_addressController.text.trim().isNotEmpty && deliveryType != 'pickup') {
+                                  _debouncedCalculateDeliveryFee();
+                                } else if (deliveryType == 'pickup') {
+                                  // Clear delivery fee when switching to pickup
+                                  setState(() {
+                                    _deliveryFee = 0.0;
+                                    _deliveryDistance = 0.0;
+                                  });
+                                }
+                              } : null,
+                              child: Container(
+                                margin: const EdgeInsets.only(right: 8),
+                                padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+                                decoration: BoxDecoration(
+                                  color: isSelected ? AppTheme.deepTeal : 
+                                         isAvailable ? Colors.grey.shade200 : Colors.grey.shade100,
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(
+                                    color: isSelected ? AppTheme.deepTeal : 
+                                           isAvailable ? Colors.grey.shade300 : Colors.grey.shade200,
+                                  ),
                                 ),
-                              ),
-                              child: Column(
-                                children: [
-                                  Icon(
-                                    Icons.local_shipping,
-                                    color: _selectedDeliveryType == 'seller' ? Colors.white : 
-                                           _sellerDeliveryAvailable ? Colors.grey.shade600 : Colors.grey.shade400,
-                                    size: 20,
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    'Seller',
-                                    style: TextStyle(
-                                      color: _selectedDeliveryType == 'seller' ? Colors.white : 
-                                             _sellerDeliveryAvailable ? Colors.grey.shade600 : Colors.grey.shade400,
-                                      fontWeight: FontWeight.w600,
-                                      fontSize: 12,
+                                child: Column(
+                                  children: [
+                                    Icon(
+                                      deliveryType == 'platform' ? Icons.delivery_dining :
+                                      deliveryType == 'seller' ? Icons.local_shipping :
+                                      Icons.store,
+                                      color: isSelected ? Colors.white : 
+                                             isAvailable ? Colors.grey.shade600 : Colors.grey.shade400,
+                                      size: 20,
                                     ),
-                                    textAlign: TextAlign.center,
-                                  ),
-                                  if (!_sellerDeliveryAvailable)
+                                    const SizedBox(height: 4),
                                     Text(
-                                      '(Unavailable)',
+                                      deliveryType == 'platform' ? 'Platform' :
+                                      deliveryType == 'seller' ? 'Seller' : 'Pickup',
                                       style: TextStyle(
-                                        color: Colors.grey.shade400,
-                                        fontWeight: FontWeight.w400,
-                                        fontSize: 10,
+                                        color: isSelected ? Colors.white : 
+                                               isAvailable ? Colors.grey.shade600 : Colors.grey.shade400,
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 12,
                                       ),
                                       textAlign: TextAlign.center,
                                     ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: GestureDetector(
-                            onTap: () {
-                              setState(() => _selectedDeliveryType = 'pickup');
-                              // Clear delivery fee when switching to pickup
-                              setState(() {
-                                _deliveryFee = 0.0;
-                                _deliveryDistance = 0.0;
-                              });
-                            },
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
-                              decoration: BoxDecoration(
-                                color: _selectedDeliveryType == 'pickup' ? AppTheme.deepTeal : Colors.grey.shade200,
-                                borderRadius: BorderRadius.circular(8),
-                                border: Border.all(
-                                  color: _selectedDeliveryType == 'pickup' ? AppTheme.deepTeal : Colors.grey.shade300,
+                                    if (!isAvailable && deliveryType != 'pickup')
+                                      Text(
+                                        '(Unavailable)',
+                                        style: TextStyle(
+                                          color: Colors.grey.shade400,
+                                          fontWeight: FontWeight.w400,
+                                          fontSize: 10,
+                                        ),
+                                        textAlign: TextAlign.center,
+                                      ),
+                                  ],
                                 ),
                               ),
-                              child: Column(
-                                children: [
-                                  Icon(
-                                    Icons.store,
-                                    color: _selectedDeliveryType == 'pickup' ? Colors.white : Colors.grey.shade600,
-                                    size: 20,
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    'Pickup',
-                                    style: TextStyle(
-                                      color: _selectedDeliveryType == 'pickup' ? Colors.white : Colors.grey.shade600,
-                                      fontWeight: FontWeight.w600,
-                                      fontSize: 12,
-                                    ),
-                                    textAlign: TextAlign.center,
-                                  ),
-                                ],
-                              ),
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    ],
+                  ),
+                ),
+                SizedBox(height: ResponsiveUtils.getVerticalPadding(context)),
+              
+                // Address Field with Suggestions
+                AddressInputField(
+                  controller: _addressController,
+                  labelText: 'Delivery Address',
+                  hintText: 'Enter your delivery address',
+                  onAddressSelected: (String address) {
+                    print('📍 Selected address: $address');
+                      _debouncedCalculateDeliveryFee();
+                  },
+                ),
+              
+                // Delivery Fee Notice (only show for delivery)
+                if (_selectedDeliveryType != 'pickup' && _addressController.text.trim().isEmpty)
+                  Container(
+                    margin: const EdgeInsets.only(top: 8),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: AppTheme.warning.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: AppTheme.warning.withOpacity(0.3)),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.info_outline, color: AppTheme.warning, size: 16),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Enter your delivery address to calculate delivery fee',
+                            style: TextStyle(
+                              color: AppTheme.warning,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
                             ),
                           ),
                         ),
                       ],
                     ),
-                  ],
-                ),
-              ),
-              SizedBox(height: ResponsiveUtils.getVerticalPadding(context)),
+                  ),
               
-              // Address Field
-              AddressInputField(
-                controller: _addressController,
-                labelText: _selectedDeliveryType == 'pickup' ? 'Pickup Address' : 'Delivery Address',
-                hintText: _selectedDeliveryType == 'pickup' ? 'Enter your pickup address' : 'Enter your delivery address',
-                onAddressSelected: (address) {
-                  setState(() {});
-                  // Don't trigger delivery fee calculation here to avoid double triggers
-                  // It will be triggered by onPlacemarkSelected instead
-                },
-                onPlacemarkSelected: (placemark) {
-                  // Store coordinates for delivery calculation
-                  print('📍 Selected address: ${placemark.street}, ${placemark.locality}');
-                  // Trigger delivery fee calculation if delivery is selected
-                  if (_selectedDeliveryType != 'pickup') {
-                    _debouncedCalculateDeliveryFee();
-                  }
-                },
-              ),
-              
-              // Delivery Fee Notice (only show for delivery)
-              if (_selectedDeliveryType != 'pickup' && _addressController.text.trim().isEmpty)
-                Container(
-                  margin: const EdgeInsets.only(top: 8),
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: AppTheme.warning.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: AppTheme.warning.withOpacity(0.3)),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(Icons.info_outline, color: AppTheme.warning, size: 16),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          'Enter your delivery address to calculate delivery fee',
-                          style: TextStyle(
-                            color: AppTheme.warning,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              
-              // Delivery Fee Loading (when calculating)
-              if (_selectedDeliveryType != 'pickup' && _addressController.text.trim().isNotEmpty && _deliveryFee == null)
-                Container(
-                  margin: const EdgeInsets.only(top: 8),
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: AppTheme.deepTeal.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: AppTheme.deepTeal.withOpacity(0.3)),
-                  ),
-                  child: Row(
-                    children: [
-                      SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation<Color>(AppTheme.deepTeal),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          'Calculating delivery fee...',
-                          style: TextStyle(
-                            color: AppTheme.deepTeal,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              
-              // Delivery Fee Display (when calculated)
-              if (_selectedDeliveryType != 'pickup' && _deliveryFee != null && _deliveryFee! > 0)
-                Container(
-                  margin: const EdgeInsets.only(top: 8),
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: AppTheme.success.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: AppTheme.success.withOpacity(0.3)),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(Icons.delivery_dining, color: AppTheme.success, size: 16),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          'Delivery Fee: R${_deliveryFee!.toStringAsFixed(2)} (${_deliveryDistance.toStringAsFixed(1)}km)',
-                          style: TextStyle(
-                            color: AppTheme.success,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              SizedBox(height: ResponsiveUtils.getVerticalPadding(context)),
-              
-              // Phone Field
-              TextFormField(
-                controller: _phoneController,
-                decoration: InputDecoration(
-                  labelText: 'Phone Number',
-                  labelStyle: TextStyle(color: AppTheme.breeze),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide(color: AppTheme.breeze.withOpacity(0.3)),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide(color: AppTheme.breeze.withOpacity(0.3)),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide(color: AppTheme.deepTeal, width: 2),
-                  ),
-                  prefixIcon: Icon(Icons.phone, color: AppTheme.breeze),
-                ),
-                keyboardType: TextInputType.phone,
-                validator: (value) {
-                  if (value == null || value.isEmpty) return 'Please enter your phone number';
-                  final phoneReg = RegExp(r'^(\+?\d{10,15})');
-                  if (!phoneReg.hasMatch(value)) return 'Enter a valid phone number';
-                  return null;
-                },
-              ),
-              SizedBox(height: ResponsiveUtils.getVerticalPadding(context)),
-              
-              // Delivery Instructions
-              TextFormField(
-                controller: _deliveryInstructionsController,
-                decoration: InputDecoration(
-                  labelText: _selectedDeliveryType == 'pickup' ? 'Pickup Instructions (optional)' : 'Delivery Instructions (optional)',
-                  labelStyle: TextStyle(color: AppTheme.breeze),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide(color: AppTheme.breeze.withOpacity(0.3)),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide(color: AppTheme.breeze.withOpacity(0.3)),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide(color: AppTheme.deepTeal, width: 2),
-                  ),
-                  prefixIcon: Icon(Icons.note, color: AppTheme.breeze),
-                ),
-                maxLines: 2,
-              ),
-              SizedBox(height: ResponsiveUtils.getVerticalPadding(context)),
-              
-              // Payment Section
-              _buildPaymentSection(),
-              SizedBox(height: ResponsiveUtils.getVerticalPadding(context)),
-              
-              // Order Summary
-              _buildOrderSummary(widget.totalPrice + (_selectedDeliveryType == 'pickup' ? 0 : (_deliveryFee ?? 0)) + _platformFee),
-              SizedBox(height: ResponsiveUtils.getVerticalPadding(context)),
-              
-              // Place Order Button
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: _isLoading ? null : _placeOrder,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppTheme.deepTeal,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
+                // Delivery Fee Loading (when calculating)
+                if (_selectedDeliveryType != 'pickup' && _addressController.text.trim().isNotEmpty && _deliveryFee == null)
+                  Container(
+                    margin: const EdgeInsets.only(top: 8),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: AppTheme.deepTeal.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: AppTheme.deepTeal.withOpacity(0.3)),
                     ),
-                  ),
-                  child: _isLoading
-                      ? const SizedBox(
-                          height: 20,
-                          width: 20,
+                    child: Row(
+                      children: [
+                        SizedBox(
+                          width: 16,
+                          height: 16,
                           child: CircularProgressIndicator(
                             strokeWidth: 2,
-                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                          ),
-                        )
-                      : const Text(
-                          'Place Order',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
+                            valueColor: AlwaysStoppedAnimation<Color>(AppTheme.deepTeal),
                           ),
                         ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Calculating delivery fee...',
+                            style: TextStyle(
+                              color: AppTheme.deepTeal,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+              
+                // Delivery Fee Display (when calculated)
+                if (_selectedDeliveryType != 'pickup' && _deliveryFee != null && _deliveryFee! > 0)
+                  Container(
+                    margin: const EdgeInsets.only(top: 8),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: AppTheme.success.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: AppTheme.success.withOpacity(0.3)),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.delivery_dining, color: AppTheme.success, size: 16),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Delivery Fee: R${_deliveryFee!.toStringAsFixed(2)} (${_deliveryDistance.toStringAsFixed(1)}km)',
+                            style: TextStyle(
+                              color: AppTheme.success,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                SizedBox(height: ResponsiveUtils.getVerticalPadding(context)),
+              
+                // Phone Field
+                TextFormField(
+                  controller: _phoneController,
+                  decoration: InputDecoration(
+                    labelText: 'Phone Number',
+                    labelStyle: TextStyle(color: AppTheme.breeze),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: AppTheme.breeze.withOpacity(0.3)),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: AppTheme.breeze.withOpacity(0.3)),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: AppTheme.deepTeal, width: 2),
+                    ),
+                    prefixIcon: Icon(Icons.phone, color: AppTheme.breeze),
+                  ),
+                  keyboardType: TextInputType.phone,
+                  validator: (value) {
+                    if (value == null || value.isEmpty) return 'Please enter your phone number';
+                    // More lenient phone validation - accept various formats
+                    final phoneReg = RegExp(r'^[\+]?[\d\s\-\(\)]{10,15}$');
+                    if (!phoneReg.hasMatch(value)) return 'Enter a valid phone number';
+                    return null;
+                  },
                 ),
-              ),
-            ],
+                SizedBox(height: ResponsiveUtils.getVerticalPadding(context)),
+              
+                // Delivery Instructions
+                TextFormField(
+                  controller: _deliveryInstructionsController,
+                  decoration: InputDecoration(
+                    labelText: _selectedDeliveryType == 'pickup' ? 'Pickup Instructions (optional)' : 'Delivery Instructions (optional)',
+                    labelStyle: TextStyle(color: AppTheme.breeze),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: AppTheme.breeze.withOpacity(0.3)),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: AppTheme.breeze.withOpacity(0.3)),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: AppTheme.deepTeal, width: 2),
+                    ),
+                    prefixIcon: Icon(Icons.note, color: AppTheme.breeze),
+                  ),
+                  maxLines: 2,
+                ),
+                SizedBox(height: ResponsiveUtils.getVerticalPadding(context)),
+              
+                // Payment Section
+                _buildPaymentSection(),
+                SizedBox(height: ResponsiveUtils.getVerticalPadding(context)),
+              
+                // Order Summary
+                _buildOrderSummary(widget.totalPrice + (_selectedDeliveryType == 'pickup' ? 0 : (_deliveryFee ?? 0))),
+                SizedBox(height: ResponsiveUtils.getVerticalPadding(context)),
+              
+                // Place Order Button
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: _isLoading ? null : _placeOrder,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppTheme.deepTeal,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: _isLoading
+                        ? const SizedBox(
+                            height: 20,
+                            width: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                            ),
+                          )
+                        : const Text(
+                            'Place Order',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -1049,8 +1266,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           _buildSummaryRow('Subtotal', 'R${widget.totalPrice.toStringAsFixed(2)}'),
           if (_selectedDeliveryType != 'pickup' && _deliveryFee != null && _deliveryFee! > 0)
             _buildSummaryRow('Delivery Fee', 'R${_deliveryFee!.toStringAsFixed(2)}'),
-          if (_platformFee > 0)
-            _buildSummaryRow('Platform Fee', 'R${_platformFee.toStringAsFixed(2)}'),
           Divider(color: AppTheme.breeze.withOpacity(0.3)),
           _buildSummaryRow(
             'Total',
@@ -1095,10 +1310,43 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       return;
     }
     
+    print('🔍 DEBUG: Starting form validation...');
+    print('🔍 DEBUG: Name: "${_nameController.text.trim()}"');
+    print('🔍 DEBUG: Phone: "${_phoneController.text.trim()}"');
+    print('🔍 DEBUG: Address: "${_addressController.text.trim()}"');
+    print('🔍 DEBUG: Payment Method: "$_selectedPaymentMethod"');
+    
     if (!_formKey.currentState!.validate()) {
       print('🔍 DEBUG: Form validation failed');
       return;
     }
+    
+    print('🔍 DEBUG: Form validation passed');
+    
+    // Check if payment method is selected
+    if (_selectedPaymentMethod == null || _selectedPaymentMethod!.isEmpty) {
+      print('🔍 DEBUG: No payment method selected');
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('❌ Please select a payment method'),
+          backgroundColor: AppTheme.primaryRed,
+        ),
+      );
+      return;
+    }
+    
+    print('🔍 DEBUG: Payment method selected: $_selectedPaymentMethod');
+    
+    // Ensure delivery fee is calculated
+    if (_deliveryFee == null) {
+      print('🔍 DEBUG: Delivery fee not calculated, setting default');
+      setState(() {
+        _deliveryFee = 25.0; // Default delivery fee
+        _deliveryDistance = 5.0; // Default distance
+      });
+    }
+    
+    print('🔍 DEBUG: Delivery fee: $_deliveryFee, Distance: $_deliveryDistance');
     
     setState(() {
       _isLoading = true;
@@ -1215,25 +1463,39 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       
       // Create order document
       final orderData = {
-        'orderNumber': orderNumber,
+        'orderId': orderNumber,
+        'orderNumber': orderNumber, // Add orderNumber field for compatibility
         'buyerId': currentUser.uid,
         'buyerName': _nameController.text.trim(),
         'buyerPhone': _phoneController.text.trim(),
         'buyerAddress': _addressController.text.trim(),
         'deliveryInstructions': _deliveryInstructionsController.text.trim(),
-        'sellerId': sellerId,
-        'items': cartItems,
-        'subtotal': widget.totalPrice,
+        'deliveryType': _selectedDeliveryType,
+        'deliveryDistance': _deliveryDistance,
         'deliveryFee': _selectedDeliveryType == 'pickup' ? 0.0 : (_deliveryFee ?? 0.0),
-        'platformFee': _platformFee,
-        'total': widget.totalPrice + (_selectedDeliveryType == 'pickup' ? 0 : (_deliveryFee ?? 0)) + _platformFee,
+        'subtotal': widget.totalPrice,
+        'totalPrice': widget.totalPrice + (_selectedDeliveryType == 'pickup' ? 0 : (_deliveryFee ?? 0)),
+        'total': widget.totalPrice + (_selectedDeliveryType == 'pickup' ? 0 : (_deliveryFee ?? 0)),
         'paymentMethod': _selectedPaymentMethod ?? 'Cash on Delivery',
         'status': 'pending',
-        'isDelivery': _selectedDeliveryType != 'pickup',
-        'timestamp': FieldValue.serverTimestamp(),
-        'deliveryDistance': _selectedDeliveryType == 'pickup' ? 0.0 : _deliveryDistance,
-        'deliveryTimeEstimate': _deliveryTimeEstimate,
-        'deliveryType': _selectedDeliveryType,
+        'orderDate': FieldValue.serverTimestamp(),
+        'timestamp': FieldValue.serverTimestamp(), // Add timestamp field for compatibility
+        'items': cartItems,
+        'sellerId': sellerId,
+        'sellerName': _storeName ?? 'Store',
+        'estimatedDeliveryTime': _deliveryTimeMinutes ?? 30,
+        'deliveryStartHour': _deliveryStartHour ?? 8,
+        'deliveryEndHour': _deliveryEndHour ?? 20,
+        'minOrderForDelivery': _minOrderForDelivery ?? 0.0,
+        'storeOpen': _storeOpen ?? true,
+        'excludedZones': _excludedZones,
+        'paymentMethods': _paymentMethods,
+        // Add additional fields for compatibility with seller order processing
+        'name': _nameController.text.trim(), // Legacy field
+        'phone': _phoneController.text.trim(), // Legacy field
+        'address': _addressController.text.trim(), // Legacy field
+        'deliveryAddress': _addressController.text.trim(), // Alternative field name
+        'paymentStatus': 'pending', // Add payment status
       };
       
       // Save order to Firestore
@@ -1294,29 +1556,44 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   Future<void> _sendOrderNotifications(String orderId, String sellerId, String orderNumber) async {
     try {
       final currentUser = FirebaseAuth.instance.currentUser;
-      if (currentUser == null) return;
+      if (currentUser == null) {
+        print('❌ ERROR: No authenticated user found for notifications');
+        return;
+      }
+      
+      print('🔍 DEBUG: Starting notification process...');
+      print('🔍 DEBUG: Order ID: $orderId');
+      print('🔍 DEBUG: Seller ID: $sellerId');
+      print('🔍 DEBUG: Buyer ID: ${currentUser.uid}');
+      print('🔍 DEBUG: Buyer Name: ${_nameController.text.trim()}');
+      print('🔍 DEBUG: Order Total: ${widget.totalPrice + (_selectedDeliveryType == 'pickup' ? 0 : (_deliveryFee ?? 0))}');
       
       // Send notification to seller
+      print('🔍 DEBUG: Sending notification to seller...');
       await NotificationService().sendNewOrderNotificationToSeller(
         sellerId: sellerId,
         orderId: orderId,
         buyerName: _nameController.text.trim(),
-        orderTotal: widget.totalPrice + (_selectedDeliveryType == 'pickup' ? 0 : (_deliveryFee ?? 0)) + _platformFee,
+        orderTotal: widget.totalPrice + (_selectedDeliveryType == 'pickup' ? 0 : (_deliveryFee ?? 0)),
         sellerName: _storeName ?? 'Store',
       );
+      print('🔍 DEBUG: Seller notification sent');
       
       // Send notification to buyer
+      print('🔍 DEBUG: Sending notification to buyer...');
       await NotificationService().sendOrderStatusNotificationToBuyer(
         buyerId: currentUser.uid,
         orderId: orderId,
         status: 'pending',
         sellerName: _storeName ?? 'Store',
       );
+      print('🔍 DEBUG: Buyer notification sent');
       
-      print('🔍 DEBUG: Order notifications sent');
+      print('🔍 DEBUG: Order notifications sent successfully');
       
     } catch (e) {
       print('❌ Error sending order notifications: $e');
+      print('❌ Error stack trace: ${StackTrace.current}');
     }
   }
 }

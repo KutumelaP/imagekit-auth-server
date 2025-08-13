@@ -1,0 +1,66 @@
+{
+    "name": "Mzansi Marketplace",
+    "short_name": "Mzansi",
+    "start_url": ".",
+    "display": "standalone",
+    "background_color": "#1F4654",
+    "theme_color": "#1F4654",
+    "description": "Your local food and goods marketplace - Buy and sell locally",
+    "orientation": "portrait-primary",
+    "prefer_related_applications": false,
+    "scope": "/",
+    "lang": "en",
+    "categories": ["shopping", "food", "marketplace"],
+    "icons": [
+        {
+            "src": "icons/Icon-192.png",
+            "sizes": "192x192",
+            "type": "image/png",
+            "purpose": "any"
+        },
+        {
+            "src": "icons/Icon-512.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "any"
+        },
+        {
+            "src": "icons/Icon-maskable-192.png",
+            "sizes": "192x192",
+            "type": "image/png",
+            "purpose": "maskable"
+        },
+        {
+            "src": "icons/Icon-maskable-512.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "maskable"
+        }
+    ],
+    "shortcuts": [
+        {
+            "name": "Browse Products",
+            "short_name": "Browse",
+            "description": "Browse all products",
+            "url": "/?source=pwa",
+            "icons": [
+                {
+                    "src": "icons/Icon-192.png",
+                    "sizes": "192x192"
+                }
+            ]
+        },
+        {
+            "name": "Upload Product",
+            "short_name": "Upload",
+            "description": "Upload a new product",
+            "url": "/upload?source=pwa",
+            "icons": [
+                {
+                    "src": "icons/Icon-192.png",
+                    "sizes": "192x192"
+                }
+            ]
+        }
+    ]
+}

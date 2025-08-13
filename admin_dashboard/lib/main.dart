@@ -43,8 +43,8 @@ class MyApp extends StatelessWidget {
             useMaterial3: true,
             brightness: Brightness.light,
             primaryColor: AdminTheme.deepTeal,
-            scaffoldBackgroundColor: AdminTheme.angel,
-            cardColor: AdminTheme.angel,
+            scaffoldBackgroundColor: AdminTheme.whisper, // Use Whisper as scaffold background
+            cardColor: AdminTheme.angel, // Use Angel as card background
             colorScheme: ColorScheme(
               brightness: Brightness.light,
               primary: AdminTheme.deepTeal,
@@ -53,13 +53,13 @@ class MyApp extends StatelessWidget {
               onSecondary: AdminTheme.deepTeal,
               tertiary: AdminTheme.breeze,
               onTertiary: AdminTheme.deepTeal,
-              surface: AdminTheme.angel,
+              surface: AdminTheme.angel, // Use Angel as surface
               onSurface: AdminTheme.deepTeal,
-              background: AdminTheme.whisper,
+              background: AdminTheme.whisper, // Use Whisper as background
               onBackground: AdminTheme.deepTeal,
               error: AdminTheme.error,
               onError: AdminTheme.angel,
-              surfaceVariant: AdminTheme.antiqueWhite,
+              surfaceVariant: AdminTheme.angel, // Use Angel as surface variant
               onSurfaceVariant: AdminTheme.darkGrey,
               outline: AdminTheme.indigo,
               outlineVariant: AdminTheme.silverGray,
@@ -90,7 +90,7 @@ class MyApp extends StatelessWidget {
               labelSmall: AdminTheme.labelSmall,
             ),
             cardTheme: CardThemeData(
-              color: AdminTheme.paleLinen,
+              color: AdminTheme.angel, // Use Angel for all cards
               elevation: AdminTheme.complementaryElevation,
               shadowColor: AdminTheme.complementaryGlow.withOpacity(0.1),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -98,7 +98,7 @@ class MyApp extends StatelessWidget {
             ),
             inputDecorationTheme: InputDecorationTheme(
               filled: true,
-              fillColor: AdminTheme.angel,
+              fillColor: AdminTheme.angel, // Use Angel for input backgrounds
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
                 borderSide: BorderSide(color: AdminTheme.cloud.withOpacity(0.3)),
@@ -158,7 +158,7 @@ class MyApp extends StatelessWidget {
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
             ),
             bottomNavigationBarTheme: BottomNavigationBarThemeData(
-              backgroundColor: AdminTheme.angel,
+              backgroundColor: AdminTheme.angel, // Use Angel for bottom nav
               selectedItemColor: AdminTheme.deepTeal,
               unselectedItemColor: AdminTheme.mediumGrey,
               type: BottomNavigationBarType.fixed,
@@ -185,7 +185,7 @@ class MyApp extends StatelessWidget {
               size: 24,
             ),
             dialogTheme: DialogThemeData(
-              backgroundColor: AdminTheme.angel,
+              backgroundColor: AdminTheme.angel, // Use Angel for dialogs
               elevation: 8,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
               titleTextStyle: AdminTheme.headlineMedium,

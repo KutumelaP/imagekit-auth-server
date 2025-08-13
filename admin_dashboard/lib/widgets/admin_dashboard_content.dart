@@ -266,14 +266,14 @@ class _AdminDashboardContentState extends State<AdminDashboardContent> {
                             backgroundColor: Theme.of(context).colorScheme.surface,
                             backgroundImage: AssetImage('assets/logo.png'),
                           ),
-                          const SizedBox(height: 18),
+                          const SizedBox(height: 12),
                           // Admin email
                           Text(
                             widget.adminEmail,
-                            style: Theme.of(context).textTheme.titleLarge?.copyWith(color: Theme.of(context).colorScheme.onPrimary, fontWeight: FontWeight.bold, fontSize: 17),
+                            style: Theme.of(context).textTheme.titleLarge?.copyWith(color: Theme.of(context).colorScheme.onPrimary, fontWeight: FontWeight.bold, fontSize: 15),
                             textAlign: TextAlign.center,
                           ),
-                          const SizedBox(height: 18),
+                          const SizedBox(height: 12),
                           _NotificationBell(),
                           const SizedBox(height: 24),
                           // Navigation
@@ -754,7 +754,6 @@ class _AdminDashboardContentState extends State<AdminDashboardContent> {
       child: Container(
         padding: const EdgeInsets.all(20),
         decoration: AdminTheme.cardDecoration(
-          color: AdminTheme.angel,
           boxShadow: [
             BoxShadow(
               color: AdminTheme.indigo.withOpacity(0.1),
@@ -828,7 +827,6 @@ class _AdminDashboardContentState extends State<AdminDashboardContent> {
       height: 350,
       padding: const EdgeInsets.all(24),
       decoration: AdminTheme.cardDecoration(
-        color: AdminTheme.angel,
         boxShadow: [
           BoxShadow(
             color: AdminTheme.indigo.withOpacity(0.1),
@@ -1138,7 +1136,6 @@ class _AdminDashboardContentState extends State<AdminDashboardContent> {
             child: Container(
         padding: const EdgeInsets.all(20),
         decoration: AdminTheme.cardDecoration(
-          color: AdminTheme.angel,
           boxShadow: [
             BoxShadow(
               color: AdminTheme.indigo.withOpacity(0.1),

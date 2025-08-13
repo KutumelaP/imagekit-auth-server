@@ -25,6 +25,17 @@
         "source": "**",
         "destination": "/index.html"
       }
+    ],
+    "headers": [
+      {
+        "source": "**/*.@(js|css)",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "max-age=31536000"
+          }
+        ]
+      }
     ]
   },
   "flutter": {
@@ -40,7 +51,7 @@
         "lib/firebase_options.dart": {
           "projectId": "marketplace-8d6bd",
           "configurations": {
-            "android": "1:578732094610:android:e3d33c8d33a21bdbea624b",
+            "android": "1:578732094610:android:559ba8ba1329223dea624b",
             "ios": "1:578732094610:ios:559ba8ba1329223dea624b",
             "macos": "1:578732094610:ios:559ba8ba1329223dea624b",
             "web": "1:578732094610:web:d11867f5b450935dea624b",

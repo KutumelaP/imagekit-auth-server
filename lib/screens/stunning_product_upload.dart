@@ -33,6 +33,7 @@ class _StunningProductUploadState extends State<StunningProductUpload>
   final _descriptionController = TextEditingController();
   final _priceController = TextEditingController();
   final _quantityController = TextEditingController();
+  final _subcategoryController = TextEditingController();
   
   // Animation Controllers
   late AnimationController _fadeController;
@@ -45,11 +46,19 @@ class _StunningProductUploadState extends State<StunningProductUpload>
   // State Variables
   String selectedCategory = 'Food';
   String selectedSubcategory = 'Baked Goods';
+  String selectedCondition = 'New'; // New, Second Hand, Refurbished
   File? selectedImage;
   Uint8List? selectedImageBytes; // For web support
   bool isUploading = false;
   String uploadStatus = '';
   int currentStep = 0;
+  
+  // Product condition options
+  final List<String> _conditionOptions = [
+    'New',
+    'Second Hand', 
+    'Refurbished'
+  ];
   
   final PageController _pageController = PageController();
 
@@ -60,6 +69,70 @@ class _StunningProductUploadState extends State<StunningProductUpload>
     print('🔍 DEBUG: storeId = ${widget.storeId}');
     print('🔍 DEBUG: storeName = ${widget.storeName}');
     _initializeAnimations();
+    // Load store category immediately and ensure it's set
+    _loadStoreCategory().then((_) {
+      print('🔍 DEBUG: _loadStoreCategory completed, selectedCategory: $selectedCategory');
+      // Force a rebuild to ensure the UI reflects the correct category
+      if (mounted) {
+        setState(() {});
+      }
+    });
+  }
+
+  // Load store category from store registration
+  Future<void> _loadStoreCategory() async {
+    try {
+      print('🔍 DEBUG: _loadStoreCategory called for storeId: ${widget.storeId}');
+      
+      final storeDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(widget.storeId)
+          .get();
+      
+      print('🔍 DEBUG: Store document exists: ${storeDoc.exists}');
+      
+      if (storeDoc.exists) {
+        final storeData = storeDoc.data() as Map<String, dynamic>;
+        final storeCategory = storeData['storeCategory'] as String?;
+        
+        print('🔍 DEBUG: Raw storeCategory from database: "$storeCategory"');
+        print('🔍 DEBUG: storeCategory is null: ${storeCategory == null}');
+        print('🔍 DEBUG: storeCategory is empty: ${storeCategory?.isEmpty}');
+        
+        if (storeCategory != null && storeCategory.isNotEmpty) {
+          print('🔍 DEBUG: Setting selectedCategory to: $storeCategory');
+          setState(() {
+            selectedCategory = storeCategory;
+            // Set appropriate subcategory based on category
+            selectedSubcategory = _getDefaultSubcategory(storeCategory);
+            _subcategoryController.text = selectedSubcategory;
+          });
+          print('🔍 DEBUG: Loaded store category: $storeCategory');
+          print('🔍 DEBUG: Set selectedSubcategory to: $selectedSubcategory');
+        } else {
+          print('🔍 DEBUG: storeCategory is null or empty, keeping default: $selectedCategory');
+        }
+      } else {
+        print('🔍 DEBUG: Store document does not exist');
+      }
+    } catch (e) {
+      print('❌ Error loading store category: $e');
+    }
+  }
+
+  String _getDefaultSubcategory(String category) {
+    switch (category) {
+      case 'Food':
+        return 'Baked Goods';
+      case 'Electronics':
+        return 'Phones';
+      case 'Clothes':
+        return 'T-Shirts';
+      case 'Clothing':
+        return 'T-Shirts';
+      default:
+        return 'Other';
+    }
   }
 
   void _initializeAnimations() {
@@ -101,7 +174,7 @@ class _StunningProductUploadState extends State<StunningProductUpload>
     _descriptionController.dispose();
     _priceController.dispose();
     _quantityController.dispose();
-    _pageController.dispose();
+    _subcategoryController.dispose();
     super.dispose();
   }
 
@@ -398,6 +471,7 @@ class _StunningProductUploadState extends State<StunningProductUpload>
         'quantity': quantity,
         'category': selectedCategory,
         'subcategory': selectedSubcategory,
+        'condition': selectedCondition,
         'imageUrl': imageUrl,
         'storeId': widget.storeId,
         'ownerId': user.uid,
@@ -441,10 +515,12 @@ class _StunningProductUploadState extends State<StunningProductUpload>
     _descriptionController.clear();
     _priceController.clear();
     _quantityController.clear();
+    _subcategoryController.clear();
     setState(() {
       selectedImage = null;
       selectedCategory = 'Food';
       selectedSubcategory = 'Baked Goods';
+      selectedCondition = 'New';
       currentStep = 0;
     });
     _pageController.animateToPage(
@@ -477,8 +553,15 @@ class _StunningProductUploadState extends State<StunningProductUpload>
   }
 
   void _nextStep() {
+    // Validate current step before proceeding
+    if (!_validateCurrentStep()) {
+      return;
+    }
+    
     if (currentStep < 3) {
-      setState(() => currentStep++);
+      setState(() {
+        currentStep++;
+      });
       _pageController.nextPage(
         duration: const Duration(milliseconds: 300),
         curve: Curves.easeInOut,
@@ -488,12 +571,92 @@ class _StunningProductUploadState extends State<StunningProductUpload>
 
   void _previousStep() {
     if (currentStep > 0) {
-      setState(() => currentStep--);
+      setState(() {
+        currentStep--;
+      });
       _pageController.previousPage(
         duration: const Duration(milliseconds: 300),
         curve: Curves.easeInOut,
       );
     }
+  }
+
+  bool _validateCurrentStep() {
+    switch (currentStep) {
+      case 0: // Image step
+        if (selectedImage == null && selectedImageBytes == null) {
+          _showErrorSnackBar('Please select a product image');
+          return false;
+        }
+        break;
+      case 1: // Details step
+        if (!_validateDetailsStep()) {
+          return false;
+        }
+        break;
+      case 2: // Category step
+        if (!_validateCategoryStep()) {
+          return false;
+        }
+        break;
+    }
+    return true;
+  }
+
+  bool _validateDetailsStep() {
+    if (_nameController.text.trim().isEmpty) {
+      _showErrorSnackBar('Please enter a product name');
+      return false;
+    }
+    if (_descriptionController.text.trim().isEmpty) {
+      _showErrorSnackBar('Please enter a product description');
+      return false;
+    }
+    if (_descriptionController.text.trim().length < 10) {
+      _showErrorSnackBar('Description must be at least 10 characters');
+      return false;
+    }
+    if (_priceController.text.trim().isEmpty) {
+      _showErrorSnackBar('Please enter a price');
+      return false;
+    }
+    if (double.tryParse(_priceController.text) == null) {
+      _showErrorSnackBar('Please enter a valid price');
+      return false;
+    }
+    if (double.parse(_priceController.text) <= 0) {
+      _showErrorSnackBar('Price must be greater than 0');
+      return false;
+    }
+    if (_quantityController.text.trim().isEmpty) {
+      _showErrorSnackBar('Please enter quantity');
+      return false;
+    }
+    if (int.tryParse(_quantityController.text) == null) {
+      _showErrorSnackBar('Please enter a valid quantity');
+      return false;
+    }
+    if (int.parse(_quantityController.text) < 0) {
+      _showErrorSnackBar('Quantity cannot be negative');
+      return false;
+    }
+    if (selectedCondition.isEmpty) {
+      _showErrorSnackBar('Please select product condition');
+      return false;
+    }
+    return true;
+  }
+
+  bool _validateCategoryStep() {
+    if (selectedCategory.isEmpty) {
+      _showErrorSnackBar('Please select a category');
+      return false;
+    }
+    if (_subcategoryController.text.trim().isEmpty) {
+      _showErrorSnackBar('Please enter a subcategory');
+      return false;
+    }
+    return true;
   }
 
   @override
@@ -714,7 +877,9 @@ class _StunningProductUploadState extends State<StunningProductUpload>
                     color: AppTheme.whisper,
                     borderRadius: BorderRadius.circular(16),
                     border: Border.all(
-                      color: AppTheme.cloud,
+                      color: (selectedImage == null && selectedImageBytes == null) 
+                          ? AppTheme.error 
+                          : AppTheme.cloud,
                       width: 2,
                     ),
                   ),
@@ -774,6 +939,17 @@ class _StunningProductUploadState extends State<StunningProductUpload>
                               ),
                               textAlign: TextAlign.center,
                             ),
+                            if (currentStep > 0) ...[
+                              SizedBox(height: isMobile ? 4 : 6),
+                              Text(
+                                'Image is required',
+                                style: AppTheme.bodySmall.copyWith(
+                                  color: AppTheme.error,
+                                  fontSize: isMobile ? 11 : 12,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                            ],
                           ],
                         ),
                 ),
@@ -833,6 +1009,33 @@ class _StunningProductUploadState extends State<StunningProductUpload>
               hint: 'Describe your amazing product',
               icon: Icons.description,
               maxLines: 3,
+              validator: (value) {
+                if (value == null || value.trim().isEmpty) {
+                  return 'Please enter a product description';
+                }
+                if (value.trim().length < 10) {
+                  return 'Description must be at least 10 characters';
+                }
+                return null;
+              },
+            ),
+            
+            const SizedBox(height: 16),
+            
+            _buildStyledDropdown(
+              value: selectedCondition,
+              label: 'Product Condition',
+              icon: Icons.verified,
+              items: _conditionOptions,
+              onChanged: (value) {
+                setState(() => selectedCondition = value!);
+              },
+              validator: (value) {
+                if (value == null || value.isEmpty) {
+                  return 'Please select product condition';
+                }
+                return null;
+              },
             ),
             
             const SizedBox(height: 16),
@@ -916,30 +1119,102 @@ class _StunningProductUploadState extends State<StunningProductUpload>
           
           const SizedBox(height: 20),
           
+          // Category Dropdown
           _buildStyledDropdown(
             value: selectedCategory,
             label: 'Category',
             icon: Icons.category,
             items: AppConstants.categories,
             onChanged: (value) {
-              setState(() {
-                selectedCategory = value!;
-                selectedSubcategory = AppConstants.categoryMap[value]?.first ?? '';
-              });
+              if (value != null) {
+                setState(() {
+                  selectedCategory = value;
+                  selectedSubcategory = AppConstants.categoryMap[value]?.first ?? 'Other';
+                  _subcategoryController.text = selectedSubcategory;
+                });
+              }
+            },
+            validator: (value) {
+              if (value == null || value.isEmpty) {
+                return 'Please select a category';
+              }
+              return null;
             },
           ),
           
           const SizedBox(height: 16),
           
-          _buildStyledDropdown(
-            value: selectedSubcategory,
+          // Subcategory with manual entry option
+          _buildStyledTextField(
+            controller: _subcategoryController,
             label: 'Subcategory',
+            hint: 'Enter subcategory or select from list',
             icon: Icons.subdirectory_arrow_right,
-            items: AppConstants.categoryMap[selectedCategory] ?? [],
             onChanged: (value) {
-              setState(() => selectedSubcategory = value!);
+              setState(() => selectedSubcategory = value);
+            },
+            validator: (value) {
+              if (value == null || value.trim().isEmpty) {
+                return 'Please enter a subcategory';
+              }
+              return null;
             },
           ),
+          
+          const SizedBox(height: 16),
+          
+          // Suggested subcategories based on category
+          if (AppConstants.categoryMap[selectedCategory] != null) ...[
+            Text(
+              'Suggested subcategories:',
+              style: AppTheme.bodyMedium.copyWith(
+                color: AppTheme.cloud,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: AppConstants.categoryMap[selectedCategory]!
+                  .map((subcategory) => GestureDetector(
+                        onTap: () {
+                          setState(() {
+                            selectedSubcategory = subcategory;
+                            _subcategoryController.text = subcategory;
+                          });
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: selectedSubcategory == subcategory
+                                ? AppTheme.deepTeal
+                                : AppTheme.whisper,
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(
+                              color: selectedSubcategory == subcategory
+                                  ? AppTheme.deepTeal
+                                  : AppTheme.cloud,
+                            ),
+                          ),
+                          child: Text(
+                            subcategory,
+                            style: TextStyle(
+                              color: selectedSubcategory == subcategory
+                                  ? Colors.white
+                                  : AppTheme.deepTeal,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      ))
+                  .toList(),
+            ),
+          ],
         ],
       ),
     );
@@ -996,6 +1271,7 @@ class _StunningProductUploadState extends State<StunningProductUpload>
             _buildReviewItem('Description', _descriptionController.text),
             _buildReviewItem('Price', 'R${_priceController.text}'),
             _buildReviewItem('Quantity', _quantityController.text),
+            _buildReviewItem('Condition', selectedCondition),
             _buildReviewItem('Category', selectedCategory),
             _buildReviewItem('Subcategory', selectedSubcategory ?? ''),
             
@@ -1050,12 +1326,14 @@ class _StunningProductUploadState extends State<StunningProductUpload>
     TextInputType? keyboardType,
     String? Function(String?)? validator,
     int maxLines = 1,
+    void Function(String)? onChanged,
   }) {
     return TextFormField(
       controller: controller,
       keyboardType: keyboardType,
       validator: validator,
       maxLines: maxLines,
+      onChanged: onChanged,
       decoration: InputDecoration(
         labelText: label,
         hintText: hint,
@@ -1084,6 +1362,7 @@ class _StunningProductUploadState extends State<StunningProductUpload>
     required IconData icon,
     required List<String> items,
     required void Function(String?) onChanged,
+    String? Function(String?)? validator,
   }) {
     return DropdownButtonFormField<String>(
       value: value,
@@ -1112,6 +1391,7 @@ class _StunningProductUploadState extends State<StunningProductUpload>
         );
       }).toList(),
       onChanged: onChanged,
+      validator: validator,
     );
   }
 

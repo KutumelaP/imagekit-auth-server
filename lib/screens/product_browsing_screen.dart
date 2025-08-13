@@ -65,7 +65,7 @@ class _ProductBrowsingScreenState extends State<ProductBrowsingScreen>
   String? _filterSubcategory;
   String _searchQuery = '';
   double _minPrice = 0.0;
-  double _maxPrice = 1000.0;
+  double _maxPrice = 50000.0; // Increased to accommodate higher-priced electronics
   bool _inStockOnly = false;
   String _sortBy = 'name';
 
@@ -554,18 +554,10 @@ class _ProductBrowsingScreenState extends State<ProductBrowsingScreen>
         }
         
         if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-          print('🔍 DEBUG: No products found in snapshot');
           return _buildEmptyState();
         }
         
         final docs = snapshot.data!.docs;
-        print('🔍 DEBUG: Loaded ${docs.length} products from database');
-        
-        // Debug the first few products to see their categories
-        for (int i = 0; i < docs.length && i < 3; i++) {
-          final data = docs[i].data() as Map<String, dynamic>;
-          print('🔍 DEBUG: Product ${i + 1}: ${data['name']} - Category: ${data['category']}, Subcategory: ${data['subcategory']}');
-        }
         
         // Update the loaded products list
         _allLoadedProducts = docs;
@@ -601,16 +593,6 @@ class _ProductBrowsingScreenState extends State<ProductBrowsingScreen>
         final doc = docs[index];
         final data = doc.data() as Map<String, dynamic>;
         
-        // Debug product data
-        print('🔍 DEBUG: Grid Product ${index + 1} data:');
-        print('  - ID: ${doc.id}');
-        print('  - Name: ${data['name']}');
-        print('  - Image URL: ${data['imageUrl']}');
-        print('  - Stock: ${data['stock']}');
-        print('  - Price: ${data['price']}');
-        print('  - Category: ${data['category']}');
-        print('  - Subcategory: ${data['subcategory']}');
-        
         return RepaintBoundary(
           child: BeautifulProductCard(
             productId: doc.id,
@@ -632,16 +614,6 @@ class _ProductBrowsingScreenState extends State<ProductBrowsingScreen>
       itemBuilder: (context, index) {
         final doc = docs[index];
         final data = doc.data() as Map<String, dynamic>;
-        
-        // Debug product data
-        print('🔍 DEBUG: List Product ${index + 1} data:');
-        print('  - ID: ${doc.id}');
-        print('  - Name: ${data['name']}');
-        print('  - Image URL: ${data['imageUrl']}');
-        print('  - Stock: ${data['stock']}');
-        print('  - Price: ${data['price']}');
-        print('  - Category: ${data['category']}');
-        print('  - Subcategory: ${data['subcategory']}');
         
         return RepaintBoundary(
           child: BeautifulProductCard(
@@ -793,69 +765,53 @@ class _ProductBrowsingScreenState extends State<ProductBrowsingScreen>
   }
 
   Stream<QuerySnapshot> _getProductsQuery() {
-    try {
-      var q = FirebaseFirestore.instance
-          .collection('products')
-          .limit(12); // Reduced from 20 to 12 for better performance
-      
-      print('🔍 DEBUG: Building query with storeId: ${widget.storeId}, categoryFilter: ${widget.categoryFilter}, subcategoryFilter: $_filterSubcategory');
-      
-      // ALWAYS filter by storeId if provided - this prevents mixing stores
-      if (widget.storeId != null) {
-        q = q.where('ownerId', isEqualTo: widget.storeId);
-        print('🔍 DEBUG: Added storeId filter: ${widget.storeId}');
-      }
-      
-      // Apply category filter if provided (regardless of storeId)
-      if (widget.categoryFilter != null) {
-        q = q.where('category', isEqualTo: widget.categoryFilter);
-        print('🔍 DEBUG: Added category filter: ${widget.categoryFilter}');
-      }
-      
-      // Apply subcategory filter at database level if available
-      if (widget.categoryFilter != null && _filterSubcategory != null) {
-        q = q.where('subcategory', isEqualTo: _filterSubcategory);
-        print('🔍 DEBUG: Added subcategory filter: $_filterSubcategory');
-      }
-      
-      print('🔍 DEBUG: Query built successfully');
-      return q.snapshots();
-    } catch (e) {
-      print('❌ ERROR: Failed to build query: $e');
-      rethrow;
+    var q = FirebaseFirestore.instance
+        .collection('products')
+        .limit(12);
+    
+    if (widget.storeId != null && widget.storeId != 'all') {
+      q = q.where('ownerId', isEqualTo: widget.storeId);
     }
+    
+    if (widget.categoryFilter != null && widget.categoryFilter!.isNotEmpty) {
+      q = q.where('category', isEqualTo: widget.categoryFilter);
+    }
+    
+    if (_filterSubcategory != null && _filterSubcategory!.isNotEmpty) {
+      q = q.where('subcategory', isEqualTo: _filterSubcategory);
+    }
+    
+    return q.snapshots();
   }
 
   List<DocumentSnapshot> _applyFilters(List<DocumentSnapshot> docs) {
-    print('🔍 DEBUG: Applying filters to ${docs.length} products');
-    print('🔍 DEBUG: Search query: "$_searchQuery"');
-    print('🔍 DEBUG: Subcategory filter: $_filterSubcategory');
-    print('🔍 DEBUG: Price range: $_minPrice - $_maxPrice');
-    print('🔍 DEBUG: In stock only: $_inStockOnly');
-    print('🔍 DEBUG: Sort by: $_sortBy');
-    
     final filteredDocs = docs.where((doc) {
       final data = doc.data() as Map<String, dynamic>;
       
       // Apply search filter
       if (_searchQuery.isNotEmpty) {
-        final productName = (data['name'] as String?)?.toLowerCase() ?? '';
-        final searchLower = _searchQuery.toLowerCase();
-        if (!productName.contains(searchLower)) {
-          print('🔍 DEBUG: Filtered out ${data['name']} - search query mismatch');
+        final productName = data['name']?.toString().toLowerCase() ?? '';
+        if (!productName.contains(_searchQuery.toLowerCase())) {
           return false;
         }
       }
       
+      // Apply category filter
+      if (widget.categoryFilter != null && widget.categoryFilter!.isNotEmpty) {
+        final productCategory = (data['category'] as String?) ?? '';
+        if (productCategory.toLowerCase() != widget.categoryFilter!.toLowerCase()) {
+          return false;
+        }
+      }
+      
+      // Apply subcategory filter
       if (_filterSubcategory != null && data['subcategory'] != _filterSubcategory) {
-        print('🔍 DEBUG: Filtered out ${data['name']} - subcategory mismatch (${data['subcategory']} != $_filterSubcategory)');
         return false;
       }
       
       // Apply advanced filters
       final price = (data['price'] as num?)?.toDouble() ?? 0.0;
       if (price < _minPrice || price > _maxPrice) {
-        print('🔍 DEBUG: Filtered out ${data['name']} - price $price outside range $_minPrice-$_maxPrice');
         return false;
       }
       
@@ -863,15 +819,12 @@ class _ProductBrowsingScreenState extends State<ProductBrowsingScreen>
         final quantity = data['quantity'] as int? ?? 0;
         final stock = data['stock'] as int? ?? quantity;
         if (stock <= 0) {
-          print('🔍 DEBUG: Filtered out ${data['name']} - out of stock (stock: $stock)');
           return false;
         }
       }
       
       return true;
     }).toList();
-    
-    print('🔍 DEBUG: After filtering: ${filteredDocs.length} products');
     
     // Sort the filtered results
     return _sortProducts(filteredDocs);
@@ -1043,7 +996,7 @@ class _ProductBrowsingScreenState extends State<ProductBrowsingScreen>
     
     // Only add common categories if we have no actual categories (for empty stores)
     if (values.isEmpty) {
-              values.addAll(['Food', 'Drinks', 'Bakery', 'Electronics', 'Clothes', 'Other']);
+              values.addAll(['Food', 'Drinks', 'Bakery', 'Electronics', 'Clothing', 'Other']);
     }
     
     print('🔍 DEBUG: Available categories: $values');
@@ -1080,7 +1033,7 @@ class _ProductBrowsingScreenState extends State<ProductBrowsingScreen>
       'Accessories',       // Chargers, Cases, Cables
       'Other Electronics'
     ],
-    'Clothes': [
+    'Clothing': [
       'T-Shirts',          // Cotton shirts, Graphic tees
       'Jeans',             // Denim pants
       'Dresses',           // Summer dresses, Formal
@@ -1165,7 +1118,7 @@ class _ProductBrowsingScreenState extends State<ProductBrowsingScreen>
         name.contains('sweater') || name.contains('hoodie') || name.contains('sneaker') ||
         name.contains('cap') || name.contains('belt') || name.contains('scarf') ||
         name.contains('underwear') || name.contains('sock') || name.contains('bra')) {
-      return 'Clothes';
+      return 'Clothing';
     }
     
     // Default to Other for everything else
@@ -1234,7 +1187,7 @@ class _ProductBrowsingScreenState extends State<ProductBrowsingScreen>
           return 'Accessories';
         return 'Other Electronics';
         
-      case 'Clothes':
+      case 'Clothing':
         if (name.contains('t-shirt') || name.contains('tshirt')) 
           return 'T-Shirts';
         if (name.contains('jean')) 
@@ -1442,7 +1395,7 @@ class _ProductBrowsingScreenState extends State<ProductBrowsingScreen>
           newImageUrl = 'https://images.unsplash.com/photo-1509440159596-0249088772ff?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80';
         } else if (name.contains('juice')) {
           newImageUrl = 'https://images.unsplash.com/photo-1621506289937-a8e4df240d0b?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80';
-        } else if (name.contains('shirt') || name.contains('clothes')) {
+        } else if (name.contains('shirt') || name.contains('clothing')) {
           newImageUrl = 'https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80';
         } else {
           // Default food image
@@ -1503,7 +1456,7 @@ class _ProductBrowsingScreenState extends State<ProductBrowsingScreen>
       _filterSubcategory = null;
       _searchQuery = '';
       _minPrice = 0.0;
-      _maxPrice = 1000.0;
+              _maxPrice = 50000.0; // Increased to accommodate higher-priced electronics
       _inStockOnly = false;
       _sortBy = 'name';
     });
@@ -1643,6 +1596,8 @@ class BeautifulProductCard extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: 4),
+                _buildConditionBadge(),
+                const SizedBox(height: 4),
                 // Description in grid layout
                 if (data['description'] != null && data['description'].toString().isNotEmpty)
                   Expanded(
@@ -1725,6 +1680,8 @@ class BeautifulProductCard extends StatelessWidget {
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                         ),
+                const SizedBox(height: 8),
+                        _buildConditionBadge(),
                 const SizedBox(height: 8),
                         Text(
                   'R ${(data['price'] ?? 0.0).toStringAsFixed(2)}',
@@ -2041,5 +1998,49 @@ class BeautifulProductCard extends StatelessWidget {
     });
   }
 
+  Widget _buildConditionBadge() {
+    final condition = data['condition'] as String?;
+    if (condition == null || condition.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    Color badgeColor;
+    String badgeText;
+
+    switch (condition.toLowerCase()) {
+      case 'new':
+        badgeColor = AppTheme.primaryGreen;
+        badgeText = 'New';
+        break;
+      case 'second hand':
+        badgeColor = AppTheme.warning;
+        badgeText = 'Used';
+        break;
+      case 'refurbished':
+        badgeColor = AppTheme.deepTeal;
+        badgeText = 'Refurbished';
+        break;
+      default:
+        badgeColor = AppTheme.cloud;
+        badgeText = condition;
+        break;
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: badgeColor.withOpacity(0.9),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        badgeText,
+        style: const TextStyle(
+          color: AppTheme.angel,
+          fontSize: 10,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+    );
+  }
 }
 

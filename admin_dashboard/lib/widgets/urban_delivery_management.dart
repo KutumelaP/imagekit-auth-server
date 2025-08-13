@@ -187,7 +187,7 @@ class _UrbanDeliveryManagementState extends State<UrbanDeliveryManagement> {
           'Peak Hours',
           '2',
           Icons.schedule,
-          AdminTheme.whisper,
+          AdminTheme.breeze,
         ),
       ],
     );
@@ -391,7 +391,7 @@ class _UrbanDeliveryManagementState extends State<UrbanDeliveryManagement> {
       {'name': 'Electronics', 'icon': '💻', 'color': AdminTheme.deepTeal},
       {'name': 'Food', 'icon': '🍕', 'color': AdminTheme.cloud},
       {'name': 'Clothes', 'icon': '👕', 'color': AdminTheme.breeze},
-      {'name': 'Other', 'icon': '📦', 'color': AdminTheme.whisper},
+              {'name': 'Other', 'icon': '📦', 'color': AdminTheme.breeze},
     ];
 
     return GridView.builder(
@@ -510,7 +510,7 @@ class _UrbanDeliveryManagementState extends State<UrbanDeliveryManagement> {
         'name': 'Delivery Services',
         'description': 'Uber Eats API, local delivery companies',
         'icon': Icons.delivery_dining,
-        'color': AdminTheme.whisper,
+        'color': AdminTheme.breeze,
       },
     ];
 
@@ -602,7 +602,7 @@ class _UrbanDeliveryManagementState extends State<UrbanDeliveryManagement> {
       case 'student':
         return AdminTheme.breeze;
       default:
-        return AdminTheme.whisper;
+        return AdminTheme.breeze;
     }
   }
 

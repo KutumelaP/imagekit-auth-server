@@ -12,7 +12,7 @@ class CategoryFilterScreen extends StatefulWidget {
 }
 
 class _CategoryFilterScreenState extends State<CategoryFilterScreen> {
-  final List<String> _categories = ['All', 'Food', 'Clothes', 'Accessories', 'Other'];
+  final List<String> _categories = ['All', 'Food', 'Clothing', 'Accessories', 'Other'];
   String _selectedCategory = 'All';
 
   @override

@@ -403,6 +403,10 @@ class _StunningProductDetailState extends State<StunningProductDetail>
             
             const SizedBox(width: 12),
             
+            _buildConditionBadge(),
+            
+            const SizedBox(width: 12),
+            
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               decoration: BoxDecoration(
@@ -433,6 +437,50 @@ class _StunningProductDetailState extends State<StunningProductDetail>
           ],
         ),
       ],
+    );
+  }
+
+  Widget _buildConditionBadge() {
+    final condition = widget.product['condition'] as String?;
+    if (condition == null || condition.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    Color badgeColor;
+    String badgeText;
+
+    switch (condition.toLowerCase()) {
+      case 'new':
+        badgeColor = AppTheme.primaryGreen;
+        badgeText = 'New';
+        break;
+      case 'second hand':
+        badgeColor = AppTheme.warning;
+        badgeText = 'Used';
+        break;
+      case 'refurbished':
+        badgeColor = AppTheme.deepTeal;
+        badgeText = 'Refurbished';
+        break;
+      default:
+        badgeColor = AppTheme.cloud;
+        badgeText = condition;
+        break;
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: badgeColor.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        badgeText,
+        style: TextStyle(
+          color: badgeColor,
+          fontWeight: FontWeight.w500,
+        ),
+      ),
     );
   }
 

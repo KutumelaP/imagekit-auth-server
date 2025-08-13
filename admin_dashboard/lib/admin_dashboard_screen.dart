@@ -204,7 +204,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                   // Desktop Sidebar for larger screens
                   if (MediaQuery.of(context).size.width >= 1200)
                     Container(
-                      width: 280,
+                      width: 220,
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
                           begin: Alignment.topLeft,
@@ -227,7 +227,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                         children: [
                           // Sidebar Header
                           Container(
-                            padding: const EdgeInsets.all(24),
+                            padding: const EdgeInsets.all(16),
                             decoration: BoxDecoration(
                               color: Colors.white.withOpacity(0.1),
                               border: Border(
@@ -293,7 +293,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                           
                           // Sidebar Footer
                           Container(
-                            padding: const EdgeInsets.all(16),
+                            padding: const EdgeInsets.all(12),
                             decoration: BoxDecoration(
                               color: Colors.white.withOpacity(0.05),
                               border: Border(

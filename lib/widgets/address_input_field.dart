@@ -8,7 +8,6 @@ class AddressInputField extends StatefulWidget {
   final String? labelText;
   final String? hintText;
   final Function(String)? onAddressSelected;
-  final Function(Placemark)? onPlacemarkSelected;
   final bool enabled;
   final TextEditingController? controller;
 
@@ -18,7 +17,6 @@ class AddressInputField extends StatefulWidget {
     this.labelText = 'Address',
     this.hintText = 'Enter your address',
     this.onAddressSelected,
-    this.onPlacemarkSelected,
     this.enabled = true,
     this.controller,
   }) : super(key: key);
@@ -42,6 +40,14 @@ class _AddressInputFieldState extends State<AddressInputField> {
     
     // Listen to search service changes
     _searchService.addListener(_onSearchResultsChanged);
+    
+    // Debug: Test suggestions after a short delay
+    Future.delayed(const Duration(seconds: 1), () {
+      if (mounted) {
+        print('🔍 Debug: Testing address suggestions...');
+        _searchService.searchAddresses('brakpan');
+      }
+    });
   }
 
   @override
@@ -55,9 +61,27 @@ class _AddressInputFieldState extends State<AddressInputField> {
 
   void _onFocusChanged() {
     print('🔍 Focus change - Has focus: ${_focusNode.hasFocus}, Show suggestions: $_showSuggestions');
-    setState(() {
-      _showSuggestions = _focusNode.hasFocus && _textController.text.length >= 2;
-    });
+    final controller = widget.controller ?? _textController;
+    
+    // Show suggestions when gaining focus and there's text
+    if (_focusNode.hasFocus && controller.text.length >= 2) {
+      setState(() {
+        _showSuggestions = true;
+      });
+      // Trigger search if we have text
+      if (controller.text.isNotEmpty) {
+        _searchService.searchAddresses(controller.text);
+      }
+    } else if (!_focusNode.hasFocus) {
+      // Add a small delay before hiding suggestions to allow for taps
+      Future.delayed(const Duration(milliseconds: 200), () {
+        if (mounted && !_focusNode.hasFocus) {
+          setState(() {
+            _showSuggestions = false;
+          });
+        }
+      });
+    }
   }
 
   void _onSearchResultsChanged() {
@@ -65,8 +89,9 @@ class _AddressInputFieldState extends State<AddressInputField> {
     setState(() {
       _isLoading = _searchService.isSearching;
       // Keep suggestions visible if we have results or are still searching
-      _showSuggestions = _focusNode.hasFocus && 
-                         (_searchService.suggestions.isNotEmpty || _searchService.isSearching);
+      if (_focusNode.hasFocus && (_searchService.suggestions.isNotEmpty || _searchService.isSearching)) {
+        _showSuggestions = true;
+      }
     });
   }
 
@@ -78,10 +103,16 @@ class _AddressInputFieldState extends State<AddressInputField> {
     // Trigger search
     _searchService.searchAddresses(value);
     
-    // Update UI state
-    setState(() {
-      _showSuggestions = _focusNode.hasFocus && (value.length >= 2);
-    });
+    // Update UI state - show suggestions if we have focus and enough text
+    if (_focusNode.hasFocus && value.length >= 2) {
+      setState(() {
+        _showSuggestions = true;
+      });
+    } else if (value.length < 2) {
+      setState(() {
+        _showSuggestions = false;
+      });
+    }
   }
 
   int _getItemCount() {
@@ -124,33 +155,52 @@ class _AddressInputFieldState extends State<AddressInputField> {
     );
   }
 
-  void _onAddressSelected(Placemark placemark) {
-    final formattedAddress = _searchService.formatAddress(placemark);
-    _textController.text = formattedAddress;
-    _textController.selection = TextSelection.fromPosition(
-      TextPosition(offset: formattedAddress.length),
+  void _onAddressSelected(String address) {
+    print('🔍 Address selected: $address');
+    
+    // Use the correct controller (external or internal)
+    final controller = widget.controller ?? _textController;
+    print('🔍 Controller type: ${controller.runtimeType}');
+    print('🔍 Controller text before: "${controller.text}"');
+    
+    controller.text = address;
+    controller.selection = TextSelection.fromPosition(
+      TextPosition(offset: address.length),
     );
     
+    print('🔍 Controller text after: "${controller.text}"');
+    
+    // Hide suggestions immediately
     setState(() {
       _showSuggestions = false;
     });
     
-    widget.onAddressSelected?.call(formattedAddress);
-    widget.onPlacemarkSelected?.call(placemark);
+    // Remove focus to prevent further focus changes
+    _focusNode.unfocus();
+    
+    print('🔍 Calling onAddressSelected callback');
+    widget.onAddressSelected?.call(address);
+    print('🔍 Address selection completed');
   }
 
   void _onUseEnteredAddress() {
-    final enteredAddress = _textController.text.trim();
+    final controller = widget.controller ?? _textController;
+    final enteredAddress = controller.text.trim();
     if (enteredAddress.isNotEmpty) {
       widget.onAddressSelected?.call(enteredAddress);
       setState(() {
         _showSuggestions = false;
       });
+      // Remove focus to prevent further focus changes
+      _focusNode.unfocus();
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    // Get the bottom padding to account for keyboard
+    final bottomPadding = MediaQuery.of(context).viewInsets.bottom;
+    
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -202,8 +252,8 @@ class _AddressInputFieldState extends State<AddressInputField> {
         
         const SizedBox(height: 8),
         
-        // Suggestions Dropdown
-        if (_showSuggestions) _buildSuggestionsDropdown(),
+        // Suggestions Dropdown - Only show if keyboard is not covering too much
+        if (_showSuggestions && bottomPadding < 200) _buildSuggestionsDropdown(),
       ],
     );
   }
@@ -223,11 +273,12 @@ class _AddressInputFieldState extends State<AddressInputField> {
       );
     }
     
-    if (_textController.text.isNotEmpty) {
+    final controller = widget.controller ?? _textController;
+    if (controller.text.isNotEmpty) {
       return IconButton(
         icon: const Icon(Icons.clear, color: Colors.grey),
         onPressed: () {
-          _textController.clear();
+          controller.clear();
           _searchService.clearSearch();
           setState(() {
             _showSuggestions = false;
@@ -300,7 +351,8 @@ class _AddressInputFieldState extends State<AddressInputField> {
                 }
                 
                 final placemark = _searchService.suggestions[index];
-                return _buildSuggestionItem(placemark);
+                final address = _formatPlacemark(placemark);
+                return _buildSuggestionItem(address);
               },
             ),
           ),
@@ -309,13 +361,29 @@ class _AddressInputFieldState extends State<AddressInputField> {
     );
   }
 
-  Widget _buildSuggestionItem(Placemark placemark) {
-    final formattedAddress = _searchService.formatAddress(placemark);
+  String _formatPlacemark(Placemark placemark) {
+    final parts = <String>[];
+    if (placemark.street?.isNotEmpty == true) parts.add(placemark.street!);
+    if (placemark.locality?.isNotEmpty == true) parts.add(placemark.locality!);
+    if (placemark.administrativeArea?.isNotEmpty == true) parts.add(placemark.administrativeArea!);
+    if (placemark.country?.isNotEmpty == true) parts.add(placemark.country!);
+    return parts.join(', ');
+  }
+
+  Widget _buildSuggestionItem(String address) {
     
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        onTap: () => _onAddressSelected(placemark),
+        onTap: () {
+          print('🔍 InkWell tap detected on address suggestion: $address');
+          // Prevent focus loss during tap
+          _focusNode.requestFocus();
+          // Small delay to ensure tap is processed
+          Future.delayed(const Duration(milliseconds: 50), () {
+            _onAddressSelected(address);
+          });
+        },
         borderRadius: BorderRadius.circular(8),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -339,7 +407,7 @@ class _AddressInputFieldState extends State<AddressInputField> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      formattedAddress,
+                      address,
                       style: const TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w500,
@@ -347,14 +415,6 @@ class _AddressInputFieldState extends State<AddressInputField> {
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    if (placemark.locality?.isNotEmpty == true)
-                      Text(
-                        placemark.locality!,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey.shade600,
-                        ),
-                      ),
                   ],
                 ),
               ),
@@ -371,13 +431,22 @@ class _AddressInputFieldState extends State<AddressInputField> {
   }
 
   Widget _buildUseEnteredAddressOption() {
-    final enteredAddress = _textController.text.trim();
+    final controller = widget.controller ?? _textController;
+    final enteredAddress = controller.text.trim();
     if (enteredAddress.isEmpty) return const SizedBox.shrink();
     
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        onTap: _onUseEnteredAddress,
+        onTap: () {
+          print('🔍 InkWell tap detected on "Use entered address"');
+          // Prevent focus loss during tap
+          _focusNode.requestFocus();
+          // Small delay to ensure tap is processed
+          Future.delayed(const Duration(milliseconds: 50), () {
+            _onUseEnteredAddress();
+          });
+        },
         borderRadius: BorderRadius.circular(8),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),

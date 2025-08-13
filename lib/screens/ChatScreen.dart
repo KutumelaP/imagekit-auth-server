@@ -41,9 +41,31 @@ class _ChatScreenState extends State<ChatScreen> {
     super.initState();
     _loadAISuggestions();
     _markChatAsRead();
+    _markChatAsViewed(); // Mark chat as viewed when opened
   }
 
-  // Mark chat as read when opened
+  // Mark chat as viewed by current user
+  Future<void> _markChatAsViewed() async {
+    try {
+      final currentUser = FirebaseAuth.instance.currentUser;
+      if (currentUser == null) return;
+
+      print('🔔 Marking chat as viewed by user: ${currentUser.uid}');
+      
+      await FirebaseFirestore.instance
+          .collection('chats')
+          .doc(widget.chatId)
+          .update({
+        'lastViewed_${currentUser.uid}': FieldValue.serverTimestamp(),
+      });
+
+      print('🔔 Chat marked as viewed: ${widget.chatId}');
+    } catch (e) {
+      print('❌ Error marking chat as viewed: $e');
+    }
+  }
+
+  // Mark chat as read when user opens it
   Future<void> _markChatAsRead() async {
     try {
       final currentUser = FirebaseAuth.instance.currentUser;

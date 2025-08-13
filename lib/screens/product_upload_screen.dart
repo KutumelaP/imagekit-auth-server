@@ -31,13 +31,14 @@ class _ProductUploadScreenState extends State<ProductUploadScreen> {
   
   String selectedCategory = 'Food';
   String selectedSubcategory = 'Baked Goods';
+  String? storeCategory; // Store's category from database
   File? selectedImage;
   bool isUploading = false;
   String uploadStatus = '';
 
   final List<String> categories = [
     'Food',
-    'Clothes',
+    'Clothing',
     'Electronics',
     'Home & Garden',
     'Beauty & Health',
@@ -48,7 +49,7 @@ class _ProductUploadScreenState extends State<ProductUploadScreen> {
 
   final Map<String, List<String>> subcategories = {
     'Food': ['Baked Goods', 'Fresh Produce', 'Dairy', 'Meat', 'Beverages', 'Snacks', 'Other'],
-    'Clothes': ['Men', 'Women', 'Children', 'Accessories', 'Shoes', 'Other'],
+    'Clothing': ['Men', 'Women', 'Children', 'Accessories', 'Shoes', 'Other'],
     'Electronics': ['Phones', 'Computers', 'Audio', 'Cameras', 'Gaming', 'Other'],
     'Home & Garden': ['Furniture', 'Decor', 'Kitchen', 'Garden', 'Tools', 'Other'],
     'Beauty & Health': ['Skincare', 'Makeup', 'Hair Care', 'Fragrances', 'Supplements', 'Other'],
@@ -56,6 +57,65 @@ class _ProductUploadScreenState extends State<ProductUploadScreen> {
     'Books & Media': ['Fiction', 'Non-Fiction', 'Educational', 'Magazines', 'Music', 'Other'],
     'Other': ['Miscellaneous']
   };
+
+  @override
+  void initState() {
+    super.initState();
+    _loadStoreCategory();
+  }
+
+  // Load store category from database
+  Future<void> _loadStoreCategory() async {
+    try {
+      final storeDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(widget.storeId)
+          .get();
+      
+      if (storeDoc.exists) {
+        final storeData = storeDoc.data() as Map<String, dynamic>;
+        final category = storeData['storeCategory'] as String?;
+        
+        setState(() {
+          storeCategory = category;
+          // Set default category based on store category
+          if (category != null && category.isNotEmpty) {
+            selectedCategory = category;
+            selectedSubcategory = subcategories[category]?.first ?? 'Other';
+          }
+        });
+      }
+    } catch (e) {
+      print('Error loading store category: $e');
+    }
+  }
+
+  // Check if a category is allowed for this store
+  bool _isCategoryAllowed(String category) {
+    if (storeCategory == null) return true; // Allow all if store category not set
+    
+    final storeCat = storeCategory!.toLowerCase();
+    final selectedCat = category.toLowerCase();
+    
+    // Allow exact matches
+    if (storeCat == selectedCat) return true;
+    
+    // Allow related categories
+    if (storeCat.contains('food') && selectedCat.contains('food')) return true;
+    if (storeCat.contains('electronics') && selectedCat.contains('electronics')) return true;
+    if (storeCat.contains('clothing') && (selectedCat.contains('clothing') || selectedCat.contains('clothes'))) return true;
+    if (storeCat.contains('clothes') && (selectedCat.contains('clothing') || selectedCat.contains('clothes'))) return true;
+    
+    // Allow "Other" category for all stores
+    if (selectedCat == 'other') return true;
+    
+    return false;
+  }
+
+  // Get available categories for this store
+  List<String> get _availableCategories {
+    return categories.where((category) => _isCategoryAllowed(category)).toList();
+  }
 
   @override
   void dispose() {
@@ -577,10 +637,12 @@ class _ProductUploadScreenState extends State<ProductUploadScreen> {
             );
           }).toList(),
           onChanged: (value) {
-            setState(() {
-              selectedCategory = value!;
-              selectedSubcategory = subcategories[value]!.first;
-            });
+            if (value != null) {
+              setState(() {
+                selectedCategory = value;
+                selectedSubcategory = subcategories[value]!.first;
+              });
+            }
           },
         ),
         

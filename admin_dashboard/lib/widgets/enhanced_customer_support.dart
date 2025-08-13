@@ -321,7 +321,7 @@ class _EnhancedCustomerSupportState extends State<EnhancedCustomerSupport>
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: AdminTheme.whisper,
+        color: AdminTheme.breeze,
         border: Border(
           bottom: BorderSide(color: AdminTheme.silverGray.withOpacity(0.3)),
         ),
@@ -521,7 +521,6 @@ class _EnhancedCustomerSupportState extends State<EnhancedCustomerSupport>
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: AdminTheme.cardDecoration(
-        color: AdminTheme.angel,
         boxShadow: [
           BoxShadow(
             color: AdminTheme.indigo.withOpacity(0.1),

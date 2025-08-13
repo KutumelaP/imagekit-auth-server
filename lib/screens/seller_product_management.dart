@@ -21,6 +21,7 @@ class _SellerProductManagementState extends State<SellerProductManagement> {
   void initState() {
     super.initState();
     _loadProducts();
+    _checkAndFixProductOwnership(); // Check and fix product ownership
   }
 
   Future<void> _loadProducts() async {
@@ -70,6 +71,57 @@ class _SellerProductManagementState extends State<SellerProductManagement> {
     }
   }
 
+  // Helper function to check and fix product ownership
+  Future<void> _checkAndFixProductOwnership() async {
+    try {
+      final currentUser = FirebaseAuth.instance.currentUser;
+      if (currentUser == null) return;
+
+      print('🔍 DEBUG: Checking product ownership for user: ${currentUser.uid}');
+
+      // Get all products for the current user
+      final productsSnapshot = await FirebaseFirestore.instance
+          .collection('products')
+          .where('ownerId', isEqualTo: currentUser.uid)
+          .get();
+
+      print('🔍 DEBUG: Found ${productsSnapshot.docs.length} products owned by user');
+
+      // Also check for products with storeId that might have wrong ownerId
+      final storeProductsSnapshot = await FirebaseFirestore.instance
+          .collection('products')
+          .where('storeId', isEqualTo: currentUser.uid)
+          .get();
+
+      print('🔍 DEBUG: Found ${storeProductsSnapshot.docs.length} products with storeId matching user');
+
+      // Check for products that have storeId but wrong ownerId
+      for (var doc in storeProductsSnapshot.docs) {
+        final data = doc.data();
+        final ownerId = data['ownerId'] as String?;
+        
+        if (ownerId != currentUser.uid) {
+          print('🔍 DEBUG: Found product with wrong ownerId: ${doc.id}');
+          print('🔍 DEBUG: Current ownerId: $ownerId, Should be: ${currentUser.uid}');
+          
+          // Fix the ownerId
+          await FirebaseFirestore.instance
+              .collection('products')
+              .doc(doc.id)
+              .update({
+            'ownerId': currentUser.uid,
+          });
+          
+          print('🔍 DEBUG: Fixed ownerId for product: ${doc.id}');
+        }
+      }
+
+      print('🔍 DEBUG: Product ownership check completed');
+    } catch (e) {
+      print('❌ Error checking product ownership: $e');
+    }
+  }
+
   Future<void> _deleteProduct(String productId, String productName) async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -95,26 +147,95 @@ class _SellerProductManagementState extends State<SellerProductManagement> {
 
     if (confirmed == true) {
       try {
+        // Show loading indicator
+        setState(() {
+          _isLoading = true;
+        });
+
+        // Get current user to verify ownership
+        final currentUser = FirebaseAuth.instance.currentUser;
+        if (currentUser == null) {
+          throw Exception('User not authenticated');
+        }
+
+        print('🔍 DEBUG: Attempting to delete product: $productId');
+        print('🔍 DEBUG: Current user ID: ${currentUser.uid}');
+
+        // First verify the product belongs to the current user
+        final productDoc = await FirebaseFirestore.instance
+            .collection('products')
+            .doc(productId)
+            .get();
+
+        if (!productDoc.exists) {
+          throw Exception('Product not found');
+        }
+
+        final productData = productDoc.data()!;
+        final productOwnerId = productData['ownerId'] as String?;
+        
+        print('🔍 DEBUG: Product data: $productData');
+        print('🔍 DEBUG: Product ownerId: $productOwnerId');
+        print('🔍 DEBUG: Current user ID: ${currentUser.uid}');
+        print('🔍 DEBUG: Owner match: ${productOwnerId == currentUser.uid}');
+
+        if (productOwnerId == null) {
+          throw Exception('Product has no owner ID');
+        }
+
+        if (productOwnerId != currentUser.uid) {
+          throw Exception('You can only delete your own products. Product owner: $productOwnerId, Your ID: ${currentUser.uid}');
+        }
+
+        print('🔍 DEBUG: Ownership verified, proceeding with deletion...');
+
+        // Delete the product
         await FirebaseFirestore.instance
             .collection('products')
             .doc(productId)
             .delete();
 
+        print('🔍 DEBUG: Product deleted successfully');
+
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('$productName deleted successfully'),
+            content: Text('✅ $productName deleted successfully'),
             backgroundColor: Colors.green,
+            duration: const Duration(seconds: 3),
           ),
         );
 
         _loadProducts(); // Reload the list
       } catch (e) {
+        print('❌ Error deleting product: $e');
+        
+        String errorMessage = 'Failed to delete product';
+        if (e.toString().contains('permission-denied')) {
+          errorMessage = 'Permission denied. You can only delete your own products.';
+        } else if (e.toString().contains('not found')) {
+          errorMessage = 'Product not found.';
+        } else if (e.toString().contains('not authenticated')) {
+          errorMessage = 'Please log in to delete products.';
+        } else if (e.toString().contains('You can only delete your own products')) {
+          errorMessage = e.toString();
+        }
+
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Failed to delete product: $e'),
+            content: Text('❌ $errorMessage'),
             backgroundColor: Colors.red,
+            duration: const Duration(seconds: 4),
+            action: SnackBarAction(
+              label: 'OK',
+              textColor: Colors.white,
+              onPressed: () {},
+            ),
           ),
         );
+      } finally {
+        setState(() {
+          _isLoading = false;
+        });
       }
     }
   }

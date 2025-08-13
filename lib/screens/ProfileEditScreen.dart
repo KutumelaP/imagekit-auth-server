@@ -123,13 +123,20 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
       // Read file bytes safely
       List<int> bytes;
       try {
-        bytes = await file.readAsBytes();
+        if (kIsWeb) {
+          // For web, we need to handle XFile differently
+          if (file is XFile) {
+            bytes = await file.readAsBytes();
+          } else {
+            throw Exception('Web environment requires XFile for file uploads');
+          }
+        } else {
+          bytes = await file.readAsBytes();
+        }
       } catch (e) {
         print('DEBUG: Error reading file bytes: $e');
-        // Try alternative method for web
         if (kIsWeb) {
-          // For web, we might need to handle this differently
-          throw Exception('File reading not supported in web environment');
+          throw Exception('File reading not supported in web environment. Please use image picker for web.');
         }
         rethrow;
       }
@@ -196,11 +203,20 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
       // Read file bytes safely
       List<int> bytes;
       try {
-        bytes = await file.readAsBytes();
+        if (kIsWeb) {
+          // For web, we need to handle XFile differently
+          if (file is XFile) {
+            bytes = await file.readAsBytes();
+          } else {
+            throw Exception('Web environment requires XFile for video uploads');
+          }
+        } else {
+          bytes = await file.readAsBytes();
+        }
       } catch (e) {
         print('DEBUG: Error reading video file bytes: $e');
         if (kIsWeb) {
-          throw Exception('Video file reading not supported in web environment');
+          throw Exception('Video file reading not supported in web environment. Please use video picker for web.');
         }
         rethrow;
       }
@@ -277,7 +293,12 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
           _profileImage = null; // Don't set File for web
         });
         // Upload directly using bytes
-        await _uploadImageToImageKitWeb(pickedFile);
+        final url = await _uploadImageToImageKitWeb(pickedFile);
+        if (url != null) {
+          setState(() => _profileImageUrl = url);
+        } else {
+          print('DEBUG: ImageKit upload returned null URL');
+        }
       } else {
         // For mobile platforms
         imageFile = File(pickedFile.path);
@@ -307,7 +328,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
     }
   }
 
-  Future<void> _uploadImageToImageKitWeb(XFile file) async {
+  Future<String?> _uploadImageToImageKitWeb(XFile file) async {
     try {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) throw Exception('User not logged in');
@@ -352,25 +373,20 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
       if (uploadResponse.statusCode == 200) {
         final result = jsonDecode(uploadResponse.body);
         print('DEBUG: ImageKit upload success, url=${result['url']}');
-        if (mounted) {
-          setState(() => _profileImageUrl = result['url']);
-        }
+        return result['url'];
       } else {
         throw Exception('Upload failed: ${uploadResponse.body}');
       }
-    } catch (e, st) {
+    } catch (e) {
       print('DEBUG: ImageKit upload error: ${e.toString()}');
-      print(st);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Upload failed: $e')),
-      );
+      return null;
     }
   }
 
   Future<void> _pickStoryPhoto() async {
-    if (_storyPhotoUrls.length + _storyPhotos.length >= 2) {
+    if (_storyPhotos.length >= 5) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Maximum 2 story photos allowed')),
+        const SnackBar(content: Text('Maximum 5 story photos allowed')),
       );
       return;
     }
@@ -381,17 +397,33 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
     
     if (mounted) {
       setState(() {
-        _storyPhotos.add(File(pickedFile.path));
+        if (kIsWeb) {
+          // For web, we'll handle XFile differently - don't add to _storyPhotos for web
+          // _storyPhotos is for File objects only
+        } else {
+          // For mobile, convert to File
+          _storyPhotos.add(File(pickedFile.path));
+        }
       });
     }
     
     // Upload to ImageKit
     try {
-      final url = await _uploadImageToImageKit(File(pickedFile.path));
+      String? url;
+      if (kIsWeb) {
+        // For web, use XFile directly
+        url = await _uploadImageToImageKitWeb(pickedFile);
+      } else {
+        // For mobile, convert to File
+        url = await _uploadImageToImageKit(File(pickedFile.path));
+      }
+      
       if (url != null && mounted) {
         setState(() {
-          _storyPhotoUrls.add(url);
-          _storyPhotos.removeLast(); // Remove the local file after successful upload
+          _storyPhotoUrls.add(url!); // Use non-null assertion since we already checked
+          if (!kIsWeb) {
+            _storyPhotos.removeLast(); // Remove the local file after successful upload (mobile only)
+          }
         });
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -400,7 +432,9 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
         }
       } else if (mounted) {
         setState(() {
-          _storyPhotos.removeLast(); // Remove the local file if upload failed
+          if (!kIsWeb) {
+            _storyPhotos.removeLast(); // Remove the local file if upload failed (mobile only)
+          }
         });
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Failed to upload story photo')),
@@ -409,7 +443,9 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
     } catch (e) {
       if (mounted) {
         setState(() {
-          _storyPhotos.removeLast(); // Remove the local file if upload failed
+          if (!kIsWeb) {
+            _storyPhotos.removeLast(); // Remove the local file if upload failed (mobile only)
+          }
         });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Error uploading story photo: $e')),

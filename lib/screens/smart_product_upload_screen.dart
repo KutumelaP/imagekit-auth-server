@@ -36,6 +36,7 @@ class _SmartProductUploadScreenState extends State<SmartProductUploadScreen> {
   bool _isCustomSubcategory = false;
   File? _imageFile;
   bool _isUploading = false;
+  String? storeCategory; // Store's category from database
   
   // Category-subcategory mapping for your app
   static const Map<String, List<String>> categorySubcategoryMap = {
@@ -67,7 +68,7 @@ class _SmartProductUploadScreenState extends State<SmartProductUploadScreen> {
       'Accessories',       // Chargers, Cases, Cables
       'Other Electronics'
     ],
-    'Clothes': [
+    'Clothing': [
       'T-Shirts',          // Cotton shirts, Graphic tees
       'Jeans',             // Denim pants
       'Dresses',           // Summer dresses, Formal
@@ -112,6 +113,57 @@ class _SmartProductUploadScreenState extends State<SmartProductUploadScreen> {
     super.initState();
     _nameController.addListener(_onProductNameChanged);
     _descriptionController.addListener(_onProductNameChanged);
+    _loadStoreCategory();
+  }
+
+  // Load store category from database
+  Future<void> _loadStoreCategory() async {
+    if (widget.storeId == null) return;
+    
+    try {
+      final storeDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(widget.storeId)
+          .get();
+      
+      if (storeDoc.exists) {
+        final storeData = storeDoc.data() as Map<String, dynamic>;
+        final category = storeData['storeCategory'] as String?;
+        
+        setState(() {
+          storeCategory = category;
+        });
+      }
+    } catch (e) {
+      print('Error loading store category: $e');
+    }
+  }
+
+  // Check if a category is allowed for this store
+  bool _isCategoryAllowed(String category) {
+    if (storeCategory == null) return true; // Allow all if store category not set
+    
+    final storeCat = storeCategory!.toLowerCase();
+    final selectedCat = category.toLowerCase();
+    
+    // Allow exact matches
+    if (storeCat == selectedCat) return true;
+    
+    // Allow related categories
+    if (storeCat.contains('food') && selectedCat.contains('food')) return true;
+    if (storeCat.contains('electronics') && selectedCat.contains('electronics')) return true;
+    if (storeCat.contains('clothing') && (selectedCat.contains('clothing') || selectedCat.contains('clothes'))) return true;
+    if (storeCat.contains('clothes') && (selectedCat.contains('clothing') || selectedCat.contains('clothes'))) return true;
+    
+    // Allow "Other" category for all stores
+    if (selectedCat == 'other') return true;
+    
+    return false;
+  }
+
+  // Get available categories for this store
+  List<String> get _availableCategories {
+    return categorySubcategoryMap.keys.where((category) => _isCategoryAllowed(category)).toList();
   }
 
   @override
@@ -173,7 +225,7 @@ class _SmartProductUploadScreenState extends State<SmartProductUploadScreen> {
         name.contains('underwear') || name.contains('sock') || name.contains('bra') ||
         desc.contains('wear') || desc.contains('fashion') || desc.contains('clothing') ||
         desc.contains('cotton') || desc.contains('denim') || desc.contains('wool')) {
-      return 'Clothes';
+      return 'Clothing';
     }
     
     // Default to Other
@@ -241,7 +293,7 @@ class _SmartProductUploadScreenState extends State<SmartProductUploadScreen> {
           return 'Accessories';
         return 'Other Electronics';
         
-      case 'Clothes':
+      case 'Clothing':
         if (name.contains('t-shirt') || name.contains('tshirt')) 
           return 'T-Shirts';
         if (name.contains('jean')) 
@@ -480,7 +532,8 @@ class _SmartProductUploadScreenState extends State<SmartProductUploadScreen> {
         'category': _selectedCategory,
         'subcategory': finalSubcategory,
         'imageUrl': imageUrl ?? '',
-        'ownerId': widget.storeId ?? user.uid, // Fallback to user.uid if storeId is null
+        'ownerId': user.uid, // Always use user ID for ownership
+        'storeId': widget.storeId, // Store ID for store association
         'timestamp': FieldValue.serverTimestamp(),
         'status': 'active',
       };
@@ -673,17 +726,19 @@ class _SmartProductUploadScreenState extends State<SmartProductUploadScreen> {
                   labelText: 'Category *',
                   border: OutlineInputBorder(),
                 ),
-                items: allCategories.map((category) {
+                items: categorySubcategoryMap.keys.map((category) {
                   return DropdownMenuItem(
                     value: category,
                     child: Text(category),
                   );
                 }).toList(),
                 onChanged: (value) {
-                  setState(() {
-                    _selectedCategory = value;
-                    _selectedSubcategory = null; // Reset subcategory
-                  });
+                  if (value != null) {
+                    setState(() {
+                      _selectedCategory = value;
+                      _selectedSubcategory = null; // Reset subcategory
+                    });
+                  }
                 },
                 validator: (value) {
                   if (value == null) {

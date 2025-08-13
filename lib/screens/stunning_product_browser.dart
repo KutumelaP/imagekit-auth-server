@@ -41,7 +41,7 @@ class _StunningProductBrowserState extends State<StunningProductBrowser>
   String sortBy = 'name';
   bool isAscending = true;
   double minPrice = 0.0;
-  double maxPrice = 10000.0;
+  double maxPrice = 50000.0; // Increased to accommodate higher-priced electronics
   bool inStockOnly = false;
   bool isLoading = true;
   bool showFilters = false;
@@ -105,19 +105,6 @@ class _StunningProductBrowserState extends State<StunningProductBrowser>
     setState(() => isLoading = true);
     
     try {
-      // First, let's get all products to see what fields exist
-      final allProductsSnapshot = await FirebaseFirestore.instance
-          .collection(AppConstants.productsCollection)
-          .limit(5)
-          .get();
-      
-      debugPrint('🔍 DEBUG: Checking product fields...');
-      if (allProductsSnapshot.docs.isNotEmpty) {
-        final sampleData = allProductsSnapshot.docs.first.data();
-        debugPrint('🔍 DEBUG: Sample product fields: ${sampleData.keys.toList()}');
-      }
-      
-      // Build query based on available fields
       Query query = FirebaseFirestore.instance
           .collection(AppConstants.productsCollection);
 
@@ -126,37 +113,26 @@ class _StunningProductBrowserState extends State<StunningProductBrowser>
         query = query.where('ownerId', isEqualTo: widget.storeId);
       }
 
-      final snapshot = await query.get();
-      
-      // Debug logging
-      debugPrint('🔍 DEBUG: StunningProductBrowser - Query results:');
-      debugPrint('  - StoreId: ${widget.storeId}');
-      debugPrint('  - Total products found: ${snapshot.docs.length}');
-      
-      // If no products found for specific store, try getting all products
-      QuerySnapshot finalSnapshot = snapshot;
-      if (snapshot.docs.isEmpty && widget.storeId != 'all') {
-        debugPrint('🔍 DEBUG: No products found for store ${widget.storeId}, trying all products...');
-        finalSnapshot = await FirebaseFirestore.instance
-            .collection(AppConstants.productsCollection)
-            .limit(20)
-            .get();
-        debugPrint('🔍 DEBUG: Found ${finalSnapshot.docs.length} total products');
+      // Add category filter at database level
+      if (selectedCategory != 'All' && selectedCategory.isNotEmpty) {
+        query = query.where('category', isEqualTo: selectedCategory);
       }
+
+      // Add subcategory filter at database level
+      if (selectedSubcategory != null && selectedSubcategory!.isNotEmpty) {
+        query = query.where('subcategory', isEqualTo: selectedSubcategory);
+      }
+
+      final snapshot = await query.get();
       
       // Process products and extract categories
       final Set<String> categorySet = <String>{};
       final Map<String, Set<String>> subcategorySet = <String, Set<String>>{};
       
-      for (final doc in finalSnapshot.docs) {
+      for (final doc in snapshot.docs) {
         final data = doc.data() as Map<String, dynamic>;
         final category = data['category']?.toString();
         final subcategory = data['subcategory']?.toString();
-        
-        // Debug first few products
-        if (finalSnapshot.docs.indexOf(doc) < 3) {
-          debugPrint('  - Product ${finalSnapshot.docs.indexOf(doc) + 1}: ${data['name']} (Category: $category, Subcategory: $subcategory)');
-        }
         
         if (category != null) {
           categorySet.add(category);
@@ -168,7 +144,7 @@ class _StunningProductBrowserState extends State<StunningProductBrowser>
       }
 
       setState(() {
-        products = finalSnapshot.docs;
+        products = snapshot.docs;
         categories = categorySet.toList()..sort();
         subcategoriesMap = subcategorySet.map(
           (key, value) => MapEntry(key, value.toList()..sort()),
@@ -176,7 +152,7 @@ class _StunningProductBrowserState extends State<StunningProductBrowser>
         isLoading = false;
       });
     } catch (e) {
-      debugPrint('Error loading products: $e');
+      print('❌ Error loading products: $e');
       setState(() => isLoading = false);
     }
   }
@@ -196,23 +172,33 @@ class _StunningProductBrowserState extends State<StunningProductBrowser>
       }
       
       // Category filter
-      if (selectedCategory != 'All') {
-        if (data['category'] != selectedCategory) return false;
+      if (selectedCategory != 'All' && selectedCategory.isNotEmpty) {
+        final productCategory = (data['category'] as String?) ?? '';
+        if (productCategory.toLowerCase() != selectedCategory.toLowerCase()) {
+          return false;
+        }
       }
       
       // Subcategory filter
-      if (selectedSubcategory != null) {
-        if (data['subcategory'] != selectedSubcategory) return false;
+      if (selectedSubcategory != null && selectedSubcategory!.isNotEmpty) {
+        final productSubcategory = (data['subcategory'] as String?) ?? '';
+        if (productSubcategory.toLowerCase() != selectedSubcategory!.toLowerCase()) {
+          return false;
+        }
       }
       
       // Price filter
       final price = (data['price'] ?? 0.0).toDouble();
-      if (price < minPrice || price > maxPrice) return false;
+      if (price < minPrice || price > maxPrice) {
+        return false;
+      }
       
       // Stock filter
       if (inStockOnly) {
         final stock = data['quantity'] ?? data['stock'] ?? 0;
-        if ((stock as num) <= 0) return false;
+        if ((stock as num) <= 0) {
+          return false;
+        }
       }
       
       return true;
@@ -460,6 +446,8 @@ class _StunningProductBrowserState extends State<StunningProductBrowser>
             selectedCategory = label;
             selectedSubcategory = null;
           });
+          // Reload products when category changes
+          _loadProducts();
         },
         backgroundColor: Colors.white,
         selectedColor: AppTheme.deepTeal,
@@ -654,6 +642,8 @@ class _StunningProductBrowserState extends State<StunningProductBrowser>
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
+                    const SizedBox(height: 4),
+                    _buildConditionIndicator(data),
                     const Spacer(),
                     Row(
                       children: [
@@ -677,6 +667,77 @@ class _StunningProductBrowserState extends State<StunningProductBrowser>
         ),
       ),
     );
+  }
+
+  Widget _buildConditionIndicator(Map<String, dynamic> data) {
+    final condition = data['condition']?.toString() ?? '';
+    
+    switch (condition.toLowerCase()) {
+      case 'new':
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+          decoration: BoxDecoration(
+            color: AppTheme.primaryGreen.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Text(
+            'New',
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w500,
+              color: AppTheme.primaryGreen,
+            ),
+          ),
+        );
+      case 'second hand':
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+          decoration: BoxDecoration(
+            color: AppTheme.warning.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Text(
+            'Used',
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w500,
+              color: AppTheme.warning,
+            ),
+          ),
+        );
+      case 'refurbished':
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+          decoration: BoxDecoration(
+            color: AppTheme.deepTeal.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Text(
+            'Refurbished',
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w500,
+              color: AppTheme.deepTeal,
+            ),
+          ),
+        );
+      default:
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+          decoration: BoxDecoration(
+            color: AppTheme.cloud.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Text(
+            condition.isNotEmpty ? condition : 'N/A',
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w500,
+              color: AppTheme.cloud,
+            ),
+          ),
+        );
+    }
   }
 
   Widget _buildStockIndicator(Map<String, dynamic> data) {
@@ -735,12 +796,16 @@ class _StunningProductBrowserState extends State<StunningProductBrowser>
             ),
             const SizedBox(height: 16),
             Text(
-              'No products found',
+              widget.storeId != 'all' 
+                  ? 'No products in this store'
+                  : 'No products found',
               style: AppTheme.headlineMedium.copyWith(color: AppTheme.deepTeal),
             ),
             const SizedBox(height: 8),
             Text(
-              'Try adjusting your search or filters',
+              widget.storeId != 'all'
+                  ? 'This store has not added any products yet'
+                  : 'Try adjusting your search or filters',
               style: AppTheme.bodyMedium.copyWith(color: AppTheme.cloud),
             ),
           ],

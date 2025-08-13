@@ -1,0 +1,148 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Beautiful launch splash screen for Mzansi Marketplace -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Beautiful gradient background -->
+    <item>
+        <shape android:shape="rectangle">
+            <gradient
+                android:type="linear"
+                android:angle="135"
+                android:startColor="#667eea"
+                android:endColor="#764ba2" />
+        </shape>
+    </item>
+    
+    <!-- Subtle pattern overlay -->
+    <item>
+        <shape android:shape="rectangle">
+            <gradient
+                android:type="radial"
+                android:centerX="0.5"
+                android:centerY="0.5"
+                android:gradientRadius="800dp"
+                android:startColor="#00ffffff"
+                android:centerColor="#11ffffff"
+                android:endColor="#22ffffff" />
+        </shape>
+    </item>
+    
+    <!-- Main logo container with shadow -->
+    <item android:gravity="center">
+        <layer-list>
+            <!-- Shadow -->
+            <item android:left="4dp" android:top="4dp">
+                <vector
+                    android:width="140dp"
+                    android:height="140dp"
+                    android:viewportWidth="140"
+                    android:viewportHeight="140">
+                    <path
+                        android:fillColor="#40000000"
+                        android:pathData="M0,0 L140,0 L140,140 L0,140 Z" />
+                </vector>
+            </item>
+            <!-- Enhanced shopping bag with Africa silhouette -->
+            <item>
+                <vector
+                    android:width="140dp"
+                    android:height="140dp"
+                    android:viewportWidth="140"
+                    android:viewportHeight="140">
+                    <!-- Shopping bag body with gradient effect -->
+                    <path
+                        android:fillColor="#1F4654"
+                        android:pathData="M30,20 L110,20 L110,100 L30,100 Z" />
+                    <!-- Shopping bag handle -->
+                    <path
+                        android:fillColor="#1F4654"
+                        android:strokeColor="#FFFFFF"
+                        android:strokeWidth="2"
+                        android:pathData="M40,20 Q70,10 100,20" />
+                    <!-- Africa continent silhouette (enhanced) -->
+                    <path
+                        android:fillColor="#FFFFFF"
+                        android:pathData="M45,35 L55,30 L65,32 L75,30 L85,35 L90,40 L85,45 L80,50 L75,55 L70,60 L65,65 L60,70 L55,75 L50,70 L45,65 L50,60 L55,55 L60,50 L55,45 L55,40 Z" />
+                    <!-- Madagascar dot -->
+                    <path
+                        android:fillColor="#FFFFFF"
+                        android:pathData="M85,55 Q90,55 90,60 Q90,65 85,65 Q80,65 80,60 Q80,55 85,55 Z" />
+                    <!-- Horn of Africa -->
+                    <path
+                        android:fillColor="#FFFFFF"
+                        android:pathData="M90,40 L95,35 L100,40 L95,45 Z" />
+                    <!-- Decorative elements -->
+                    <path
+                        android:fillColor="#FFFFFF"
+                        android:pathData="M50,80 Q60,75 70,80 Q60,85 50,80 Z" />
+                    <path
+                        android:fillColor="#FFFFFF"
+                        android:pathData="M75,85 Q85,80 95,85 Q85,90 75,85 Z" />
+                </vector>
+            </item>
+        </layer-list>
+    </item>
+    
+    <!-- App name with beautiful typography -->
+    <item android:gravity="center_horizontal|bottom"
+          android:bottom="120dp">
+        <layer-list>
+            <!-- Text shadow -->
+            <item android:left="2dp" android:top="2dp">
+                <bitmap
+                    android:gravity="center"
+                    android:src="@mipmap/ic_launcher" />
+            </item>
+            <!-- Main text -->
+            <item>
+                <bitmap
+                    android:gravity="center"
+                    android:src="@mipmap/ic_launcher" />
+            </item>
+        </layer-list>
+    </item>
+    
+    <!-- Tagline -->
+    <item android:gravity="center_horizontal|bottom"
+          android:bottom="80dp">
+        <layer-list>
+            <!-- Tagline shadow -->
+            <item android:left="1dp" android:top="1dp">
+                <bitmap
+                    android:gravity="center"
+                    android:src="@mipmap/ic_launcher" />
+            </item>
+            <!-- Main tagline -->
+            <item>
+                <bitmap
+                    android:gravity="center"
+                    android:src="@mipmap/ic_launcher" />
+            </item>
+        </layer-list>
+    </item>
+    
+    <!-- Loading indicator -->
+    <item android:gravity="center_horizontal|bottom"
+          android:bottom="40dp">
+        <layer-list>
+            <!-- Loading dots -->
+            <item android:left="-20dp">
+                <shape android:shape="oval">
+                    <solid android:color="#FFFFFF" />
+                    <size android:width="8dp" android:height="8dp" />
+                </shape>
+            </item>
+            <item android:left="0dp">
+                <shape android:shape="oval">
+                    <solid android:color="#FFFFFF" />
+                    <size android:width="8dp" android:height="8dp" />
+                </shape>
+            </item>
+            <item android:left="20dp">
+                <shape android:shape="oval">
+                    <solid android:color="#FFFFFF" />
+                    <size android:width="8dp" android:height="8dp" />
+                </shape>
+            </item>
+        </layer-list>
+    </item>
+</layer-list>

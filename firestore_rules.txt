@@ -1,0 +1,219 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper function to check if user is admin
+    function isAdmin() {
+      return request.auth != null &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    // Helper function to check if user is seller
+    function isSeller() {
+      return request.auth != null &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'seller';
+    }
+
+    // Helper function to check if user is buyer
+    function isBuyer() {
+      return request.auth != null &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'user';
+    }
+
+    // USERS
+    match /users/{userId} {
+      // Allow unauthenticated read access for browsing stores/sellers (public info only)
+      // This enables browsing without login
+      allow read: if true;
+      
+      // Write access requires authentication and proper authorization
+      allow create: if request.auth != null && (
+        request.auth.uid == userId ||
+        isAdmin() ||
+        // Allow sellers to create basic user documents for buyers during order processing
+        (isSeller() && request.resource.data.role == 'user')
+      );
+      
+      allow update: if request.auth != null && (
+        request.auth.uid == userId ||
+        isAdmin()
+      );
+      
+      allow delete: if isAdmin();
+      
+      // Personal subcollections still require authentication
+      // Favorites subcollection
+      match /favorites/{productId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+      // Favorite Stores subcollection
+      match /favoriteStores/{storeId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+      // Cart subcollection
+      match /cart/{productId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+    }
+
+    // CONFIG - Allow unauthenticated access for app initialization
+    match /config/{docId} {
+      allow read: if true;
+    }
+
+    // CATEGORIES - Allow unauthenticated read for browsing
+    match /categories/{categoryId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // PRODUCTS - Allow unauthenticated read for browsing
+    match /products/{productId} {
+      allow read: if true;
+      allow create, update: if request.auth != null && request.resource.data.ownerId == request.auth.uid;
+      allow delete: if isAdmin();
+    }
+
+    // REVIEWS - Allow unauthenticated read for browsing
+    match /reviews/{reviewId} {
+      allow read: if true;
+      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
+      allow update: if request.auth != null && resource.data.userId == request.auth.uid;
+      allow delete: if isAdmin();
+    }
+
+    // ORDERS - Allow public read for store stats, but require auth for personal data
+    match /orders/{orderId} {
+      allow read: if true; // Allow public read for store statistics
+      allow create: if request.auth != null && request.resource.data.buyerId == request.auth.uid;
+      allow update: if request.auth != null && (
+        resource.data.buyerId == request.auth.uid ||
+        resource.data.sellerId == request.auth.uid
+      );
+      allow delete: if isAdmin();
+    }
+
+    // CHATS - Require authentication for messaging
+    match /chats/{chatId} {
+      allow create: if request.auth != null && (
+        request.resource.data.buyerId == request.auth.uid ||
+        request.resource.data.sellerId == request.auth.uid
+      );
+      allow read, update: if isAdmin() || (request.auth != null && (
+        resource.data.buyerId == request.auth.uid ||
+        resource.data.sellerId == request.auth.uid
+      ));
+      allow delete: if isAdmin();
+      // Messages subcollection
+      match /messages/{messageId} {
+        allow read, write: if isAdmin() || (request.auth != null && (
+          get(/databases/$(database)/documents/chats/$(chatId)).data.buyerId == request.auth.uid ||
+          get(/databases/$(database)/documents/chats/$(chatId)).data.sellerId == request.auth.uid
+        ));
+        allow delete: if isAdmin();
+      }
+    }
+
+    // RETURNS
+    match /returns/{returnId} {
+      allow read: if isAdmin() || (request.auth != null && resource.data.sellerId == request.auth.uid);
+      allow write: if request.auth != null && resource.data.sellerId == request.auth.uid;
+      allow delete: if isAdmin();
+    }
+
+    // TOTALS & IMPACT - Allow unauthenticated read
+    match /totals/{docId} {
+      allow read: if true;
+    }
+    match /impact/{docId} {
+      allow read: if true;
+    }
+
+    // NOTIFICATIONS - For FreeFCMService push notifications
+    match /notifications/{notificationId} {
+      // Allow authenticated users to create notifications (for FCM testing)
+      allow create: if request.auth != null;
+      // Allow users to read notifications they created
+      allow read: if request.auth != null;
+      // Allow users to update/delete their own notifications
+      allow update, delete: if request.auth != null;
+    }
+
+    // IN_APP_NOTIFICATIONS - For FreeFCMService in-app notifications
+    match /in_app_notifications/{notificationId} {
+      // Allow authenticated users to create in-app notifications
+      allow create: if request.auth != null;
+      // Allow users to read their own in-app notifications
+      allow read: if request.auth != null && (
+        resource.data.userId == request.auth.uid ||
+        isAdmin()
+      );
+      // Allow users to update/delete their own notifications
+      allow update, delete: if request.auth != null && (
+        resource.data.userId == request.auth.uid ||
+        isAdmin()
+      );
+    }
+
+    // USER_NOTIFICATIONS - Enhanced permissions for system-generated notifications
+    match /user_notifications/{notificationId} {
+      // Allow users to read their own notifications
+      allow read: if request.auth != null && (
+        resource.data.userId == request.auth.uid ||
+        isAdmin()
+      );
+      
+      // Allow users to create their own notifications
+      allow create: if request.auth != null && (
+        request.resource.data.userId == request.auth.uid ||
+        isAdmin()
+      );
+      
+      // Allow sellers to create notifications for buyers (for order status updates)
+      allow create: if request.auth != null && (
+        request.resource.data.userId == request.auth.uid ||
+        isAdmin() ||
+        (isSeller() && request.resource.data.type in ['order_status', 'order_update'])
+      );
+      
+      // Allow users to update their own notifications
+      allow update: if request.auth != null && (
+        resource.data.userId == request.auth.uid ||
+        isAdmin()
+      );
+      
+      // Allow users to delete their own notifications
+      allow delete: if request.auth != null && (
+        resource.data.userId == request.auth.uid ||
+        isAdmin()
+      );
+    }
+
+    // Admin-only collections
+    match /emails/{emailId} {
+      allow read, write: if isAdmin();
+    }
+    match /kanban_tasks/{taskId} {
+      allow read, write: if isAdmin();
+    }
+    match /auditLogs/{logId} {
+      allow read, write: if isAdmin();
+    }
+    match /announcements/{announcementId} {
+      allow read, write: if isAdmin();
+    }
+
+    // Admin dashboard specific collections
+    match /admin_notifications/{notificationId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /analytics/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /dashboard_cache/{docId} {
+      allow read, write: if isAdmin();
+    }
+  }
+} 

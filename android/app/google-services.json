@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "578732094610",
+    "project_id": "marketplace-8d6bd",
+    "storage_bucket": "marketplace-8d6bd.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:578732094610:android:e3d33c8d33a21bdbea624b",
+        "android_client_info": {
+          "package_name": "com.example.food_marketplace_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCIq5PmSYN_bmDFLnPL9ctTM06sM0nsUPM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
