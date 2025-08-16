@@ -2189,9 +2189,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             ),
             child: Column(
               children: [
-                // Clean Header
+                // Header
                 Container(
-                  padding: EdgeInsets.all(24),
+                  padding: EdgeInsets.all(20),
                   decoration: BoxDecoration(
                     color: AppTheme.deepTeal,
                     borderRadius: BorderRadius.only(
@@ -2201,37 +2201,29 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                   ),
                   child: Row(
                     children: [
-                      Container(
-                        padding: EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          color: AppTheme.angel.withOpacity(0.2),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Icon(
-                          Icons.account_balance,
-                          color: AppTheme.angel,
-                          size: 22,
-                        ),
+                      Icon(
+                        Icons.account_balance,
+                        color: AppTheme.angel,
+                        size: 24,
                       ),
                       SizedBox(width: 16),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            SafeUI.safeText(
+                            Text(
                               '🏦 Bank Transfer (EFT)',
                               style: TextStyle(
-                                fontSize: ResponsiveUtils.getTitleSize(context) + 1,
-                                fontWeight: FontWeight.w800,
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
                                 color: AppTheme.angel,
-                                letterSpacing: 0.5,
                               ),
                             ),
                             SizedBox(height: 4),
-                            SafeUI.safeText(
+                            Text(
                               'Complete your payment via bank transfer',
                               style: TextStyle(
-                                fontSize: ResponsiveUtils.getTitleSize(context) - 3,
+                                fontSize: 14,
                                 color: AppTheme.angel.withOpacity(0.9),
                                 fontWeight: FontWeight.w500,
                               ),
@@ -2253,30 +2245,27 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                         // Success Message
                         Container(
                           width: double.infinity,
-                          padding: EdgeInsets.all(18),
+                          padding: EdgeInsets.all(16),
                           decoration: BoxDecoration(
                             color: AppTheme.success.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: AppTheme.success.withOpacity(0.3),
-                              width: 1,
-                            ),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: AppTheme.success.withOpacity(0.3)),
                           ),
                           child: Row(
                             children: [
                               Icon(
                                 Icons.check_circle_outline,
                                 color: AppTheme.success,
-                                size: 22,
+                                size: 20,
                               ),
-                              SizedBox(width: 14),
+                              SizedBox(width: 12),
                               Expanded(
-                                child: SafeUI.safeText(
+                                child: Text(
                                   'Order placed successfully! Complete payment to confirm your order.',
                                   style: TextStyle(
                                     color: AppTheme.success,
                                     fontWeight: FontWeight.w600,
-                                    fontSize: ResponsiveUtils.getTitleSize(context) - 2,
+                                    fontSize: 14,
                                     height: 1.4,
                                   ),
                                 ),
@@ -2288,13 +2277,12 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                         SizedBox(height: 28),
                         
                         // Bank Details Section
-                        SafeUI.safeText(
+                        Text(
                           'Bank Account Details',
                           style: TextStyle(
-                            fontSize: ResponsiveUtils.getTitleSize(context) + 1,
-                            fontWeight: FontWeight.w800,
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
                             color: AppTheme.deepTeal,
-                            letterSpacing: 0.3,
                           ),
                         ),
                         SizedBox(height: 20),
@@ -2309,13 +2297,12 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                         SizedBox(height: 32),
                         
                         // Instructions Section
-                        SafeUI.safeText(
+                        Text(
                           'Important Instructions',
                           style: TextStyle(
-                            fontSize: ResponsiveUtils.getTitleSize(context) + 1,
-                            fontWeight: FontWeight.w800,
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
                             color: AppTheme.warning,
-                            letterSpacing: 0.3,
                           ),
                         ),
                         SizedBox(height: 20),
@@ -2328,202 +2315,82 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                         
                         SizedBox(height: 28),
                         
-                        // Professional Action Buttons
-                        Container(
-                          margin: EdgeInsets.symmetric(vertical: 8),
-                          child: Row(
-                            children: [
-                              Expanded(
-                                child: Container(
-                                  height: 56,
-                                  decoration: BoxDecoration(
-                                    borderRadius: BorderRadius.circular(16),
-                                    border: Border.all(
-                                      color: AppTheme.deepTeal.withOpacity(0.3),
-                                      width: 2,
-                                    ),
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: AppTheme.deepTeal.withOpacity(0.1),
-                                        blurRadius: 12,
-                                        offset: Offset(0, 4),
-                                      ),
-                                    ],
-                                  ),
-                                  child: Material(
-                                    color: Colors.transparent,
-                                    child: InkWell(
-                                      borderRadius: BorderRadius.circular(16),
-                                      onTap: () {
-                                        final bankDetails = '''Bank Transfer Details:
+                        // Action Buttons
+                        Column(
+                          children: [
+                            SizedBox(
+                              width: double.infinity,
+                              child: OutlinedButton.icon(
+                                onPressed: () {
+                                  final bankDetails = '''Bank Transfer Details:
 Account Name: Food Marketplace Pty Ltd
 Bank: First National Bank (FNB)
 Account Number: 62612345678
 Branch Code: 250655
 Reference: ${orderNumber ?? 'Use your Order Number'}''';
-                                        Clipboard.setData(ClipboardData(text: bankDetails));
-                                        ScaffoldMessenger.of(context).showSnackBar(
-                                          SnackBar(
-                                            content: Text('Bank details copied to clipboard!'),
-                                            backgroundColor: AppTheme.success,
-                                            behavior: SnackBarBehavior.floating,
-                                          ),
-                                        );
-                                      },
-                                      child: Container(
-                                        padding: EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                                        child: Row(
-                                          mainAxisAlignment: MainAxisAlignment.center,
-                                          children: [
-                                            Icon(
-                                              Icons.copy_all,
-                                              color: AppTheme.deepTeal,
-                                              size: 22,
-                                            ),
-                                            SizedBox(width: 12),
-                                            Text(
-                                              'Copy All Details',
-                                              style: TextStyle(
-                                                color: AppTheme.deepTeal,
-                                                fontSize: ResponsiveUtils.getTitleSize(context) - 1,
-                                                fontWeight: FontWeight.w700,
-                                                letterSpacing: 0.5,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
+                                  Clipboard.setData(ClipboardData(text: bankDetails));
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text('Bank details copied to clipboard!'),
+                                      backgroundColor: AppTheme.success,
+                                      behavior: SnackBarBehavior.floating,
                                     ),
-                                  ),
+                                  );
+                                },
+                                icon: Icon(Icons.copy_all, size: 18),
+                                label: Text('Copy All Details'),
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: AppTheme.deepTeal,
+                                  side: BorderSide(color: AppTheme.deepTeal),
+                                  padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                                 ),
                               ),
-                              SizedBox(width: 20),
-                              Expanded(
-                                child: Container(
-                                  height: 56,
-                                  decoration: BoxDecoration(
-                                    borderRadius: BorderRadius.circular(16),
-                                    gradient: LinearGradient(
-                                      colors: [
-                                        AppTheme.primaryGreen,
-                                        AppTheme.primaryGreen.withOpacity(0.8),
-                                      ],
-                                      begin: Alignment.topLeft,
-                                      end: Alignment.bottomRight,
-                                    ),
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: AppTheme.primaryGreen.withOpacity(0.3),
-                                        blurRadius: 16,
-                                        offset: Offset(0, 6),
-                                      ),
-                                    ],
-                                  ),
-                                  child: Material(
-                                    color: Colors.transparent,
-                                    child: InkWell(
-                                      borderRadius: BorderRadius.circular(16),
-                                      onTap: () {
-                                        final url = Uri.parse('https://www.fnb.co.za/');
-                                        launchUrl(url, mode: LaunchMode.externalApplication);
-                                      },
-                                      child: Container(
-                                        padding: EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                                        child: Row(
-                                          mainAxisAlignment: MainAxisAlignment.center,
-                                          children: [
-                                            Icon(
-                                              Icons.open_in_new,
-                                              color: AppTheme.angel,
-                                              size: 22,
-                                            ),
-                                            SizedBox(width: 12),
-                                            Text(
-                                              'Open FNB Banking',
-                                              style: TextStyle(
-                                                color: AppTheme.angel,
-                                                fontSize: ResponsiveUtils.getTitleSize(context) - 1,
-                                                fontWeight: FontWeight.w700,
-                                                letterSpacing: 0.5,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ),
-                                  ),
+                            ),
+                            SizedBox(height: 12),
+                            SizedBox(
+                              width: double.infinity,
+                              child: ElevatedButton.icon(
+                                onPressed: () {
+                                  final url = Uri.parse('https://www.fnb.co.za/');
+                                  launchUrl(url, mode: LaunchMode.externalApplication);
+                                },
+                                icon: Icon(Icons.open_in_new, size: 18),
+                                label: Text('Open FNB Banking'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: AppTheme.primaryGreen,
+                                  foregroundColor: AppTheme.angel,
+                                  padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                                 ),
                               ),
-                            ],
-                          ),
+                            ),
+                          ],
                         ),
                       ],
                     ),
                   ),
                 ),
                 
-                // Professional Bottom Button
+                // Bottom Button
                 Container(
                   width: double.infinity,
-                  padding: EdgeInsets.all(24),
-                  child: Container(
-                    height: 60,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(18),
-                      gradient: LinearGradient(
-                        colors: [
-                          AppTheme.deepTeal,
-                          AppTheme.deepTeal.withOpacity(0.9),
-                        ],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: AppTheme.deepTeal.withOpacity(0.4),
-                          blurRadius: 20,
-                          offset: Offset(0, 8),
+                  padding: EdgeInsets.all(16),
+                  child: ElevatedButton.icon(
+                    onPressed: () {
+                      Navigator.of(context).pop();
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Payment instructions saved! Please complete your bank transfer.'),
+                          backgroundColor: AppTheme.success,
+                          behavior: SnackBarBehavior.floating,
                         ),
-                      ],
-                    ),
-                    child: Material(
-                      color: Colors.transparent,
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(18),
-                        onTap: () {
-                          Navigator.of(context).pop();
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text('Payment instructions saved! Please complete your bank transfer.'),
-                              backgroundColor: AppTheme.success,
-                              behavior: SnackBarBehavior.floating,
-                            ),
-                          );
-                        },
-                        child: Container(
-                          padding: EdgeInsets.symmetric(horizontal: 32, vertical: 18),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(
-                                Icons.check_circle_outline,
-                                color: AppTheme.angel,
-                                size: 24,
-                              ),
-                              SizedBox(width: 16),
-                              Text(
-                                'Got It! I\'ll Complete the Transfer',
-                                style: TextStyle(
-                                  color: AppTheme.angel,
-                                  fontSize: ResponsiveUtils.getTitleSize(context),
-                                  fontWeight: FontWeight.w800,
-                                  letterSpacing: 0.8,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
+                      );
+                    },
+                    icon: Icon(Icons.check_circle_outline, size: 20),
+                    label: Text('Got It! I\'ll Complete the Transfer'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppTheme.deepTeal,
+                      foregroundColor: AppTheme.angel,
+                      padding: EdgeInsets.symmetric(horizontal: 24, vertical: 16),
                     ),
                   ),
                 ),
@@ -2537,45 +2404,17 @@ Reference: ${orderNumber ?? 'Use your Order Number'}''';
 
   Widget _buildSuperReadableBankDetail(String label, String value, IconData icon) {
     return Container(
-      margin: EdgeInsets.only(bottom: 20),
-      padding: EdgeInsets.all(24),
+      margin: EdgeInsets.only(bottom: 16),
+      padding: EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: AppTheme.angel,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: AppTheme.deepTeal.withOpacity(0.15),
-          width: 1.5,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: AppTheme.deepTeal.withOpacity(0.08),
-            blurRadius: 12,
-            offset: Offset(0, 4),
-          ),
-        ],
+        color: AppTheme.whisper,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppTheme.deepTeal.withOpacity(0.2)),
       ),
       child: Row(
         children: [
-          Container(
-            padding: EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: AppTheme.deepTeal.withOpacity(0.12),
-              borderRadius: BorderRadius.circular(12),
-              boxShadow: [
-                BoxShadow(
-                  color: AppTheme.deepTeal.withOpacity(0.1),
-                  blurRadius: 8,
-                  offset: Offset(0, 2),
-                ),
-              ],
-            ),
-            child: Icon(
-              icon,
-              color: AppTheme.deepTeal,
-              size: 24,
-            ),
-          ),
-          SizedBox(width: 20),
+          Icon(icon, color: AppTheme.deepTeal, size: 20),
+          SizedBox(width: 16),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -2583,48 +2422,31 @@ Reference: ${orderNumber ?? 'Use your Order Number'}''';
                 Text(
                   label,
                   style: TextStyle(
-                    fontSize: ResponsiveUtils.getTitleSize(context) - 2,
-                    fontWeight: FontWeight.w600,
-                    color: AppTheme.deepTeal.withOpacity(0.7),
-                    letterSpacing: 0.5,
+                    fontSize: 12,
+                    color: AppTheme.breeze,
+                    fontWeight: FontWeight.w500,
                   ),
                 ),
-                SizedBox(height: 6),
+                SizedBox(height: 4),
                 Text(
                   value,
                   style: TextStyle(
-                    fontSize: ResponsiveUtils.getTitleSize(context),
-                    fontWeight: FontWeight.w800,
+                    fontSize: 16,
                     color: AppTheme.deepTeal,
-                    height: 1.4,
-                    letterSpacing: 0.3,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ],
             ),
           ),
-          Container(
-            decoration: BoxDecoration(
-              color: AppTheme.deepTeal.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: IconButton(
-              onPressed: () {
-                Clipboard.setData(ClipboardData(text: value));
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('$label copied to clipboard!'),
-                    backgroundColor: AppTheme.success,
-                    behavior: SnackBarBehavior.floating,
-                  ),
-                );
-              },
-              icon: Icon(
-                Icons.copy,
-                color: AppTheme.deepTeal.withOpacity(0.7),
-                size: 22,
-              ),
-            ),
+          IconButton(
+            icon: Icon(Icons.copy, color: AppTheme.deepTeal),
+            onPressed: () {
+              Clipboard.setData(ClipboardData(text: value));
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('Copied to clipboard')),
+              );
+            },
           ),
         ],
       ),
@@ -2633,56 +2455,35 @@ Reference: ${orderNumber ?? 'Use your Order Number'}''';
 
   Widget _buildSuperReadableInstruction(String instruction) {
     return Container(
-      margin: EdgeInsets.only(bottom: 16),
-      padding: EdgeInsets.all(20),
+      margin: EdgeInsets.only(bottom: 12),
+      padding: EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: AppTheme.warning.withOpacity(0.08),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: AppTheme.warning.withOpacity(0.25),
-          width: 1.5,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: AppTheme.warning.withOpacity(0.1),
-            blurRadius: 8,
-            offset: Offset(0, 2),
-          ),
-        ],
+        color: AppTheme.warning.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppTheme.warning.withOpacity(0.3)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
-            margin: EdgeInsets.only(top: 4),
-            width: 8,
-            height: 8,
+            margin: EdgeInsets.only(top: 2),
+            width: 6,
+            height: 6,
             decoration: BoxDecoration(
               color: AppTheme.warning,
               shape: BoxShape.circle,
-              boxShadow: [
-                BoxShadow(
-                  color: AppTheme.warning.withOpacity(0.3),
-                  blurRadius: 4,
-                  offset: Offset(0, 1),
-                ),
-              ],
             ),
           ),
-          SizedBox(width: 20),
+          SizedBox(width: 16),
           Expanded(
             child: Text(
               instruction,
               style: TextStyle(
-                fontSize: ResponsiveUtils.getTitleSize(context) - 1,
+                fontSize: 14,
                 color: AppTheme.deepTeal,
-                fontWeight: FontWeight.w600,
-                height: 1.5,
-                letterSpacing: 0.3,
+                fontWeight: FontWeight.w500,
+                height: 1.4,
               ),
-              textAlign: TextAlign.left,
-              softWrap: true,
-              overflow: TextOverflow.visible,
             ),
           ),
         ],

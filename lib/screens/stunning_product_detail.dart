@@ -862,7 +862,7 @@ class _StunningProductDetailState extends State<StunningProductDetail>
     }
     
     // Add to cart with selected quantity
-    cartProvider.addItem(
+    final success = await cartProvider.addItem(
       widget.product['id'],
       widget.product['name'] ?? 'Unknown Product',
       (widget.product['price'] ?? 0.0).toDouble(),
@@ -874,11 +874,19 @@ class _StunningProductDetailState extends State<StunningProductDetail>
       availableStock: stock,
     );
     
-    // Show success message
-    _showSnackBar('Product added to cart!', AppTheme.primaryGreen);
-    
-    // Navigate to cart
-    Navigator.pushNamed(context, '/cart');
+    if (success) {
+      // Show success message
+      _showSnackBar('Product added to cart!', AppTheme.primaryGreen);
+      
+      // Navigate to cart
+      Navigator.pushNamed(context, '/cart');
+    } else {
+      // Show specific error message from cart provider
+      final errorMessage = cartProvider.lastAddError ?? 'Failed to add product to cart';
+      final backgroundColor = cartProvider.lastAddBlocked ? AppTheme.error : AppTheme.warning;
+      
+      _showSnackBar(errorMessage, backgroundColor);
+    }
   }
 
   Future<void> _contactSeller() async {

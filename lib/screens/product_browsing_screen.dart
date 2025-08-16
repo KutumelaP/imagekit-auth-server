@@ -1969,16 +1969,21 @@ class BeautifulProductCard extends StatelessWidget {
           ),
         );
       } else {
+        // Show specific error message from cart provider
+        final errorMessage = cartProvider.lastAddError ?? 'Cannot add more ${data['name'] ?? 'items'} - insufficient stock!';
+        final backgroundColor = cartProvider.lastAddBlocked ? Colors.red : Colors.orange;
+        final icon = cartProvider.lastAddBlocked ? Icons.block : Icons.warning;
+        
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Row(
               children: [
-                const Icon(Icons.warning, color: Colors.white),
+                Icon(icon, color: Colors.white),
                 const SizedBox(width: 8),
-                Text('Cannot add more ${data['name'] ?? 'items'} - insufficient stock!'),
+                Expanded(child: Text(errorMessage)),
               ],
             ),
-            backgroundColor: Colors.orange,
+            backgroundColor: backgroundColor,
             duration: const Duration(seconds: 3),
           ),
         );

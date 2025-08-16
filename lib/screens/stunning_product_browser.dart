@@ -1000,10 +1000,21 @@ class _StunningProductBrowserState extends State<StunningProductBrowser>
           ),
         );
       } else {
+        // Show specific error message from cart provider
+        final errorMessage = cartProvider.lastAddError ?? 'Cannot add more ${data['name'] ?? 'items'} - insufficient stock!';
+        final backgroundColor = cartProvider.lastAddBlocked ? Colors.red : Colors.orange;
+        final icon = cartProvider.lastAddBlocked ? Icons.block : Icons.warning;
+        
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Cannot add more ${data['name'] ?? 'items'} - insufficient stock!'),
-            backgroundColor: Colors.orange,
+            content: Row(
+              children: [
+                Icon(icon, color: Colors.white),
+                const SizedBox(width: 8),
+                Expanded(child: Text(errorMessage)),
+              ],
+            ),
+            backgroundColor: backgroundColor,
             duration: const Duration(seconds: 3),
           ),
         );

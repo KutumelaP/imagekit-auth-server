@@ -132,17 +132,22 @@ class _EnhancedProductCardState extends State<EnhancedProductCard>
           ),
         );
       } else {
-        // Show insufficient stock message
+        // Show specific error message from cart provider
+        final cart = Provider.of<CartProvider>(context, listen: false);
+        final errorMessage = cart.lastAddError ?? 'Insufficient stock for ${widget.name}';
+        final backgroundColor = cart.lastAddBlocked ? Colors.red : Colors.orange;
+        final icon = cart.lastAddBlocked ? Icons.block : Icons.warning;
+        
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Row(
               children: [
-                const Icon(Icons.warning, color: Colors.white),
+                Icon(icon, color: Colors.white),
                 const SizedBox(width: 8),
-                Text('Insufficient stock for ${widget.name}'),
+                Expanded(child: Text(errorMessage)),
               ],
             ),
-            backgroundColor: Colors.orange,
+            backgroundColor: backgroundColor,
             duration: const Duration(seconds: 2),
             behavior: SnackBarBehavior.floating,
             shape: RoundedRectangleBorder(

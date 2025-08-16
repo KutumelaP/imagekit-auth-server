@@ -85,7 +85,7 @@ class ProductDetailScreen extends StatelessWidget {
       }
       
       // Add to cart (default quantity 1)
-      cartProvider.addItem(
+      final success = await cartProvider.addItem(
         product['id'],
         product['name'] ?? 'Unknown Product',
         (product['price'] ?? 0.0).toDouble(),
@@ -97,16 +97,37 @@ class ProductDetailScreen extends StatelessWidget {
         availableStock: stock,
       );
       
-      // Show success message
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Product added to cart!'),
-          backgroundColor: AppTheme.primaryGreen,
-        ),
-      );
-      
-      // Navigate to cart
-      Navigator.pushNamed(context, '/cart');
+      if (success) {
+        // Show success message
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Product added to cart!'),
+            backgroundColor: AppTheme.primaryGreen,
+          ),
+        );
+        
+        // Navigate to cart
+        Navigator.pushNamed(context, '/cart');
+      } else {
+        // Show specific error message from cart provider
+        final errorMessage = cartProvider.lastAddError ?? 'Failed to add product to cart';
+        final backgroundColor = cartProvider.lastAddBlocked ? Colors.red : Colors.orange;
+        final icon = cartProvider.lastAddBlocked ? Icons.block : Icons.warning;
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                Icon(icon, color: Colors.white),
+                const SizedBox(width: 8),
+                Expanded(child: Text(errorMessage)),
+              ],
+            ),
+            backgroundColor: backgroundColor,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
     }
 
     return Scaffold(

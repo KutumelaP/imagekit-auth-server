@@ -15,6 +15,9 @@ class CartProvider extends ChangeNotifier {
   String? lastAddNotice;
   bool lastAddClamped = false;
   int? lastAddedQuantity;
+  // Add new fields for better error handling
+  String? lastAddError;
+  bool lastAddBlocked = false;
 
   // Getters
   List<CartItem> get items => _currentStoreId != null ? _storeCarts[_currentStoreId] ?? [] : [];
@@ -56,10 +59,15 @@ class CartProvider extends ChangeNotifier {
     lastAddNotice = null;
     lastAddClamped = false;
     lastAddedQuantity = null;
+    lastAddError = null;
+    lastAddBlocked = false;
+    
     // Prevent seller self-purchase
     final user = FirebaseAuth.instance.currentUser;
     if (user != null && sellerId == user.uid) {
       print('🛑 Self-purchase blocked: seller $sellerId attempted to add own product');
+      lastAddError = 'You can\'t purchase from your store';
+      lastAddBlocked = true;
       return false;
     }
     
@@ -85,6 +93,7 @@ class CartProvider extends ChangeNotifier {
       final currentCartQuantity = existingIndex >= 0 ? storeItems[existingIndex].quantity : 0;
       final remaining = availableStock - currentCartQuantity;
       if (remaining <= 0) {
+        lastAddError = 'No more stock available for this product';
         return false; // already at max
       }
       if (quantityToAdd > remaining) {
@@ -186,10 +195,15 @@ class CartProvider extends ChangeNotifier {
     lastAddNotice = null;
     lastAddClamped = false;
     lastAddedQuantity = null;
+    lastAddError = null;
+    lastAddBlocked = false;
+    
     // Prevent seller self-purchase
     final user = FirebaseAuth.instance.currentUser;
     if (user != null && item.sellerId == user.uid) {
       print('🛑 Self-purchase blocked: seller ${item.sellerId} attempted to add own product');
+      lastAddError = 'You can\'t purchase from your store';
+      lastAddBlocked = true;
       return;
     }
     // Check if this is a different store than current cart
