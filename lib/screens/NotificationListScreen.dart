@@ -130,6 +130,7 @@ class _NotificationListScreenState extends State<NotificationListScreen> {
     print('🔍 DEBUG: Notification tap - OrderId: $orderId');
     print('🔍 DEBUG: Notification tap - ChatId: $chatId');
     print('🔍 DEBUG: Notification tap - Data: $data');
+    print('🔍 DEBUG: Full notification data: $notificationData');
 
     // Mark as read
     await _markAsRead(notificationData['id']);
@@ -161,14 +162,6 @@ class _NotificationListScreenState extends State<NotificationListScreen> {
           ),
         );
       }
-    } else if ((type == 'order_status' || type == 'order' || type == 'new_order_buyer') && orderId != null) {
-      print('🔍 DEBUG: Navigating to OrderTrackingScreen');
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => OrderTrackingScreen(orderId: orderId),
-        ),
-      );
     } else if (type == 'new_order_seller') {
       print('🔍 DEBUG: Navigating to SellerOrdersListScreen');
       final currentUser = FirebaseAuth.instance.currentUser;
@@ -188,8 +181,27 @@ class _NotificationListScreenState extends State<NotificationListScreen> {
           ),
         );
       }
+    } else if ((type == 'order_status' || type == 'order' || type == 'new_order_buyer') && orderId != null && orderId.toString().isNotEmpty) {
+      print('🔍 DEBUG: Navigating to OrderTrackingScreen with orderId: $orderId');
+      try {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => OrderTrackingScreen(orderId: orderId.toString()),
+          ),
+        );
+      } catch (e) {
+        print('❌ Error navigating to OrderTrackingScreen: $e');
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Unable to open order tracking: ${e.toString()}'),
+            backgroundColor: AppTheme.primaryRed,
+          ),
+        );
+      }
     } else if (type == 'order_status' || type == 'order' || type == 'new_order_buyer') {
-      print('🔍 DEBUG: Navigating to OrderHistoryScreen');
+      print('🔍 DEBUG: OrderId missing, navigating to OrderHistoryScreen');
+      print('🔍 DEBUG: OrderId was: $orderId (type: ${orderId.runtimeType})');
       Navigator.push(
         context,
         MaterialPageRoute(
