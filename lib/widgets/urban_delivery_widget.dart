@@ -63,10 +63,10 @@ class _UrbanDeliveryWidgetState extends State<UrbanDeliveryWidget> {
     }
 
     return Container(
-      margin: EdgeInsets.symmetric(
-        vertical: ResponsiveUtils.getVerticalPadding(context) * 0.2,
+      margin: const EdgeInsets.symmetric(
+        vertical: 8,
       ),
-      padding: EdgeInsets.all(ResponsiveUtils.getHorizontalPadding(context) * 0.3),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: AppTheme.deepTeal.withOpacity(0.05),
         borderRadius: BorderRadius.circular(12),

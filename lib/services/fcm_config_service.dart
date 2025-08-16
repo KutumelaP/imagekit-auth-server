@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import '../firebase_options.dart';
+import 'awesome_notification_service.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:http/http.dart' as http;
 
@@ -19,7 +20,7 @@ class FCMConfigService {
   String? _projectId;
   String? _messagingSenderId;
   String? _appId;
-  String? _apiKey;
+  // String? _apiKey; // reserved for future use
   String? _serverKey;
   
   // FCM token
@@ -65,7 +66,6 @@ class FCMConfigService {
       _projectId = options.projectId;
       _messagingSenderId = options.messagingSenderId;
       _appId = options.appId;
-      _apiKey = options.apiKey;
       
       print('🔔 Loaded Firebase configuration:');
       print('   Project ID: $_projectId');
@@ -207,8 +207,33 @@ class FCMConfigService {
     print('   Body: ${message.notification?.body}');
     print('   Data: ${message.data}');
     
-    // You can add custom UI handling here
-    // For now, we'll just log the message
+    // Show a foreground banner for chat messages on mobile using Awesome Notifications
+    final data = message.data;
+    final type = data['type'];
+    if (type == 'chat_message') {
+      final chatId = data['chatId'] ?? '';
+      final senderId = data['senderId'] ?? '';
+      final body = message.notification?.body ?? '';
+      if (chatId.isNotEmpty && senderId.isNotEmpty && body.isNotEmpty) {
+        AwesomeNotificationService().showChatNotification(
+          chatId: chatId,
+          senderId: senderId,
+          message: body,
+        );
+      }
+    } else if (type == 'order_status' || type == 'new_order_seller' || type == 'new_order_buyer') {
+      final orderId = data['orderId'] ?? '';
+      final title = message.notification?.title ?? 'Order Update';
+      final body = message.notification?.body ?? '';
+      if (orderId.isNotEmpty && body.isNotEmpty) {
+        AwesomeNotificationService().showOrderNotification(
+          title: title,
+          body: body,
+          orderId: orderId,
+          type: type,
+        );
+      }
+    }
   }
 
   /// Handle notification opened
@@ -336,8 +361,8 @@ class FCMConfigService {
         return true;
       }
       
-      // Fallback: Create notification document in Firestore
-      await _firestore.collection('notifications').add({
+      // Fallback: Enqueue push notification document in Firestore
+      await _firestore.collection('push_notifications').add({
         'to': fcmToken,
         'notification': {
           'title': 'Test Notification',

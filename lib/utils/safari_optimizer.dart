@@ -1,7 +1,7 @@
 import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
-import 'dart:html' as html;
+import 'package:marketplace_app/utils/web_html_stub.dart'
+    if (dart.library.html) 'dart:html' as html;
 
 class SafariOptimizer {
   static bool _isInitialized = false;

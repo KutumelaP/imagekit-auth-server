@@ -8,14 +8,9 @@ class FirebaseAdminService {
   factory FirebaseAdminService() => _instance;
   FirebaseAdminService._internal();
 
-  // Firebase project configuration
-  static const String _projectId = 'marketplace-8d6bd';
-  
-  // FCM Server Key - You'll need to add this from Firebase Console
-  // Go to Project Settings > Cloud Messaging > Server key
-  static const String _fcmServerKey = 'YOUR_FCM_SERVER_KEY_HERE'; // Replace with your actual server key
+  // Client never holds FCM server keys; push is sent via Cloud Functions by enqueuing to Firestore.
 
-  /// Send push notification using FCM HTTP API
+  /// Send push via your Node server (no Functions required)
   Future<bool> sendPushNotification({
     required String fcmToken,
     required String title,
@@ -24,76 +19,27 @@ class FirebaseAdminService {
     String? imageUrl,
   }) async {
     try {
-      print('🔔 Sending push notification...');
-      print('🔔 Token: ${fcmToken.substring(0, 20)}...');
-      print('🔔 Title: $title');
-      print('🔔 Body: $body');
-
-      // Check if FCM server key is configured
-      if (_fcmServerKey == 'YOUR_FCM_SERVER_KEY_HERE') {
-        print('⚠️ FCM Server Key not configured. Creating in-app notification only.');
-        print('📝 To enable push notifications:');
-        print('   1. Go to Firebase Console > Project Settings > Cloud Messaging');
-        print('   2. Copy the Server key');
-        print('   3. Replace YOUR_FCM_SERVER_KEY_HERE in firebase_admin_service.dart');
-        return true; // Return true so in-app notifications still work
-      }
-
-      // Get badge count from data if available
-      final badgeCount = data?['badge'] != null ? int.tryParse(data!['badge']) ?? 1 : 1;
-      
-      // Prepare FCM message
-      final message = {
-        'to': fcmToken,
-        'notification': {
-          'title': title,
-          'body': body,
-          if (imageUrl != null) 'image': imageUrl,
-        },
+      print('🔔 Sending push notification via server...');
+      final serverUrl = const String.fromEnvironment('NOTIFY_SERVER_URL', defaultValue: 'http://localhost:3000');
+      final payload = {
+        'token': fcmToken,
+        'title': title,
+        'body': body,
+        if (imageUrl != null) 'image': imageUrl,
         'data': data ?? {},
-        'priority': 'high',
-        'android': {
-          'priority': 'high',
-          'notification': {
-            'channel_id': 'chat_notifications',
-            'sound': 'default',
-            'badge': badgeCount,
-          },
-        },
-        'apns': {
-          'payload': {
-            'aps': {
-              'sound': 'default',
-              'badge': badgeCount,
-            },
-          },
-        },
       };
 
-      // Send to FCM
+      final uri = Uri.parse('$serverUrl/notify/send');
       final response = await http.post(
-        Uri.parse('https://fcm.googleapis.com/fcm/send'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'key=$_fcmServerKey',
-        },
-        body: jsonEncode(message),
+        uri,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode(payload),
       );
-
-      if (response.statusCode == 200) {
-        final responseData = jsonDecode(response.body);
-        if (responseData['success'] == 1) {
-          print('✅ Push notification sent successfully');
-          return true;
-        } else {
-          print('❌ FCM returned error: ${responseData['results']?[0]['error']}');
-          return false;
-        }
-      } else {
-        print('❌ FCM request failed with status: ${response.statusCode}');
-        print('❌ Response: ${response.body}');
-        return false;
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        return true;
       }
+      print('❌ Server push failed: ${response.statusCode} ${response.body}');
+      return false;
     } catch (e) {
       print('❌ Error sending push notification: $e');
       return false;
@@ -129,14 +75,29 @@ class FirebaseAdminService {
         print('🔔 Creating in-app notification only');
       } else {
         print('🔔 FCM token found, attempting push notification');
-        // Try push notification
-        await sendPushNotification(
+        // Try direct push via server (if configured)
+        final pushed = await sendPushNotification(
           fcmToken: fcmToken,
           title: title,
           body: body,
           data: data,
           imageUrl: imageUrl,
         );
+        // Fallback: enqueue to Cloud Function trigger to ensure delivery
+        if (!pushed) {
+          print('⚠️ Direct push failed or server unavailable, enqueuing Firestore push');
+          await FirebaseFirestore.instance.collection('push_notifications').add({
+            'to': fcmToken,
+            'notification': {
+              'title': title,
+              'body': body,
+              if (imageUrl != null) 'image': imageUrl,
+            },
+            'data': data ?? {},
+            'userId': userId,
+            'timestamp': FieldValue.serverTimestamp(),
+          });
+        }
       }
 
       // Always create in-app notification in Firestore
@@ -198,7 +159,7 @@ class FirebaseAdminService {
   }) async {
     try {
       final title = 'New Order Received! 🎉';
-      final body = 'Order ${_formatOrderNumber(orderNumber)} from $buyerName - \$${totalPrice.toStringAsFixed(2)}';
+      final body = 'Order ${_formatOrderNumber(orderNumber)} from $buyerName - R${totalPrice.toStringAsFixed(2)}';
 
       final data = {
         'type': 'new_order_seller',

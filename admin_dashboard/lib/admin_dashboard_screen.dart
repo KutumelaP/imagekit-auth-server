@@ -106,6 +106,11 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       items: ['Moderation', 'Reviews', 'Returns/Refunds'],
     ),
     NavigationCategory(
+      title: 'Image Management',
+      icon: Icons.image,
+      items: ['Storage Stats', 'Orphaned Images', 'Cleanup Tools'],
+    ),
+    NavigationCategory(
       title: 'Settings',
       icon: Icons.settings,
       items: ['Platform Settings', 'Roles/Permissions', 'Audit Logs'],
@@ -678,18 +683,21 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       case 10: return 10; // Moderation
       case 11: return 11; // Reviews
       case 12: return 12; // Returns/Refunds
-      case 13: return 13; // Platform Settings
-      case 14: return 14; // Roles/Permissions
-      case 15: return 15; // Audit Logs
-      case 16: return 16; // Payment Settings
-      case 17: return 17; // Escrow Management
-      case 18: return 18; // Returns Management
-      case 19: return 19; // Developer Tools
-      case 20: return 20; // Data Export
-      case 21: return 21; // Order Migration
-      case 22: return 22; // Rural Driver Management
-      case 23: return 23; // Urban Delivery Management
-      case 24: return 24; // Driver Management
+      case 13: return 13; // Storage Stats
+      case 14: return 14; // Orphaned Images
+      case 15: return 15; // Cleanup Tools
+      case 16: return 16; // Platform Settings
+      case 17: return 17; // Roles/Permissions
+      case 18: return 18; // Audit Logs
+      case 19: return 19; // Payment Settings
+      case 20: return 20; // Escrow Management
+      case 21: return 21; // Returns Management
+      case 22: return 22; // Developer Tools
+      case 23: return 23; // Data Export
+      case 24: return 24; // Order Migration
+      case 25: return 25; // Rural Driver Management
+      case 26: return 26; // Urban Delivery Management
+      case 27: return 27; // Driver Management
       default: return 0;
     }
   }
@@ -710,18 +718,21 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       case 10: return 10; // Moderation
       case 11: return 11; // Reviews
       case 12: return 12; // Returns/Refunds
-      case 13: return 13; // Platform Settings
-      case 14: return 14; // Roles/Permissions
-      case 15: return 15; // Audit Logs
-      case 16: return 16; // Payment Settings
-      case 17: return 17; // Escrow Management
-      case 18: return 18; // Returns Management
-      case 19: return 19; // Developer Tools
-      case 20: return 20; // Data Export
-      case 21: return 21; // Order Migration
-      case 22: return 22; // Rural Driver Management
-      case 23: return 23; // Urban Delivery Management
-      case 24: return 24; // Driver Management
+      case 13: return 13; // Storage Stats
+      case 14: return 14; // Orphaned Images
+      case 15: return 15; // Cleanup Tools
+      case 16: return 16; // Platform Settings
+      case 17: return 17; // Roles/Permissions
+      case 18: return 18; // Audit Logs
+      case 19: return 19; // Payment Settings
+      case 20: return 20; // Escrow Management
+      case 21: return 21; // Returns Management
+      case 22: return 22; // Developer Tools
+      case 23: return 23; // Data Export
+      case 24: return 24; // Order Migration
+      case 25: return 25; // Rural Driver Management
+      case 26: return 26; // Urban Delivery Management
+      case 27: return 27; // Driver Management
       default: return 0;
     }
   }

@@ -86,6 +86,22 @@ class AppConstants {
   static const String profileUpdateSuccessMessage = 'Profile updated successfully!';
   static const String orderPlacedSuccessMessage = 'Order placed successfully!';
   
+  // Subscription Constants
+  static const String subscriptionTypeSubscription = '1';  // Type 1 now requires frequency
+  static const String subscriptionTypeOneTime = '2';       // Type 2 is now one-time
+  
+  static const List<String> subscriptionFrequencies = [
+    'weekly',
+    'monthly',
+    'yearly',
+  ];
+  
+  static const Map<String, String> frequencyDisplayNames = {
+    'weekly': 'Weekly',
+    'monthly': 'Monthly',
+    'yearly': 'Yearly',
+  };
+  
   // Loading Messages
   static const String uploadingMessage = 'Uploading...';
   static const String loadingMessage = 'Loading...';

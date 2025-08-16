@@ -332,9 +332,11 @@ class _ModernSellerDashboardSectionState extends State<ModernSellerDashboardSect
 
   Future<void> _loadSalesChartData() async {
     try {
+      final thirtyDaysAgo = DateTime.now().subtract(const Duration(days: 30));
       final ordersSnapshot = await FirebaseFirestore.instance
           .collection('orders')
           .where('sellerId', isEqualTo: _sellerId)
+          .where('timestamp', isGreaterThanOrEqualTo: Timestamp.fromDate(thirtyDaysAgo))
           .orderBy('timestamp', descending: false)
           .get();
       

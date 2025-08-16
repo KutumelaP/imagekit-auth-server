@@ -1,4 +1,5 @@
 import 'package:awesome_notifications/awesome_notifications.dart';
+import 'navigation_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -49,7 +50,6 @@ class AwesomeNotificationService {
             enableVibration: true,
             enableLights: true,
             playSound: true,
-            soundSource: 'resource://raw/notification_sound',
           ),
           NotificationChannel(
             channelKey: 'order_channel',
@@ -62,10 +62,12 @@ class AwesomeNotificationService {
             enableVibration: true,
             enableLights: true,
             playSound: true,
-            soundSource: 'resource://raw/notification_sound',
           ),
         ],
       );
+
+      // Reset badge on init and ensure iOS foreground presentation is allowed
+      await AwesomeNotifications().setGlobalBadgeCounter(0);
 
       // Set up notification action listeners
       _setupNotificationListeners();
@@ -82,24 +84,20 @@ class AwesomeNotificationService {
   /// Set up notification action listeners
   void _setupNotificationListeners() {
     // Listen to notification action buttons
-    AwesomeNotifications().actionStream.listen((ReceivedAction receivedAction) {
+    AwesomeNotifications().setListeners(
+      onActionReceivedMethod: (ReceivedAction receivedAction) async {
       _handleNotificationAction(receivedAction);
-    });
-
-    // Listen to notification creation
-    AwesomeNotifications().createdStream.listen((ReceivedNotification receivedNotification) {
-      print('🔔 Notification created: ${receivedNotification.title}');
-    });
-
-    // Listen to notification display
-    AwesomeNotifications().displayedStream.listen((ReceivedNotification receivedNotification) {
-      print('🔔 Notification displayed: ${receivedNotification.title}');
-    });
-
-    // Listen to notification dismissal
-    AwesomeNotifications().dismissedStream.listen((ReceivedAction receivedAction) {
-      print('🔔 Notification dismissed: ${receivedAction.title}');
-    });
+      },
+      onNotificationCreatedMethod: (ReceivedNotification receivedNotification) async {
+        print('🔔 Notification created: ${receivedNotification.title}');
+      },
+      onNotificationDisplayedMethod: (ReceivedNotification receivedNotification) async {
+        print('🔔 Notification displayed: ${receivedNotification.title}');
+      },
+      onDismissActionReceivedMethod: (ReceivedAction receivedAction) async {
+        print('🔔 Notification dismissed: ${receivedAction.title}');
+      },
+    );
   }
 
   /// Handle notification actions
@@ -109,6 +107,9 @@ class AwesomeNotificationService {
     // Handle different notification types
     switch (receivedAction.payload?['type']) {
       case 'chat':
+        _handleChatNotification(receivedAction);
+        break;
+      case 'chat_message': // backward compatibility
         _handleChatNotification(receivedAction);
         break;
       case 'order':
@@ -126,9 +127,56 @@ class AwesomeNotificationService {
   void _handleChatNotification(ReceivedAction receivedAction) {
     final chatId = receivedAction.payload?['chatId'];
     if (chatId != null) {
-      // Navigate to chat screen
-      print('🔔 Navigating to chat: $chatId');
-      // TODO: Implement navigation to chat screen
+      final actionKey = receivedAction.buttonKeyPressed;
+      final replyText = receivedAction.buttonKeyInput?.trim();
+      if (actionKey == 'REPLY' && (replyText?.isNotEmpty ?? false)) {
+        print('🔔 Quick reply from notification to chat $chatId');
+        // ignore: unawaited_futures
+        _sendQuickReply(chatId, replyText!);
+      } else {
+        // Navigate to chat screen (VIEW or tap on body)
+        print('🔔 Navigating to chat: $chatId');
+        try {
+          // ignore: unawaited_futures
+          NavigationService.navigateTo('/chat', arguments: { 'chatId': chatId });
+        } catch (_) {}
+      }
+    }
+  }
+
+  Future<void> _sendQuickReply(String chatId, String text) async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) {
+        print('❌ Cannot send quick reply: no authenticated user');
+        return;
+      }
+
+      final message = {
+        'senderId': user.uid,
+        'timestamp': FieldValue.serverTimestamp(),
+        'text': text,
+        'status': 'sent',
+      };
+
+      await _firestore
+          .collection('chats')
+          .doc(chatId)
+          .collection('messages')
+          .add(message);
+
+      await _firestore
+          .collection('chats')
+          .doc(chatId)
+          .update({
+        'lastMessage': text,
+        'lastMessageBy': user.uid,
+        'timestamp': FieldValue.serverTimestamp(),
+      });
+
+      print('✅ Quick reply sent to chat $chatId');
+    } catch (e) {
+      print('❌ Error sending quick reply: $e');
     }
   }
 
@@ -138,7 +186,10 @@ class AwesomeNotificationService {
     if (orderId != null) {
       // Navigate to order details
       print('🔔 Navigating to order: $orderId');
-      // TODO: Implement navigation to order details
+      try {
+        // ignore: unawaited_futures
+        NavigationService.navigateTo('/seller-order-detail', arguments: { 'orderId': orderId });
+      } catch (_) {}
     }
   }
 
@@ -222,7 +273,7 @@ class AwesomeNotificationService {
             body: message.isNotEmpty ? message : 'New message',
             notificationLayout: NotificationLayout.Default,
             payload: {
-              'type': 'chat_message',
+              'type': 'chat',
               'chatId': chatId,
               'senderId': senderId,
             },

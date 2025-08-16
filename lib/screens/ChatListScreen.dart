@@ -577,6 +577,9 @@ class _ChatListScreenState extends State<ChatListScreen> with TickerProviderStat
                                     ),
                                   );
                                 },
+                                onLongPress: () {
+                                  _confirmDeleteChat(context, chatId);
+                                },
                                 child: Padding(
                                   padding: const EdgeInsets.all(20),
                                   child: Row(
@@ -830,6 +833,57 @@ class _ChatListScreenState extends State<ChatListScreen> with TickerProviderStat
         ),
       ),
     );
+  }
+
+  Future<void> _confirmDeleteChat(BuildContext context, String chatId) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete chat?'),
+        content: const Text('This will permanently remove the conversation and its messages.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(backgroundColor: AppTheme.primaryRed, foregroundColor: Colors.white),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (ok == true) {
+      await _deleteChat(chatId);
+    }
+  }
+
+  Future<void> _deleteChat(String chatId) async {
+    try {
+      // Delete messages in batches
+      final messagesRef = FirebaseFirestore.instance.collection('chats').doc(chatId).collection('messages');
+      while (true) {
+        final snap = await messagesRef.limit(500).get();
+        if (snap.docs.isEmpty) break;
+        final batch = FirebaseFirestore.instance.batch();
+        for (final d in snap.docs) {
+          batch.delete(d.reference);
+        }
+        await batch.commit();
+      }
+      // Delete chat document
+      await FirebaseFirestore.instance.collection('chats').doc(chatId).delete();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Chat deleted'), backgroundColor: AppTheme.primaryGreen),
+        );
+        setState(() {});
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to delete chat: $e'), backgroundColor: AppTheme.primaryRed),
+        );
+      }
+    }
   }
 
   String _formatTimestamp(Timestamp timestamp) {

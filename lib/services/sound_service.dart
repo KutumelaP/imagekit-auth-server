@@ -1,8 +1,8 @@
-import 'package:flutter/material.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
-import 'dart:js' as js;
+import 'package:marketplace_app/utils/web_js_stub.dart'
+    if (dart.library.html) 'package:marketplace_app/utils/web_js_real.dart' as js;
 
 class SoundService {
   static final SoundService _instance = SoundService._internal();
@@ -156,13 +156,7 @@ class SoundService {
   }
 
   /// Play platform-specific notification sound
-  void _playPlatformSpecificSound() {
-    if (kIsWeb) {
-      _playWebNotificationSound();
-    } else {
-      _playMobileNotificationSound();
-    }
-  }
+  // Removed unused helper to avoid lints
 
   /// Play mobile notification sound
   void _playMobileNotificationSound() {

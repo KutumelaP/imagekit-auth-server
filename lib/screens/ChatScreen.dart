@@ -10,7 +10,7 @@ import '../services/rate_limiter.dart';
 import '../services/performance_monitor.dart';
 import '../widgets/message_status_indicator.dart';
 import '../widgets/home_navigation_button.dart';
-import 'package:flutter/foundation.dart';
+import '../services/awesome_notification_service.dart';
 import 'store_page.dart';
 
 class ChatScreen extends StatefulWidget {
@@ -34,14 +34,20 @@ class _ChatScreenState extends State<ChatScreen> {
   final ScrollController _scrollController = ScrollController();
   bool _isLoading = false;
   List<String> _aiSuggestions = [];
-  bool _isLoadingSuggestions = false;
+  bool _isLoadingSuggestions = false; // used for AI suggestion loading state
+  _ChatLifecycleObserver? _appLifecycleObserver;
 
   @override
   void initState() {
     super.initState();
     _loadAISuggestions();
     _markChatAsRead();
-    _markChatAsViewed(); // Mark chat as viewed when opened
+    _markChatAsViewed();
+    // Also listen to app lifecycle to re-mark viewed when returning to foreground
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _appLifecycleObserver ??= _ChatLifecycleObserver(onResume: _markChatAsViewed);
+      WidgetsBinding.instance.addObserver(_appLifecycleObserver!);
+    });
   }
 
   // Mark chat as viewed by current user
@@ -59,13 +65,21 @@ class _ChatScreenState extends State<ChatScreen> {
         'lastViewed_${currentUser.uid}': FieldValue.serverTimestamp(),
       });
 
+      // Cancel any chat notifications for this conversation
+      try {
+        await AwesomeNotificationService().cancelAllNotifications();
+        print('🔔 Cancelled chat notifications');
+      } catch (e) {
+        print('❌ Error cancelling chat notifications: $e');
+      }
+
       print('🔔 Chat marked as viewed: ${widget.chatId}');
     } catch (e) {
       print('❌ Error marking chat as viewed: $e');
     }
   }
 
-  // Mark chat as read when user opens it
+  // Mark chat as read when user opens it and keep updating lastViewed while visible
   Future<void> _markChatAsRead() async {
     try {
       final currentUser = FirebaseAuth.instance.currentUser;
@@ -98,6 +112,7 @@ class _ChatScreenState extends State<ChatScreen> {
             .doc(widget.chatId)
             .update({
           'unreadCount': 0,
+          'lastViewed_${currentUser.uid}': FieldValue.serverTimestamp(),
         });
 
         // Mark all messages from the other user as read
@@ -116,6 +131,15 @@ class _ChatScreenState extends State<ChatScreen> {
     } catch (e) {
       print('❌ Error marking chat as read: $e');
     }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Periodically refresh lastViewed while on this screen
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _markChatAsViewed();
+    });
   }
 
   // Format message timestamp
@@ -177,6 +201,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   void dispose() {
+    if (_appLifecycleObserver != null) WidgetsBinding.instance.removeObserver(_appLifecycleObserver!);
     _messageController.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -279,6 +304,65 @@ class _ChatScreenState extends State<ChatScreen> {
           'timestamp': FieldValue.serverTimestamp(),
           // Note: unreadCount is handled by GlobalMessageListener for incoming messages
         });
+
+        // Update seller avg response time when appropriate
+        try {
+          final chatSnap = await FirebaseFirestore.instance.collection('chats').doc(widget.chatId).get();
+          final chat = chatSnap.data();
+          if (chat != null) {
+            final sellerId = chat['sellerId'] as String?;
+            final buyerId = chat['buyerId'] as String?;
+            if (sellerId != null && buyerId != null) {
+              final isSellerMsg = currentUser.uid == sellerId;
+              print('🧭 ResponseTime: currentUser=${currentUser.uid}, sellerId=$sellerId, buyerId=$buyerId, isSellerMsg=$isSellerMsg');
+              if (isSellerMsg) {
+                print('🧭 ResponseTime: fetching recent messages for chat ${widget.chatId} to locate last buyer message...');
+                // Fetch recent messages and find the last buyer message without requiring a composite index
+                final recentMsgs = await FirebaseFirestore.instance
+                    .collection('chats')
+                    .doc(widget.chatId)
+                    .collection('messages')
+                    .orderBy('timestamp', descending: true)
+                    .limit(50)
+                    .get();
+                print('🧭 ResponseTime: fetched ${recentMsgs.docs.length} recent messages');
+                Timestamp? lastBuyerTs;
+                for (final doc in recentMsgs.docs) {
+                  final data = doc.data();
+                  if (data['senderId'] == buyerId && data['timestamp'] is Timestamp) {
+                    lastBuyerTs = data['timestamp'] as Timestamp;
+                    print('🧭 ResponseTime: found last buyer message ts=${lastBuyerTs.toDate().toIso8601String()}');
+                    break;
+                  }
+                }
+                if (lastBuyerTs != null) {
+                  final buyerTs = lastBuyerTs.toDate();
+                  final sellerTs = DateTime.now();
+                  if (buyerTs != null) {
+                    final deltaMinutes = sellerTs.difference(buyerTs).inMinutes;
+                    final userRef = FirebaseFirestore.instance.collection('users').doc(sellerId);
+                    print('🧭 ResponseTime: deltaMinutes=$deltaMinutes — updating rolling average at users/$sellerId');
+                    try {
+                      await FirebaseFirestore.instance.runTransaction((tx) async {
+                        final snap = await tx.get(userRef);
+                        final existing = (snap.data()?['avgResponseMinutes'] as num?)?.toDouble();
+                        final newAvg = existing == null ? deltaMinutes.toDouble() : ((existing * 4 + deltaMinutes) / 5);
+                        tx.update(userRef, {'avgResponseMinutes': newAvg.round()});
+                      });
+                      print('🧭 ResponseTime: avgResponseMinutes write OK');
+                    } catch (e) {
+                      print('❌ ResponseTime: failed to write avgResponseMinutes for $sellerId — $e');
+                    }
+                  }
+                } else {
+                  print('🧭 ResponseTime: no prior buyer message found in last 50; skipping update');
+                }
+              } else {
+                print('🧭 ResponseTime: current message not from seller; skipping avg update');
+              }
+            }
+          }
+        } catch (_) {}
       });
 
       print('🔔 Message sent with status: sent');
@@ -728,5 +812,17 @@ class _ChatScreenState extends State<ChatScreen> {
         ],
       ),
     );
+  }
+}
+
+class _ChatLifecycleObserver extends WidgetsBindingObserver {
+  final Future<void> Function() onResume;
+  _ChatLifecycleObserver({required this.onResume});
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      onResume();
+    }
   }
 }

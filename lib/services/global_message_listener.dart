@@ -1,8 +1,8 @@
+// ignore_for_file: duplicate_import
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'notification_service.dart';
-import 'notification_service.dart';
+import 'awesome_notification_service.dart' as an;
 
 class GlobalMessageListener {
   static final GlobalMessageListener _instance = GlobalMessageListener._internal();
@@ -11,6 +11,7 @@ class GlobalMessageListener {
 
   final Map<String, StreamSubscription> _chatListeners = {};
   final Map<String, String> _lastMessageIds = {};
+  final Map<String, bool> _chatInitialized = {};
 
   // Start listening to all chats for the current user
   Future<void> startListening() async {
@@ -69,11 +70,64 @@ class GlobalMessageListener {
            final messageData = latestMessage.data();
            final senderId = messageData['senderId'] as String?;
            
+            // On initial load decide whether to notify based on lastViewed vs latest message time
+            if (_chatInitialized[chatId] != true) {
+              _chatInitialized[chatId] = true;
+              bool handledInitial = false;
+              try {
+                if (senderId != null && senderId != currentUserId) {
+                  final chatDoc = await FirebaseFirestore.instance
+                      .collection('chats')
+                      .doc(chatId)
+                      .get();
+                  final chatData = chatDoc.data();
+                  final lastViewed = chatData != null
+                      ? chatData['lastViewed_$currentUserId'] as Timestamp?
+                      : null;
+                  final msgTs = messageData['timestamp'] as Timestamp?;
+                  final isUnseen = msgTs == null || lastViewed == null || msgTs.toDate().isAfter(lastViewed.toDate());
+                  if (isUnseen) {
+                    // Treat as new unseen message on startup: increment unread and notify
+                    _lastMessageIds[chatId] = latestMessage.id;
+                    print('🔔 Initial load: unseen message detected for chat $chatId; notifying.');
+
+                    await FirebaseFirestore.instance
+                        .collection('chats')
+                        .doc(chatId)
+                        .update({
+                      'unreadCount': FieldValue.increment(1),
+                      'lastMessage': messageData['text'] ?? '',
+                      'lastMessageBy': senderId,
+                      'timestamp': FieldValue.serverTimestamp(),
+                    });
+
+                    await FirebaseFirestore.instance
+                        .collection('chats')
+                        .doc(chatId)
+                        .collection('messages')
+                        .doc(latestMessage.id)
+                        .update({'status': 'delivered'});
+
+                    await _showNotificationForMessage(chatId, messageData);
+                    handledInitial = true;
+                  }
+                }
+              } catch (e) {
+                print('❌ Error handling initial snapshot for chat $chatId: $e');
+              }
+
+              if (!handledInitial) {
+                _lastMessageIds[chatId] = latestMessage.id;
+                print('🔔 Seeded last message for chat $chatId on initial load; skipping notification.');
+              }
+              return;
+            }
+
                        // Only show notification if:
             // 1. Message is from someone else
             // 2. It's a new message (not the same as last seen)
             // 3. The app is not currently in the foreground for this chat
-            if (senderId != null && 
+              if (senderId != null && 
                 senderId != currentUserId && 
                 latestMessage.id != _lastMessageIds[chatId]) {
               
@@ -83,7 +137,7 @@ class GlobalMessageListener {
               // Don't update if the current user is the sender
               if (senderId != currentUserId) {
                 print('🔔 Updating unread count for chat: $chatId');
-                await FirebaseFirestore.instance
+                 await FirebaseFirestore.instance
                     .collection('chats')
                     .doc(chatId)
                     .update({
@@ -197,8 +251,8 @@ class GlobalMessageListener {
 
       print('🔔 Sending notification to ${currentUser.uid} from $senderName');
 
-      // Send local system notification using awesome notifications
-              await NotificationService().showChatNotification(
+      // Respect quiet hours and channel toggles
+      await an.AwesomeNotificationService().showChatNotification(
         chatId: chatId,
         senderId: senderId,
         message: messageText,
@@ -219,6 +273,7 @@ class GlobalMessageListener {
       subscription.cancel();
       _chatListeners.remove(chatId);
       _lastMessageIds.remove(chatId);
+        _chatInitialized.remove(chatId);
       print('🔔 Stopped listening to chat: $chatId');
     }
   }
@@ -230,6 +285,7 @@ class GlobalMessageListener {
     }
     _chatListeners.clear();
     _lastMessageIds.clear();
+      _chatInitialized.clear();
     print('🔔 Stopped all global message listeners');
   }
 

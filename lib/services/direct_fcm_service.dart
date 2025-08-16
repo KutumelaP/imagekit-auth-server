@@ -1,5 +1,3 @@
-import 'dart:convert';
-import 'package:http/http.dart' as http;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
@@ -26,52 +24,11 @@ class DirectFCMService {
         return false;
       }
 
-      // Create the FCM message for direct sending
-      final message = {
-        'to': fcmToken,
-        'notification': {
-          'title': title,
-          'body': body,
-          'sound': 'default',
-        },
-        'data': {
-          'type': 'true_system_notification',
-          'payload': payload ?? '',
-          'timestamp': DateTime.now().millisecondsSinceEpoch.toString(),
-          'click_action': 'FLUTTER_NOTIFICATION_CLICK',
-        },
-        'android': {
-          'notification': {
-            'channel_id': 'system_notifications',
-            'priority': 'high',
-            'default_sound': true,
-            'default_vibrate_timings': true,
-            'icon': 'ic_launcher',
-            'color': '#1F4654',
-            'click_action': 'FLUTTER_NOTIFICATION_CLICK',
-          },
-        },
-        'apns': {
-          'payload': {
-            'aps': {
-              'sound': 'default',
-              'badge': 1,
-              'alert': {
-                'title': title,
-                'body': body,
-              },
-            },
-          },
-        },
-        'priority': 'high',
-      };
-
-      // For now, let's simulate the notification by creating a local notification
-      // This will show in the notification tray immediately
-      print('🔔 Simulating true system notification in tray...');
+      // Enqueue for Cloud Function to send via FCM
+      print('🔔 Enqueuing true system notification for Cloud Function...');
       
-      // Create a notification document that will be processed by existing Cloud Function
-      await FirebaseFirestore.instance.collection('notifications').add({
+      // Enqueue a push notification document that will be processed by Cloud Function
+      await FirebaseFirestore.instance.collection('push_notifications').add({
         'to': fcmToken,
         'notification': {
           'title': title,

@@ -1,8 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:provider/provider.dart';
+import '../providers/cart_provider.dart';
 import '../theme/app_theme.dart';
 import '../utils/order_utils.dart';
+import '../services/whatsapp_cloud_service.dart';
+import '../models/order_status.dart';
+import '../services/pargo_tracking_service.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 
 class OrderTrackingScreen extends StatefulWidget {
   final String orderId;
@@ -16,6 +23,13 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
     with TickerProviderStateMixin {
   late AnimationController _fadeController;
   late Animation<double> _fadeAnimation;
+  bool _cartClearedOnPayment = false;
+
+  // Add new fields for Pargo tracking
+  Map<String, dynamic>? _orderData;
+  PargoPickupDetails? _pargoPickupDetails;
+  List<TrackingEvent> _trackingTimeline = [];
+  bool _isLoadingTimeline = false;
 
   @override
   void initState() {
@@ -28,6 +42,47 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
       CurvedAnimation(parent: _fadeController, curve: Curves.easeOut),
     );
     _fadeController.forward();
+    _loadOrderData();
+    _loadTrackingTimeline();
+  }
+
+  // Load order data
+  Future<void> _loadOrderData() async {
+    final orderRef = FirebaseFirestore.instance.collection('orders').doc(widget.orderId);
+    final snapshot = await orderRef.get();
+    if (snapshot.exists) {
+      final data = snapshot.data()! as Map<String, dynamic>;
+      setState(() {
+        _orderData = data;
+        
+        // Load Pargo pickup details if available
+        if (data['pargoPickupDetails'] != null) {
+          _pargoPickupDetails = PargoPickupDetails.fromMap(data['pargoPickupDetails']);
+        }
+      });
+    }
+  }
+
+  // Load tracking timeline
+  Future<void> _loadTrackingTimeline() async {
+    setState(() {
+      _isLoadingTimeline = true;
+    });
+
+    try {
+      // Listen to tracking timeline
+      PargoTrackingService.getOrderTimeline(widget.orderId).listen((timeline) {
+        setState(() {
+          _trackingTimeline = timeline;
+          _isLoadingTimeline = false;
+        });
+      });
+    } catch (e) {
+      print('Error loading tracking timeline: $e');
+      setState(() {
+        _isLoadingTimeline = false;
+      });
+    }
   }
 
   @override
@@ -141,6 +196,10 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
               return tb.compareTo(ta); // Most recent first
             });
 
+            // Auto-clear buyer cart once payment is confirmed/complete
+            _maybeClearCartOnPayment(data);
+            _maybeNotifyWhatsApp(data);
+
             return CustomScrollView(
               slivers: [
                 // Beautiful App Bar
@@ -189,6 +248,16 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
                   child: _buildContactSupportCard(),
                 ),
                 
+                // Add Pargo pickup section
+                SliverToBoxAdapter(
+                  child: _buildPargoPickupSection(),
+                ),
+                
+                // Add tracking timeline
+                SliverToBoxAdapter(
+                  child: _buildTrackingTimeline(),
+                ),
+                
                 SliverToBoxAdapter(
                   child: const SizedBox(height: 100), // Bottom padding
                 ),
@@ -198,6 +267,60 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
         ),
       ),
     );
+  }
+
+  Future<void> _maybeClearCartOnPayment(Map<String, dynamic> data) async {
+    if (_cartClearedOnPayment) return;
+    final paymentStatus = (data['paymentStatus'] as String?)?.toLowerCase() ?? '';
+    final status = (data['status'] as String?)?.toLowerCase() ?? '';
+    final isPaid = paymentStatus == 'paid' || status == 'complete' || status == 'confirmed';
+    if (!isPaid) return;
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) return;
+      // Clear Firestore cart
+      final cartRef = FirebaseFirestore.instance.collection('users').doc(user.uid).collection('cart');
+      final items = await cartRef.get();
+      final batch = FirebaseFirestore.instance.batch();
+      for (final d in items.docs) {
+        batch.delete(d.reference);
+      }
+      await batch.commit();
+      // Clear provider cart if context available
+      if (mounted) {
+        final cart = Provider.of<CartProvider>(context, listen: false);
+        cart.clearCart();
+        setState(() { _cartClearedOnPayment = true; });
+      } else {
+        _cartClearedOnPayment = true;
+      }
+    } catch (_) {}
+  }
+
+  bool _waNotified = false;
+  Future<void> _maybeNotifyWhatsApp(Map<String, dynamic> data) async {
+    if (_waNotified) return;
+    final paymentStatus = (data['paymentStatus'] as String?)?.toLowerCase() ?? '';
+    final status = (data['status'] as String?)?.toLowerCase() ?? '';
+    final isPaid = paymentStatus == 'paid' || status == 'confirmed' || status == 'complete';
+    if (!isPaid) return;
+    final phone = (data['buyerPhone'] as String?)?.trim();
+    if (phone == null || phone.isEmpty) return;
+    String e164 = phone.replaceAll(RegExp(r'[^\d+]'), '');
+    if (!e164.startsWith('+')) {
+      if (e164.startsWith('0')) e164 = e164.substring(1);
+      e164 = '+27$e164';
+    }
+    final orderNo = (data['orderNumber'] as String?) ?? (data['orderId'] as String?) ?? widget.orderId;
+    final ok = await WhatsAppCloudService.instance.sendTemplate(
+      toE164: e164,
+      templateName: const String.fromEnvironment('WA_TMPL_ORDER_CONFIRMED', defaultValue: 'order_confirmed'),
+      language: 'en',
+      parameters: [orderNo],
+    );
+    if (ok) {
+      _waNotified = true;
+    }
   }
 
   Widget _buildSliverAppBar(String status) {
@@ -380,7 +503,7 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
       if (driverDoc.exists) {
         final driverData = driverDoc.data();
         final driverName = driverData?['name'] ?? 'Unknown Driver';
-        final driverPhone = driverData?['phone'] ?? 'No phone available';
+        final String driverPhone = driverData?['phone'] ?? 'No phone available';
         final driverRating = driverData?['rating'] ?? 0.0;
         final isOnline = driverData?['isOnline'] ?? false;
         final currentLocation = driverData?['currentLocation'];
@@ -956,6 +1079,313 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
         ],
       ),
     );
+  }
+
+  // Build Pargo pickup details section
+  Widget _buildPargoPickupSection() {
+    if (_pargoPickupDetails == null) return const SizedBox.shrink();
+
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.store, color: Colors.green[600]),
+                const SizedBox(width: 8),
+                Text(
+                  'Pickup Point Details',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            
+            // Pickup point info
+            _buildPickupInfoRow('📍 Location', _pargoPickupDetails!.pickupPointName),
+            _buildPickupInfoRow('🏠 Address', _pargoPickupDetails!.pickupPointAddress),
+            _buildPickupInfoRow('💰 Pickup Fee', 'R${_pargoPickupDetails!.pickupFee.toStringAsFixed(0)}'),
+            
+            if (_pargoPickupDetails!.trackingNumber != null)
+              _buildPickupInfoRow('📦 Tracking', _pargoPickupDetails!.trackingNumber!),
+            
+            if (_pargoPickupDetails!.estimatedArrival != null)
+              _buildPickupInfoRow('📅 Estimated Arrival', 
+                _formatDate(_pargoPickupDetails!.estimatedArrival!)),
+            
+            const SizedBox(height: 16),
+            
+            // Collection instructions
+            if (_orderData?['status'] == OrderStatus.readyForCollection.name)
+              _buildCollectionInstructions(),
+            
+            // Collection QR code
+            if (_orderData?['status'] == OrderStatus.readyForCollection.name)
+              _buildCollectionQRCode(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Build pickup info row
+  Widget _buildPickupInfoRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 100,
+            child: Text(
+              label,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                fontWeight: FontWeight.w500,
+                color: Colors.grey[600],
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Build collection instructions
+  Widget _buildCollectionInstructions() {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.blue[50],
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.blue[200]!),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.info_outline, color: Colors.blue[600], size: 20),
+              const SizedBox(width: 8),
+              Text(
+                'Collection Instructions',
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: Colors.blue[700],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            PargoTrackingService.getCollectionInstructions(_pargoPickupDetails!),
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: Colors.blue[700],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Build collection QR code
+  Widget _buildCollectionQRCode() {
+    final qrData = PargoTrackingService.generateCollectionQRData(
+      widget.orderId,
+      _orderData?['orderNumber'] ?? '',
+    );
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey[300]!),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey[200]!,
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          Text(
+            'Collection QR Code',
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: QrImageView(
+              data: qrData,
+              version: QrVersions.auto,
+              size: 120,
+              backgroundColor: Colors.white,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            'Show this QR code to pickup point staff',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: Colors.grey[600],
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Build tracking timeline
+  Widget _buildTrackingTimeline() {
+    if (_trackingTimeline.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.timeline, color: Colors.blue[600]),
+                const SizedBox(width: 8),
+                Text(
+                  'Tracking Timeline',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            
+            if (_isLoadingTimeline)
+              const Center(child: CircularProgressIndicator())
+            else
+              ..._trackingTimeline.map((event) => _buildTimelineEvent(event)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Build individual timeline event
+  Widget _buildTimelineEvent(TrackingEvent event) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Status icon
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: event.status.color.withOpacity(0.1),
+              shape: BoxShape.circle,
+              border: Border.all(color: event.status.color, width: 2),
+            ),
+            child: Icon(
+              event.status.icon,
+              color: event.status.color,
+              size: 20,
+            ),
+          ),
+          
+          const SizedBox(width: 12),
+          
+          // Event details
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  event.status.displayName,
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                if (event.description != null) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    event.description!,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Colors.grey[600],
+                    ),
+                  ),
+                ],
+                if (event.location != null) ...[
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Icon(Icons.location_on, size: 14, color: Colors.grey[500]),
+                      const SizedBox(width: 4),
+                      Text(
+                        event.location!,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Colors.grey[500],
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+                const SizedBox(height: 4),
+                Text(
+                  _formatDate(event.timestamp),
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Colors.grey[400],
+                    fontSize: 11,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Format date for display
+  String _formatDate(DateTime date) {
+    final now = DateTime.now();
+    final difference = now.difference(date);
+    
+    if (difference.inDays == 0) {
+      return 'Today at ${_formatTime(date)}';
+    } else if (difference.inDays == 1) {
+      return 'Yesterday at ${_formatTime(date)}';
+    } else if (difference.inDays < 7) {
+      return '${difference.inDays} days ago at ${_formatTime(date)}';
+    } else {
+      return '${date.day}/${date.month}/${date.year} at ${_formatTime(date)}';
+    }
+  }
+
+  // Format time for display
+  String _formatTime(DateTime date) {
+    return '${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
   }
 
   Widget _buildInfoRow(IconData icon, String label, String value) {

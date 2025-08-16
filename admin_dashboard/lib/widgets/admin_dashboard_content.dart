@@ -44,6 +44,7 @@ import 'reports_section.dart';
 import 'data_export_section.dart';
 import 'roles_permissions_section.dart';
 import 'seller_delivery_management.dart';
+import 'image_management_section.dart';
 
 class AdminDashboardContent extends StatefulWidget {
   final String adminEmail;
@@ -83,6 +84,9 @@ class _AdminDashboardContentState extends State<AdminDashboardContent> {
     'Moderation',
     'Reviews',
     'Returns/Refunds',
+    'Storage Stats',
+    'Orphaned Images',
+    'Cleanup Tools',
     'Platform Settings',
     'Roles/Permissions',
     'Audit Logs',
@@ -452,19 +456,22 @@ class _AdminDashboardContentState extends State<AdminDashboardContent> {
       case 10: return SingleChildScrollView(child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [SectionHeader('Moderation Center'), const SizedBox(height: 8), ModerationCenter(auth: widget.auth, firestore: widget.firestore)])); // Moderation
       case 11: return SingleChildScrollView(child: ReviewsSection()); // Reviews
               case 12: return ReturnsManagement(); // Returns/Refunds
-      case 13: return SingleChildScrollView(child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [SectionHeader('Platform Settings'), const SizedBox(height: 8), PlatformSettingsSection(auth: widget.auth, firestore: widget.firestore)])); // Platform Settings
-      case 14: return RolesPermissionsSection(); // Roles/Permissions
-      case 15: return AuditLogsSection(); // Audit Logs
-      case 16: return PaymentSettingsManagement(); // Payment Settings
-      case 17: return EscrowManagement(); // Escrow Management
-      case 18: return ReturnsManagement(); // Returns Management
-      case 19: return DeveloperToolsSection(); // Developer Tools
-      case 20: return DataExportSection(); // Data Export
-      case 21: return const OrderMigrationScreen(); // Order Migration
-      case 22: return RuralDriverManagement(); // Rural Driver Management
-      case 23: return UrbanDeliveryManagement(); // Urban Delivery Management
-      case 24: return DriverManagementScreen(); // Driver Management
-      case 25: return SellerDeliveryManagement(); // Seller Delivery Management
+      case 13: return ImageManagementSection(); // Storage Stats
+      case 14: return ImageManagementSection(); // Orphaned Images
+      case 15: return ImageManagementSection(); // Cleanup Tools
+      case 16: return SingleChildScrollView(child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [SectionHeader('Platform Settings'), const SizedBox(height: 8), PlatformSettingsSection(auth: widget.auth, firestore: widget.firestore)])); // Platform Settings
+      case 17: return RolesPermissionsSection(); // Roles/Permissions
+      case 18: return AuditLogsSection(); // Audit Logs
+      case 19: return PaymentSettingsManagement(); // Payment Settings
+      case 20: return EscrowManagement(); // Escrow Management
+      case 21: return ReturnsManagement(); // Returns Management
+      case 22: return DeveloperToolsSection(); // Developer Tools
+      case 23: return DataExportSection(); // Data Export
+      case 24: return const OrderMigrationScreen(); // Order Migration
+      case 25: return RuralDriverManagement(); // Rural Driver Management
+      case 26: return UrbanDeliveryManagement(); // Urban Delivery Management
+      case 27: return DriverManagementScreen(); // Driver Management
+      case 28: return SellerDeliveryManagement(); // Seller Delivery Management
       default: return const SizedBox();
     }
   }

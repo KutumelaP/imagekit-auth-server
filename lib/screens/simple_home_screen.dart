@@ -12,7 +12,6 @@ import 'OrderHistoryScreen.dart';
 import 'ChatListScreen.dart';
 import 'NotificationListScreen.dart';
 import 'SellerOrdersListScreen.dart';
-import 'SellerRegistrationScreen.dart';
 import 'seller_onboarding_screen.dart';
 import 'stunning_product_upload.dart';
 import 'seller_product_management.dart';
@@ -21,7 +20,6 @@ import 'seller_product_management.dart';
 
 import 'dart:async'; // Added import for StreamSubscription
 import '../services/global_message_listener.dart';
-import '../services/notification_service.dart'; // Added import for NotificationService
 import '../widgets/notification_badge.dart';
 import '../widgets/chat_badge.dart';
 import 'package:geolocator/geolocator.dart';
@@ -43,9 +41,7 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
   
   // Smooth animations
   late AnimationController _fadeController;
-  late AnimationController _slideController;
   late Animation<double> _fadeAnimation;
-  late Animation<Offset> _slideAnimation;
 
   bool _isDriver = false;
 
@@ -250,25 +246,13 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
       CurvedAnimation(parent: _fadeController, curve: Curves.easeOut),
     );
 
-    // Smooth slide animation
-    _slideController = AnimationController(
-      duration: const Duration(milliseconds: 600),
-      vsync: this,
-    );
-    _slideAnimation = Tween<Offset>(
-      begin: const Offset(0, 0.3),
-      end: Offset.zero,
-    ).animate(CurvedAnimation(parent: _slideController, curve: Curves.easeOut));
-
     // Start animations
     _fadeController.forward();
-    _slideController.forward();
   }
 
   @override
   void dispose() {
     _fadeController.dispose();
-    _slideController.dispose();
     _messageListener?.cancel(); // Cancel the listener
     super.dispose();
   }
@@ -353,186 +337,7 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
     }
   }
 
-  void _showPlatformFeeDialog(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          title: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: AppTheme.primaryGreen.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Icon(
-                  Icons.info_outline,
-                  color: AppTheme.primaryGreen,
-                  size: 24,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Text(
-                'Platform Fee Information',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: AppTheme.deepTeal,
-                ),
-              ),
-            ],
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Before you register as a seller, please note our platform fee structure:',
-                style: TextStyle(
-                  fontSize: 14,
-                  color: AppTheme.darkGrey,
-                  height: 1.4,
-                ),
-              ),
-              const SizedBox(height: 16),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: AppTheme.primaryGreen.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(
-                    color: AppTheme.primaryGreen.withOpacity(0.3),
-                  ),
-                ),
-                child: Column(
-                  children: [
-                    Row(
-                      children: [
-                        Icon(
-                          Icons.receipt,
-                          color: AppTheme.primaryGreen,
-                          size: 20,
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          'Orders R50 and above:',
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            color: AppTheme.deepTeal,
-                          ),
-                        ),
-                        const Spacer(),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: AppTheme.primaryGreen,
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Text(
-                            '5%',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
-                              color: AppTheme.angel,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        Icon(
-                          Icons.receipt,
-                          color: AppTheme.deepTeal,
-                          size: 20,
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          'Orders below R50:',
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            color: AppTheme.deepTeal,
-                          ),
-                        ),
-                        const Spacer(),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: AppTheme.deepTeal,
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Text(
-                            '3%',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
-                              color: AppTheme.angel,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                'This fee helps us maintain the platform and provide support to all sellers.',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: AppTheme.mediumGrey,
-                  fontStyle: FontStyle.italic,
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-              },
-              child: Text(
-                'Cancel',
-                style: TextStyle(
-                  color: AppTheme.mediumGrey,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const SellerOnboardingScreen()),
-                );
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppTheme.primaryGreen,
-                foregroundColor: AppTheme.angel,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-              ),
-              child: Text(
-                'Continue',
-                style: TextStyle(
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          ],
-        );
-      },
-    );
-  }
+  // Removed unused _showPlatformFeeDialog to fix lints
 
   @override
   Widget build(BuildContext context) {
@@ -558,10 +363,7 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
       body: SafeArea(
         child: FadeTransition(
           opacity: _fadeAnimation,
-          child: SlideTransition(
-            position: _slideAnimation,
-            child: _buildBody(),
-          ),
+          child: _buildBody(),
         ),
       ),
         );
@@ -749,18 +551,21 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
   Widget _buildStunningMainContent() {
     return LayoutBuilder(
       builder: (context, constraints) {
-        return CustomScrollView(
-          physics: const BouncingScrollPhysics(),
-          slivers: [
-            _buildStunningAppBar(),
-            _buildWelcomeHero(),
-            _buildCategoriesSection(),
-            _buildMyPurchasesSection(),
-            // Add bottom padding to prevent overflow
-            SliverToBoxAdapter(
-              child: SizedBox(height: MediaQuery.of(context).size.height * 0.05),
-            ),
-          ],
+        return RefreshIndicator(
+          onRefresh: _loadCategories,
+          child: CustomScrollView(
+            physics: const BouncingScrollPhysics(),
+            slivers: [
+              _buildStunningAppBar(),
+              _buildWelcomeHero(),
+              _buildCategoriesHeaderSliver(),
+              _buildCategoriesGridSliver(),
+              _buildMyPurchasesSection(),
+              SliverToBoxAdapter(
+                child: SizedBox(height: MediaQuery.of(context).size.height * 0.05),
+              ),
+            ],
+          ),
         );
       },
     );
@@ -768,448 +573,64 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
 
   Widget _buildStunningAppBar() {
     return SliverAppBar(
-      expandedHeight: _getResponsiveAppBarHeight(),
-      floating: false,
       pinned: true,
       backgroundColor: AppTheme.deepTeal,
-      iconTheme: const IconThemeData(color: Colors.white),
-      flexibleSpace: FlexibleSpaceBar(
-        background: Container(
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [AppTheme.deepTeal, AppTheme.cloud],
-            ),
-          ),
-          child: Stack(
-            children: [
-              // Decorative circles - only on larger screens
-              if (MediaQuery.of(context).size.width > 600) ...[
-                Positioned(
-                  top: -50,
-                  right: -50,
-                  child: Container(
-                    width: 150,
-                    height: 150,
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.1),
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                ),
-                Positioned(
-                  bottom: -30,
-                  left: -30,
-                  child: Container(
-                    width: 100,
-                    height: 100,
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.1),
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                ),
-              ],
-              // Content
-              Padding(
-                padding: _getResponsivePadding(),
-                child: _buildResponsiveHeaderContent(),
-              ),
-            ],
-          ),
-        ),
-      ),
+      automaticallyImplyLeading: false,
+      title: _buildSimpleHeader(),
     );
   }
 
-  // Responsive height based on screen size
-  double _getResponsiveAppBarHeight() {
+  Widget _buildSimpleHeader() {
     final screenWidth = MediaQuery.of(context).size.width;
-    final screenHeight = MediaQuery.of(context).size.height;
-    
-    if (screenWidth < 600) {
-      // Mobile: Very compact height - further reduced to eliminate overflow
-      return screenHeight * 0.05;
-    } else if (screenWidth < 900) {
-      // Tablet: Medium height
-      return screenHeight * 0.1;
-    } else {
-      // Desktop: Larger height
-      return screenHeight * 0.12;
-    }
-  }
+    final logoSize = screenWidth < 600 ? 28.0 : screenWidth < 900 ? 32.0 : 36.0;
 
-  // Responsive padding based on screen size
-  EdgeInsets _getResponsivePadding() {
-    final screenWidth = MediaQuery.of(context).size.width;
-    final screenHeight = MediaQuery.of(context).size.height;
-    
-    if (screenWidth < 600) {
-      // Mobile: Very compact padding
-      return EdgeInsets.fromLTRB(
-        screenWidth * 0.03,
-        screenHeight * 0.015,
-        screenWidth * 0.03,
-        screenHeight * 0.005,
-      );
-    } else if (screenWidth < 900) {
-      // Tablet: Medium padding
-      return EdgeInsets.fromLTRB(
-        screenWidth * 0.04,
-        screenHeight * 0.03,
-        screenWidth * 0.04,
-        screenHeight * 0.015,
-      );
-    } else {
-      // Desktop: Larger padding
-      return EdgeInsets.fromLTRB(
-        screenWidth * 0.05,
-        screenHeight * 0.04,
-        screenWidth * 0.05,
-        screenHeight * 0.02,
-      );
-    }
-  }
-
-  // Responsive header content
-  Widget _buildResponsiveHeaderContent() {
-    final screenWidth = MediaQuery.of(context).size.width;
-    
-    if (screenWidth < 600) {
-      // Mobile: Compact layout
-      return _buildMobileHeader();
-    } else if (screenWidth < 900) {
-      // Tablet: Medium layout
-      return _buildTabletHeader();
-    } else {
-      // Desktop: Full layout
-      return _buildDesktopHeader();
-    }
-  }
-
-  // Mobile header layout
-  Widget _buildMobileHeader() {
     return Row(
       children: [
-        // Logo - smaller for mobile
         Container(
-          width: MediaQuery.of(context).size.width * 0.1,
-          height: MediaQuery.of(context).size.width * 0.1,
+          width: logoSize,
+          height: logoSize,
           decoration: BoxDecoration(
             color: Colors.white.withOpacity(0.2),
-            borderRadius: BorderRadius.circular(10),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.1),
-                blurRadius: 6,
-                offset: const Offset(0, 2),
-              ),
-            ],
+            borderRadius: BorderRadius.circular(8),
           ),
           child: ClipRRect(
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(8),
             child: Image.asset(
               'assets/logo.png',
-              width: MediaQuery.of(context).size.width * 0.1,
-              height: MediaQuery.of(context).size.width * 0.1,
               fit: BoxFit.cover,
               errorBuilder: (context, error, stackTrace) {
-                return const Icon(
-                  Icons.shopping_bag,
-                  color: Colors.white,
-                  size: 20,
-                );
+                return const Icon(Icons.shopping_bag, color: Colors.white, size: 18);
               },
             ),
           ),
         ),
+        const Expanded(
+          child: Text(
+            'Mzansi Marketplace',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+          ),
+        ),
+        _buildAccountMenu(),
         const SizedBox(width: 8),
-        // Title only - removed subtitle for mobile
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text(
-                'Mzansi Marketplace',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: MediaQuery.of(context).size.width * 0.04,
-                  fontWeight: FontWeight.bold,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ],
-          ),
-        ),
-        // Buttons - include notification and chat for mobile
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _buildNotificationButton(),
-            const SizedBox(width: 4),
-            _buildChatButton(),
-            const SizedBox(width: 4),
-            _buildAccountMenu(),
-            const SizedBox(width: 4),
-            _buildCartButton(),
-          ],
-        ),
+        _buildCartButton(),
       ],
     );
   }
 
-  // Tablet header layout
-  Widget _buildTabletHeader() {
-    return Row(
-      children: [
-        // Logo - medium size for tablet
-        Container(
-          width: MediaQuery.of(context).size.width * 0.08,
-          height: MediaQuery.of(context).size.width * 0.08,
-          decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.2),
-            borderRadius: BorderRadius.circular(15),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.1),
-                blurRadius: 10,
-                offset: const Offset(0, 5),
-              ),
-            ],
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(15),
-            child: Image.asset(
-              'assets/logo.png',
-              width: MediaQuery.of(context).size.width * 0.08,
-              height: MediaQuery.of(context).size.width * 0.08,
-              fit: BoxFit.cover,
-              errorBuilder: (context, error, stackTrace) {
-                return const Icon(
-                  Icons.shopping_bag,
-                  color: Colors.white,
-                  size: 28,
-                );
-              },
-            ),
-          ),
-        ),
-        const SizedBox(width: 16),
-        // Title only - removed subtitle for tablet
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text(
-                'Mzansi Marketplace',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: MediaQuery.of(context).size.width * 0.04,
-                  fontWeight: FontWeight.bold,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ],
-          ),
-        ),
-        // Buttons - more buttons for tablet
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _buildNotificationButton(),
-            const SizedBox(width: 4),
-            _buildChatButton(),
-            const SizedBox(width: 4),
-            if (FirebaseAuth.instance.currentUser != null) _buildMyOrdersButton(),
-            const SizedBox(width: 4),
-            _buildAccountMenu(),
-            const SizedBox(width: 4),
-            _buildCartButton(),
-          ],
-        ),
-      ],
-    );
-  }
-
-  // Desktop header layout
-  Widget _buildDesktopHeader() {
-    return Row(
-      children: [
-        // Logo - larger for desktop
-        Container(
-          width: MediaQuery.of(context).size.width * 0.06,
-          height: MediaQuery.of(context).size.width * 0.06,
-          decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.2),
-            borderRadius: BorderRadius.circular(18),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.1),
-                blurRadius: 12,
-                offset: const Offset(0, 6),
-              ),
-            ],
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(18),
-            child: Image.asset(
-              'assets/logo.png',
-              width: MediaQuery.of(context).size.width * 0.06,
-              height: MediaQuery.of(context).size.width * 0.06,
-              fit: BoxFit.cover,
-              errorBuilder: (context, error, stackTrace) {
-                return const Icon(
-                  Icons.shopping_bag,
-                  color: Colors.white,
-                  size: 32,
-                );
-              },
-            ),
-          ),
-        ),
-        const SizedBox(width: 20),
-        // Title only - removed subtitle for desktop
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment: MainAxisAlignment.center,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Flexible(
-                child: Text(
-                  'Mzansi Marketplace',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: MediaQuery.of(context).size.width * 0.035,
-                    fontWeight: FontWeight.bold,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            ],
-          ),
-        ),
-        // Buttons - all buttons for desktop
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _buildNotificationButton(),
-            const SizedBox(width: 8),
-            _buildChatButton(),
-            const SizedBox(width: 8),
-            if (FirebaseAuth.instance.currentUser != null) _buildMyOrdersButton(),
-            const SizedBox(width: 8),
-            _buildAccountMenu(),
-            const SizedBox(width: 8),
-            _buildCartButton(),
-          ],
-        ),
-      ],
-    );
-  }
-
-  Widget _buildNotificationButton() {
-    final screenWidth = MediaQuery.of(context).size.width;
-    final iconSize = screenWidth < 600 ? 16.0 : screenWidth < 900 ? 18.0 : 20.0;
-    final currentUserId = FirebaseAuth.instance.currentUser?.uid;
-    
-    return Container(
-      margin: EdgeInsets.only(right: screenWidth < 600 ? 4.0 : screenWidth < 900 ? 6.0 : 8.0),
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.9),
-        borderRadius: BorderRadius.circular(screenWidth < 600 ? 10.0 : 12.0),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: currentUserId != null
-          ? NotificationBadge(
-              key: ValueKey('notification_badge_$currentUserId'), // Force rebuild when user changes
-              child: IconButton(
-                icon: Icon(Icons.notifications, color: AppTheme.deepTeal, size: iconSize),
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const NotificationListScreen()),
-                  );
-                },
-              ),
-            )
-          : IconButton(
-              icon: Icon(Icons.notifications, color: AppTheme.deepTeal, size: iconSize),
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const LoginScreen()),
-                );
-              },
-            ),
-    );
-  }
-
-  Widget _buildChatButton() {
-    final screenWidth = MediaQuery.of(context).size.width;
-    final iconSize = screenWidth < 600 ? 16.0 : screenWidth < 900 ? 18.0 : 20.0;
-    final currentUserId = FirebaseAuth.instance.currentUser?.uid;
-    
-    return Container(
-      margin: EdgeInsets.only(right: screenWidth < 600 ? 4.0 : screenWidth < 900 ? 6.0 : 8.0),
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.9),
-        borderRadius: BorderRadius.circular(screenWidth < 600 ? 10.0 : 12.0),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: currentUserId != null
-          ? ChatBadge(
-              key: ValueKey('chat_badge_$currentUserId'), // Force rebuild when user changes
-              child: IconButton(
-                icon: Icon(Icons.chat_outlined, color: AppTheme.deepTeal, size: iconSize),
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const ChatListScreen()),
-                  );
-                },
-              ),
-            )
-          : IconButton(
-              icon: Icon(Icons.chat_outlined, color: AppTheme.deepTeal, size: iconSize),
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const LoginScreen()),
-                );
-              },
-            ),
-    );
-  }
+  // Removed header Chat/Notifications for a cleaner, minimal top bar
 
   Widget _buildAccountMenu() {
     final screenWidth = MediaQuery.of(context).size.width;
-    final iconSize = screenWidth < 600 ? 16.0 : screenWidth < 900 ? 18.0 : 20.0;
+    final iconSize = screenWidth < 600 ? 24.0 : screenWidth < 900 ? 26.0 : 28.0;
     
     return Consumer<UserProvider>(
       builder: (context, userProvider, child) {
         return Container(
           margin: EdgeInsets.only(right: screenWidth < 600 ? 4.0 : screenWidth < 900 ? 6.0 : 8.0),
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.9),
+            color: Colors.white,
             borderRadius: BorderRadius.circular(screenWidth < 600 ? 10.0 : 12.0),
             boxShadow: [
               BoxShadow(
@@ -1227,7 +648,34 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
             ),
             color: AppTheme.angel,
             offset: const Offset(0, 8),
-            icon: Icon(Icons.account_circle, color: AppTheme.deepTeal, size: iconSize),
+            child: Padding(
+              padding: EdgeInsets.all(screenWidth < 600 ? 8.0 : 10.0),
+              child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Icon(Icons.account_circle, color: AppTheme.deepTeal, size: iconSize),
+                Positioned(
+                  right: 0,
+                  top: 0,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.1),
+                          blurRadius: 4,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    padding: const EdgeInsets.all(1),
+                    child: const _AccountUnreadCounter(),
+                  ),
+                ),
+              ],
+              ),
+            ),
             onSelected: (value) async {
               if (value == 'login') {
                 // Check if user is already authenticated but UserProvider is still loading
@@ -1242,6 +690,14 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
                   return;
                 }
                 Navigator.push(context, MaterialPageRoute(builder: (_) => const LoginScreen()));
+              } else if (value == 'notification_settings') {
+                Navigator.pushNamed(context, '/notification-settings');
+              } else if (value == 'notifications') {
+                Navigator.push(context, MaterialPageRoute(builder: (_) => const NotificationListScreen()));
+              } else if (value == 'chat') {
+                Navigator.push(context, MaterialPageRoute(builder: (_) => const ChatListScreen()));
+              } else if (value == 'my_stores') {
+                Navigator.pushNamed(context, '/my-stores');
               } else if (value == 'logout') {
                 try {
                   await FirebaseAuth.instance.signOut();
@@ -1390,6 +846,81 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
                   ),
                 ),
               ] else ...[
+                PopupMenuItem(
+                  value: 'notifications',
+                  child: Row(
+                    children: [
+                      NotificationBadge(
+                        child: Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: AppTheme.deepTeal.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Icon(Icons.notifications, size: 18, color: AppTheme.deepTeal),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      const Text('Notifications'),
+                    ],
+                  ),
+                ),
+                PopupMenuItem(
+                  value: 'my_stores',
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: AppTheme.deepTeal.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Icon(Icons.favorite, size: 18, color: AppTheme.deepTeal),
+                      ),
+                      const SizedBox(width: 12),
+                      const Text('My Stores'),
+                    ],
+                  ),
+                ),
+                PopupMenuItem(
+                  value: 'chat',
+                  child: Row(
+                    children: [
+                      ChatBadge(
+                        child: Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: AppTheme.deepTeal.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Icon(Icons.chat_outlined, size: 18, color: AppTheme.deepTeal),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      const Text('Chat'),
+                    ],
+                  ),
+                ),
+                PopupMenuItem(
+                  value: 'notification_settings',
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: AppTheme.deepTeal.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Icon(Icons.settings, size: 18, color: AppTheme.deepTeal),
+                        ),
+                        const SizedBox(width: 12),
+                        const Text('Notification Settings'),
+                      ],
+                    ),
+                  ),
+                ),
                 // Edit Profile
                 PopupMenuItem(
                   value: 'profile',
@@ -1715,7 +1246,7 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
 
   Widget _buildCartButton() {
     final screenWidth = MediaQuery.of(context).size.width;
-    final iconSize = screenWidth < 600 ? 16.0 : screenWidth < 900 ? 18.0 : 20.0;
+    final iconSize = screenWidth < 600 ? 22.0 : screenWidth < 900 ? 24.0 : 26.0;
     
     return Consumer<CartProvider>(
       builder: (context, cart, child) {
@@ -1739,6 +1270,7 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
                 onPressed: () {
                   Navigator.pushNamed(context, '/cart');
                 },
+                splashRadius: iconSize + 6,
               ),
             ),
             if (cart.itemCount > 0)
@@ -1779,171 +1311,123 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
     );
   }
 
-  Widget _buildMyOrdersButton() {
-    final screenWidth = MediaQuery.of(context).size.width;
-    final iconSize = screenWidth < 600 ? 16.0 : screenWidth < 900 ? 18.0 : 20.0;
-    
-    return Container(
-      margin: EdgeInsets.only(right: screenWidth < 600 ? 4.0 : screenWidth < 900 ? 6.0 : 8.0),
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.9),
-        borderRadius: BorderRadius.circular(screenWidth < 600 ? 10.0 : 12.0),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: IconButton(
-        icon: Icon(Icons.history, color: AppTheme.primaryGreen, size: iconSize),
-        onPressed: () {
-          Navigator.push(context, MaterialPageRoute(builder: (_) => const OrderHistoryScreen()));
-        },
-      ),
-    );
-  }
 
   Widget _buildWelcomeHero() {
     return SliverToBoxAdapter(
       child: Container(
-        margin: EdgeInsets.all(MediaQuery.of(context).size.width * 0.02), // Further reduced from 0.03
-        padding: EdgeInsets.all(MediaQuery.of(context).size.width * 0.03), // Further reduced from 0.04
+        margin: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          gradient: AppTheme.cardBackgroundGradient, // Use consistent card gradient
-          borderRadius: BorderRadius.circular(16), // Reduced from 20
-          boxShadow: AppTheme.complementaryElevation, // Use consistent elevation
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: AppTheme.complementaryElevation,
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        child: const Text(
+          'Welcome to Mzansi',
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+            color: AppTheme.deepTeal,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCategoriesHeaderSliver() {
+    return SliverToBoxAdapter(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
           children: [
-            Row(
-              children: [
-                Container(
-                  padding: EdgeInsets.all(MediaQuery.of(context).size.width * 0.02), // Further reduced from 0.025
-                  decoration: BoxDecoration(
-                    color: AppTheme.deepTeal.withOpacity(0.1), // Use consistent color scheme
-                    borderRadius: BorderRadius.circular(10), // Reduced from 12
-                  ),
-                  child: Icon(
-                    Icons.local_mall_rounded,
-                    color: AppTheme.deepTeal, // Use consistent color
-                    size: MediaQuery.of(context).size.width * 0.04, // Further reduced from 0.05
-                  ),
-                ),
-                SizedBox(width: MediaQuery.of(context).size.width * 0.025), // Further reduced from 0.03
-                Expanded(
-                  child: Text(
-                    'Welcome to Mzansi',
-                    style: TextStyle(
-                      fontSize: MediaQuery.of(context).size.width * 0.035, // Further reduced from 0.045
-                      fontWeight: FontWeight.bold,
-                      color: AppTheme.deepTeal, // Use consistent color
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            SizedBox(height: MediaQuery.of(context).size.height * 0.008), // Further reduced from 0.01
-            Text(
-              'Discover local businesses and fresh products from your community. Support local, shop smart!',
-              style: TextStyle(
-                fontSize: MediaQuery.of(context).size.width * 0.025, // Further reduced from 0.03
-                color: AppTheme.cloud, // Use consistent color
-                height: 1.3, // Reduced from 1.4
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: AppTheme.deepTeal.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(
+                Icons.category_rounded,
+                color: AppTheme.deepTeal,
+                size: 20,
               ),
             ),
-            SizedBox(height: MediaQuery.of(context).size.height * 0.01), // Further reduced from 0.015
+            const SizedBox(width: 12),
+            const Text(
+              'Browse Categories',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: AppTheme.deepTeal,
+              ),
+            ),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildCategoriesSection() {
-    return SliverToBoxAdapter(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
+  Widget _buildCategoriesGridSliver() {
+    if (_categories.isEmpty) {
+      return const SliverToBoxAdapter(
+        child: Padding(
+          padding: EdgeInsets.all(32),
+          child: Center(
+            child: Column(
               children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: AppTheme.deepTeal.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Icon(
-                    Icons.category_rounded,
+                Icon(
+                  Icons.category_outlined,
+                  color: AppTheme.deepTeal,
+                  size: 48,
+                ),
+                SizedBox(height: 16),
+                Text(
+                  'No categories available',
+                  style: TextStyle(
                     color: AppTheme.deepTeal,
-                    size: 20,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w500,
                   ),
                 ),
-                const SizedBox(width: 12),
-                const Text(
-                  'Browse Categories',
+                SizedBox(height: 8),
+                Text(
+                  'Categories will appear here once added',
                   style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                    color: AppTheme.deepTeal,
+                    color: AppTheme.cloud,
+                    fontSize: 14,
                   ),
                 ),
               ],
             ),
           ),
-          if (_categories.isEmpty)
-            const Padding(
-              padding: EdgeInsets.all(32),
-              child: Center(
-                child: Column(
-                  children: [
-                    Icon(
-                      Icons.category_outlined,
-                      color: AppTheme.deepTeal,
-                      size: 48,
-                    ),
-                    SizedBox(height: 16),
-                    Text(
-                      'No categories available',
-                      style: TextStyle(
-                        color: AppTheme.deepTeal,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    SizedBox(height: 8),
-                    Text(
-                      'Categories will appear here once added',
-                      style: TextStyle(
-                        color: AppTheme.cloud,
-                        fontSize: 14,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            )
-          else
-            GridView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              padding: const EdgeInsets.all(16),
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 2,
-                childAspectRatio: 0.75, // Reduced from 0.85 to give more height
-                crossAxisSpacing: 16,
-                mainAxisSpacing: 16,
-              ),
-              itemCount: _categories.length,
-              itemBuilder: (context, index) {
-                final category = _categories[index];
-                return _buildStunningCategoryCard(category, index);
-              },
-            ),
-        ],
+        ),
+      );
+    }
+
+    final screenWidth = MediaQuery.of(context).size.width;
+    int crossAxisCount = 2;
+    if (screenWidth >= 900) {
+      crossAxisCount = 4;
+    } else if (screenWidth >= 600) {
+      crossAxisCount = 3;
+    }
+
+    return SliverPadding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      sliver: SliverGrid(
+        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: crossAxisCount,
+          mainAxisSpacing: 16,
+          crossAxisSpacing: 16,
+          childAspectRatio: 0.78,
+        ),
+        delegate: SliverChildBuilderDelegate(
+          (context, index) {
+            final category = _categories[index];
+            return _buildStunningCategoryCard(category, index);
+          },
+          childCount: _categories.length,
+        ),
       ),
     );
   }
@@ -2066,22 +1550,9 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
       onTap: () => _goToCategory(category['name']),
       child: Container(
         decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              AppTheme.whisper,
-              AppTheme.angel,
-            ],
-          ),
-          borderRadius: BorderRadius.circular(20),
-          boxShadow: [
-            BoxShadow(
-              color: AppTheme.deepTeal.withOpacity(0.1),
-              blurRadius: 12,
-              offset: const Offset(0, 4),
-            ),
-          ],
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: AppTheme.complementaryElevation,
         ),
         child: Column(
           children: [
@@ -2090,42 +1561,18 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
               child: Container(
                 width: double.infinity,
                 decoration: BoxDecoration(
-                  borderRadius: const BorderRadius.vertical(
-                    top: Radius.circular(20),
-                  ),
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      AppTheme.deepTeal.withOpacity(0.1),
-                      AppTheme.cloud.withOpacity(0.05),
-                    ],
-                  ),
+                  borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
                 ),
                 child: ClipRRect(
-                  borderRadius: const BorderRadius.vertical(
-                    top: Radius.circular(20),
-                  ),
-                  child: Container(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: [
-                          AppTheme.deepTeal.withOpacity(0.1),
-                          AppTheme.cloud.withOpacity(0.05),
-                        ],
-                      ),
-                    ),
-                                            child: _buildCategoryImage(category),
-                  ),
+                  borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+                  child: _buildCategoryImage(category),
                 ),
               ),
             ),
             Expanded(
               flex: 2,
               child: Container(
-                padding: const EdgeInsets.all(12),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
@@ -2134,27 +1581,11 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
                       textAlign: TextAlign.center,
                       style: const TextStyle(
                         fontWeight: FontWeight.w600,
-                        fontSize: 14,
+                        fontSize: 13,
                         color: AppTheme.deepTeal,
                       ),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 4),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: AppTheme.deepTeal.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: const Text(
-                        'Explore',
-                        style: TextStyle(
-                          fontSize: 10,
-                          color: AppTheme.deepTeal,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
                     ),
                   ],
                 ),
@@ -2359,32 +1790,127 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
     }
   }
 
-  Widget _buildQuickActionCard(String title, IconData icon, Color color, VoidCallback onPressed) {
-    return GestureDetector(
-      onTap: onPressed,
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: color.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: color.withOpacity(0.3)),
-        ),
-        child: Column(
-          children: [
-            Icon(icon, color: color, size: 32),
-            const SizedBox(height: 8),
-            Text(
-              title,
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: color,
-              ),
+  // Removed unused _buildQuickActionCard to fix lints
+} 
+
+class _AccountUnreadCounter extends StatefulWidget {
+  const _AccountUnreadCounter();
+
+  @override
+  State<_AccountUnreadCounter> createState() => _AccountUnreadCounterState();
+}
+
+class _AccountUnreadCounterState extends State<_AccountUnreadCounter> {
+  int _chatUnread = 0;
+  int _notificationUnread = 0;
+  StreamSubscription<QuerySnapshot>? _chatSub;
+  StreamSubscription<QuerySnapshot>? _notifSub;
+
+  @override
+  void initState() {
+    super.initState();
+    _listen();
+  }
+
+  void _listen() {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    final userId = user.uid;
+
+    _notifSub = FirebaseFirestore.instance
+        .collection('notifications')
+        .where('userId', isEqualTo: userId)
+        .where('read', isEqualTo: false)
+        .snapshots(includeMetadataChanges: false)
+        .listen((snapshot) {
+      int count = 0;
+      for (final doc in snapshot.docs) {
+        final data = doc.data();
+        final type = data['type'] as String?;
+        if (type != 'chat_message') count++;
+      }
+      print('🔍 DEBUG: Notification count updated: $count notifications found');
+      if (mounted) setState(() => _notificationUnread = count);
+    });
+
+    _chatSub = FirebaseFirestore.instance
+        .collection('chats')
+        .where(Filter.or(
+          Filter('buyerId', isEqualTo: userId),
+          Filter('sellerId', isEqualTo: userId),
+        ))
+        .snapshots(includeMetadataChanges: false)
+        .listen((snapshot) {
+      int unread = 0;
+      for (final chat in snapshot.docs) {
+        final data = chat.data() as Map<String, dynamic>;
+        final chatUnreadCount = data['unreadCount'] as int? ?? 0;
+        final lastMessageBy = data['lastMessageBy'] as String?;
+        final lastMessageTime = data['timestamp'] as Timestamp? ?? data['lastMessageTime'] as Timestamp?;
+        final lastViewedTime = data['lastViewed_$userId'] as Timestamp?;
+        bool countThis = false;
+        if (chatUnreadCount > 0 && lastMessageBy != null && lastMessageBy != userId) {
+          if (lastMessageTime != null) {
+            if (lastViewedTime == null || lastMessageTime.toDate().isAfter(lastViewedTime.toDate())) {
+              countThis = true;
+            }
+          } else {
+            countThis = true;
+          }
+        }
+        if (countThis) unread += chatUnreadCount;
+      }
+      print('🔍 DEBUG: Chat count updated: $unread unread messages found');
+      if (mounted) setState(() => _chatUnread = unread);
+    });
+  }
+
+  @override
+  void dispose() {
+    _chatSub?.cancel();
+    _notifSub?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final total = _chatUnread + _notificationUnread;
+    print('🔍 DEBUG: Badge counts - Chat: $_chatUnread, Notifications: $_notificationUnread, Total: $total');
+    
+    if (total <= 0) return const SizedBox.shrink();
+    
+    final display = total > 99 ? '99+' : total.toString();
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: AppTheme.primaryRed,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.white, width: 2),
+        boxShadow: [
+          BoxShadow(
+            color: AppTheme.primaryRed.withOpacity(0.4),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
+      child: Text(
+        display,
+        style: const TextStyle(
+          color: Colors.white, 
+          fontSize: 12, 
+          fontWeight: FontWeight.bold,
+          shadows: [
+            Shadow(
+              color: Colors.black26,
+              offset: Offset(0, 1),
+              blurRadius: 2,
             ),
           ],
         ),
+        textAlign: TextAlign.center,
       ),
     );
   }
-} 
+}

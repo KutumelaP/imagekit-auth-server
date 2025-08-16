@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:geocoding/geocoding.dart';
+import 'package:geolocator/geolocator.dart';
 import '../services/address_search_service.dart';
 import '../theme/app_theme.dart';
 
@@ -7,9 +8,11 @@ class AddressInputField extends StatefulWidget {
   final String? initialValue;
   final String? labelText;
   final String? hintText;
-  final Function(String)? onAddressSelected;
+  final Function(String address)? onAddressSelected;
+  final Function(String address, double? latitude, double? longitude)? onAddressWithCoords;
   final bool enabled;
   final TextEditingController? controller;
+  final bool showUseMyLocation;
 
   const AddressInputField({
     Key? key,
@@ -17,8 +20,10 @@ class AddressInputField extends StatefulWidget {
     this.labelText = 'Address',
     this.hintText = 'Enter your address',
     this.onAddressSelected,
+    this.onAddressWithCoords,
     this.enabled = true,
     this.controller,
+    this.showUseMyLocation = true,
   }) : super(key: key);
 
   @override
@@ -31,6 +36,7 @@ class _AddressInputFieldState extends State<AddressInputField> {
   final TextEditingController _textController = TextEditingController();
   bool _showSuggestions = false;
   bool _isLoading = false;
+  bool _isReverseGeocoding = false;
 
   @override
   void initState() {
@@ -41,13 +47,7 @@ class _AddressInputFieldState extends State<AddressInputField> {
     // Listen to search service changes
     _searchService.addListener(_onSearchResultsChanged);
     
-    // Debug: Test suggestions after a short delay
-    Future.delayed(const Duration(seconds: 1), () {
-      if (mounted) {
-        print('🔍 Debug: Testing address suggestions...');
-        _searchService.searchAddresses('brakpan');
-      }
-    });
+    // Removed auto-test query to avoid unexpected API calls in production
   }
 
   @override
@@ -112,6 +112,31 @@ class _AddressInputFieldState extends State<AddressInputField> {
       setState(() {
         _showSuggestions = false;
       });
+    }
+  }
+
+  Future<void> _useMyLocation() async {
+    try {
+      setState(() { _isReverseGeocoding = true; });
+      LocationPermission perm = await Geolocator.checkPermission();
+      if (perm == LocationPermission.denied) {
+        perm = await Geolocator.requestPermission();
+      }
+      if (perm == LocationPermission.deniedForever || perm == LocationPermission.denied) {
+        setState(() { _isReverseGeocoding = false; });
+        return;
+      }
+      final pos = await Geolocator.getCurrentPosition(timeLimit: const Duration(seconds: 6));
+      // Use Nominatim reverse via AddressSearchService’s public method if added in future
+      // For now, create a suggestion with coordinates and let parent do map confirm
+      final approx = 'Current location (${pos.latitude.toStringAsFixed(5)}, ${pos.longitude.toStringAsFixed(5)})';
+      final controller = widget.controller ?? _textController;
+      controller.text = approx;
+      widget.onAddressWithCoords?.call(approx, pos.latitude, pos.longitude);
+    } catch (e) {
+      // Ignore errors silently; user can still type
+    } finally {
+      if (mounted) setState(() { _isReverseGeocoding = false; });
     }
   }
 
@@ -180,6 +205,22 @@ class _AddressInputFieldState extends State<AddressInputField> {
     
     print('🔍 Calling onAddressSelected callback');
     widget.onAddressSelected?.call(address);
+    // Try to pass coordinates if we can match the suggestion label
+    try {
+      final suggestion = _searchService.suggestions.firstWhere(
+        (s) => s.label == address,
+        orElse: () => AddressSuggestion(
+          label: address,
+          street: address,
+          locality: '',
+          administrativeArea: '',
+          postalCode: '',
+          latitude: null,
+          longitude: null,
+        ),
+      );
+      widget.onAddressWithCoords?.call(address, suggestion.latitude, suggestion.longitude);
+    } catch (_) {}
     print('🔍 Address selection completed');
   }
 
@@ -232,7 +273,20 @@ class _AddressInputFieldState extends State<AddressInputField> {
                 Icons.location_on,
                 color: _focusNode.hasFocus ? AppTheme.deepTeal : Colors.grey.shade600,
               ),
-              suffixIcon: _buildSuffixIcon(),
+              suffixIcon: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (widget.showUseMyLocation)
+                    IconButton(
+                      tooltip: 'Use my location',
+                      icon: _isReverseGeocoding 
+                        ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, valueColor: AlwaysStoppedAnimation<Color>(AppTheme.deepTeal)))
+                        : const Icon(Icons.my_location, color: AppTheme.deepTeal, size: 20),
+                      onPressed: _isReverseGeocoding ? null : _useMyLocation,
+                    ),
+                  _buildSuffixIcon(),
+                ],
+              ),
               border: InputBorder.none,
               contentPadding: const EdgeInsets.symmetric(
                 horizontal: 16,
@@ -350,8 +404,8 @@ class _AddressInputFieldState extends State<AddressInputField> {
                   return _buildUseEnteredAddressOption();
                 }
                 
-                final placemark = _searchService.suggestions[index];
-                final address = _formatPlacemark(placemark);
+                 final suggestion = _searchService.suggestions[index];
+                 final address = suggestion.label;
                 return _buildSuggestionItem(address);
               },
             ),

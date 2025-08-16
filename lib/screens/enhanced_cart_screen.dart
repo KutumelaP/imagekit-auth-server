@@ -80,8 +80,7 @@ class _EnhancedCartScreenState extends State<EnhancedCartScreen>
     // Electronics categories
     if (name.contains('phone') || name.contains('laptop') || name.contains('computer') ||
         name.contains('camera') || name.contains('headphone') || name.contains('charger') ||
-        name.contains('tablet') || name.contains('ipad') || name.contains('iphone') ||
-        name.contains('samsung') || name.contains('macbook') || name.contains('dell') ||
+         name.contains('samsung') || name.contains('macbook') || name.contains('dell') ||
         name.contains('speaker') || name.contains('game') || name.contains('console') ||
         name.contains('smart') || name.contains('watch') || name.contains('fitbit')) {
       return Icons.devices;

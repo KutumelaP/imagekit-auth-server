@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:async';
-import 'package:flutter/foundation.dart';
 import '../utils/safari_optimizer.dart';
 
 class ChatBadge extends StatefulWidget {
@@ -86,9 +85,41 @@ class _ChatBadgeState extends State<ChatBadge> {
 
       _subscription = chatsStream.listen(
         (snapshot) {
-          if (mounted) {
-            print('🔍 DEBUG: Chat badge stream update - ${snapshot.docs.length} chats');
-            _debouncedUpdateBadgeCount(currentUserId);
+          if (!mounted) return;
+          print('🔍 DEBUG: Chat badge stream update - ${snapshot.docs.length} chats');
+
+          // Recalculate unread count from snapshot for the receiver
+          try {
+            int unreadCount = 0;
+        for (final chat in snapshot.docs) {
+              final data = chat.data();
+              final chatUnreadCount = data['unreadCount'] as int? ?? 0;
+              final lastMessageBy = data['lastMessageBy'] as String?;
+              final lastMessageTime = data['timestamp'] as Timestamp? ?? data['lastMessageTime'] as Timestamp?; // support either
+              final lastViewedTime = data['lastViewed_$currentUserId'] as Timestamp?;
+
+              bool countThisChat = false;
+              if (chatUnreadCount > 0 && lastMessageBy != null && lastMessageBy != currentUserId) {
+                if (lastMessageTime != null) {
+                  if (lastViewedTime == null || lastMessageTime.toDate().isAfter(lastViewedTime.toDate())) {
+                    countThisChat = true;
+                  }
+                } else {
+                  countThisChat = true;
+                }
+              }
+              if (countThisChat) {
+                unreadCount += chatUnreadCount;
+              }
+            }
+
+            setState(() {
+              _unreadCount = unreadCount;
+              _isInitialized = true;
+              _lastCount = unreadCount;
+            });
+          } catch (e) {
+            print('❌ Error aggregating chat badge count: $e');
           }
         },
         onError: (error) {

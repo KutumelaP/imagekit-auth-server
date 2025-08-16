@@ -228,59 +228,59 @@ class _StunningProductDetailState extends State<StunningProductDetail>
         icon: const Icon(Icons.arrow_back, color: Colors.white),
         onPressed: () => Navigator.of(context).pop(),
       ),
-      actions: [
-        // Cart with count
-        Consumer<CartProvider>(
-          builder: (context, cartProvider, child) {
-            final itemCount = cartProvider.itemCount;
-            return Container(
-              margin: const EdgeInsets.only(right: 8),
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Stack(
-                children: [
-                  IconButton(
-                    icon: const Icon(
-                      Icons.shopping_cart,
-                      color: Colors.white,
+              actions: [
+          // Cart with count
+          Consumer<CartProvider>(
+            builder: (context, cartProvider, child) {
+              final itemCount = cartProvider.itemCount;
+              return Container(
+                margin: const EdgeInsets.only(right: 8),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Stack(
+                  children: [
+                    IconButton(
+                      icon: const Icon(
+                        Icons.shopping_cart,
+                        color: Colors.white,
+                      ),
+                      onPressed: () {
+                        Navigator.pushNamed(context, '/cart');
+                      },
                     ),
-                    onPressed: () {
-                      Navigator.pushNamed(context, '/cart');
-                    },
-                  ),
-                  if (itemCount > 0)
-                    Positioned(
-                      right: 8,
-                      top: 8,
-                      child: Container(
-                        padding: const EdgeInsets.all(2),
-                        decoration: BoxDecoration(
-                          color: AppTheme.primaryRed,
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        constraints: const BoxConstraints(
-                          minWidth: 16,
-                          minHeight: 16,
-                        ),
-                        child: Text(
-                          itemCount.toString(),
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
+                    if (itemCount > 0)
+                      Positioned(
+                        right: 8,
+                        top: 8,
+                        child: Container(
+                          padding: const EdgeInsets.all(2),
+                          decoration: BoxDecoration(
+                            color: AppTheme.primaryRed,
+                            borderRadius: BorderRadius.circular(10),
                           ),
-                          textAlign: TextAlign.center,
+                          constraints: const BoxConstraints(
+                            minWidth: 16,
+                            minHeight: 16,
+                          ),
+                          child: Text(
+                            itemCount.toString(),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
                         ),
                       ),
-                    ),
-                ],
-              ),
-            );
-          },
-        ),
-        ScaleTransition(
+                  ],
+                ),
+              );
+            },
+          ),
+          ScaleTransition(
           scale: _scaleAnimation,
           child: Container(
             margin: const EdgeInsets.only(right: 16),
@@ -765,34 +765,15 @@ class _StunningProductDetailState extends State<StunningProductDetail>
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Contact Seller Button (always visible)
-            Container(
-              width: double.infinity,
-              margin: const EdgeInsets.only(bottom: 8),
-              child: OutlinedButton.icon(
-                onPressed: () => _contactSeller(),
-                icon: const Icon(Icons.chat_outlined),
-                label: const Text('Contact Seller'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: AppTheme.deepTeal,
-                  side: BorderSide(color: AppTheme.deepTeal, width: 2),
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-              ),
-            ),
-            
             // Purchase Buttons Row
             Row(
               children: [
                 if (!isOutOfStock) ...[
                   Expanded(
                     child: OutlinedButton.icon(
-                      onPressed: () async => await _addToCart(),
-                      icon: const Icon(Icons.add_shopping_cart),
-                      label: const Text('Add to Cart'),
+                      onPressed: () async => await _contactSeller(),
+                      icon: const Icon(Icons.message),
+                      label: const Text('Contact Seller'),
                       style: OutlinedButton.styleFrom(
                         foregroundColor: AppTheme.deepTeal,
                         side: BorderSide(color: AppTheme.deepTeal, width: 2),
@@ -855,45 +836,7 @@ class _StunningProductDetailState extends State<StunningProductDetail>
     );
   }
 
-  Future<void> _addToCart() async {
-    final cartProvider = Provider.of<CartProvider>(context, listen: false);
-    
-    // Check if user is authenticated
-    if (!cartProvider.isAuthenticated) {
-      _showSnackBar('Please login to add items to cart', AppTheme.warning);
-      return;
-    }
-    
-    // Check stock availability
-    final stock = _getProductStock();
-    if (stock <= 0) {
-      _showSnackBar('This product is out of stock!', AppTheme.error);
-      return;
-    }
-    
-    // Add to cart - call addItem for each quantity
-    bool success = true;
-    for (int i = 0; i < quantity; i++) {
-      final added = await cartProvider.addItem(
-        widget.product['id'],
-        widget.product['name'] ?? 'Unknown Product',
-        (widget.product['price'] ?? 0.0).toDouble(),
-        widget.product['imageUrl'] ?? '',
-        widget.product['ownerId'] ?? widget.product['sellerId'] ?? '',
-        availableStock: stock,
-      );
-      if (!added) {
-        success = false;
-        break;
-      }
-    }
-    
-    if (success) {
-      _showSnackBar('Added $quantity item(s) to cart!', AppTheme.success);
-    } else {
-      _showSnackBar('Could not add all items - insufficient stock!', AppTheme.error);
-    }
-  }
+
 
   void _buyNow() {
     // Add current item to cart first
@@ -912,15 +855,27 @@ class _StunningProductDetailState extends State<StunningProductDetail>
       return;
     }
     
-    // Add to cart
+    // Check if selected quantity is available
+    if (quantity > stock) {
+      _showSnackBar('Selected quantity exceeds available stock!', AppTheme.error);
+      return;
+    }
+    
+    // Add to cart with selected quantity
     cartProvider.addItem(
       widget.product['id'],
       widget.product['name'] ?? 'Unknown Product',
       (widget.product['price'] ?? 0.0).toDouble(),
       widget.product['imageUrl'] ?? '',
       widget.product['ownerId'] ?? widget.product['sellerId'] ?? '',
+      widget.product['storeName'] ?? 'Unknown Store',
+      widget.product['storeCategory'] ?? 'Other',
+      quantity: quantity, // Include the selected quantity
       availableStock: stock,
     );
+    
+    // Show success message
+    _showSnackBar('Product added to cart!', AppTheme.primaryGreen);
     
     // Navigate to cart
     Navigator.pushNamed(context, '/cart');

@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../widgets/safe_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:provider/provider.dart';
+import '../providers/cart_provider.dart';
 
 class ProductDetailScreen extends StatelessWidget {
   final Map<String, dynamic> product;
@@ -53,6 +55,59 @@ class ProductDetailScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final stock = _getProductStock(product);
     final isOutOfStock = stock <= 0;
+
+    // Buy Now functionality
+    void _buyNow(BuildContext context) {
+      // Get cart provider
+      final cartProvider = Provider.of<CartProvider>(context, listen: false);
+      
+      // Check if user is authenticated
+      if (!cartProvider.isAuthenticated) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Please login to proceed with purchase'),
+            backgroundColor: AppTheme.warning,
+          ),
+        );
+        return;
+      }
+      
+      // Check stock availability
+      final stock = _getProductStock(product);
+      if (stock <= 0) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('This product is out of stock!'),
+            backgroundColor: AppTheme.primaryRed,
+          ),
+        );
+        return;
+      }
+      
+      // Add to cart (default quantity 1)
+      cartProvider.addItem(
+        product['id'],
+        product['name'] ?? 'Unknown Product',
+        (product['price'] ?? 0.0).toDouble(),
+        product['imageUrl'] ?? '',
+        product['ownerId'] ?? product['sellerId'] ?? '',
+        product['storeName'] ?? 'Unknown Store',
+        product['storeCategory'] ?? 'Other',
+        quantity: 1, // Default quantity for this screen
+        availableStock: stock,
+      );
+      
+      // Show success message
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Product added to cart!'),
+          backgroundColor: AppTheme.primaryGreen,
+        ),
+      );
+      
+      // Navigate to cart
+      Navigator.pushNamed(context, '/cart');
+    }
 
     return Scaffold(
       backgroundColor: AppTheme.whisper,
@@ -266,14 +321,9 @@ class ProductDetailScreen extends StatelessWidget {
                       height: 50,
                       child: OutlinedButton(
                         onPressed: () {
-                          // TODO: Buy now functionality
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Proceeding to checkout...'),
-                              backgroundColor: AppTheme.deepTeal,
-                                          ),
-                                        );
-                                      },
+                          // Buy now functionality - add to cart and navigate
+                          _buyNow(context);
+                        },
                         style: OutlinedButton.styleFrom(
                           foregroundColor: AppTheme.deepTeal,
                           side: const BorderSide(color: AppTheme.deepTeal),
@@ -410,4 +460,8 @@ class ProductDetailScreen extends StatelessWidget {
     
     return 0;
   }
+
+
+
+  // Generate order number
 }

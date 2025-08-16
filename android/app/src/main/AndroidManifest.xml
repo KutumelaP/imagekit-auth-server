@@ -43,10 +43,26 @@
                 android:name="io.flutter.embedding.android.NormalTheme"
                 android:resource="@style/NormalTheme"
                 />
+
+            <!-- Enable Flutter deep linking so incoming URLs map to app routes -->
+            <meta-data
+                android:name="flutter_deeplinking_enabled"
+                android:value="true" />
                 
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+
+            <!-- Android App Links for web deep links: https://marketplace-8d6bd.web.app/store/... -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="https"
+                    android:host="marketplace-8d6bd.web.app"
+                    android:pathPrefix="/store/" />
             </intent-filter>
         </activity>
         
@@ -62,6 +78,20 @@
          https://developer.android.com/reference/android/content/Intent#ACTION_PROCESS_TEXT.
          In particular, this is used by the Flutter engine in io.flutter.plugin.text.ProcessTextPlugin. -->
     <queries>
+        <!-- Allow resolving WhatsApp intents on Android 11+ -->
+        <package android:name="com.whatsapp" />
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="whatsapp" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="https" android:host="wa.me" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="https" android:host="api.whatsapp.com" />
+        </intent>
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>

@@ -2,15 +2,23 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:video_player/video_player.dart';
 import 'package:chewie/chewie.dart';
-import 'dart:math' as math;
+import 'dart:io';
+import 'dart:ui' as ui;
+import 'package:flutter/rendering.dart';
+import 'package:path_provider/path_provider.dart';
+import 'dart:ui' show ImageByteFormat;
 import 'dart:async';
 import '../theme/app_theme.dart';
 import '../widgets/safe_network_image.dart';
 import 'store_reviews_page.dart';
-import 'image_zoom_view.dart'; // Added import for ImageZoomView
+// Removed zoom view import
 import 'package:url_launcher/url_launcher.dart';
 import 'package:share_plus/share_plus.dart'; // Added import for share package
+import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:flutter/services.dart'; // Added import for Clipboard
+import 'package:qr_flutter/qr_flutter.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'stunning_product_browser.dart';
 
 class SimpleStoreProfileScreen extends StatefulWidget {
   final Map<String, dynamic> store;
@@ -27,29 +35,30 @@ class _SimpleStoreProfileScreenState extends State<SimpleStoreProfileScreen>
   ChewieController? _chewieController;
   bool _isVideoInitialized = false;
   bool _isVideoPlaying = false;
+  bool _isFollowing = false; // Used by Follow button
+  String? _utmSource; // optional in-app UTM overrides
+  String? _utmMedium;
+  String? _utmCampaign;
+  final FirebaseAnalytics _analytics = FirebaseAnalytics.instance;
   
   // Responsive design variables
   bool get isMobile => MediaQuery.of(context).size.width < 600;
   bool get isTablet => MediaQuery.of(context).size.width >= 600 && MediaQuery.of(context).size.width < 900;
   
   late AnimationController _fadeController;
-  late AnimationController _slideController;
-  late AnimationController _scaleController;
-  late Animation<double> _fadeAnimation;
-  late Animation<Offset> _slideAnimation;
-  late Animation<double> _scaleAnimation;
+  // late Animation<double> _fadeAnimation; // Removed - not used in modern design
   
   // Performance optimization variables
   final ScrollController _scrollController = ScrollController();
-  bool _isScrolling = false;
+  // bool _isScrolling = false; // removed - no longer used
   Timer? _scrollTimer;
   
   // Cache for gallery data to prevent unnecessary rebuilds
   Map<String, dynamic>? _cachedStoreData;
   bool _isLoadingGalleryData = false;
   
-  // Cache for live stats to prevent unnecessary rebuilds (kept for function compatibility)
-  Map<String, dynamic>? _cachedLiveStats;
+  // Cache for live stats to prevent unnecessary rebuilds (reserved for future use)
+  // Map<String, dynamic>? _cachedLiveStats; // Unused - removed
   Timer? _statsDebounceTimer;
 
   @override
@@ -58,6 +67,128 @@ class _SimpleStoreProfileScreenState extends State<SimpleStoreProfileScreen>
     _initializeAnimations();
     _initializeVideo();
     _loadGalleryData(); // Load fresh data when navigating to the screen
+    _loadFollowState();
+  }
+
+  // Share store profile
+  void _shareStore() async {
+    final storeName = widget.store['storeName'] as String? ?? 'Store';
+    final storeId = widget.store['storeId'] as String?;
+    final description = widget.store['tagline'] as String? ?? widget.store['category'] as String? ?? '';
+    // Optional UTM parameters for tracking
+    final envUtmSource = const String.fromEnvironment('UTM_SOURCE', defaultValue: '');
+    final envUtmMedium = const String.fromEnvironment('UTM_MEDIUM', defaultValue: '');
+    final envUtmCampaign = const String.fromEnvironment('UTM_CAMPAIGN', defaultValue: '');
+    // Web fallback
+    final webBase = const String.fromEnvironment('PUBLIC_BASE_URL', defaultValue: 'https://marketplace-8d6bd.web.app');
+    final deepLink = (storeId != null) ? '$webBase/store/$storeId' : webBase;
+    // Try lightweight Firebase Dynamic Links (no SDK) if LINKS_DOMAIN is provided
+    final linksDomain = const String.fromEnvironment('DYNAMIC_LINKS_DOMAIN', defaultValue: ''); // e.g. https://links.yourdomain
+    final androidPackage = const String.fromEnvironment('ANDROID_PACKAGE', defaultValue: '');
+    final iosBundleId = const String.fromEnvironment('IOS_BUNDLE_ID', defaultValue: '');
+
+    // Attach UTM params if provided
+    Uri deepUri = Uri.parse(deepLink);
+    final utmParams = <String, String>{
+      if (((_utmSource ?? envUtmSource)).isNotEmpty) 'utm_source': (_utmSource ?? envUtmSource),
+      if (((_utmMedium ?? envUtmMedium)).isNotEmpty) 'utm_medium': (_utmMedium ?? envUtmMedium),
+      if (((_utmCampaign ?? envUtmCampaign)).isNotEmpty) 'utm_campaign': (_utmCampaign ?? envUtmCampaign),
+    };
+    if (utmParams.isNotEmpty) {
+      deepUri = deepUri.replace(queryParameters: {
+        ...deepUri.queryParameters,
+        ...utmParams,
+      });
+    }
+
+    String shareUrl = deepUri.toString();
+    if (linksDomain.isNotEmpty && storeId != null) {
+      final encodedLink = Uri.encodeComponent(shareUrl);
+      final storeName = widget.store['storeName'] as String? ?? 'Store';
+      final descriptionShort = (widget.store['story'] as String?)?.trim();
+      final imageUrl = (widget.store['profileImageUrl'] as String?)?.trim();
+      final params = <String, String>{
+        'link': encodedLink,
+        if (androidPackage.isNotEmpty) 'apn': androidPackage,
+        if (iosBundleId.isNotEmpty) 'ibi': iosBundleId,
+        'efr': '1', // force redirect
+        // Social meta for previews
+        'st': storeName,
+        if (descriptionShort != null && descriptionShort.isNotEmpty) 'sd': descriptionShort,
+        if (imageUrl != null && imageUrl.isNotEmpty) 'si': imageUrl,
+        'ofl': deepUri.toString(),
+      };
+      final query = params.entries.map((e) => '${e.key}=${e.value}').join('&');
+      shareUrl = '$linksDomain/?$query';
+    }
+
+    final message = description.isNotEmpty
+        ? 'Check out $storeName on Mzansi Marketplace – $description\n$shareUrl'
+        : 'Check out $storeName on Mzansi Marketplace\n$shareUrl';
+    try {
+      await Share.share(message);
+      // Offer QR code dialog
+      if (!mounted) return;
+      showDialog(
+        context: context,
+        builder: (ctx) => Dialog(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Share via QR', style: TextStyle(fontWeight: FontWeight.bold)),
+                const SizedBox(height: 12),
+                QrImageView(
+                  data: shareUrl,
+                  size: 180,
+                  backgroundColor: Colors.white,
+                ),
+                const SizedBox(height: 12),
+                SelectableText(
+                  shareUrl,
+                  style: const TextStyle(fontSize: 12),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton.icon(
+                      onPressed: () async {
+                        await Clipboard.setData(ClipboardData(text: shareUrl));
+                        if (context.mounted) {
+                          Navigator.of(ctx).pop();
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Link copied')),
+                          );
+                        }
+                      },
+                      icon: const Icon(Icons.copy),
+                      label: const Text('Copy link'),
+                    ),
+                    const SizedBox(width: 8),
+                    TextButton(
+                      onPressed: () => Navigator.of(ctx).pop(),
+                      child: const Text('Close'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Share sheet opened')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Unable to share: $e')),
+      );
+    }
   }
 
   void _initializeAnimations() {
@@ -65,28 +196,12 @@ class _SimpleStoreProfileScreenState extends State<SimpleStoreProfileScreen>
       duration: const Duration(milliseconds: 1200),
       vsync: this,
     );
-    _slideController = AnimationController(
-      duration: const Duration(milliseconds: 800),
-      vsync: this,
-    );
-    _scaleController = AnimationController(
-      duration: const Duration(milliseconds: 600),
-      vsync: this,
-    );
     
-    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(parent: _fadeController, curve: Curves.easeOut),
-    );
-    _slideAnimation = Tween<Offset>(begin: const Offset(0, 0.3), end: Offset.zero).animate(
-      CurvedAnimation(parent: _slideController, curve: Curves.easeOut),
-    );
-    _scaleAnimation = Tween<double>(begin: 0.8, end: 1.0).animate(
-      CurvedAnimation(parent: _scaleController, curve: Curves.elasticOut),
-    );
+    // _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+    //   CurvedAnimation(parent: _fadeController, curve: Curves.easeOut),
+    // ); // Removed - not used in modern design
     
     _fadeController.forward();
-    _slideController.forward();
-    _scaleController.forward();
   }
 
   void _initializeVideo() {
@@ -167,8 +282,6 @@ class _SimpleStoreProfileScreenState extends State<SimpleStoreProfileScreen>
   @override
   void dispose() {
     _fadeController.dispose();
-    _slideController.dispose();
-    _scaleController.dispose();
     _videoController?.dispose();
     _chewieController?.dispose();
     _scrollController.dispose();
@@ -177,28 +290,7 @@ class _SimpleStoreProfileScreenState extends State<SimpleStoreProfileScreen>
     super.dispose();
   }
 
-  void _pauseVideoIfScrolling() {
-    if (_isScrolling && _isVideoPlaying) {
-      _videoController?.pause();
-      setState(() {
-        _isVideoPlaying = false;
-      });
-    }
-  }
-
-  void _handleScroll() {
-    _isScrolling = true;
-    _pauseVideoIfScrolling();
-    
-    _scrollTimer?.cancel();
-    _scrollTimer = Timer(const Duration(milliseconds: 150), () {
-      if (mounted) {
-        setState(() {
-          _isScrolling = false;
-        });
-      }
-    });
-  }
+  // Video pause/scroll handling removed - not used in modern design
 
   @override
   Widget build(BuildContext context) {
@@ -217,131 +309,1091 @@ class _SimpleStoreProfileScreenState extends State<SimpleStoreProfileScreen>
     
     return Scaffold(
       backgroundColor: AppTheme.angel,
-      body: FadeTransition(
-        opacity: _fadeAnimation,
-        child: SlideTransition(
-          position: _slideAnimation,
-          child: NotificationListener<ScrollNotification>(
-            onNotification: (ScrollNotification notification) {
-              _handleScroll();
-              return false;
-            },
-            child: CustomScrollView(
+      body: CustomScrollView(
               controller: _scrollController,
               physics: const BouncingScrollPhysics(),
               slivers: [
                 _buildStunningAppBar(),
-                SliverToBoxAdapter(child: _buildHeroSection()),
-                SliverToBoxAdapter(child: _buildStoreInfo()),
-                SliverToBoxAdapter(child: _buildStorySection()),
-                SliverToBoxAdapter(child: _buildSpecialtiesSection()),
-                SliverToBoxAdapter(child: _buildGallerySection()),
+                SliverToBoxAdapter(child: _buildModernHeroSection()),
+                SliverToBoxAdapter(child: _buildModernStatsDashboard()),
+                SliverToBoxAdapter(child: _buildModernStorySection()),
+                const SliverToBoxAdapter(child: SizedBox(height: 16)),
+                SliverToBoxAdapter(child: _buildModernSpecialtiesSection()),
+                SliverToBoxAdapter(child: _buildModernGallerySection()),
+                // Reviews summary and entry point
+                SliverToBoxAdapter(child: _buildReviewsSummaryCard()),
                 SliverToBoxAdapter(child: _buildVideoSection()),
-                SliverToBoxAdapter(child: _buildReviewsSection()),
-                SliverToBoxAdapter(child: _buildQuickActions()),
-                // SliverToBoxAdapter(child: _buildLiveStats()), // Live stats removed
-                const SliverToBoxAdapter(child: SizedBox(height: 40)),
+                const SliverToBoxAdapter(child: SizedBox(height: 100)), // Padding for FAB
               ],
             ),
+      bottomNavigationBar: _buildStickyBottomBar(),
+    );
+  }
+
+  // Modern glass morphism app bar with enhanced design
+  Widget _buildStunningAppBar() {
+    return SliverAppBar(
+      expandedHeight: 140,
+      floating: false,
+      pinned: true,
+      elevation: 0,
+      backgroundColor: Colors.transparent,
+      foregroundColor: Colors.white,
+      title: Row(
+        children: [
+          const Icon(Icons.storefront_rounded, size: 20, color: Colors.white),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              widget.store['storeName'] ?? 'Store',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                fontSize: 16,
+                letterSpacing: 0.5,
+                shadows: [
+                  Shadow(color: Colors.black26, offset: Offset(0, 2), blurRadius: 4),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+      flexibleSpace: FlexibleSpaceBar(
+        background: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                AppTheme.deepTeal.withOpacity(0.95),
+                AppTheme.primaryGreen.withOpacity(0.85),
+                AppTheme.deepTeal.withOpacity(0.90),
+              ],
+              stops: const [0.0, 0.5, 1.0],
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: AppTheme.deepTeal.withOpacity(0.3),
+                blurRadius: 20,
+                offset: const Offset(0, 10),
+              ),
+            ],
+          ),
+          child: Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Colors.white.withOpacity(0.1),
+                  Colors.transparent,
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+      actions: [
+        // QR next to share
+        Container(
+          margin: const EdgeInsets.only(right: 8, top: 8, bottom: 8),
+          child: _buildGlassButton(
+            icon: Icons.qr_code_rounded,
+            onPressed: _showQrDialog,
+          ),
+        ),
+        Container(
+          margin: const EdgeInsets.only(right: 8, top: 8, bottom: 8),
+          child: _buildGlassButton(
+            icon: Icons.share_rounded,
+            onPressed: _openCampaignBuilder,
+          ),
+        ),
+        Container(
+          margin: const EdgeInsets.only(right: 16, top: 8, bottom: 8),
+          child: _buildFollowButton(),
+        ),
+        // Campaign builder launcher (optional)
+        // Container(
+        //   margin: const EdgeInsets.only(right: 16, top: 8, bottom: 8),
+        //   child: _buildGlassButton(
+        //     icon: Icons.campaign_rounded,
+        //     onPressed: _openCampaignBuilder,
+        //   ),
+        // ),
+      ],
+    );
+  }
+
+  // Show QR dialog with share URL
+  Future<void> _showQrDialog() async {
+    final shareUrl = (() {
+      final storeId = widget.store['storeId'] as String?;
+      final webBase = const String.fromEnvironment('PUBLIC_BASE_URL', defaultValue: 'https://yourdomain.com');
+      final deepLink = (storeId != null) ? '$webBase/store/$storeId' : webBase;
+      final utmSource = const String.fromEnvironment('UTM_SOURCE', defaultValue: '');
+      final utmMedium = const String.fromEnvironment('UTM_MEDIUM', defaultValue: '');
+      final utmCampaign = const String.fromEnvironment('UTM_CAMPAIGN', defaultValue: '');
+      Uri deepUri = Uri.parse(deepLink);
+      final utmParams = <String, String>{
+        if (utmSource.isNotEmpty) 'utm_source': utmSource,
+        if (utmMedium.isNotEmpty) 'utm_medium': utmMedium,
+        if (utmCampaign.isNotEmpty) 'utm_campaign': utmCampaign,
+      };
+      if (utmParams.isNotEmpty) {
+        deepUri = deepUri.replace(queryParameters: {
+          ...deepUri.queryParameters,
+          ...utmParams,
+        });
+      }
+      final linksDomain = const String.fromEnvironment('DYNAMIC_LINKS_DOMAIN', defaultValue: '');
+      final androidPackage = const String.fromEnvironment('ANDROID_PACKAGE', defaultValue: '');
+      final iosBundleId = const String.fromEnvironment('IOS_BUNDLE_ID', defaultValue: '');
+      String out = deepUri.toString();
+      if (linksDomain.isNotEmpty && storeId != null) {
+        final encoded = Uri.encodeComponent(out);
+        final params = <String, String>{
+          'link': encoded,
+          if (androidPackage.isNotEmpty) 'apn': androidPackage,
+          if (iosBundleId.isNotEmpty) 'ibi': iosBundleId,
+          'efr': '1',
+        };
+        final query = params.entries.map((e) => '${e.key}=${e.value}').join('&');
+        out = '$linksDomain/?$query';
+      }
+      return out;
+    })();
+
+    if (!mounted) return;
+    await showDialog(
+      context: context,
+      builder: (ctx) => Dialog(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Store QR', style: TextStyle(fontWeight: FontWeight.bold)),
+              const SizedBox(height: 12),
+              Builder(
+                builder: (_) {
+                  final qrKey = GlobalKey();
+                  return Column(
+                    children: [
+                      RepaintBoundary(
+                        key: qrKey,
+                        child: Container(
+                          color: Colors.white,
+                          padding: const EdgeInsets.all(8),
+                          child: QrImageView(
+                            data: shareUrl,
+                            size: 200,
+                            backgroundColor: Colors.white,
+                            // Center logo: use app icon asset if available
+                            embeddedImage: const AssetImage('assets/app_icon_fixed.png'),
+                            embeddedImageStyle: const QrEmbeddedImageStyle(size: Size(40, 40)),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton.icon(
+                          onPressed: () => _downloadQrPng(qrKey, 'store_qr.png'),
+                          icon: const Icon(Icons.download),
+                          label: const Text('Download PNG'),
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
+              const SizedBox(height: 12),
+              SelectableText(
+                shareUrl,
+                style: const TextStyle(fontSize: 12),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton.icon(
+                    onPressed: () async {
+                      await Clipboard.setData(ClipboardData(text: shareUrl));
+                      if (context.mounted) {
+                        Navigator.of(ctx).pop();
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Link copied')),
+                        );
+                      }
+                    },
+                    icon: const Icon(Icons.copy),
+                    label: const Text('Copy link'),
+                  ),
+                  const SizedBox(width: 8),
+                  TextButton(
+                    onPressed: () => Navigator.of(ctx).pop(),
+                    child: const Text('Close'),
+                  ),
+                ],
+              ),
+            ],
           ),
         ),
       ),
     );
   }
 
-  Widget _buildStunningAppBar() {
-    final screenHeight = MediaQuery.of(context).size.height;
-    final screenWidth = MediaQuery.of(context).size.width;
-    
-    return SliverAppBar(
-      expandedHeight: isMobile ? 250 : (isTablet ? 300 : 350),
-      floating: false,
-      pinned: true,
-      backgroundColor: AppTheme.deepTeal,
-      foregroundColor: AppTheme.angel,
-      actions: [
-        IconButton(
-          icon: const Icon(Icons.refresh),
-          onPressed: () {
-            setState(() {
-              _cachedStoreData = null; // Clear cache
-            });
-            _loadGalleryData(); // Reload fresh data
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Refreshing store data...'),
-                duration: Duration(seconds: 1),
-              ),
-            );
-          },
-          tooltip: 'Refresh Data',
+  Future<void> _downloadQrPng(GlobalKey boundaryKey, String filename) async {
+    try {
+      final ctx = boundaryKey.currentContext;
+      if (ctx == null) return;
+      final boundary = ctx.findRenderObject() as RenderRepaintBoundary?;
+      if (boundary == null) return;
+      final image = await boundary.toImage(pixelRatio: 3.0);
+      final byteData = await image.toByteData(format: ImageByteFormat.png);
+      if (byteData == null) return;
+      final bytes = byteData.buffer.asUint8List();
+      final tempDir = await getTemporaryDirectory();
+      final file = File('${tempDir.path}/$filename');
+      await file.writeAsBytes(bytes);
+      await Share.shareFiles([file.path], mimeTypes: ['image/png']);
+      await _analytics.logEvent(name: 'qr_download', parameters: {'store_id': widget.store['storeId']});
+    } catch (_) {}
+  }
+
+  // Modern glass morphism button
+  Widget _buildGlassButton({required IconData icon, required VoidCallback onPressed}) {
+    return Container(
+      width: 44,
+      height: 44,
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.15),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(
+          color: Colors.white.withOpacity(0.2),
+          width: 1,
         ),
-      ],
-      flexibleSpace: FlexibleSpaceBar(
-        title: Text(
-          widget.store['storeName'] ?? 'Store',
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 10,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(22),
+          onTap: onPressed,
+          child: Icon(
+            icon,
+            color: Colors.white,
+            size: 22,
+          ),
+        ),
+      ),
+    );
+  }
+
+  // Enhanced follow button with modern design
+  Widget _buildFollowButton() {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeInOut,
+      decoration: BoxDecoration(
+        gradient: _isFollowing 
+          ? LinearGradient(
+              colors: [Colors.red.shade400, Colors.red.shade600],
+            )
+          : LinearGradient(
+              colors: [Colors.white, Colors.grey.shade50],
+            ),
+        borderRadius: BorderRadius.circular(25),
+        border: Border.all(
+          color: _isFollowing ? Colors.red.shade300 : Colors.white.withOpacity(0.3),
+          width: 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: (_isFollowing ? Colors.red : Colors.black).withOpacity(0.2),
+            blurRadius: 8,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(25),
+          onTap: _toggleFollow,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 300),
+                  child: Icon(
+                    _isFollowing ? Icons.favorite : Icons.favorite_border,
+                    key: ValueKey(_isFollowing),
+                    size: 16,
+                    color: _isFollowing ? Colors.white : AppTheme.deepTeal,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  _isFollowing ? 'Following' : 'Follow',
           style: TextStyle(
-            color: AppTheme.angel,
-            fontWeight: FontWeight.bold,
-            fontSize: isMobile ? 16 : 18,
-            shadows: [
-              Shadow(
-                color: Colors.black54,
-                offset: const Offset(1, 1),
-                blurRadius: 2,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: _isFollowing ? Colors.white : AppTheme.deepTeal,
+                    letterSpacing: 0.3,
+                  ),
               ),
             ],
           ),
         ),
-        background: Stack(
-          fit: StackFit.expand,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _loadFollowState() async {
+    try {
+      final currentUser = FirebaseAuth.instance.currentUser;
+      final String? storeId = widget.store['storeId'] as String?;
+      if (currentUser == null || storeId == null) return;
+      final doc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(currentUser.uid)
+          .collection('follows')
+          .doc(storeId)
+          .get();
+      if (!mounted) return;
+      setState(() => _isFollowing = doc.exists);
+    } catch (_) {}
+  }
+
+  Future<void> _toggleFollow() async {
+    try {
+      final currentUser = FirebaseAuth.instance.currentUser;
+      final String? storeId = widget.store['storeId'] as String?;
+      final String storeName = widget.store['storeName'] as String? ?? 'Store';
+      if (currentUser == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please login to follow stores')),
+        );
+        return;
+      }
+      if (storeId == null) return;
+
+      final followRef = FirebaseFirestore.instance
+          .collection('users')
+          .doc(currentUser.uid)
+          .collection('follows')
+          .doc(storeId);
+
+      final storeRef = FirebaseFirestore.instance
+          .collection('users')
+          .doc(storeId);
+
+      await FirebaseFirestore.instance.runTransaction((tx) async {
+        final followSnap = await tx.get(followRef);
+        final storeSnap = await tx.get(storeRef);
+        final currentFollowers = (storeSnap.data()?['followers'] as num?)?.toInt() ?? 0;
+
+        if (followSnap.exists) {
+          // Unfollow
+          tx.delete(followRef);
+          tx.update(storeRef, {'followers': (currentFollowers - 1).clamp(0, 1 << 31)});
+          if (mounted) setState(() => _isFollowing = false);
+        } else {
+          // Follow
+          tx.set(followRef, {
+            'storeId': storeId,
+            'storeName': storeName,
+            'createdAt': FieldValue.serverTimestamp(),
+            'notify': true, // auto-enable alerts on follow
+          });
+          tx.update(storeRef, {'followers': currentFollowers + 1});
+          if (mounted) setState(() => _isFollowing = true);
+        }
+      });
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to update follow: $e')),
+      );
+    }
+  }
+
+  // Modern stats dashboard section
+  Widget _buildModernStatsDashboard() {
+    return Container(
+      margin: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Colors.white,
+            AppTheme.cloud.withOpacity(0.3),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: AppTheme.deepTeal.withOpacity(0.1),
+            blurRadius: 20,
+            offset: const Offset(0, 10),
+          ),
+          BoxShadow(
+            color: Colors.white.withOpacity(0.7),
+            blurRadius: 20,
+            offset: const Offset(0, -5),
+          ),
+        ],
+        border: Border.all(
+          color: AppTheme.deepTeal.withOpacity(0.1),
+          width: 1,
+        ),
+      ),
+      child: Column(
           children: [
-            // Store image with gradient overlay
-            if (widget.store['profileImageUrl'] != null)
-              SafeStoreImage(
-                imageUrl: widget.store['profileImageUrl'],
-                width: double.infinity,
-                height: double.infinity,
-                borderRadius: BorderRadius.zero,
+          Row(
+            children: [
+              Expanded(child: _buildLiveRatingStatCard()),
+              const SizedBox(width: 12),
+              Expanded(child: _buildLiveFollowersStatCard()),
+              const SizedBox(width: 12),
+              Expanded(child: _buildLiveProductsStatCard()),
+            ],
+          ),
+          const SizedBox(height: 16),
+          _buildOpenStatusCard(),
+        ],
+      ),
+    );
+  }
+
+  // Rating stat card that listens to live reviews and computes average/count
+  Widget _buildLiveRatingStatCard() {
+    final String? storeId = widget.store['storeId'] as String?;
+    return StreamBuilder<QuerySnapshot>(
+      stream: storeId == null
+          ? const Stream.empty()
+          : FirebaseFirestore.instance
+              .collection('reviews')
+              .where('storeId', isEqualTo: storeId)
+              .snapshots(),
+      builder: (context, snapshot) {
+        double avg = 0;
+        int count = 0;
+        if (snapshot.hasData) {
+          final docs = snapshot.data!.docs;
+          count = docs.length;
+          if (count > 0) {
+            double sum = 0;
+            for (final d in docs) {
+              final data = d.data() as Map<String, dynamic>;
+              final num ratingNum = (data['rating'] ?? 0) as num;
+              sum += ratingNum.toDouble();
+            }
+            avg = sum / count;
+          }
+        } else {
+          // Fallback to provided values if any
+          final num? fallback = widget.store['rating'] as num?;
+          avg = fallback?.toDouble() ?? 0;
+          count = (widget.store['reviewCount'] as num?)?.toInt() ?? 0;
+        }
+
+        return Container(
+          padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
+          decoration: BoxDecoration(
+            color: Colors.amber.withOpacity(0.05),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: Colors.amber.withOpacity(0.2),
+              width: 1,
+            ),
+          ),
+          child: Column(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.amber.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(Icons.star_rounded, color: Colors.amber, size: 24),
               ),
-            
-            // Gradient overlay for better text readability
-            Container(
+              const SizedBox(height: 8),
+              Text(
+                count > 0 ? avg.toStringAsFixed(1) : '0.0',
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.amber,
+                ),
+              ),
+              Text(
+                'Rating',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey.shade600,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              if (count > 0)
+                Text(
+                  '($count reviews)',
+                  style: TextStyle(
+                    fontSize: 10,
+                    color: Colors.grey.shade500,
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  // Followers stat card (live from store doc)
+  Widget _buildLiveFollowersStatCard() {
+    final String? storeId = widget.store['storeId'] as String?;
+    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      stream: storeId == null
+          ? const Stream.empty()
+          : FirebaseFirestore.instance.collection('users').doc(storeId).snapshots(),
+      builder: (context, snapshot) {
+        int followers = 0;
+        if (snapshot.hasData && snapshot.data?.data() != null) {
+          final data = snapshot.data!.data()!;
+          followers = (data['followers'] as num?)?.toInt() ?? 0;
+        } else {
+          followers = (widget.store['followers'] as num?)?.toInt() ?? 0;
+        }
+
+        return _buildStatShell(
+          icon: Icons.favorite_rounded,
+          color: Colors.red,
+          valueText: '$followers',
+          labelText: 'Followers',
+        );
+      },
+    );
+  }
+
+  // Products stat card (live from products collection)
+  Widget _buildLiveProductsStatCard() {
+    final String? storeId = widget.store['storeId'] as String?;
+    return StreamBuilder<QuerySnapshot>(
+      stream: storeId == null
+          ? const Stream.empty()
+          : FirebaseFirestore.instance
+              .collection('products')
+              // Many existing products use 'ownerId' for the seller
+              .where('ownerId', isEqualTo: storeId)
+              .where('status', isEqualTo: 'active')
+              .snapshots(),
+      builder: (context, snapshot) {
+        int total = 0;
+        if (snapshot.hasData) {
+          total = snapshot.data!.docs.length;
+        } else {
+          total = (widget.store['totalProducts'] as num?)?.toInt() ?? 0;
+        }
+
+        return _buildStatShell(
+          icon: Icons.shopping_bag_rounded,
+          color: AppTheme.primaryGreen,
+          valueText: '$total',
+          labelText: 'Products',
+        );
+      },
+    );
+  }
+
+  // Shared stat shell for uniform look
+  Widget _buildStatShell({
+    required IconData icon,
+    required Color color,
+    required String valueText,
+    required String labelText,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.05),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: color.withOpacity(0.2),
+          width: 1,
+        ),
+      ),
+      child: Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(icon, color: color, size: 24),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            valueText,
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
+          ),
+          Text(
+            labelText,
+            style: TextStyle(
+              fontSize: 12,
+              color: Colors.grey.shade600,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _smallPill({required IconData icon, required String label}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: AppTheme.deepTeal.withOpacity(0.06),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppTheme.deepTeal.withOpacity(0.15)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: AppTheme.deepTeal),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: const TextStyle(fontSize: 12, color: AppTheme.deepTeal, fontWeight: FontWeight.w600),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // (Removed unused legacy stat card)
+
+  // Modern open status card with computed open/closed state
+  Widget _buildOpenStatusCard() {
+    final String? openStr = widget.store['storeOpenHour'] as String?;
+    final String? closeStr = widget.store['storeCloseHour'] as String?;
+    final bool? explicitOpen = widget.store['isStoreOpen'] as bool?; // optional override
+    final int tzOffsetHours = (widget.store['timezoneOffsetHours'] as num?)?.toInt() ?? 2; // SAST default
+    final List<dynamic> holidayList = (widget.store['holidayClosures'] as List<dynamic>?) ?? const [];
+
+    bool computedOpen = false;
+    if (explicitOpen != null) {
+      computedOpen = explicitOpen;
+    } else if (openStr != null && closeStr != null) {
+      computedOpen = _isNowWithin(openStr, closeStr, tzOffsetHours, holidayList);
+    }
+
+    final String hours = (openStr != null && closeStr != null)
+        ? '$openStr - $closeStr'
+        : (widget.store['openingHours'] as String? ?? 'Hours not specified');
+
+    String subline = hours;
+    if (!computedOpen && openStr != null && closeStr != null) {
+      final mins = _minutesUntilOpen(openStr, closeStr, tzOffsetHours, holidayList);
+      if (mins != null) {
+        subline = 'Opens in ${mins > 60 ? '${(mins / 60).floor()}h ${mins % 60}m' : '${mins}m'} • $hours';
+      }
+      if (_isHolidayToday(tzOffsetHours, holidayList)) {
+        subline = 'Closed today (Public holiday) • $hours';
+      }
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
                 gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    Colors.transparent,
-                    Colors.black.withOpacity(0.7),
+          colors: computedOpen 
+            ? [AppTheme.primaryGreen.withOpacity(0.1), AppTheme.primaryGreen.withOpacity(0.05)]
+            : [Colors.orange.withOpacity(0.1), Colors.orange.withOpacity(0.05)],
+        ),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: computedOpen ? AppTheme.primaryGreen.withOpacity(0.3) : Colors.orange.withOpacity(0.3),
+          width: 1,
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: computedOpen ? AppTheme.primaryGreen : Colors.orange,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(
+              computedOpen ? Icons.store_rounded : Icons.access_time_rounded,
+              color: Colors.white,
+              size: 20,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  computedOpen ? 'Open Now' : 'Closed',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: computedOpen ? AppTheme.primaryGreen : Colors.orange,
+                    fontSize: 16,
+                  ),
+                ),
+                Text(
+                  subline,
+                  style: TextStyle(
+                    color: Colors.grey.shade600,
+                    fontSize: 12,
+                  ),
+                ),
                   ],
+                ),
+              ),
+        ],
+      ),
+    );
+  }
+
+  bool _isNowWithin(String open, String close, int tzOffsetHours, List<dynamic> holidayList) {
+    // open/close in HH:mm (24h)
+    TimeOfDay? parse(String s) {
+      final parts = s.split(':');
+      if (parts.length != 2) return null;
+      final h = int.tryParse(parts[0]);
+      final m = int.tryParse(parts[1]);
+      if (h == null || m == null) return null;
+      return TimeOfDay(hour: h, minute: m);
+    }
+
+    final openTod = parse(open);
+    final closeTod = parse(close);
+    if (openTod == null || closeTod == null) return false;
+
+    final nowDt = DateTime.now().toUtc().add(Duration(hours: tzOffsetHours));
+    if (_isHolidayDate(nowDt, holidayList)) return false;
+    final now = TimeOfDay(hour: nowDt.hour, minute: nowDt.minute);
+    bool isAfterOrEqual(TimeOfDay a, TimeOfDay b) => a.hour > b.hour || (a.hour == b.hour && a.minute >= b.minute);
+    bool isBeforeOrEqual(TimeOfDay a, TimeOfDay b) => a.hour < b.hour || (a.hour == b.hour && a.minute <= b.minute);
+
+    // Handle overnight hours (e.g., 22:00 - 06:00)
+    final overnight = (closeTod.hour < openTod.hour) || (closeTod.hour == openTod.hour && closeTod.minute < openTod.minute);
+    if (!overnight) {
+      return isAfterOrEqual(now, openTod) && isBeforeOrEqual(now, closeTod);
+    } else {
+      // Now is after open OR before close
+      return isAfterOrEqual(now, openTod) || isBeforeOrEqual(now, closeTod);
+    }
+  }
+
+  int? _minutesUntilOpen(String open, String close, int tzOffsetHours, List<dynamic> holidayList) {
+    TimeOfDay? parse(String s) {
+      final parts = s.split(':');
+      if (parts.length != 2) return null;
+      final h = int.tryParse(parts[0]);
+      final m = int.tryParse(parts[1]);
+      if (h == null || m == null) return null;
+      return TimeOfDay(hour: h, minute: m);
+    }
+    final openTod = parse(open);
+    final closeTod = parse(close);
+    if (openTod == null || closeTod == null) return null;
+    final now = DateTime.now().toUtc().add(Duration(hours: tzOffsetHours));
+    if (_isHolidayDate(now, holidayList)) return null;
+    final todayOpen = DateTime(now.year, now.month, now.day, openTod.hour, openTod.minute);
+    final todayClose = DateTime(now.year, now.month, now.day, closeTod.hour, closeTod.minute);
+    if (todayClose.isBefore(todayOpen)) {
+      // overnight close -> treat close as next day
+      if (now.isBefore(todayOpen)) {
+        return todayOpen.difference(now).inMinutes;
+      }
+      // already after open, next opening is tomorrow's open
+      final tomorrowOpen = todayOpen.add(const Duration(days: 1));
+      return now.isAfter(todayClose) ? tomorrowOpen.difference(now).inMinutes : 0;
+    } else {
+      if (now.isBefore(todayOpen)) return todayOpen.difference(now).inMinutes;
+      // already within or after close -> next open tomorrow
+      if (now.isAfter(todayClose)) {
+        final tomorrowOpen = todayOpen.add(const Duration(days: 1));
+        return tomorrowOpen.difference(now).inMinutes;
+      }
+    }
+    return 0;
+  }
+
+  bool _isHolidayToday(int tzOffsetHours, List<dynamic> holidayList) {
+    final now = DateTime.now().toUtc().add(Duration(hours: tzOffsetHours));
+    return _isHolidayDate(now, holidayList);
+  }
+
+  bool _isHolidayDate(DateTime date, List<dynamic> holidayList) {
+    final todayStr = '${date.year.toString().padLeft(4, '0')}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+    return holidayList.map((e) => e.toString()).contains(todayStr);
+  }
+
+  Future<void> _openCampaignBuilder() async {
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      builder: (ctx) {
+        String? source = _utmSource;
+        String? medium = _utmMedium;
+        String? campaign = _utmCampaign;
+        final sourceOptions = ['whatsapp', 'instagram', 'facebook', 'twitter', 'flyer', 'referral'];
+        final mediumOptions = ['social', 'qr', 'referral', 'paid'];
+        final controller = TextEditingController(text: campaign ?? '');
+        return Padding(
+          padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+          child: StatefulBuilder(
+            builder: (ctx, setStateSheet) => Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Campaign Builder', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 12),
+                  const Text('Source'),
+                  Wrap(
+                    spacing: 8,
+                    children: [
+                      for (final s in sourceOptions)
+                        ChoiceChip(
+                          label: Text(s),
+                          selected: source == s,
+                          onSelected: (_) => setStateSheet(() => source = s),
+                        )
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  const Text('Medium'),
+                  Wrap(
+                    spacing: 8,
+                    children: [
+                      for (final m in mediumOptions)
+                        ChoiceChip(
+                          label: Text(m),
+                          selected: medium == m,
+                          onSelected: (_) => setStateSheet(() => medium = m),
+                        )
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: controller,
+                    decoration: const InputDecoration(labelText: 'Campaign (optional)'),
+                    onChanged: (v) => campaign = v.trim(),
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: () {
+                            Navigator.of(ctx).pop();
+                            setState(() {
+                              _utmSource = source;
+                              _utmMedium = medium;
+                              _utmCampaign = campaign?.isEmpty == true ? null : campaign;
+                            });
+                            _showQrDialog();
+                            _analytics.logEvent(name: 'qr_open', parameters: {'store_id': widget.store['storeId'] ?? '', 'src': source ?? '', 'med': medium ?? ''});
+                          },
+                          icon: const Icon(Icons.qr_code),
+                          label: const Text('QR'),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: () {
+                            Navigator.of(ctx).pop();
+                            setState(() {
+                              _utmSource = source;
+                              _utmMedium = medium;
+                              _utmCampaign = campaign?.isEmpty == true ? null : campaign;
+                            });
+                            _shareStore();
+                            _analytics.logEvent(name: 'share_click', parameters: {'store_id': widget.store['storeId'] ?? '', 'src': source ?? '', 'med': medium ?? ''});
+                          },
+                          icon: const Icon(Icons.share),
+                          label: const Text('Share'),
+                          style: ElevatedButton.styleFrom(backgroundColor: AppTheme.primaryGreen),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildReviewsSummaryCard() {
+    final String? storeId = widget.store['storeId'] as String?;
+    return RepaintBoundary(
+              child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 16),
+        padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: AppTheme.complementaryElevation,
+          border: Border.all(color: AppTheme.deepTeal.withOpacity(0.15), width: 1),
+        ),
+        child: StreamBuilder<QuerySnapshot>(
+          stream: storeId == null
+              ? const Stream.empty()
+              : FirebaseFirestore.instance
+                  .collection('reviews')
+                  .where('storeId', isEqualTo: storeId)
+                  .snapshots(),
+          builder: (context, snapshot) {
+            double avg = 0;
+            int count = 0;
+            if (snapshot.hasData) {
+              final docs = snapshot.data!.docs;
+              count = docs.length;
+              if (count > 0) {
+                double sum = 0;
+                for (final d in docs) {
+                  final data = d.data() as Map<String, dynamic>;
+                  final num ratingNum = (data['rating'] ?? 0) as num;
+                  sum += ratingNum.toDouble();
+                }
+                avg = sum / count;
+              }
+            } else {
+              final num? fallback = widget.store['rating'] as num?;
+              avg = fallback?.toDouble() ?? 0;
+              count = (widget.store['reviewCount'] as num?)?.toInt() ?? 0;
+            }
+
+            return Row(
+              children: [
+                Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: AppTheme.deepTeal.withOpacity(0.08),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: AppTheme.deepTeal.withOpacity(0.2)),
+              ),
+              child: const Icon(Icons.star, color: AppTheme.deepTeal, size: 20),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        count > 0 ? 'Rated ${avg.toStringAsFixed(1)}' : 'No ratings yet',
+                        style: const TextStyle(fontWeight: FontWeight.w700, color: AppTheme.deepTeal),
+                      ),
+                      Text(
+                        count > 0 ? '$count reviews' : 'Be the first to review',
+                        style: TextStyle(color: AppTheme.cloud, fontSize: 12),
+                      ),
+                    ],
+                  ),
+                ),
+                TextButton(
+                  onPressed: () {
+                    final storeId = widget.store['storeId'] as String?;
+                    final storeName = widget.store['storeName'] as String? ?? 'Store';
+                    if (storeId != null) {
+                      _navigateToReviewsPage(storeId, storeName);
+                    }
+                  },
+                  style: TextButton.styleFrom(foregroundColor: AppTheme.deepTeal),
+                  child: const Text('See all'),
+                )
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  // Bottom action bar (original simple buttons)
+  Widget _buildStickyBottomBar() {
+    return SafeArea(
+      top: false,
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+        decoration: BoxDecoration(
+          color: Colors.white,
+                  boxShadow: [
+                    BoxShadow(
+              color: Colors.black.withOpacity(0.06),
+              blurRadius: 10,
+              offset: const Offset(0, -4),
+            ),
+          ],
+          border: Border(
+            top: BorderSide(color: AppTheme.deepTeal.withOpacity(0.08), width: 1),
+          ),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: SizedBox(
+                height: 44,
+                child: OutlinedButton.icon(
+                  onPressed: _handleChat,
+                  icon: const Icon(Icons.chat_bubble_outline, size: 18),
+                  label: const Text('Chat'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppTheme.deepTeal,
+                    side: BorderSide(color: AppTheme.deepTeal.withOpacity(0.3)),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
                 ),
               ),
             ),
-            
-            // Floating action elements
-            Positioned(
-              top: 60,
-              right: 16,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: AppTheme.primaryGreen.withOpacity(0.9),
-                  borderRadius: BorderRadius.circular(20),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.2),
-                      blurRadius: 4,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-                child: Text(
-                  _getStoreType(),
-                  style: const TextStyle(
-                    color: AppTheme.angel,
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
+            const SizedBox(width: 12),
+            Expanded(
+              child: SizedBox(
+                height: 44,
+                child: ElevatedButton.icon(
+                  onPressed: _handleShop,
+                  icon: const Icon(Icons.storefront, size: 18),
+                  label: const Text('Shop'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.deepTeal,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                   ),
                 ),
               ),
@@ -352,10 +1404,124 @@ class _SimpleStoreProfileScreenState extends State<SimpleStoreProfileScreen>
     );
   }
 
-  Widget _buildHeroSection() {
+  // Modern action button with enhanced styling
+  // (Removed unused modern action button)
+
+  void _handleShop() {
+    final storeId = widget.store['storeId'] as String?;
+    final storeName = widget.store['storeName'] as String? ?? 'Store';
+    if (storeId != null) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => StunningProductBrowser(
+            storeId: storeId,
+            storeName: storeName,
+          ),
+        ),
+      );
+    }
+  }
+
+  void _handleChat() async {
+    final contact = (widget.store['contact'] as String?)?.trim();
+    if (contact == null || contact.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No WhatsApp contact found for this store')),
+      );
+      return;
+    }
+
+    // Normalize to international format, assume ZA if no +
+    String phone = contact.replaceAll(RegExp(r'[^\d+]'), '');
+    if (!phone.startsWith('+')) {
+      if (phone.startsWith('0')) phone = phone.substring(1);
+      phone = '+27$phone';
+    }
+    final phoneDigits = phone.replaceAll('+', '');
+
+    final storeName = widget.store['storeName'] as String? ?? 'Store';
+    final preset = 'Hi $storeName, I found your store on Mzansi Marketplace and would like to chat.';
+    
+    // 1) Try native WhatsApp scheme
+    final whatsappUri = Uri.parse('whatsapp://send?phone=$phoneDigits&text=${Uri.encodeComponent(preset)}');
+    if (await canLaunchUrl(whatsappUri)) {
+      final ok = await launchUrl(whatsappUri, mode: LaunchMode.externalNonBrowserApplication);
+      if (ok) return;
+    }
+
+    // 2) Try wa.me link
+    final waMeUri = Uri.https('wa.me', '/$phoneDigits', {'text': preset});
+    if (await canLaunchUrl(waMeUri)) {
+      final ok = await launchUrl(waMeUri, mode: LaunchMode.externalApplication);
+      if (ok) return;
+    }
+
+    // 3) Try api.whatsapp.com fallback
+    final apiUri = Uri.https('api.whatsapp.com', '/send', {'phone': phoneDigits, 'text': preset});
+    if (await canLaunchUrl(apiUri)) {
+      final ok = await launchUrl(apiUri, mode: LaunchMode.externalApplication);
+      if (ok) return;
+    }
+
+    // 4) Offer store install links as a last resort
+    final playStoreUri = Uri.parse('market://details?id=com.whatsapp');
+    if (await canLaunchUrl(playStoreUri)) {
+      final ok = await launchUrl(playStoreUri, mode: LaunchMode.externalApplication);
+      if (ok) return;
+    }
+    final playStoreHttp = Uri.parse('https://play.google.com/store/apps/details?id=com.whatsapp');
+    if (await canLaunchUrl(playStoreHttp)) {
+      final ok = await launchUrl(playStoreHttp, mode: LaunchMode.externalApplication);
+      if (ok) return;
+    }
+    final appStoreUri = Uri.parse('https://apps.apple.com/app/whatsapp-messenger/id310633997');
+    if (await canLaunchUrl(appStoreUri)) {
+      final ok = await launchUrl(appStoreUri, mode: LaunchMode.externalApplication);
+      if (ok) return;
+    }
+
+    // 5) Give user a copy option if nothing handled the URL
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Open WhatsApp'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('We couldn\'t open WhatsApp automatically.'),
+            const SizedBox(height: 8),
+            SelectableText('Number: $phone'),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () async {
+              await Clipboard.setData(ClipboardData(text: phone));
+              if (context.mounted) {
+                Navigator.of(ctx).pop();
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Number copied')));
+              }
+            },
+            child: const Text('Copy number'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Modern hero section with enhanced design
+  Widget _buildModernHeroSection() {
     final storeName = widget.store['storeName'] as String? ?? 'Store Name';
     final category = widget.store['category'] as String? ?? 'General';
     final isVerified = widget.store['isVerified'] as bool? ?? false;
+    final String? profileImageUrl = widget.store['profileImageUrl'] as String?;
     
     return RepaintBoundary(
       child: Container(
@@ -364,10 +1530,38 @@ class _SimpleStoreProfileScreenState extends State<SimpleStoreProfileScreen>
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
+                // Profile image (angular avatar)
+                if (profileImageUrl != null && profileImageUrl.isNotEmpty)
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: SizedBox(
+                      width: isMobile ? 48 : 56,
+                      height: isMobile ? 48 : 56,
+                      child: SafeNetworkImage(
+                        imageUrl: profileImageUrl,
+                        fit: BoxFit.cover,
+                      ),
+                    ),
+                  )
+                else
+                  Container(
+                    width: isMobile ? 48 : 56,
+                    height: isMobile ? 48 : 56,
+                    decoration: BoxDecoration(
+                      color: AppTheme.deepTeal.withOpacity(0.08),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AppTheme.deepTeal.withOpacity(0.2)),
+                    ),
+                    child: const Icon(Icons.storefront, color: AppTheme.deepTeal),
+                  ),
+                const SizedBox(width: 12),
                 Expanded(
                   child: Text(
                     storeName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       fontSize: isMobile ? 24 : 28,
                       fontWeight: FontWeight.bold,
@@ -393,13 +1587,13 @@ class _SimpleStoreProfileScreenState extends State<SimpleStoreProfileScreen>
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(
+                        const Icon(
                           Icons.verified,
                           color: Colors.white,
                           size: 16,
                         ),
                         const SizedBox(width: 4),
-                        Text(
+                        const Text(
                           'Verified',
                           style: TextStyle(
                             color: Colors.white,
@@ -435,6 +1629,424 @@ class _SimpleStoreProfileScreenState extends State<SimpleStoreProfileScreen>
     );
   }
 
+  // (Removed unused modern hero section duplicate)
+  // Keeping signature to avoid large refactor; not referenced.
+  // ignore: unused_element
+  Widget _buildModernHeroSectionComplete() {
+    final storeName = widget.store['storeName'] as String? ?? 'Store Name';
+    final category = widget.store['category'] as String? ?? 'General';
+    final isVerified = widget.store['isVerified'] as bool? ?? false;
+    final String? profileImageUrl = widget.store['profileImageUrl'] as String?;
+    final String? coverImageUrl = widget.store['coverImageUrl'] as String?;
+    
+    return RepaintBoundary(
+      child: Container(
+        margin: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(24),
+          boxShadow: [
+            BoxShadow(
+              color: AppTheme.deepTeal.withOpacity(0.1),
+              blurRadius: 25,
+              offset: const Offset(0, 15),
+            ),
+          ],
+        ),
+        child: Stack(
+          children: [
+            // Cover image with gradient overlay
+            if (coverImageUrl != null && coverImageUrl.isNotEmpty)
+              Container(
+                height: 200,
+                width: double.infinity,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(24),
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(24),
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      SafeNetworkImage(
+                        imageUrl: coverImageUrl,
+                        fit: BoxFit.cover,
+                        errorWidget: Container(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: [
+                                AppTheme.deepTeal.withOpacity(0.8),
+                                AppTheme.primaryGreen.withOpacity(0.6),
+                              ],
+                            ),
+                          ),
+                          child: Center(
+                            child: Icon(
+                              Icons.storefront_rounded,
+                              size: 60,
+                              color: Colors.white.withOpacity(0.7),
+                            ),
+                          ),
+                        ),
+                      ),
+                      Container(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [
+                              Colors.transparent,
+                              Colors.black.withOpacity(0.7),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              )
+            else
+              Container(
+                height: 200,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(24),
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      AppTheme.deepTeal.withOpacity(0.9),
+                      AppTheme.primaryGreen.withOpacity(0.7),
+                    ],
+                  ),
+                ),
+                child: Center(
+                  child: Icon(
+                    Icons.storefront_rounded,
+                    size: 60,
+                    color: Colors.white.withOpacity(0.7),
+                  ),
+                ),
+              ),
+            // Profile content overlay
+            Positioned(
+              bottom: 0,
+              left: 0,
+              right: 0,
+              child: Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: const BorderRadius.only(
+                    bottomLeft: Radius.circular(24),
+                    bottomRight: Radius.circular(24),
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.1),
+                      blurRadius: 10,
+                      offset: const Offset(0, -5),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  children: [
+                    // Profile picture with modern styling
+                    Container(
+                      width: 80,
+                      height: 80,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: Colors.white,
+                          width: 3,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: AppTheme.deepTeal.withOpacity(0.2),
+                            blurRadius: 15,
+                            offset: const Offset(0, 8),
+                          ),
+                        ],
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(17),
+                        child: profileImageUrl != null && profileImageUrl.isNotEmpty
+                          ? SafeNetworkImage(
+                              imageUrl: profileImageUrl,
+                              fit: BoxFit.cover,
+                              errorWidget: Container(
+                                decoration: BoxDecoration(
+                                  gradient: LinearGradient(
+                                    colors: [AppTheme.deepTeal, AppTheme.primaryGreen],
+                                  ),
+                                ),
+                                child: const Icon(
+                                  Icons.storefront_rounded,
+                                  color: Colors.white,
+                                  size: 40,
+                                ),
+                              ),
+                            )
+                          : Container(
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  colors: [AppTheme.deepTeal, AppTheme.primaryGreen],
+                                ),
+                              ),
+                              child: const Icon(
+                                Icons.storefront_rounded,
+                                color: Colors.white,
+                                size: 40,
+                              ),
+                            ),
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    // Store information
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  storeName,
+                                  style: const TextStyle(
+                                    fontSize: 22,
+                                    fontWeight: FontWeight.bold,
+                                    color: AppTheme.deepTeal,
+                                    letterSpacing: 0.3,
+                                  ),
+                                ),
+                              ),
+                              if (isVerified)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                  decoration: BoxDecoration(
+                                    gradient: LinearGradient(
+                                      colors: [AppTheme.primaryGreen, AppTheme.primaryGreen.withOpacity(0.8)],
+                                    ),
+                                    borderRadius: BorderRadius.circular(15),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: AppTheme.primaryGreen.withOpacity(0.3),
+                                        blurRadius: 8,
+                                        offset: const Offset(0, 4),
+                                      ),
+                                    ],
+                                  ),
+                                  child: const Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.verified_rounded, color: Colors.white, size: 16),
+                                      SizedBox(width: 4),
+                                      Text(
+                                        'Verified',
+                                        style: TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.bold,
+                                          letterSpacing: 0.3,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: AppTheme.deepTeal.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: AppTheme.deepTeal.withOpacity(0.2),
+                                width: 1,
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.category_rounded,
+                                  size: 16,
+                                  color: AppTheme.deepTeal,
+                                ),
+                                const SizedBox(width: 6),
+                                Text(
+                                  category,
+                                  style: TextStyle(
+                                    color: AppTheme.deepTeal,
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          _buildTrustSignalsRow(),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTrustSignalsRow() {
+    final String? storeId = widget.store['storeId'] as String?;
+    final int? avgResponse = (widget.store['avgResponseMinutes'] as num?)?.toInt();
+    return Row(
+      children: [
+        // Orders volume chip (live)
+        if (storeId != null)
+          StreamBuilder<QuerySnapshot>(
+            stream: FirebaseFirestore.instance
+                .collection('orders')
+                .where('sellerId', isEqualTo: storeId)
+                .snapshots(),
+            builder: (context, snap) {
+              final count = snap.hasData ? snap.data!.docs.length : 0;
+              return _smallPill(icon: Icons.shopping_bag_rounded, label: _formatOrders(count));
+            },
+          )
+        else
+          _smallPill(icon: Icons.shopping_bag_rounded, label: 'Orders —'),
+        const SizedBox(width: 8),
+        // Response time chip (live from seller doc)
+        if (storeId != null)
+          StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+            stream: FirebaseFirestore.instance.collection('users').doc(storeId).snapshots(),
+            builder: (context, snap) {
+              final data = snap.data?.data();
+              final liveAvg = (data?['avgResponseMinutes'] as num?)?.toInt() ?? avgResponse;
+              final label = liveAvg == null
+                  ? 'Response —'
+                  : (liveAvg <= 10
+                      ? 'Response: Fast'
+                      : liveAvg <= 60
+                          ? 'Response: ~${liveAvg}m'
+                          : 'Response: ${_hoursMinutes(liveAvg)}');
+              return _smallPill(icon: Icons.bolt_rounded, label: label);
+            },
+          )
+        else
+          _smallPill(icon: Icons.bolt_rounded, label: 'Response —'),
+      ],
+    );
+  }
+
+  String _formatOrders(int n) {
+    if (n >= 1000) return '${(n / 1000).toStringAsFixed(1)}k orders';
+    if (n == 1) return '1 order';
+    return '$n orders';
+  }
+
+  String _hoursMinutes(int minutes) {
+    final h = minutes ~/ 60;
+    final m = minutes % 60;
+    if (m == 0) return '${h}h';
+    return '${h}h ${m}m';
+  }
+
+  // Alias functions for modern sections
+  Widget _buildModernStorySection() => _buildStorySection();
+  Widget _buildModernSpecialtiesSection() => _buildSpecialtiesSection();
+  Widget _buildModernGallerySection() => _buildGallerySection();
+
+  // Modern specialties section
+  Widget _buildSpecialtiesSection() {
+    final specialties = widget.store['specialties'];
+    if (specialties == null || (specialties is List && specialties.isEmpty)) {
+      return const SizedBox.shrink();
+    }
+
+    List<String> specialtyList = [];
+    if (specialties is String) {
+      specialtyList = specialties.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+    } else if (specialties is List) {
+      specialtyList = specialties.map((e) => e.toString().trim()).where((e) => e.isNotEmpty).toList();
+    }
+
+    if (specialtyList.isEmpty) return const SizedBox.shrink();
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16),
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: AppTheme.complementaryElevation,
+        border: Border.all(color: AppTheme.deepTeal.withOpacity(0.1), width: 1),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                Icons.stars_rounded,
+                color: AppTheme.deepTeal,
+                size: 24,
+              ),
+              const SizedBox(width: 12),
+              const Text(
+                'Specialties',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: AppTheme.deepTeal,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: specialtyList.map((specialty) {
+              return Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      AppTheme.primaryGreen.withOpacity(0.1),
+                      AppTheme.primaryGreen.withOpacity(0.05),
+                    ],
+                  ),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: AppTheme.primaryGreen.withOpacity(0.3),
+                    width: 1,
+                  ),
+                ),
+                child: Text(
+                  specialty,
+                  style: TextStyle(
+                    color: AppTheme.primaryGreen,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 13,
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // (Removed unused legacy info section)
+  // ignore: unused_element
   Widget _buildStoreInfo() {
     return RepaintBoundary(
       child: Container(
@@ -690,23 +2302,13 @@ class _SimpleStoreProfileScreenState extends State<SimpleStoreProfileScreen>
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: AppTheme.cloud,
-                borderRadius: BorderRadius.circular(16),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.05),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: AppTheme.complementaryElevation,
               ),
-              child: Text(
-                displayStory,
-                style: TextStyle(
-                  fontSize: 16,
-                  height: 1.5,
-                  color: AppTheme.deepTeal,
-                ),
+              child: _ExpandableText(
+                text: displayStory,
+                maxLines: 4,
               ),
             ),
           ],
@@ -741,8 +2343,7 @@ class _SimpleStoreProfileScreenState extends State<SimpleStoreProfileScreen>
     
     final storyPhotoUrls = storeData['storyPhotoUrls'] as List?;
     final extraPhotoUrls = storeData['extraPhotoUrls'] as List?;
-    final photoCaptions = storeData['photoCaptions'] as List?;
-    final behindTheScenes = storeData['behindTheScenes'] as Map<String, dynamic>?;
+    // Removed unused: photoCaptions, behindTheScenes
     
     List<String> displayPhotos = [];
     
@@ -821,49 +2422,32 @@ class _SimpleStoreProfileScreenState extends State<SimpleStoreProfileScreen>
             ),
             const SizedBox(height: 16),
             if (displayPhotos.isNotEmpty) ...[
-              SizedBox(
-                height: ResponsiveUtils.isMobile(context) ? 150 : 200,
-                child: ListView.builder(
-                  scrollDirection: Axis.horizontal,
+              GridView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: isMobile ? 2 : 3,
+                  mainAxisSpacing: 12,
+                  crossAxisSpacing: 12,
+                  childAspectRatio: 1.2,
+                ),
                   itemCount: displayPhotos.length,
                   itemBuilder: (context, index) {
                     final photoUrl = displayPhotos[index];
-                    print('🔍 DEBUG: Displaying photo $index: $photoUrl');
-                    return Container(
-                      width: ResponsiveUtils.isMobile(context) ? 150 : 200,
-                      margin: EdgeInsets.only(right: ResponsiveUtils.isMobile(context) ? 8 : 12),
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(16),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.1),
-                            blurRadius: 12,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(16),
+                  return ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
                         child: SafeNetworkImage(
                           imageUrl: photoUrl,
                           width: double.infinity,
                           height: double.infinity,
                           fit: BoxFit.cover,
                           errorWidget: Container(
-                            width: double.infinity,
-                            height: double.infinity,
                             color: AppTheme.cloud,
-                            child: Icon(
-                              Icons.image,
-                              color: AppTheme.deepTeal,
-                              size: 48,
-                            ),
-                          ),
+                        child: Icon(Icons.image, color: AppTheme.deepTeal, size: 36),
                         ),
                       ),
                     );
                   },
-                ),
               ),
             ] else ...[
               Container(
@@ -907,58 +2491,10 @@ class _SimpleStoreProfileScreenState extends State<SimpleStoreProfileScreen>
 
 
 
-  void _showImageZoom(String currentImageUrl, List<String> allImages, int currentIndex) {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (context) => ImageZoomView(
-          images: allImages,
-          initialIndex: currentIndex,
-        ),
-      ),
-    );
-  }
+  // Removed unused: _showImageZoom (zoom handled within image components if needed)
 
   // Helper method to generate sample photos
-  Future<List<String>> _fetchProductImages(String storeId) async {
-    try {
-      print('🔍 DEBUG: _fetchProductImages called with storeId: $storeId');
-      
-      // Get user document to access extraPhotoUrls
-      final userDoc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(storeId)
-          .get();
-
-      if (!userDoc.exists) {
-        print('🔍 DEBUG: User document not found for storeId: $storeId');
-        return [];
-      }
-
-      final userData = userDoc.data()!;
-      final extraPhotoUrls = userData['extraPhotoUrls'] as List<dynamic>?;
-      
-      print('🔍 DEBUG: Found extraPhotoUrls: $extraPhotoUrls');
-      
-      if (extraPhotoUrls == null || extraPhotoUrls.isEmpty) {
-        print('🔍 DEBUG: No extraPhotoUrls found for store $storeId');
-        return [];
-      }
-
-      // Convert to List<String> and take max 2 images
-      final List<String> photoImages = extraPhotoUrls
-          .map((url) => url.toString())
-          .where((url) => url.isNotEmpty)
-          .take(2) // Limit to 2 images
-          .toList();
-
-      print('🔍 DEBUG: Fetched ${photoImages.length} extra photo images for store $storeId');
-      print('🔍 DEBUG: Photo images: $photoImages');
-      return photoImages;
-    } catch (e) {
-      print('🔍 DEBUG: Error fetching extra photo images: $e');
-      return [];
-    }
-  }
+  // Removed unused: _fetchProductImages
 
   List<String> _generateSamplePhotos(String? category) {
     // Generate placeholder images based on category
@@ -1102,175 +2638,13 @@ class _SimpleStoreProfileScreenState extends State<SimpleStoreProfileScreen>
     );
   }
 
-  Widget _buildVideoPlayer(String videoUrl) {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(
-                Icons.play_circle_filled,
-                color: AppTheme.deepTeal,
-                size: 20,
-              ),
-              const SizedBox(width: 8),
-              Text(
-                'Our Story',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: AppTheme.deepTeal,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Container(
-            height: 200,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.1),
-                  blurRadius: 12,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-            ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(16),
-              child: _isVideoInitialized && _chewieController != null
-                  ? Chewie(controller: _chewieController!)
-                  : Container(
-                      color: AppTheme.cloud,
-                      child: Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              Icons.play_circle_outline,
-                              size: 48,
-                              color: AppTheme.deepTeal,
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              'Tap to play our story',
-                              style: TextStyle(
-                                color: AppTheme.deepTeal,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  // Removed unused: _buildVideoPlayer
 
-  Widget _buildFeaturedProducts() {
-    final productImages = widget.store['productImages'] as List?;
-    
-    if (productImages == null || productImages.isEmpty) {
-      return const SizedBox.shrink();
-    }
-
-    return RepaintBoundary(
-      child: Container(
-        margin: const EdgeInsets.all(16),
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              AppTheme.deepTeal.withOpacity(0.1),
-              AppTheme.primaryGreen.withOpacity(0.05),
-            ],
-          ),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: AppTheme.deepTeal.withOpacity(0.2),
-            width: 1,
-          ),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: AppTheme.deepTeal.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Icon(
-                    Icons.shopping_bag,
-                    color: AppTheme.deepTeal,
-                    size: 20,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Text(
-                  'Featured Products',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: AppTheme.deepTeal,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            GridView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: isMobile ? 2 : (isTablet ? 3 : 4),
-                crossAxisSpacing: isMobile ? 8 : 12,
-                mainAxisSpacing: isMobile ? 8 : 12,
-                childAspectRatio: isMobile ? 0.9 : 1,
-              ),
-              itemCount: productImages.length,
-              itemBuilder: (context, index) {
-                final photoUrl = productImages[index];
-                return Container(
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(16),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.1),
-                        blurRadius: 8,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(16),
-                    child: SafeNetworkImage(
-                      imageUrl: photoUrl,
-                      width: double.infinity,
-                      height: double.infinity,
-                      borderRadius: BorderRadius.circular(16),
-                      fit: BoxFit.cover,
-                    ),
-                  ),
-                );
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+  // Removed unused: _buildFeaturedProducts
 
   // Helper method to build reviews section
+  // (Removed unused legacy reviews section)
+  // ignore: unused_element
   Widget _buildReviewsSection() {
     final storeId = widget.store['storeId'] as String?;
     final storeName = widget.store['storeName'] as String? ?? 'Store';
@@ -1340,745 +2714,73 @@ class _SimpleStoreProfileScreenState extends State<SimpleStoreProfileScreen>
     );
   }
   
-  String _formatTimestamp(Timestamp timestamp) {
-    final now = DateTime.now();
-    final reviewDate = timestamp.toDate();
-    final difference = now.difference(reviewDate);
-    
-    if (difference.inDays > 0) {
-      return '${difference.inDays} day${difference.inDays == 1 ? '' : 's'} ago';
-    } else if (difference.inHours > 0) {
-      return '${difference.inHours} hour${difference.inHours == 1 ? '' : 's'} ago';
-    } else if (difference.inMinutes > 0) {
-      return '${difference.inMinutes} minute${difference.inMinutes == 1 ? '' : 's'} ago';
-    } else {
-      return 'Just now';
-    }
-  }
+  // Removed unused: _formatTimestamp
 
-  String _getStoreType() {
-    final category = widget.store['category'] as String?;
-    switch (category?.toLowerCase()) {
-      case 'food':
-      case 'groceries':
-        return 'Food Business';
-              case 'clothes':
-      case 'fashion':
-        return 'Fashion Store';
-      case 'electronics':
-        return 'Electronics Store';
-      case 'home':
-      case 'home & living':
-        return 'Home & Living';
-      case 'beauty':
-        return 'Beauty Store';
-      case 'books':
-        return 'Bookstore';
-      case 'toys':
-        return 'Toy Store';
-      case 'sports':
-        return 'Sports Store';
-      default:
-        return 'Local Business';
-    }
-  }
+  // Removed unused functions: _getStoreType, _buildStatCard (duplicate), _buildQuickActions
+}
 
-  Widget _buildLiveStats() {
-    // Debounce stats updates to prevent excessive rebuilds during scrolling
-    if (_statsDebounceTimer?.isActive == true) {
-      return RepaintBoundary(
-        child: Container(
-          margin: const EdgeInsets.symmetric(horizontal: 16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Icon(
-                    Icons.analytics,
-                    color: AppTheme.deepTeal,
-                    size: 20,
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    'Live Stats',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: AppTheme.deepTeal,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              // Show cached stats while debouncing
-              if (_cachedLiveStats != null) ...[
-                Row(
-                  children: [
-                    Expanded(
-                      child: _buildStatCard(
-                        icon: Icons.shopping_bag,
-                        title: 'Orders',
-                        value: _cachedLiveStats!['orders']?.toString() ?? '0',
-                        color: AppTheme.primaryGreen,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _buildStatCard(
-                        icon: Icons.star,
-                        title: 'Rating',
-                        value: _cachedLiveStats!['rating']?.toString() ?? '0.0',
-                        color: AppTheme.deepTeal,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _buildStatCard(
-                        icon: Icons.rate_review,
-                        title: 'Reviews',
-                        value: _cachedLiveStats!['reviews']?.toString() ?? '0',
-                        color: AppTheme.cloud,
-                      ),
-                    ),
-                  ],
-                ),
-              ] else ...[
-                const Center(
-                  child: CircularProgressIndicator(),
-                ),
-              ],
-            ],
-          ),
-        ),
-      );
-    }
-    
-    return RepaintBoundary(
-      child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 16),
-        child: Column(
+// _ExpandableText widget for expandable story section
+class _ExpandableText extends StatefulWidget {
+  final String text;
+  final int maxLines;
+
+  const _ExpandableText({
+    required this.text,
+    this.maxLines = 3,
+  });
+
+  @override
+  State<_ExpandableText> createState() => _ExpandableTextState();
+}
+
+class _ExpandableTextState extends State<_ExpandableText> {
+  bool _isExpanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                Icon(
-                  Icons.analytics,
-                  color: AppTheme.deepTeal,
-                  size: 20,
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  'Live Stats',
+        AnimatedCrossFade(
+          firstChild: Text(
+            widget.text,
+            maxLines: widget.maxLines,
+            overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: AppTheme.deepTeal,
-                  ),
-                ),
-              ],
+              color: Colors.grey[700],
+              fontSize: 14,
+              height: 1.5,
             ),
-            const SizedBox(height: 12),
-            StreamBuilder<QuerySnapshot>(
-              stream: FirebaseFirestore.instance
-                  .collection('orders')
-                  .where('sellerId', isEqualTo: widget.store['storeId'])
-                  .where('status', whereIn: ['completed', 'delivered'])
-                  .snapshots(),
-              builder: (context, snapshot) {
-                // Handle permission denied or other errors gracefully
-                int completedOrders = 0;
-                bool hasOrderError = false;
-                
-                if (snapshot.hasError) {
-                  hasOrderError = true;
-                  print('🔍 DEBUG: Orders query error: ${snapshot.error}');
-                } else if (snapshot.hasData) {
-                  completedOrders = snapshot.data!.docs.length;
-                }
-                
-                return StreamBuilder<QuerySnapshot>(
-                  stream: FirebaseFirestore.instance
-                      .collection('reviews')
-                      .where('sellerId', isEqualTo: widget.store['storeId'])
-                      .snapshots(),
-                  builder: (context, reviewSnapshot) {
-                    int totalReviews = 0;
-                    double avgRating = 0.0;
-                    bool hasReviewError = false;
-                    
-                    if (reviewSnapshot.hasError) {
-                      hasReviewError = true;
-                      print('🔍 DEBUG: Reviews query error: ${reviewSnapshot.error}');
-                    } else if (reviewSnapshot.hasData && reviewSnapshot.data!.docs.isNotEmpty) {
-                      totalReviews = reviewSnapshot.data!.docs.length;
-                      double totalRating = 0.0;
-                      for (var doc in reviewSnapshot.data!.docs) {
-                        totalRating += (doc.data() as Map<String, dynamic>)['rating'] ?? 0.0;
-                      }
-                      avgRating = totalRating / reviewSnapshot.data!.docs.length;
-                    }
-                    
-                    // Show demo data if there are permission errors
-                    if (hasOrderError || hasReviewError) {
-                      return Column(
-                        children: [
-                          Row(
-                            children: [
-                              Expanded(
-                                child: _buildStatCard(
-                                  icon: Icons.shopping_bag,
-                                  title: 'Orders',
-                                  value: 'Demo',
-                                  color: AppTheme.primaryGreen,
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: _buildStatCard(
-                                  icon: Icons.star,
-                                  title: 'Rating',
-                                  value: '4.5',
-                                  color: AppTheme.deepTeal,
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: _buildStatCard(
-                                  icon: Icons.rate_review,
-                                  title: 'Reviews',
-                                  value: 'Demo',
-                                  color: AppTheme.cloud,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                            decoration: BoxDecoration(
-                              color: AppTheme.deepTeal.withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: AppTheme.deepTeal.withOpacity(0.3)),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(Icons.info_outline, size: 14, color: AppTheme.deepTeal),
-                                const SizedBox(width: 6),
-                                Text(
-                                  'Demo mode - Login to see real stats',
-                                  style: TextStyle(fontSize: 11, color: AppTheme.deepTeal, fontWeight: FontWeight.w500),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      );
-                    }
-                    
-                    // Cache the stats and debounce updates
-                    final newStats = {
-                      'orders': completedOrders,
-                      'rating': avgRating,
-                      'reviews': totalReviews,
-                    };
-                    
-                    // Only update if stats have changed
-                    if (_cachedLiveStats == null || 
-                        _cachedLiveStats!['orders'] != completedOrders ||
-                        _cachedLiveStats!['rating'] != avgRating ||
-                        _cachedLiveStats!['reviews'] != totalReviews) {
-                      
-                      // Cancel existing timer
-                      _statsDebounceTimer?.cancel();
-                      
-                      // Set new timer to update stats after a delay
-                      _statsDebounceTimer = Timer(const Duration(milliseconds: 500), () {
-                        if (mounted) {
-                          setState(() {
-                            _cachedLiveStats = newStats;
-                          });
-                        }
-                      });
-                    }
-                    
-                    return Row(
-                      children: [
-                        Expanded(
-                          child: _buildStatCard(
-                            icon: Icons.shopping_bag,
-                            title: 'Orders',
-                            value: completedOrders.toString(),
-                            color: AppTheme.primaryGreen,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: _buildStatCard(
-                            icon: Icons.star,
-                            title: 'Rating',
-                            value: avgRating.toStringAsFixed(1),
-                            color: AppTheme.deepTeal,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: _buildStatCard(
-                            icon: Icons.rate_review,
-                            title: 'Reviews',
-                            value: totalReviews.toString(),
-                            color: AppTheme.cloud,
-                          ),
-                        ),
-                      ],
-                    );
-                  },
-                );
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildStatCard({
-    required IconData icon,
-    required String title,
-    required String value,
-    required Color color,
-  }) {
-    return RepaintBoundary(
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              color.withOpacity(0.1),
-              color.withOpacity(0.05),
-            ],
           ),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: color.withOpacity(0.3)),
-        ),
-        child: Column(
-          children: [
-            Icon(
-              icon,
-              color: color,
-              size: 24,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              value,
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-                color: color,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              title,
-              style: TextStyle(
-                fontSize: 12,
-                color: color.withOpacity(0.8),
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildQuickActions() {
-    return RepaintBoundary(
-      child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(
-                  Icons.flash_on,
-                  color: AppTheme.deepTeal,
-                  size: 20,
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  'Quick Actions',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: AppTheme.deepTeal,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: _buildActionButton(
-                    icon: Icons.phone,
-                    label: 'Call',
-                    onTap: () => _handleCall(),
-                    color: AppTheme.primaryGreen,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _buildActionButton(
-                    icon: Icons.chat,
-                    label: 'WhatsApp',
-                    onTap: () => _handleWhatsApp(),
-                    color: AppTheme.primaryGreen,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _buildActionButton(
-                    icon: Icons.share,
-                    label: 'Share',
-                    onTap: () => _handleShare(),
-                    color: AppTheme.cloud,
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildActionButton({
-    required IconData icon,
-    required String label,
-    required VoidCallback onTap,
-    required Color color,
-  }) {
-    return RepaintBoundary(
-      child: GestureDetector(
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 16),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                color.withOpacity(0.1),
-                color.withOpacity(0.05),
-              ],
-            ),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: color.withOpacity(0.3)),
-          ),
-          child: Column(
-            children: [
-              Icon(
-                icon,
-                color: color,
-                size: 24,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                label,
+          secondChild: Text(
+            widget.text,
                 style: TextStyle(
-                  color: color,
-                  fontWeight: FontWeight.w600,
+              color: Colors.grey[700],
                   fontSize: 14,
-                ),
-              ),
-            ],
+              height: 1.5,
+            ),
           ),
+          crossFadeState: _isExpanded
+              ? CrossFadeState.showSecond
+              : CrossFadeState.showFirst,
+          duration: const Duration(milliseconds: 300),
         ),
-      ),
-    );
-  }
-
-  void _handleCall() async {
-    final contact = widget.store['contact'] as String?;
-    if (contact != null && contact.isNotEmpty) {
-      // Remove any non-numeric characters and ensure it starts with country code
-      String cleanContact = contact.replaceAll(RegExp(r'[^\d+]'), '');
-      
-      // If it doesn't start with +, assume it's a local number and add country code
-      if (!cleanContact.startsWith('+')) {
-        cleanContact = '+27$cleanContact'; // Assuming South Africa (+27)
-      }
-      
-      final phoneUrl = Uri.parse('tel:$cleanContact');
-      
-      try {
-        if (await canLaunchUrl(phoneUrl)) {
-          await launchUrl(phoneUrl);
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Calling $contact...'),
-              backgroundColor: AppTheme.primaryGreen,
-            ),
-          );
-        } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Unable to make phone call'),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
-      } catch (e) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error making call: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Contact information not available'),
-          backgroundColor: Colors.orange,
-        ),
-      );
-    }
-  }
-
-  void _handleWhatsApp() async {
-    final contact = widget.store['contact'] as String?;
-    if (contact != null && contact.isNotEmpty) {
-      // Clean the phone number - remove spaces, dashes, parentheses
-      String cleanContact = contact.replaceAll(RegExp(r'[\s\-\(\)]'), '');
-      
-      // Remove any non-numeric characters except +
-      cleanContact = cleanContact.replaceAll(RegExp(r'[^\d+]'), '');
-      
-      // If it doesn't start with +, assume it's a local number and add country code
-      if (!cleanContact.startsWith('+')) {
-        cleanContact = '+27$cleanContact'; // Assuming South Africa (+27)
-      }
-      
-      // Format for WhatsApp URL - remove + and any leading zeros
-      String whatsappNumber = cleanContact.replaceFirst('+', '');
-      // Remove leading zeros after country code
-      if (whatsappNumber.startsWith('27')) {
-        whatsappNumber = '27' + whatsappNumber.substring(2).replaceFirst(RegExp(r'^0+'), '');
-      }
-      
-      final whatsappUrl = Uri.parse('https://wa.me/$whatsappNumber');
-      
-      try {
-        // Debug: Show the URL being generated
-        print('WhatsApp URL: $whatsappUrl');
-        print('Original contact: $contact');
-        print('Cleaned contact: $cleanContact');
-        print('WhatsApp number: $whatsappNumber');
-        
-        // Try launching WhatsApp directly without checking first
-        bool launched = false;
-        
-        // Try web URL first
-        try {
-          await launchUrl(whatsappUrl, mode: LaunchMode.externalApplication);
-          launched = true;
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Opening WhatsApp...'),
-              backgroundColor: AppTheme.primaryGreen,
-            ),
-          );
-        } catch (e) {
-          print('Web URL failed: $e');
-        }
-        
-        // If web URL failed, try app protocol
-        if (!launched) {
-          final whatsappAppUrl = Uri.parse('whatsapp://send?phone=$whatsappNumber');
-          try {
-            await launchUrl(whatsappAppUrl, mode: LaunchMode.externalApplication);
-            launched = true;
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Opening WhatsApp...'),
-                backgroundColor: AppTheme.primaryGreen,
-              ),
-            );
-          } catch (e) {
-            print('App protocol failed: $e');
-          }
-        }
-        
-        // If both failed, show dialog
-        if (!launched) {
-          // Show dialog with options when WhatsApp is not available
-          showDialog(
-              context: context,
-            builder: (BuildContext context) {
-              return AlertDialog(
-                title: const Text('WhatsApp Not Available'),
-                content: const Text(
-                  'WhatsApp is not installed on this device. Would you like to:\n\n'
-                  '• Call the store directly\n'
-                  '• Copy the phone number\n'
-                  '• Install WhatsApp from Play Store',
-                ),
-                actions: [
-                  TextButton(
-                    onPressed: () {
-                      Navigator.of(context).pop();
-                      _handleCall(); // Fallback to call
-                    },
-                    child: const Text('Call Store'),
-                  ),
-                  TextButton(
-                    onPressed: () {
-                      Navigator.of(context).pop();
-                      // Copy to clipboard
-                      Clipboard.setData(ClipboardData(text: cleanContact));
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('Phone number copied: $cleanContact'),
-                          backgroundColor: AppTheme.cloud,
-                        ),
-                      );
-                    },
-                    child: const Text('Copy Number'),
-                  ),
-                  TextButton(
-                    onPressed: () {
-                      Navigator.of(context).pop();
-                      // Open Play Store to install WhatsApp
-                      final playStoreUrl = Uri.parse(
-                        'https://play.google.com/store/apps/details?id=com.whatsapp'
-                      );
-                      launchUrl(playStoreUrl, mode: LaunchMode.externalApplication);
-                    },
-                    child: const Text('Install WhatsApp'),
-                  ),
-                  TextButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    child: const Text('Cancel'),
-                  ),
-                ],
-              );
-            },
-          );
-        }
-      } catch (e) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error opening WhatsApp: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Contact information not available'),
-          backgroundColor: Colors.orange,
-        ),
-      );
-    }
-  }
-
-  void _handleShare() async {
-    final storeName = widget.store['storeName'] as String? ?? 'Store';
-    final storeId = widget.store['storeId'] as String?;
-    final contact = widget.store['contact'] as String?;
-    final location = widget.store['location'] as String?;
-    
-    if (storeId != null) {
-      // Create share text
-      String shareText = 'Check out $storeName!';
-      if (contact != null && contact.isNotEmpty) {
-        shareText += '\n📞 Contact: $contact';
-      }
-      if (location != null && location.isNotEmpty) {
-        shareText += '\n📍 Location: $location';
-      }
-      shareText += '\n\nDiscover amazing products and services!';
-      
-      // Create share URL (you can replace this with your app's deep link)
-      final shareUrl = 'https://your-app.com/store/$storeId';
-      
-      // Combine text and URL
-      final fullShareText = '$shareText\n\n$shareUrl';
-      
-      try {
-        // Use the share package to share content
-        await Share.share(
-          fullShareText,
-          subject: 'Check out $storeName',
-        );
-        
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Sharing $storeName...'),
-            backgroundColor: AppTheme.cloud,
-          ),
-        );
-      } catch (e) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error sharing: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
-  }
-
-  Widget _buildSpecialtiesSection() {
-    final specialties = widget.store['specialties'] as List<dynamic>?;
-    if (specialties == null || specialties.isEmpty) return const SizedBox.shrink();
-    
-    return RepaintBoundary(
-      child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(Icons.star, color: AppTheme.deepTeal, size: 20),
-                const SizedBox(width: 8),
-                Text('Specialties', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppTheme.deepTeal)),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: specialties.map((specialty) {
-                return Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: AppTheme.primaryGreen.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: AppTheme.primaryGreen.withOpacity(0.3)),
-                  ),
+        if (widget.text.length > 100)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: GestureDetector(
+              onTap: () => setState(() => _isExpanded = !_isExpanded),
                   child: Text(
-                    specialty.toString(),
-                    style: TextStyle(
-                      color: AppTheme.primaryGreen,
+                _isExpanded ? 'Show less' : 'Read more',
+                style: const TextStyle(
+                  color: AppTheme.deepTeal,
                       fontWeight: FontWeight.w600,
                       fontSize: 14,
                     ),
                   ),
-                );
-              }).toList(),
             ),
-          ],
         ),
-      ),
+      ],
     );
   }
 } 

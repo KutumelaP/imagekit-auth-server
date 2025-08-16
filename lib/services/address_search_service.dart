@@ -1,179 +1,53 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
-import 'package:geocoding/geocoding.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
-import 'dart:async';
+
+class AddressSuggestion {
+  final String label;
+  final String street;
+  final String locality;
+  final String administrativeArea;
+  final String postalCode;
+  final double? latitude;
+  final double? longitude;
+
+  const AddressSuggestion({
+    required this.label,
+    required this.street,
+    required this.locality,
+    required this.administrativeArea,
+    required this.postalCode,
+    required this.latitude,
+    required this.longitude,
+  });
+}
 
 class AddressSearchService extends ChangeNotifier {
   Timer? _searchTimer;
-  List<Placemark> _suggestions = [];
+  List<AddressSuggestion> _suggestions = [];
   bool _isSearching = false;
+  int _currentSearchId = 0;
+  double? _userLat;
+  double? _userLng;
 
-  // Alternative geocoding services
-  static const String _photonApiUrl = 'https://photon.komoot.io/api/';
-  static const String _nominatimApiUrl = 'https://nominatim.openstreetmap.org/search';
-  
-  // Fallback local database for when APIs are not available
-  static const Map<String, List<Map<String, dynamic>>> _localAddresses = {
-    'johannesburg': [
-      {
-        'address': 'Sandton, Johannesburg, Gauteng',
-        'lat': -26.1076,
-        'lng': 28.0567,
-        'street': 'Sandton',
-        'locality': 'Johannesburg',
-        'province': 'Gauteng'
-      },
-      {
-        'address': 'Rosebank, Johannesburg, Gauteng',
-        'lat': -26.1445,
-        'lng': 28.0453,
-        'street': 'Rosebank',
-        'locality': 'Johannesburg',
-        'province': 'Gauteng'
-      },
-      {
-        'address': 'Melville, Johannesburg, Gauteng',
-        'lat': -26.1708,
-        'lng': 28.0026,
-        'street': 'Melville',
-        'locality': 'Johannesburg',
-        'province': 'Gauteng'
-      },
-      {
-        'address': 'Parktown, Johannesburg, Gauteng',
-        'lat': -26.1869,
-        'lng': 28.0386,
-        'street': 'Parktown',
-        'locality': 'Johannesburg',
-        'province': 'Gauteng'
-      },
-      {
-        'address': 'Braamfontein, Johannesburg, Gauteng',
-        'lat': -26.1997,
-        'lng': 28.0447,
-        'street': 'Braamfontein',
-        'locality': 'Johannesburg',
-        'province': 'Gauteng'
-      },
-    ],
-    'cape town': [
-      {
-        'address': 'Sea Point, Cape Town, Western Cape',
-        'lat': -33.9249,
-        'lng': 18.4241,
-        'street': 'Sea Point',
-        'locality': 'Cape Town',
-        'province': 'Western Cape'
-      },
-      {
-        'address': 'Green Point, Cape Town, Western Cape',
-        'lat': -33.9144,
-        'lng': 18.4196,
-        'street': 'Green Point',
-        'locality': 'Cape Town',
-        'province': 'Western Cape'
-      },
-      {
-        'address': 'V&A Waterfront, Cape Town, Western Cape',
-        'lat': -33.9036,
-        'lng': 18.4201,
-        'street': 'V&A Waterfront',
-        'locality': 'Cape Town',
-        'province': 'Western Cape'
-      },
-      {
-        'address': 'Camps Bay, Cape Town, Western Cape',
-        'lat': -33.9561,
-        'lng': 18.3833,
-        'street': 'Camps Bay',
-        'locality': 'Cape Town',
-        'province': 'Western Cape'
-      },
-      {
-        'address': 'Claremont, Cape Town, Western Cape',
-        'lat': -33.9816,
-        'lng': 18.4653,
-        'street': 'Claremont',
-        'locality': 'Cape Town',
-        'province': 'Western Cape'
-      },
-    ],
-    'durban': [
-      {
-        'address': 'Berea, Durban, KwaZulu-Natal',
-        'lat': -29.8587,
-        'lng': 31.0218,
-        'street': 'Berea',
-        'locality': 'Durban',
-        'province': 'KwaZulu-Natal'
-      },
-      {
-        'address': 'Morningside, Durban, KwaZulu-Natal',
-        'lat': -29.8587,
-        'lng': 31.0218,
-        'street': 'Morningside',
-        'locality': 'Durban',
-        'province': 'KwaZulu-Natal'
-      },
-      {
-        'address': 'Umhlanga, Durban, KwaZulu-Natal',
-        'lat': -29.6482,
-        'lng': 31.1044,
-        'street': 'Umhlanga',
-        'locality': 'Durban',
-        'province': 'KwaZulu-Natal'
-      },
-      {
-        'address': 'Ballito, Durban, KwaZulu-Natal',
-        'lat': -29.5389,
-        'lng': 31.2074,
-        'street': 'Ballito',
-        'locality': 'Durban',
-        'province': 'KwaZulu-Natal'
-      },
-    ],
-    'pretoria': [
-      {
-        'address': 'Arcadia, Pretoria, Gauteng',
-        'lat': -25.7479,
-        'lng': 28.2293,
-        'street': 'Arcadia',
-        'locality': 'Pretoria',
-        'province': 'Gauteng'
-      },
-      {
-        'address': 'Hatfield, Pretoria, Gauteng',
-        'lat': -25.7479,
-        'lng': 28.2293,
-        'street': 'Hatfield',
-        'locality': 'Pretoria',
-        'province': 'Gauteng'
-      },
-      {
-        'address': 'Brooklyn, Pretoria, Gauteng',
-        'lat': -25.7479,
-        'lng': 28.2293,
-        'street': 'Brooklyn',
-        'locality': 'Pretoria',
-        'province': 'Gauteng'
-      },
-      {
-        'address': 'Menlyn, Pretoria, Gauteng',
-        'lat': -25.7479,
-        'lng': 28.2293,
-        'street': 'Menlyn',
-        'locality': 'Pretoria',
-        'province': 'Gauteng'
-      },
-    ],
-  };
+  // HERE Maps API configuration
+  static const String _hereApiKey = 'F2ZQ7Djp9L9lUHpw4qvxlrgCePbtSgD7efexLP_kU_A';
+  static const String _hereGeocodingUrl = 'https://geocode.search.hereapi.com/v1/geocode';
+  static const String _hereAutocompleteUrl = 'https://autocomplete.search.hereapi.com/v1/autocomplete';
 
-  List<Placemark> get suggestions => _suggestions;
+  List<AddressSuggestion> get suggestions => _suggestions;
   bool get isSearching => _isSearching;
 
-  // Search addresses with debouncing
+  // Set user location for biasing results
+  void setUserLocation({required double latitude, required double longitude}) {
+    _userLat = latitude;
+    _userLng = longitude;
+  }
+
+
+
+  // Search addresses using Google Places API
   Future<void> searchAddresses(String query) async {
     print('🔍 AddressSearchService.searchAddresses called with: "$query"');
     
@@ -194,50 +68,38 @@ class AddressSearchService extends ChangeNotifier {
     notifyListeners();
     print('🔍 Set searching state to true');
 
+    // Increment search id to track latest search
+    _currentSearchId++;
+    final int localSearchId = _currentSearchId;
+
     // Debounce search for 300ms
     _searchTimer = Timer(const Duration(milliseconds: 300), () async {
       print('🔍 Starting debounced search for: "$query"');
       
       try {
-        List<Placemark> placemarks = [];
+        List<AddressSuggestion> results = await _searchWithHereMaps(query);
         
-        // Strategy 1: Try Photon API (best for autocomplete)
-        print('🔍 Strategy 1: Trying Photon API...');
-        placemarks = await _tryPhotonSearch(query);
-        print('🔍 Photon API returned ${placemarks.length} results');
-        
-        // Strategy 2: If no Photon results, try Nominatim
-        if (placemarks.isEmpty) {
-          print('🔍 Strategy 2: No Photon results, trying Nominatim...');
-          placemarks = await _tryNominatimSearch(query);
-          print('🔍 Nominatim API returned ${placemarks.length} results');
-        }
-        
-        // Strategy 3: If no API results, try local database
-        if (placemarks.isEmpty) {
-          print('🔍 Strategy 3: No API results, trying local database...');
-          placemarks = await _searchLocalDatabase(query);
-          print('🔍 Local database returned ${placemarks.length} results');
-        }
-        
-        // Strategy 4: If still no results, create a fallback placemark
-        if (placemarks.isEmpty) {
-          print('🔍 Strategy 4: No placemarks found, creating fallback...');
-          placemarks = [_createFallbackPlacemark(query)];
-          print('🔍 Created fallback placemark');
-        }
+        print('🔍 HERE Maps API returned ${results.length} results');
 
-        print('🔍 Final results: ${placemarks.length} placemarks');
+        // Ignore stale results from older searches
+        if (localSearchId < _currentSearchId) {
+          print('🔍 Stale results ignored for searchId=$localSearchId (current=${_currentSearchId})');
+          return;
+        }
         
-        _suggestions = placemarks;
+        _suggestions = results;
         _isSearching = false;
         notifyListeners();
         
         print('✅ Found ${_suggestions.length} address suggestions');
       } catch (e) {
         print('❌ Error in address search: $e');
-        print('❌ Stack trace: ${StackTrace.current}');
-        _suggestions = [_createFallbackPlacemark(query)];
+        // Ignore stale errors as well
+        if (localSearchId < _currentSearchId) {
+          print('🔍 Stale error ignored for searchId=$localSearchId (current=${_currentSearchId})');
+          return;
+        }
+        _suggestions = [_createFallbackSuggestion(query)];
         _isSearching = false;
         notifyListeners();
         print('✅ Created fallback address suggestion');
@@ -245,240 +107,134 @@ class AddressSearchService extends ChangeNotifier {
     });
   }
 
-  // Try Photon API for address search
-  Future<List<Placemark>> _tryPhotonSearch(String query) async {
+  // Search using HERE Maps Geocoding API
+  Future<List<AddressSuggestion>> _searchWithHereMaps(String query) async {
     try {
-      print('🔍 Trying Photon API for: "$query"');
+      // Build query parameters for HERE Maps
+      final Map<String, String> queryParams = {
+        'q': query,
+        'apiKey': _hereApiKey,
+        'limit': '7',
+        'lang': 'en',
+        'countryCode': 'ZAF', // South Africa
+      };
+
+      // Add location bias if user location is available
+      if (_userLat != null && _userLng != null) {
+        queryParams['at'] = '${_userLat!.toStringAsFixed(6)},${_userLng!.toStringAsFixed(6)}';
+        queryParams['radius'] = '50000'; // 50km radius
+      }
+
+      print('🔍 HERE Maps API request params: $queryParams');
       
-      final url = Uri.parse('$_photonApiUrl?q=${Uri.encodeComponent(query)}&lang=en&limit=5&countrycodes=za');
-      print('🔍 Photon API URL: $url');
+      final uri = Uri.parse(_hereGeocodingUrl).replace(queryParameters: queryParams);
+      final response = await http.get(uri).timeout(const Duration(seconds: 10));
       
-      final response = await http.get(url).timeout(
-        const Duration(seconds: 10),
-        onTimeout: () {
-          print('🔍 Photon API timeout');
-          throw TimeoutException('Photon API request timed out');
-        },
+      print('🔍 HERE Maps API response status: ${response.statusCode}');
+      
+      if (response.statusCode != 200) {
+        print('⚠️ HERE Maps API returned non-200 status: ${response.statusCode}');
+        print('🔍 Response body: ${response.body}');
+        return [];
+      }
+      
+      final data = json.decode(response.body);
+      
+      if (data['error'] != null) {
+        print('⚠️ HERE Maps API error: ${data['error']}');
+        return [];
+      }
+      
+      final items = data['items'] as List<dynamic>? ?? [];
+      print('🔍 HERE Maps API returned ${items.length} items');
+      
+      List<AddressSuggestion> suggestions = [];
+      
+      // Convert HERE Maps items to address suggestions
+      for (final item in items) {
+        try {
+          final suggestion = _createSuggestionFromHereItem(item);
+          if (suggestion != null) {
+            suggestions.add(suggestion);
+          }
+        } catch (e) {
+          print('⚠️ Error processing HERE Maps item: $e');
+          continue;
+        }
+      }
+      
+      print('🔍 Processed ${suggestions.length} valid suggestions');
+      return suggestions;
+      
+    } catch (e) {
+      print('❌ HERE Maps API search failed: $e');
+      return [];
+    }
+  }
+
+  // Create suggestion from HERE Maps response
+  AddressSuggestion? _createSuggestionFromHereItem(Map<String, dynamic> item) {
+    try {
+      final title = item['title'] as String? ?? '';
+      final address = item['address'] as Map<String, dynamic>? ?? {};
+      final position = item['position'] as Map<String, dynamic>? ?? {};
+      
+      if (title.isEmpty) {
+        return null;
+      }
+      
+      // Extract address components from HERE Maps structure
+      final street = address['street'] as String? ?? '';
+      final locality = address['city'] as String? ?? '';
+      final administrativeArea = address['state'] as String? ?? '';
+      final postalCode = address['postalCode'] as String? ?? '';
+      final formattedAddress = address['label'] as String? ?? '';
+      
+      final lat = position['lat']?.toDouble();
+      final lng = position['lng']?.toDouble();
+      
+      return AddressSuggestion(
+        label: title.isNotEmpty ? title : formattedAddress,
+        street: street,
+        locality: locality,
+        administrativeArea: administrativeArea,
+        postalCode: postalCode,
+        latitude: lat,
+        longitude: lng,
       );
       
-      print('🔍 Photon API response status: ${response.statusCode}');
-      
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        final features = data['features'] as List?;
-        
-        print('🔍 Photon API features count: ${features?.length ?? 0}');
-        
-        if (features != null && features.isNotEmpty) {
-          List<Placemark> placemarks = [];
-          
-          for (final feature in features) {
-            final properties = feature['properties'];
-            final geometry = feature['geometry'];
-            
-            if (properties != null && geometry != null) {
-              final coordinates = geometry['coordinates'] as List?;
-              if (coordinates != null && coordinates.length >= 2) {
-                final placemark = Placemark(
-                  name: properties['name'] ?? '',
-                  street: properties['street'] ?? properties['name'] ?? '',
-                  locality: properties['city'] ?? properties['town'] ?? '',
-                  administrativeArea: properties['state'] ?? '',
-                  country: 'South Africa',
-                  postalCode: properties['postcode'] ?? '',
-                  isoCountryCode: 'ZA',
-                );
-                placemarks.add(placemark);
-                print('🔍 Added Photon placemark: ${placemark.name}');
-              }
-            }
-          }
-          
-          print('🔍 Photon API found ${placemarks.length} results');
-          return placemarks;
-        }
-      } else {
-        print('🔍 Photon API error status: ${response.statusCode}');
-      }
-      
-      print('🔍 Photon API returned no results or error');
-      return [];
     } catch (e) {
-      print('🔍 Photon API search failed: $e');
-      return [];
+      print('⚠️ Error creating suggestion from HERE Maps item: $e');
+      return null;
     }
   }
 
-  // Try Nominatim API for address search
-  Future<List<Placemark>> _tryNominatimSearch(String query) async {
-    try {
-      print('🔍 Trying Nominatim API for: "$query"');
-      
-      final url = Uri.parse('$_nominatimApiUrl?q=${Uri.encodeComponent(query)}&countrycodes=za&format=json&limit=5&addressdetails=1');
-      print('🔍 Nominatim API URL: $url');
-      
-      final response = await http.get(url).timeout(
-        const Duration(seconds: 10),
-        onTimeout: () {
-          print('🔍 Nominatim API timeout');
-          throw TimeoutException('Nominatim API request timed out');
-        },
-      );
-      
-      print('🔍 Nominatim API response status: ${response.statusCode}');
-      
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        final results = data as List?;
-        
-        print('🔍 Nominatim API results count: ${results?.length ?? 0}');
-        
-        if (results != null && results.isNotEmpty) {
-          List<Placemark> placemarks = [];
-          
-          for (final result in results) {
-            final address = result['address'] as Map<String, dynamic>?;
-            if (address != null) {
-              final placemark = Placemark(
-                name: result['display_name'] ?? '',
-                street: address['road'] ?? address['suburb'] ?? '',
-                locality: address['city'] ?? address['town'] ?? address['suburb'] ?? '',
-                administrativeArea: address['state'] ?? '',
-                country: 'South Africa',
-                postalCode: address['postcode'] ?? '',
-                isoCountryCode: 'ZA',
-              );
-              placemarks.add(placemark);
-              print('🔍 Added Nominatim placemark: ${placemark.name}');
-            }
-          }
-          
-          print('🔍 Nominatim API found ${placemarks.length} results');
-          return placemarks;
-        }
-      } else {
-        print('🔍 Nominatim API error status: ${response.statusCode}');
-      }
-      
-      print('🔍 Nominatim API returned no results or error');
-      return [];
-    } catch (e) {
-      print('🔍 Nominatim API search failed: $e');
-      return [];
-    }
-  }
-
-  // Search local database with real coordinates
-  Future<List<Placemark>> _searchLocalDatabase(String query) async {
-    try {
-      print('🔍 Searching local database for: "$query"');
-      
-      final queryLower = query.toLowerCase().trim();
-      List<Placemark> results = [];
-      
-      // Search through all cities
-      for (final city in _localAddresses.keys) {
-        if (queryLower.contains(city) || city.contains(queryLower)) {
-          // Add all addresses for this city
-          for (final addressData in _localAddresses[city]!) {
-            if (_matchesQuery(addressData['address'], queryLower)) {
-              results.add(_createPlacemarkFromLocalData(addressData));
-            }
-          }
-        }
-      }
-      
-      // If no city match, search all addresses
-      if (results.isEmpty) {
-        for (final city in _localAddresses.keys) {
-          for (final addressData in _localAddresses[city]!) {
-            if (_matchesQuery(addressData['address'], queryLower)) {
-              results.add(_createPlacemarkFromLocalData(addressData));
-            }
-          }
-        }
-      }
-      
-      // Limit results to 5
-      results = results.take(5).toList();
-      
-      print('🔍 Local search found ${results.length} results');
-      return results;
-    } catch (e) {
-      print('🔍 Local database search failed: $e');
-      return [];
-    }
-  }
-
-  // Check if address matches query
-  bool _matchesQuery(String address, String query) {
-    final addressLower = address.toLowerCase();
-    final queryWords = query.split(' ').where((word) => word.length > 2).toList();
-    
-    if (queryWords.isEmpty) return addressLower.contains(query);
-    
-    // Check if all query words are in the address
-    return queryWords.every((word) => addressLower.contains(word));
-  }
-
-  // Create placemark from local data with real coordinates
-  Placemark _createPlacemarkFromLocalData(Map<String, dynamic> addressData) {
-    return Placemark(
-      name: addressData['street'],
-      street: addressData['street'],
-      locality: addressData['locality'],
-      administrativeArea: addressData['province'],
-      country: 'South Africa',
-      postalCode: '',
-      isoCountryCode: 'ZA',
-    );
-  }
-
-  // Create a fallback placemark when all else fails
-  Placemark _createFallbackPlacemark(String query) {
-    return Placemark(
-      name: query,
+  // Create a fallback suggestion when search fails
+  AddressSuggestion _createFallbackSuggestion(String query) {
+    return AddressSuggestion(
+      label: query,
       street: query,
       locality: 'Unknown',
       administrativeArea: 'Unknown',
-      country: 'South Africa',
       postalCode: '',
-      isoCountryCode: 'ZA',
+      latitude: null,
+      longitude: null,
     );
   }
 
   // Format address for display
-  String formatAddress(Placemark placemark) {
-    final parts = <String>[];
-    
-    if (placemark.street?.isNotEmpty == true) {
-      parts.add(placemark.street!);
-    }
-    if (placemark.subLocality?.isNotEmpty == true) {
-      parts.add(placemark.subLocality!);
-    }
-    if (placemark.locality?.isNotEmpty == true) {
-      parts.add(placemark.locality!);
-    }
-    if (placemark.administrativeArea?.isNotEmpty == true) {
-      parts.add(placemark.administrativeArea!);
-    }
-    if (placemark.postalCode?.isNotEmpty == true) {
-      parts.add(placemark.postalCode!);
-    }
-    
-    return parts.join(', ');
-  }
+  String formatAddress(AddressSuggestion suggestion) => suggestion.label;
 
   // Get coordinates for delivery fee calculation
   Map<String, double>? getCoordinatesForAddress(String address) {
-    for (final city in _localAddresses.keys) {
-      for (final addressData in _localAddresses[city]!) {
-        if (addressData['address'].toLowerCase().contains(address.toLowerCase()) ||
-            address.toLowerCase().contains(addressData['street'].toLowerCase())) {
+    // Try to find coordinates from current suggestions
+    for (final suggestion in _suggestions) {
+      if (suggestion.label.toLowerCase().contains(address.toLowerCase()) ||
+          address.toLowerCase().contains(suggestion.street.toLowerCase())) {
+        if (suggestion.latitude != null && suggestion.longitude != null) {
           return {
-            'latitude': addressData['lat'],
-            'longitude': addressData['lng'],
+            'latitude': suggestion.latitude!,
+            'longitude': suggestion.longitude!,
           };
         }
       }
@@ -501,4 +257,4 @@ class AddressSearchService extends ChangeNotifier {
     _searchTimer?.cancel();
     super.dispose();
   }
-} 
+}

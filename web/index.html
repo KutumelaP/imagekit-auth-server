@@ -39,6 +39,24 @@
 
   <title>Mzansi Marketplace</title>
   <link rel="manifest" href="manifest.json">
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function() {
+        navigator.serviceWorker.register('/flutter_service_worker.js');
+      });
+    }
+  </script>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="preconnect" href="https://ik.imagekit.io" crossorigin>
+  <meta name="theme-color" content="#1F4654" />
+  <link rel="canonical" href="https://marketplace-8d6bd.web.app/" />
+  <meta property="og:site_name" content="Mzansi Marketplace" />
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="Mzansi Marketplace" />
+  <meta property="og:description" content="Your local SA marketplace for food and goods" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Mzansi Marketplace" />
+  <meta name="twitter:description" content="Your local SA marketplace for food and goods" />
   
   <!-- Mobile Keyboard and Viewport Fixes -->
   <style>
@@ -94,6 +112,14 @@
       position: absolute;
       top: 0;
       left: 0;
+    }
+    
+    /* Prefer dynamic viewport units when supported to reduce iOS top-bar jump */
+    @supports (height: 100dvh) {
+      html, body, #flutter_target {
+        height: 100dvh;
+        min-height: 100dvh;
+      }
     }
     
     /* Mobile viewport handling */
@@ -213,6 +239,7 @@
       
       if (isMobile) {
         // Set viewport height for mobile
+        let resizeTimer;
         const setViewportHeight = () => {
           const vh = window.innerHeight * 0.01;
           document.documentElement.style.setProperty('--vh', `${vh}px`);
@@ -226,17 +253,63 @@
         setViewportHeight();
         
         // Update on resize (keyboard show/hide)
-        window.addEventListener('resize', setViewportHeight);
-        window.addEventListener('orientationchange', setViewportHeight);
+        const debouncedResize = () => {
+          if (resizeTimer) cancelAnimationFrame(resizeTimer);
+          resizeTimer = requestAnimationFrame(setViewportHeight);
+        };
+        window.addEventListener('resize', debouncedResize);
+        window.addEventListener('orientationchange', debouncedResize);
         
         // Handle visual viewport changes
         if (window.visualViewport) {
-          window.visualViewport.addEventListener('resize', () => {
-            setViewportHeight();
-          });
+          window.visualViewport.addEventListener('resize', debouncedResize);
         }
       }
     }
+    
+    // Reduce scroll position restores that can cause jumps on Safari
+    try { if ('scrollRestoration' in history) { history.scrollRestoration = 'manual'; } } catch (_) {}
+
+    // iOS Safari: prevent pull-to-refresh/bounce which looks like a page refresh
+    (function() {
+      const ua = navigator.userAgent || '';
+      const isSafari = ua.includes('Safari') && !ua.includes('Chrome');
+      const isIOS = /iP(ad|hone|od)/.test(ua);
+      if (!(isSafari && isIOS)) return;
+
+      let startY = 0;
+      let startX = 0;
+      let active = false;
+
+      const onTouchStart = (e) => {
+        if (!e.touches || e.touches.length !== 1) return;
+        startY = e.touches[0].clientY;
+        startX = e.touches[0].clientX;
+        active = true;
+      };
+
+      const onTouchMove = (e) => {
+        if (!active || !e.touches || e.touches.length !== 1) return;
+        const currentY = e.touches[0].clientY;
+        const deltaY = currentY - startY;
+        const el = document.scrollingElement || document.documentElement;
+        const atTop = el.scrollTop <= 0;
+        const atBottom = Math.ceil(el.scrollTop + el.clientHeight) >= el.scrollHeight;
+        const movingDown = deltaY > 0;
+        const movingUp = deltaY < 0;
+
+        // Prevent overscroll at the top (pull-to-refresh) or bottom bounce
+        if ((atTop && movingDown) || (atBottom && movingUp)) {
+          e.preventDefault();
+        }
+      };
+
+      const onTouchEnd = () => { active = false; };
+
+      document.addEventListener('touchstart', onTouchStart, { passive: false });
+      document.addEventListener('touchmove', onTouchMove, { passive: false });
+      document.addEventListener('touchend', onTouchEnd, { passive: true });
+    })();
     
     // Prevent Safari from unloading the page
     window.addEventListener('pagehide', function(e) {
@@ -267,11 +340,7 @@
         }, false);
         
         // Prevent pull-to-refresh
-        document.addEventListener('touchmove', function(e) {
-          if (e.scale !== 1) {
-            e.preventDefault();
-          }
-        }, { passive: false });
+        // Handled globally above; keep this minimal to avoid double prevention
       }
     });
   </script>

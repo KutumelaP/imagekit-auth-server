@@ -94,27 +94,7 @@ class _EnhancedProductCardState extends State<EnhancedProductCard>
   Future<void> _addToCart() async {
     if (_isAddingToCart) return;
     
-    // Check if out of stock
-    if (widget.quantity != null && widget.quantity! <= 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Row(
-            children: [
-              const Icon(Icons.info, color: Colors.white),
-              const SizedBox(width: 8),
-              Text('${widget.name} is out of stock'),
-            ],
-          ),
-          backgroundColor: Colors.orange,
-          duration: const Duration(seconds: 2),
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
-          ),
-        ),
-      );
-      return;
-    }
+    // Do not hard-block when quantity shows 0; many food items don't manage stock strictly
     
     setState(() {
       _isAddingToCart = true;
@@ -128,28 +108,29 @@ class _EnhancedProductCardState extends State<EnhancedProductCard>
         widget.price,
         widget.imageUrl,
         widget.sellerId,
-        availableStock: widget.quantity,
+        widget.sellerName,
+        'Unknown',
+        // Enforce stock only if quantity is a positive number
+        availableStock: (widget.quantity != null && widget.quantity! > 0) ? widget.quantity : null,
       );
       
       if (success) {
-      // Show success animation
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Row(
-            children: [
-              const Icon(Icons.check_circle, color: Colors.white),
-              const SizedBox(width: 8),
-              Text('${widget.name} added to cart'),
-            ],
+        // Show success or clamped notice based on provider flags
+        final cart = Provider.of<CartProvider>(context, listen: false);
+        final msg = cart.lastAddClamped && cart.lastAddNotice != null
+            ? cart.lastAddNotice!
+            : '${widget.name} added to cart';
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(msg),
+            backgroundColor: const Color(0xFF2E7D32),
+            duration: const Duration(seconds: 2),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
           ),
-          backgroundColor: const Color(0xFF2E7D32),
-          duration: const Duration(seconds: 2),
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
-          ),
-        ),
-      );
+        );
       } else {
         // Show insufficient stock message
         ScaffoldMessenger.of(context).showSnackBar(
@@ -355,7 +336,7 @@ class _EnhancedProductCardState extends State<EnhancedProductCard>
                             child: widget.imageUrl.isNotEmpty
                                 ? SafeProductImage(
                                     imageUrl: widget.imageUrl,
-                      fit: BoxFit.cover,
+                                    fit: BoxFit.cover,
                                     width: double.infinity,
                                     height: double.infinity,
                                     borderRadius: BorderRadius.circular(16),

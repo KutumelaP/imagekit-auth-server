@@ -1,22 +1,23 @@
-import 'dart:convert';
+// import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_storage/firebase_storage.dart';
+// import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:http/http.dart' as http;
-import 'package:path/path.dart' as path;
+// import 'package:http/http.dart' as http;
+// import 'package:path/path.dart' as path;
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:provider/provider.dart';
-import 'product_upload_screen.dart';
+// import 'product_upload_screen.dart';
 import '../theme/app_theme.dart';
 import '../providers/user_provider.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import '../services/imagekit_service.dart';
-import '../widgets/home_navigation_button.dart';
-import 'seller_onboarding_screen.dart';
+// import '../widgets/home_navigation_button.dart';
+// import 'seller_onboarding_screen.dart';
+import 'package:flutter/services.dart';
 
 class SellerRegistrationScreen extends StatefulWidget {
   const SellerRegistrationScreen({super.key});
@@ -38,7 +39,7 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
   final TextEditingController _passionController = TextEditingController();
   final TextEditingController _customRangeController = TextEditingController();
   List<String> _selectedPaymentMethods = [];
-  final List<String> _paymentMethodOptions = ['cash', 'card', 'snapscan', 'eft'];
+  // final List<String> _paymentMethodOptions = ['cash', 'card', 'snapscan', 'eft'];
   
   // Store category options
   final List<String> _storeCategoryOptions = [
@@ -55,15 +56,15 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
   double _visibilityRadius = 5.0;
   
   // New delivery range variables
-  double _deliveryRange = 50.0; // Default 50km range (0-1000 range slider)
+  double _deliveryRange = 20.0; // Default 20km range (SA market standard)
   
   // Hybrid delivery mode variables
   String _deliveryMode = 'hybrid'; // 'platform', 'seller', 'hybrid', 'pickup'
   bool _sellerDeliveryEnabled = false;
   bool _platformDeliveryEnabled = true;
-  double _sellerDeliveryBaseFee = 25.0;
-  double _sellerDeliveryFeePerKm = 2.0;
-  double _sellerDeliveryMaxFee = 50.0;
+  double _sellerDeliveryBaseFee = 25.0; // SA standard base rate
+  double _sellerDeliveryFeePerKm = 6.5; // SA standard per km rate
+  double _sellerDeliveryMaxFee = 50.0; // Maximum delivery fee
   String _sellerDeliveryTime = '30-45 minutes';
   
   // Delivery hours variables
@@ -74,12 +75,12 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
   TimeOfDay _storeOpenTime = const TimeOfDay(hour: 8, minute: 0);
   TimeOfDay _storeCloseTime = const TimeOfDay(hour: 18, minute: 0);
 
-  dynamic? _storeImage; // Can be File or XFile
-  String? _storeImageUrl;
+  dynamic _storeImage; // Can be File or XFile
+  // String? _storeImageUrl;
   List<dynamic> _extraPhotos = []; // Can contain File or XFile
-  List<String> _extraPhotoUrls = [];
-  dynamic? _introVideo; // Can be File or XFile
-  String? _introVideoUrl;
+  // List<String> _extraPhotoUrls = [];
+  dynamic _introVideo; // Can be File or XFile
+  // String? _introVideoUrl;
 
   final picker = ImagePicker();
   final videoPicker = ImagePicker();
@@ -88,7 +89,7 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
   double? _latitude;
   double? _longitude;
 
-  double? _platformFeePercent;
+  // double? _platformFeePercent; // used when fetching fee config
 
   // Animation controllers
   late AnimationController _fadeController;
@@ -99,7 +100,7 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
   @override
   void initState() {
     super.initState();
-    _fetchPlatformFee();
+    // _fetchPlatformFee();
     
     // Initialize animations
     _fadeController = AnimationController(
@@ -297,15 +298,15 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
     super.dispose();
   }
 
-  Future<void> _fetchPlatformFee() async {
-    final configDoc = await FirebaseFirestore.instance.collection('config').doc('platform').get();
-    final configData = configDoc.data();
-    if (configData != null && configData['platformFee'] != null) {
-      setState(() {
-        _platformFeePercent = (configData['platformFee'] as num).toDouble();
-      });
-    }
-  }
+// Future<void> _fetchPlatformFee() async {
+//   final configDoc = await FirebaseFirestore.instance.collection('config').doc('platform').get();
+//   final configData = configDoc.data();
+//   if (configData != null && configData['platformFee'] != null) {
+//     setState(() {
+//       _platformFeePercent = (configData['platformFee'] as num).toDouble();
+//     });
+//   }
+// }
 
   Future<void> _pickStoreImage() async {
     try {
@@ -388,9 +389,7 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
     _pickStoreImage();
   }
 
-  void _handleExtraPhotoPick() {
-    _pickExtraPhoto();
-  }
+// void _handleExtraPhotoPick() { _pickExtraPhoto(); }
 
   Future<void> _pickExtraPhoto() async {
     if (_extraPhotos.length >= 2) {
@@ -860,7 +859,51 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
         if (mounted) {
           await _showApprovalNoticeDialog();
         }
-        
+
+        // Show store link and QR so seller can advertise immediately
+        final storeId = user.uid;
+        final base = const String.fromEnvironment('PUBLIC_BASE_URL', defaultValue: 'https://yourdomain.com');
+        final storeUrl = '$base/store/$storeId';
+        if (!mounted) return;
+        await showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (ctx) => AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: const Text('Your Store Link'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SelectableText(storeUrl),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: () async {
+                          await Clipboard.setData(ClipboardData(text: storeUrl));
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Link copied')));
+                          }
+                        },
+                        icon: const Icon(Icons.copy),
+                        label: const Text('Copy link'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('Close'),
+              ),
+            ],
+          ),
+        );
+
         Navigator.pop(context);
       }
     } catch (e) {
@@ -1775,13 +1818,63 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
                         onChanged: (value) => setState(() => _isDeliveryAvailable = value),
                       ),
                       if (_isDeliveryAvailable) ...[
+                        // Delivery Fee Information Note
+                        Container(
+                          margin: const EdgeInsets.only(bottom: 16),
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: AppTheme.success.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: AppTheme.success.withOpacity(0.3),
+                            ),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Icon(
+                                    Icons.info_outline,
+                                    color: AppTheme.success,
+                                    size: 20,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    'Delivery Fee Structure',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w600,
+                                      color: AppTheme.success,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                '💡 **Default Rates (SA Market Standard):**\n'
+                                '• Base Fee: R25 (covers first 3-4km)\n'
+                                '• Per KM Rate: R6.50/km (after first 3-4km)\n'
+                                '• Maximum Range: 20km\n'
+                                '• Minimum Order: R50\n\n'
+                                '💡 **You can customize these rates below, or leave blank to use defaults.**\n'
+                                '💡 **Reasonable ranges:** Base Fee: R15-R50, Per KM: R3-R15',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: AppTheme.mediumGrey,
+                                  height: 1.4,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                         _buildEnhancedTextField(
                           controller: _deliveryFeeController,
                           label: 'Delivery Fee (R)',
                           hint: 'Enter delivery fee per kilometer',
                           prefixIcon: Icons.delivery_dining,
                           keyboardType: TextInputType.number,
-                          helperText: 'This is the amount you charge per kilometer',
+                          helperText: 'This is the amount you charge per kilometer (leave blank for default R6.50/km)',
                         ),
                         _buildEnhancedTextField(
                           controller: _minOrderController,
@@ -1793,8 +1886,8 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
                         
                         // Hybrid Delivery Mode Section
                         Container(
-                          margin: const EdgeInsets.only(bottom: 16),
-                          padding: const EdgeInsets.all(16),
+                          margin: EdgeInsets.only(bottom: ResponsiveUtils.getVerticalPadding(context)),
+                          padding: EdgeInsets.all(ResponsiveUtils.getHorizontalPadding(context)),
                           decoration: BoxDecoration(
                             color: AppTheme.angel,
                             borderRadius: BorderRadius.circular(12),
@@ -1842,25 +1935,58 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
                                     borderRadius: BorderRadius.circular(8),
                                   ),
                                   prefixIcon: Icon(Icons.settings),
+                                  contentPadding: EdgeInsets.symmetric(
+                                    horizontal: ResponsiveUtils.getHorizontalPadding(context) * 0.5,
+                                    vertical: ResponsiveUtils.getVerticalPadding(context) * 0.3,
+                                  ),
                                 ),
                                 items: [
                                   DropdownMenuItem(
                                     value: 'platform',
-                                    child: Text('Platform Only - Use platform drivers'),
+                                    child: Tooltip(
+                                      message: 'Use platform drivers for deliveries',
+                                      child: Text(
+                                        'Platform Only',
+                                        style: TextStyle(fontSize: ResponsiveUtils.getTitleSize(context) - 4),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
                                   ),
                                   DropdownMenuItem(
                                     value: 'seller',
-                                    child: Text('Seller Only - Handle delivery yourself'),
+                                    child: Tooltip(
+                                      message: 'Handle delivery yourself',
+                                      child: Text(
+                                        'Seller Only',
+                                        style: TextStyle(fontSize: ResponsiveUtils.getTitleSize(context) - 4),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
                                   ),
                                   DropdownMenuItem(
                                     value: 'hybrid',
-                                    child: Text('Hybrid - Offer both options'),
+                                    child: Tooltip(
+                                      message: 'Offer both platform and seller delivery',
+                                      child: Text(
+                                        'Hybrid',
+                                        style: TextStyle(fontSize: ResponsiveUtils.getTitleSize(context) - 4),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
                                   ),
                                   DropdownMenuItem(
                                     value: 'pickup',
-                                    child: Text('Pickup Only - Customers collect'),
+                                    child: Tooltip(
+                                      message: 'Customers collect from your location',
+                                      child: Text(
+                                        'Pickup Only',
+                                        style: TextStyle(fontSize: ResponsiveUtils.getTitleSize(context) - 4),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
                                   ),
                                 ],
+                                isExpanded: true, // Prevent overflow
                                 onChanged: (value) {
                                   setState(() {
                                     _deliveryMode = value!;
@@ -1894,26 +2020,88 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
                                 Text(
                                   'Delivery Options',
                                   style: TextStyle(
-                                    fontSize: 14,
+                                    fontSize: ResponsiveUtils.getTitleSize(context) - 2,
                                     fontWeight: FontWeight.w600,
                                     color: AppTheme.deepTeal,
                                   ),
                                 ),
-                                const SizedBox(height: 8),
-                                CheckboxListTile(
-                                  title: Text('Enable Seller Delivery'),
-                                  subtitle: Text('Handle deliveries yourself'),
-                                  value: _sellerDeliveryEnabled,
-                                  onChanged: _deliveryMode == 'platform' ? null : (value) {
-                                    setState(() => _sellerDeliveryEnabled = value!);
-                                  },
-                                ),
-                                CheckboxListTile(
-                                  title: Text('Enable Platform Delivery'),
-                                  subtitle: Text('Use platform drivers'),
-                                  value: _platformDeliveryEnabled,
-                                  onChanged: _deliveryMode == 'seller' ? null : (value) {
-                                    setState(() => _platformDeliveryEnabled = value!);
+                                SizedBox(height: ResponsiveUtils.getVerticalPadding(context) * 0.3),
+                                // Responsive delivery options
+                                LayoutBuilder(
+                                  builder: (context, constraints) {
+                                    if (constraints.maxWidth > 500) {
+                                      // Desktop/Tablet: Side by side
+                                      return Row(
+                                        children: [
+                                          Expanded(
+                                            child: CheckboxListTile(
+                                              title: Text(
+                                                'Enable Seller Delivery',
+                                                style: TextStyle(fontSize: ResponsiveUtils.getTitleSize(context) - 3),
+                                              ),
+                                              subtitle: Text(
+                                                'Handle deliveries yourself',
+                                                style: TextStyle(fontSize: ResponsiveUtils.getTitleSize(context) - 4),
+                                              ),
+                                              value: _sellerDeliveryEnabled,
+                                              onChanged: _deliveryMode == 'platform' ? null : (value) {
+                                                setState(() => _sellerDeliveryEnabled = value!);
+                                              },
+                                            ),
+                                          ),
+                                          Expanded(
+                                            child: CheckboxListTile(
+                                              title: Text(
+                                                'Enable Platform Delivery',
+                                                style: TextStyle(fontSize: ResponsiveUtils.getTitleSize(context) - 3),
+                                              ),
+                                              subtitle: Text(
+                                                'Use platform drivers',
+                                                style: TextStyle(fontSize: ResponsiveUtils.getTitleSize(context) - 4),
+                                              ),
+                                              value: _platformDeliveryEnabled,
+                                              onChanged: _deliveryMode == 'seller' ? null : (value) {
+                                                setState(() => _platformDeliveryEnabled = value!);
+                                              },
+                                            ),
+                                          ),
+                                        ],
+                                      );
+                                    } else {
+                                      // Mobile: Stacked vertically
+                                      return Column(
+                                        children: [
+                                          CheckboxListTile(
+                                            title: Text(
+                                              'Enable Seller Delivery',
+                                              style: TextStyle(fontSize: ResponsiveUtils.getTitleSize(context) - 3),
+                                            ),
+                                            subtitle: Text(
+                                              'Handle deliveries yourself',
+                                              style: TextStyle(fontSize: ResponsiveUtils.getTitleSize(context) - 4),
+                                            ),
+                                            value: _sellerDeliveryEnabled,
+                                            onChanged: _deliveryMode == 'platform' ? null : (value) {
+                                              setState(() => _sellerDeliveryEnabled = value!);
+                                            },
+                                          ),
+                                          CheckboxListTile(
+                                            title: Text(
+                                              'Enable Platform Delivery',
+                                              style: TextStyle(fontSize: ResponsiveUtils.getTitleSize(context) - 3),
+                                            ),
+                                            subtitle: Text(
+                                              'Use platform drivers',
+                                              style: TextStyle(fontSize: ResponsiveUtils.getTitleSize(context) - 4),
+                                            ),
+                                            value: _platformDeliveryEnabled,
+                                            onChanged: _deliveryMode == 'seller' ? null : (value) {
+                                              setState(() => _platformDeliveryEnabled = value!);
+                                            },
+                                          ),
+                                        ],
+                                      );
+                                    }
                                   },
                                 ),
                               ],
@@ -1921,6 +2109,38 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
                               // Seller Delivery Settings
                               if (_sellerDeliveryEnabled) ...[
                                 const SizedBox(height: 16),
+                                // Seller Delivery Settings Note
+                                Container(
+                                  margin: const EdgeInsets.only(bottom: 12),
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    color: AppTheme.deepTeal.withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(
+                                      color: AppTheme.deepTeal.withOpacity(0.3),
+                                    ),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        Icons.settings,
+                                        color: AppTheme.deepTeal,
+                                        size: 16,
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          'Configure your own delivery rates. These will override the default rates.',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: AppTheme.deepTeal,
+                                            fontStyle: FontStyle.italic,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
                                 Text(
                                   'Seller Delivery Settings',
                                   style: TextStyle(
@@ -1930,77 +2150,151 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
                                   ),
                                 ),
                                 const SizedBox(height: 8),
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: _buildEnhancedTextField(
-                                        controller: TextEditingController(
-                                          text: _sellerDeliveryBaseFee.toString(),
-                                        ),
-                                        label: 'Base Fee (R)',
-                                        hint: '25.0',
-                                        prefixIcon: Icons.attach_money,
-                                        keyboardType: TextInputType.number,
-                                        onChanged: (value) {
-                                          if (value.isNotEmpty) {
-                                            _sellerDeliveryBaseFee = double.tryParse(value) ?? 25.0;
-                                          }
-                                        },
-                                      ),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Expanded(
-                                      child: _buildEnhancedTextField(
-                                        controller: TextEditingController(
-                                          text: _sellerDeliveryFeePerKm.toString(),
-                                        ),
-                                        label: 'Fee per km (R)',
-                                        hint: '2.0',
-                                        prefixIcon: Icons.trending_up,
-                                        keyboardType: TextInputType.number,
-                                        onChanged: (value) {
-                                          if (value.isNotEmpty) {
-                                            _sellerDeliveryFeePerKm = double.tryParse(value) ?? 2.0;
-                                          }
-                                        },
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 8),
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: _buildEnhancedTextField(
-                                        controller: TextEditingController(
-                                          text: _sellerDeliveryMaxFee.toString(),
-                                        ),
-                                        label: 'Max Fee (R)',
-                                        hint: '50.0',
-                                        prefixIcon: Icons.attach_money,
-                                        keyboardType: TextInputType.number,
-                                        onChanged: (value) {
-                                          if (value.isNotEmpty) {
-                                            _sellerDeliveryMaxFee = double.tryParse(value) ?? 50.0;
-                                          }
-                                        },
-                                      ),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Expanded(
-                                      child: _buildEnhancedTextField(
-                                        controller: TextEditingController(
-                                          text: _sellerDeliveryTime,
-                                        ),
-                                        label: 'Delivery Time',
-                                        hint: '30-45 minutes',
-                                        prefixIcon: Icons.access_time,
-                                        onChanged: (value) {
-                                          _sellerDeliveryTime = value;
-                                        },
-                                      ),
-                                    ),
-                                  ],
+                                // Responsive layout for delivery settings
+                                LayoutBuilder(
+                                  builder: (context, constraints) {
+                                    if (constraints.maxWidth > 600) {
+                                      // Desktop/Tablet: Side by side
+                                      return Column(
+                                        children: [
+                                          Row(
+                                            children: [
+                                              Expanded(
+                                                child: _buildEnhancedTextField(
+                                                  controller: TextEditingController(
+                                                    text: _sellerDeliveryBaseFee.toString(),
+                                                  ),
+                                                  label: 'Base Fee (R)',
+                                                  hint: '25.0',
+                                                  prefixIcon: Icons.attach_money,
+                                                  keyboardType: TextInputType.number,
+                                                  onChanged: (value) {
+                                                    if (value.isNotEmpty) {
+                                                      _sellerDeliveryBaseFee = double.tryParse(value) ?? 25.0;
+                                                    }
+                                                  },
+                                                ),
+                                              ),
+                                              SizedBox(width: ResponsiveUtils.getHorizontalPadding(context) * 0.5),
+                                              Expanded(
+                                                child: _buildEnhancedTextField(
+                                                  controller: TextEditingController(
+                                                    text: _sellerDeliveryFeePerKm.toString(),
+                                                  ),
+                                                  label: 'Fee per km (R)',
+                                                  hint: '6.5',
+                                                  prefixIcon: Icons.trending_up,
+                                                  keyboardType: TextInputType.number,
+                                                  onChanged: (value) {
+                                                    if (value.isNotEmpty) {
+                                                      _sellerDeliveryFeePerKm = double.tryParse(value) ?? 6.5;
+                                                    }
+                                                  },
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                          SizedBox(height: ResponsiveUtils.getVerticalPadding(context) * 0.5),
+                                          Row(
+                                            children: [
+                                              Expanded(
+                                                child: _buildEnhancedTextField(
+                                                  controller: TextEditingController(
+                                                    text: _sellerDeliveryMaxFee.toString(),
+                                                  ),
+                                                  label: 'Max Fee (R)',
+                                                  hint: '50.0',
+                                                  prefixIcon: Icons.attach_money,
+                                                  keyboardType: TextInputType.number,
+                                                  onChanged: (value) {
+                                                    if (value.isNotEmpty) {
+                                                      _sellerDeliveryMaxFee = double.tryParse(value) ?? 50.0;
+                                                    }
+                                                  },
+                                                ),
+                                              ),
+                                              SizedBox(width: ResponsiveUtils.getHorizontalPadding(context) * 0.5),
+                                              Expanded(
+                                                child: _buildEnhancedTextField(
+                                                  controller: TextEditingController(
+                                                    text: _sellerDeliveryTime,
+                                                  ),
+                                                  label: 'Delivery Time',
+                                                  hint: '30-45 minutes',
+                                                  prefixIcon: Icons.access_time,
+                                                  onChanged: (value) {
+                                                    _sellerDeliveryTime = value;
+                                                  },
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ],
+                                      );
+                                    } else {
+                                      // Mobile: Stacked vertically
+                                      return Column(
+                                        children: [
+                                          _buildEnhancedTextField(
+                                            controller: TextEditingController(
+                                              text: _sellerDeliveryBaseFee.toString(),
+                                            ),
+                                            label: 'Base Fee (R)',
+                                            hint: '25.0',
+                                            prefixIcon: Icons.attach_money,
+                                            keyboardType: TextInputType.number,
+                                            onChanged: (value) {
+                                              if (value.isNotEmpty) {
+                                                _sellerDeliveryBaseFee = double.tryParse(value) ?? 25.0;
+                                              }
+                                            },
+                                          ),
+                                          SizedBox(height: ResponsiveUtils.getVerticalPadding(context) * 0.5),
+                                          _buildEnhancedTextField(
+                                            controller: TextEditingController(
+                                              text: _sellerDeliveryFeePerKm.toString(),
+                                            ),
+                                            label: 'Fee per km (R)',
+                                            hint: '6.5',
+                                            prefixIcon: Icons.trending_up,
+                                            keyboardType: TextInputType.number,
+                                            onChanged: (value) {
+                                              if (value.isNotEmpty) {
+                                                _sellerDeliveryFeePerKm = double.tryParse(value) ?? 6.5;
+                                              }
+                                            },
+                                          ),
+                                          SizedBox(height: ResponsiveUtils.getVerticalPadding(context) * 0.5),
+                                          _buildEnhancedTextField(
+                                            controller: TextEditingController(
+                                              text: _sellerDeliveryMaxFee.toString(),
+                                            ),
+                                            label: 'Max Fee (R)',
+                                            hint: '50.0',
+                                            prefixIcon: Icons.attach_money,
+                                            keyboardType: TextInputType.number,
+                                            onChanged: (value) {
+                                              if (value.isNotEmpty) {
+                                                _sellerDeliveryMaxFee = double.tryParse(value) ?? 50.0;
+                                              }
+                                            },
+                                          ),
+                                          SizedBox(height: ResponsiveUtils.getVerticalPadding(context) * 0.5),
+                                          _buildEnhancedTextField(
+                                            controller: TextEditingController(
+                                              text: _sellerDeliveryTime,
+                                            ),
+                                            label: 'Delivery Time',
+                                            hint: '30-45 minutes',
+                                            prefixIcon: Icons.access_time,
+                                            onChanged: (value) {
+                                              _sellerDeliveryTime = value;
+                                            },
+                                          ),
+                                        ],
+                                      );
+                                    }
+                                  },
                                 ),
                               ],
                             ],
@@ -2009,8 +2303,8 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
                         
                         // Delivery Range Section
                         Container(
-                          margin: const EdgeInsets.only(bottom: 16),
-                          padding: const EdgeInsets.all(16),
+                          margin: EdgeInsets.only(bottom: ResponsiveUtils.getVerticalPadding(context)),
+                          padding: EdgeInsets.all(ResponsiveUtils.getHorizontalPadding(context)),
                           decoration: BoxDecoration(
                             color: AppTheme.angel,
                             borderRadius: BorderRadius.circular(12),
@@ -2040,6 +2334,38 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
                                 ],
                               ),
                               const SizedBox(height: 12),
+                              // Delivery Range Note
+                              Container(
+                                margin: const EdgeInsets.only(bottom: 12),
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: AppTheme.primaryGreen.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(
+                                    color: AppTheme.primaryGreen.withOpacity(0.3),
+                                  ),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      Icons.lightbulb_outline,
+                                      color: AppTheme.primaryGreen,
+                                      size: 16,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        '💡 **Recommended:** 15-25km for urban areas, 30-50km for rural areas. Default: 20km (SA market standard).',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: AppTheme.primaryGreen,
+                                          fontStyle: FontStyle.italic,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
                               Text(
                                 'Set the maximum distance you\'re willing to deliver. Your store won\'t be visible to customers outside this range.',
                                 style: TextStyle(

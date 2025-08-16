@@ -64,6 +64,16 @@ class AppTheme {
   static const List<Color> buttonGradient = [deepTeal, cloud];
   static const List<Color> accentGradient = [breeze, cloud];
   
+  // Input field gradients and shadows
+  static const List<Color> inputBackgroundGradient = [angel, whisper];
+  static const List<BoxShadow> inputElevation = [
+    BoxShadow(
+      color: Color(0x1A000000),
+      blurRadius: 4,
+      offset: Offset(0, 2),
+    ),
+  ];
+  
   // Complementary accent gradients (for cards and specific elements)
   static const List<Color> warmAccent = [Color(0xFFFF8A50), Color(0xFFFFB388)];
   static const List<Color> coolAccent = [Color(0xFF4FC3F7), Color(0xFF81D4FA)];

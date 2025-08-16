@@ -1,0 +1,12 @@
+{
+  "applinks": {
+    "details": [
+      {
+        "appID": "TEAMID.BUNDLE_ID",
+        "paths": [ "/store/*" ]
+      }
+    ]
+  }
+}
+
+

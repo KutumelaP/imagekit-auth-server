@@ -2,8 +2,6 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
 
 class AdminNotificationService {
   static final AdminNotificationService _instance = AdminNotificationService._internal();
@@ -16,8 +14,7 @@ class AdminNotificationService {
   // Global navigator key for navigation from notifications
   static final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
   
-  // Firebase Cloud Messaging server key (you'll need to get this from Firebase Console)
-  static const String _fcmServerKey = 'YOUR_FCM_SERVER_KEY'; // Replace with your actual server key
+  // No server key on client; push handled by Cloud Functions
 
   Future<void> initialize() async {
     try {
@@ -117,8 +114,6 @@ class AdminNotificationService {
     if (data['type'] == 'chat_message') {
       // Navigate to chat screen
       final chatId = data['chatId'];
-      final buyerId = data['buyerId'];
-      final sellerId = data['sellerId'];
       
       // TODO: Navigate to specific chat
       print('Navigate to chat: $chatId');
@@ -152,7 +147,7 @@ class AdminNotificationService {
         return;
       }
 
-      // Create notification document
+      // Create in-app notification document
       final notificationData = {
         'userId': recipientId, // Changed to match existing structure
         'title': title,
@@ -165,57 +160,27 @@ class AdminNotificationService {
 
       final notificationRef = await _firestore.collection('notifications').add(notificationData);
 
-      // Send push notification
-      await _sendPushNotification(
-        fcmToken: fcmToken,
-        title: title,
-        body: body,
-        data: {
+      // Enqueue push notification for Cloud Function
+      await _firestore.collection('push_notifications').add({
+        'to': fcmToken,
+        'notification': {
+          'title': title,
+          'body': body,
+        },
+        'data': {
           'type': type,
           'notificationId': notificationRef.id,
           ...?data,
         },
-      );
+        'timestamp': FieldValue.serverTimestamp(),
+        'priority': 'high',
+      });
     } catch (e) {
       print('Error sending notification: $e');
     }
   }
 
-  // Send push notification via FCM
-  Future<void> _sendPushNotification({
-    required String fcmToken,
-    required String title,
-    required String body,
-    required Map<String, dynamic> data,
-  }) async {
-    try {
-      final response = await http.post(
-        Uri.parse('https://fcm.googleapis.com/fcm/send'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'key=$_fcmServerKey',
-        },
-        body: json.encode({
-          'to': fcmToken,
-          'notification': {
-            'title': title,
-            'body': body,
-            'sound': 'default',
-          },
-          'data': data,
-          'priority': 'high',
-        }),
-      );
-
-      if (response.statusCode == 200) {
-        print('Push notification sent successfully');
-      } else {
-        print('Failed to send push notification: ${response.statusCode}');
-      }
-    } catch (e) {
-      print('Error sending push notification: $e');
-    }
-  }
+  // Removed direct client FCM send; using Cloud Functions via Firestore queue
 
   // Send chat notification
   Future<void> sendChatNotification({

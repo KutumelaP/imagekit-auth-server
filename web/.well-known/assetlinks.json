@@ -1,0 +1,16 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.example.food_marketplace_app",
+      "sha256_cert_fingerprints": [
+        "08:B6:4F:D4:85:55:C7:EF:16:71:E0:08:9D:04:E6:C7:48:8D:7B:F1:81:E5:39:DA:C5:6B:3B:41:8B:83:70:97"
+      ]
+    }
+  }
+]
+
+

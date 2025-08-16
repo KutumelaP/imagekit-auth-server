@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../utils/safari_optimizer.dart';
+import '../services/awesome_notification_service.dart' as an;
 
 class NotificationBadge extends StatefulWidget {
   final Widget child;
@@ -26,6 +27,8 @@ class _NotificationBadgeState extends State<NotificationBadge> {
   bool _isInitialized = false;
   Timer? _debounceTimer;
   int _lastCount = 0;
+  StreamSubscription<QuerySnapshot>? _notifSubscription;
+  final Set<String> _seenNotificationIds = <String>{};
 
   @override
   void initState() {
@@ -39,6 +42,7 @@ class _NotificationBadgeState extends State<NotificationBadge> {
     _subscription?.cancel();
     _authSubscription?.cancel();
     _debounceTimer?.cancel();
+    _notifSubscription?.cancel();
     super.dispose();
   }
 
@@ -80,38 +84,83 @@ class _NotificationBadgeState extends State<NotificationBadge> {
 
     // Safari optimization: reduce stream frequency
     try {
-      // Listen to chats where current user is a participant
+      // Optional: keep a lightweight chat stream to trigger debounced updates if needed later
       final chatsStream = FirebaseFirestore.instance
           .collection('chats')
           .where(Filter.or(
             Filter('buyerId', isEqualTo: currentUserId),
             Filter('sellerId', isEqualTo: currentUserId),
           ))
-          .snapshots(includeMetadataChanges: false); // Reduce metadata changes
-      
-      final notificationsStream = FirebaseFirestore.instance
-          .collection('notifications')
-          .where('userId', isEqualTo: currentUserId)
-          .where('read', isEqualTo: false)
-          .snapshots(includeMetadataChanges: false); // Reduce metadata changes
+          .snapshots(includeMetadataChanges: false);
 
-      // Listen to both streams separately with better error handling
       _subscription = chatsStream.listen(
-        (snapshot) {
+        (_) {
           if (mounted) {
             _debouncedUpdateBadgeCount(currentUserId);
           }
         },
         onError: (error) {
-          // Only log permission errors once to avoid spam
           if (error.toString().contains('permission-denied')) {
-            print('❌ Permission denied for notification badge stream (logged once)');
+            print('❌ Permission denied for notification badge chat stream (logged once)');
           } else {
-            print('❌ Error in notification badge stream: $error');
+            print('❌ Error in notification badge chat stream: $error');
           }
         },
       );
-      
+
+      // Primary: listen to notifications collection for this user
+      _notifSubscription = FirebaseFirestore.instance
+          .collection('notifications')
+          .where('userId', isEqualTo: currentUserId)
+          .where('read', isEqualTo: false)
+          .snapshots(includeMetadataChanges: false)
+          .listen((snapshot) async {
+        try {
+          int unread = 0;
+          for (final doc in snapshot.docs) {
+            final data = doc.data() as Map<String, dynamic>;
+            final type = data['type'] as String? ?? '';
+            if (type != 'chat_message') unread++;
+          }
+
+          // Local fallback system popup for newly added order notifications
+          for (final change in snapshot.docChanges) {
+            if (change.type == DocumentChangeType.added) {
+              final doc = change.doc;
+              if (_seenNotificationIds.add(doc.id)) {
+                final data = doc.data() as Map<String, dynamic>;
+                final type = data['type'] as String? ?? '';
+                if (!kIsWeb && type == 'new_order_seller') {
+                  final body = data['body'] as String? ?? 'You have a new order';
+                  final orderId = (data['data'] as Map<String, dynamic>?)?['orderId'] as String? ?? '';
+                  await an.AwesomeNotificationService().showOrderNotification(
+                    title: 'New Order Received',
+                    body: body,
+                    orderId: orderId,
+                    type: 'new_order_seller',
+                  );
+                }
+              }
+            }
+          }
+
+          if (mounted) {
+            setState(() {
+              _unreadCount = unread;
+              _isInitialized = true;
+            });
+          }
+        } catch (e) {
+          print('❌ Error processing notifications stream: $e');
+        }
+      }, onError: (error) {
+        if (error.toString().contains('permission-denied')) {
+          print('❌ Permission denied for notifications stream (logged once)');
+        } else {
+          print('❌ Error in notifications stream: $error');
+        }
+      });
+
       _isInitialized = true;
       print('🔔 Notification badge initialized for user: $currentUserId');
     } catch (e) {

@@ -4,7 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import '../theme/app_theme.dart';
-import '../services/notification_service.dart';
+import '../services/firebase_admin_service.dart';
 import '../utils/order_utils.dart';
 
 class SellerOrderDetailScreen extends StatefulWidget {
@@ -606,24 +606,34 @@ class _SellerOrderDetailScreenState extends State<SellerOrderDetailScreen>
             children: [
               Icon(Icons.account_balance_wallet, size: 18, color: Colors.grey[600]),
               const SizedBox(width: 12),
-              Text(
-                'Payment Status: ',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Colors.grey[600],
+              Expanded(
+                child: Text(
+                  'Payment Status: ',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: Colors.grey[600],
+                  ),
                 ),
               ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: isPaid ? Colors.green.withOpacity(0.1) : Colors.orange.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  paymentStatus.toUpperCase(),
-                  style: TextStyle(
-                    color: isPaid ? Colors.green : Colors.orange,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 12,
+              const SizedBox(width: 8),
+              Flexible(
+                fit: FlexFit.loose,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: isPaid ? Colors.green.withOpacity(0.1) : Colors.orange.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    paymentStatus.toUpperCase(),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: isPaid ? Colors.green : Colors.orange,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                    ),
                   ),
                 ),
               ),
@@ -660,11 +670,15 @@ class _SellerOrderDetailScreenState extends State<SellerOrderDetailScreen>
             children: [
               Icon(Icons.settings, color: AppTheme.primaryGreen, size: 24),
               const SizedBox(width: 8),
-              Text(
-                'Order Status Management',
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: Theme.of(context).colorScheme.onSurface,
+              Expanded(
+                child: Text(
+                  'Order Status Management',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: Theme.of(context).colorScheme.onSurface,
+                  ),
                 ),
               ),
             ],
@@ -1073,7 +1087,7 @@ class _SellerOrderDetailScreenState extends State<SellerOrderDetailScreen>
         print('🔔 Order ID: ${orderRef.id}');
         print('🔔 New Status: $newStatus');
         
-        await NotificationService().sendOrderStatusNotification(
+        await FirebaseAdminService().sendOrderStatusNotification(
           userId: buyerId,
           orderId: orderRef.id,
           orderNumber: orderNumber,

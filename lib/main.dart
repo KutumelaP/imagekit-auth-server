@@ -1,12 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:provider/provider.dart';
-import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import 'firebase_options.dart';
 import 'theme/app_theme.dart';
@@ -15,11 +11,17 @@ import 'providers/user_provider.dart';
 import 'providers/optimized_provider.dart';
 import 'services/notification_service.dart';
 import 'services/error_tracking_service.dart';
+import 'services/fcm_config_service.dart';
+import 'services/awesome_notification_service.dart';
+import 'services/navigation_service.dart';
+import 'screens/NotificationSettingsScreen.dart';
+import 'screens/ChatRoute.dart';
 import 'services/global_message_listener.dart';
 import 'widgets/in_app_notification_widget.dart';
 import 'widgets/notification_badge.dart';
 import 'widgets/simple_splash_screen.dart';
 import 'screens/simple_home_screen.dart';
+import 'screens/product_search_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/CartScreen.dart';
 import 'screens/OrderHistoryScreen.dart';
@@ -31,12 +33,18 @@ import 'screens/SellerOrderDetailScreen.dart';
 import 'screens/SellerOrdersListScreen.dart';
 import 'screens/CheckoutScreen.dart';
 import 'screens/AdminRoute.dart';
+import 'screens/StoreProfileRouteLoader.dart';
+import 'screens/MyStoresScreen.dart';
 
-import 'services/error_handler.dart';
-import 'widgets/popup_notification.dart';
 import 'dart:async';
 import 'utils/safari_optimizer.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+
+Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  // You can add background handling logic here if needed
+  print('🔔 Background message: ${message.messageId} data=${message.data}');
+}
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -58,12 +66,20 @@ void main() async {
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+  // Register background message handler before any messaging usage
+  FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
   
   // Initialize notification service with reduced frequency for Safari
   await NotificationService().initialize();
   
   // Request notification permissions
   await NotificationService().requestPermissions();
+
+  // Initialize FCM config service (token save, handlers)
+  await FCMConfigService().initialize();
+
+  // Initialize Awesome Notifications for local banners (mobile)
+  await AwesomeNotificationService().initialize();
   
   // Initialize location permissions
   try {
@@ -99,10 +115,11 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (context) => UserProvider()),
         ChangeNotifierProvider(create: (context) => OptimizedDataProvider()),
       ],
-      child: MaterialApp(
+        child: MaterialApp(
         title: 'Food Marketplace',
         debugShowCheckedModeBanner: false,
         theme: AppTheme.lightTheme,
+          navigatorKey: NavigationService.navigatorKey,
         home: InAppNotificationWidget(
           child: NotificationBadge(
             child: SplashWrapper(),
@@ -126,9 +143,29 @@ class MyApp extends StatelessWidget {
           '/admin-review-moderation': (context) => AdminReviewModerationScreen(),
           '/cache-management': (context) => CacheManagementScreen(),
           '/my-products': (context) => SellerProductManagement(),
+          '/notification-settings': (context) => const NotificationSettingsScreen(),
+          '/my-stores': (context) => const MyStoresScreen(),
         },
         onGenerateRoute: (settings) {
           // Handle routes with parameters
+          // Shareable web URL: /store/:storeId
+          if (settings.name != null && settings.name!.startsWith('/store/')) {
+            final storeId = settings.name!.substring('/store/'.length);
+            return MaterialPageRoute(
+              builder: (_) => StoreProfileRouteLoader(storeId: storeId),
+            );
+          }
+          if (settings.name == '/search') {
+            return MaterialPageRoute(builder: (_) => const ProductSearchScreen());
+          }
+          if (settings.name == '/chat') {
+            final args = settings.arguments as Map<String, dynamic>?;
+            final chatId = args?['chatId'] as String?;
+            if (chatId == null || chatId.isEmpty) {
+              return MaterialPageRoute(builder: (_) => const SimpleHomeScreen());
+            }
+            return MaterialPageRoute(builder: (_) => ChatRoute(chatId: chatId));
+          }
           if (settings.name == '/seller-order-detail') {
             final args = settings.arguments as Map<String, dynamic>?;
             final orderId = args?['orderId'] as String? ?? '';

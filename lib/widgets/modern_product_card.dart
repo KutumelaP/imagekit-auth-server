@@ -120,19 +120,10 @@ class _ModernProductCardState extends State<ModernProductCard>
         ),
       );
       
-      // Show success animation
+      // Show success message (simple text to avoid overflow)
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Row(
-            children: [
-              Icon(
-                Icons.check_circle, 
-                color: Theme.of(context).colorScheme.onPrimary,
-              ),
-              const SizedBox(width: 8),
-              Text('${widget.name} added to cart'),
-            ],
-          ),
+          content: Text('${widget.name} added to cart'),
           backgroundColor: Theme.of(context).colorScheme.primary,
           duration: const Duration(seconds: 2),
           behavior: SnackBarBehavior.floating,
@@ -201,6 +192,7 @@ class _ModernProductCardState extends State<ModernProductCard>
                                         width: double.infinity,
                                         height: double.infinity,
                                         borderRadius: BorderRadius.circular(12),
+                                        // Keep default caching (no forced bypass here)
                                       )
                                     : Container(
                                         decoration: BoxDecoration(

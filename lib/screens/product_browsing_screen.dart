@@ -1943,6 +1943,8 @@ class BeautifulProductCard extends StatelessWidget {
       (data['price'] ?? 0.0).toDouble(),
       data['imageUrl'] ?? '',
       data['ownerId'] ?? data['sellerId'] ?? '',
+      data['storeName'] ?? 'Unknown Store',
+      data['storeCategory'] ?? 'Other',
       availableStock: stock,
     ).then((success) {
       if (success) {

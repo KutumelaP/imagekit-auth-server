@@ -6,52 +6,114 @@ import '../models/cart_item.dart';
 class CartProvider extends ChangeNotifier {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   
-  List<CartItem> _items = [];
+  // Store-separated carts: Map<storeId, List<CartItem>>
+  Map<String, List<CartItem>> _storeCarts = {};
+  String? _currentStoreId; // Currently active store
   bool _isLoading = false;
   String? _error;
+  // Info about last add-to-cart operation
+  String? lastAddNotice;
+  bool lastAddClamped = false;
+  int? lastAddedQuantity;
 
   // Getters
-  List<CartItem> get items => _items;
+  List<CartItem> get items => _currentStoreId != null ? _storeCarts[_currentStoreId] ?? [] : [];
   bool get isLoading => _isLoading;
   String? get error => _error;
-  int get itemCount => _items.length;
+  int get itemCount => items.length;
   
+  // Store management
+  String? get currentStoreId => _currentStoreId;
+  List<String> get availableStoreIds => _storeCarts.keys.toList();
+  
+  // Get items for a specific store
+  List<CartItem> getItemsForStore(String storeId) => _storeCarts[storeId] ?? [];
+  
+  // Get total price for current store
   double get totalPrice {
-    return _items.fold(0.0, (sum, item) => sum + (item.price * item.quantity));
+    return items.fold(0.0, (sum, item) => sum + (item.price * item.quantity));
+  }
+  
+  // Get total price for a specific store
+  double getTotalPriceForStore(String storeId) {
+    final storeItems = _storeCarts[storeId] ?? [];
+    return storeItems.fold(0.0, (sum, item) => sum + (item.price * item.quantity));
+  }
+  
+  // Get total items across all stores
+  int get totalItemsAcrossStores {
+    return _storeCarts.values.fold(0, (sum, storeItems) => sum + storeItems.length);
   }
 
   // Check if user is authenticated
   bool get isAuthenticated => FirebaseAuth.instance.currentUser != null;
 
   // Cart operations
-  Future<bool> addItem(String productId, String productName, double price, String imageUrl, String sellerId, {int? availableStock}) async {
-    final existingIndex = _items.indexWhere((item) => item.id == productId);
+  Future<bool> addItem(String productId, String productName, double price, String imageUrl, String sellerId, String sellerName, String storeCategory, {int? quantity, int? availableStock}) async {
+    // Use provided quantity or default to 1
+    int quantityToAdd = quantity ?? 1;
+    // Reset last add info
+    lastAddNotice = null;
+    lastAddClamped = false;
+    lastAddedQuantity = null;
+    // Prevent seller self-purchase
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null && sellerId == user.uid) {
+      print('🛑 Self-purchase blocked: seller $sellerId attempted to add own product');
+      return false;
+    }
     
-    // Check stock availability if provided
+    // Check if this is a different store than current cart
+    if (_currentStoreId != null && _currentStoreId != sellerId) {
+      // Ask user if they want to switch stores or clear current cart
+      print('🔍 DEBUG: Adding item from different store. Current: $_currentStoreId, New: $sellerId');
+      // For now, we'll automatically switch stores (you can add user confirmation later)
+      _switchToStore(sellerId);
+    }
+    
+    // Initialize store cart if it doesn't exist
+    if (!_storeCarts.containsKey(sellerId)) {
+      _storeCarts[sellerId] = [];
+      _currentStoreId = sellerId;
+    }
+    
+    final storeItems = _storeCarts[sellerId]!;
+    final existingIndex = storeItems.indexWhere((item) => item.id == productId);
+    
+    // Check stock availability if provided (clamp instead of hard-fail)
     if (availableStock != null) {
-      final currentCartQuantity = existingIndex >= 0 ? _items[existingIndex].quantity : 0;
-      if (currentCartQuantity + 1 > availableStock) {
-        return false; // Cannot add more items, insufficient stock
+      final currentCartQuantity = existingIndex >= 0 ? storeItems[existingIndex].quantity : 0;
+      final remaining = availableStock - currentCartQuantity;
+      if (remaining <= 0) {
+        return false; // already at max
+      }
+      if (quantityToAdd > remaining) {
+        quantityToAdd = remaining; // clamp to remaining stock
+        lastAddClamped = true;
+        lastAddNotice = 'Added remaining stock ($remaining)';
       }
     }
     
     if (existingIndex >= 0) {
-      // Item exists, increment quantity
-      _items[existingIndex] = _items[existingIndex].copyWith(
-        quantity: _items[existingIndex].quantity + 1,
+      // Item exists, increment quantity by the specified amount
+      storeItems[existingIndex] = storeItems[existingIndex].copyWith(
+        quantity: storeItems[existingIndex].quantity + quantityToAdd,
       );
     } else {
-      // Add new item
-      _items.add(CartItem(
+      // Add new item with specified quantity
+      storeItems.add(CartItem(
         id: productId,
         name: productName,
         price: price,
-        quantity: 1,
+        quantity: quantityToAdd,
         imageUrl: imageUrl,
-        sellerName: sellerId,
+        sellerId: sellerId,
+        sellerName: sellerName,
+        storeCategory: storeCategory,
       ));
     }
     
+    lastAddedQuantity = quantityToAdd;
     notifyListeners();
     
     // Only save to Firestore if user is authenticated
@@ -62,17 +124,96 @@ class CartProvider extends ChangeNotifier {
     return true; // Successfully added
   }
 
+  // Store management methods
+  void _switchToStore(String storeId) {
+    if (_currentStoreId != storeId) {
+      _currentStoreId = storeId;
+      print('🔍 DEBUG: Switched to store: $storeId');
+      notifyListeners();
+    }
+  }
+  
+  // Switch to a different store
+  void switchToStore(String storeId) {
+    if (_storeCarts.containsKey(storeId)) {
+      _switchToStore(storeId);
+    } else {
+      print('🔍 DEBUG: Store $storeId not found in carts');
+    }
+  }
+  
+  // Get current store info
+  Map<String, dynamic>? getCurrentStoreInfo() {
+    if (_currentStoreId == null) return null;
+    
+    final storeItems = _storeCarts[_currentStoreId]!;
+    if (storeItems.isEmpty) return null;
+    
+    final firstItem = storeItems.first;
+    return {
+      'storeId': _currentStoreId,
+      'storeName': firstItem.sellerName,
+      'storeCategory': firstItem.storeCategory,
+      'itemCount': storeItems.length,
+      'totalPrice': getTotalPriceForStore(_currentStoreId!),
+    };
+  }
+  
+  // Get summary of all stores in cart
+  List<Map<String, dynamic>> getAllStoresSummary() {
+    final summaries = <Map<String, dynamic>>[];
+    
+    for (var storeId in _storeCarts.keys) {
+      final storeItems = _storeCarts[storeId]!;
+      if (storeItems.isNotEmpty) {
+        final firstItem = storeItems.first;
+        summaries.add({
+          'storeId': storeId,
+          'storeName': firstItem.sellerName,
+          'storeCategory': firstItem.storeCategory,
+          'itemCount': storeItems.length,
+          'totalPrice': getTotalPriceForStore(storeId),
+          'isCurrentStore': storeId == _currentStoreId,
+        });
+      }
+    }
+    
+    return summaries;
+  }
+  
   Future<void> addToCart(CartItem item) async {
-    final existingIndex = _items.indexWhere((cartItem) => cartItem.id == item.id);
+    // Reset last add info
+    lastAddNotice = null;
+    lastAddClamped = false;
+    lastAddedQuantity = null;
+    // Prevent seller self-purchase
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null && item.sellerId == user.uid) {
+      print('🛑 Self-purchase blocked: seller ${item.sellerId} attempted to add own product');
+      return;
+    }
+    // Check if this is a different store than current cart
+    if (_currentStoreId != null && _currentStoreId != item.sellerId) {
+      _switchToStore(item.sellerId);
+    }
+    
+    // Initialize store cart if it doesn't exist
+    if (!_storeCarts.containsKey(item.sellerId)) {
+      _storeCarts[item.sellerId] = [];
+      _currentStoreId = item.sellerId;
+    }
+    
+    final storeItems = _storeCarts[item.sellerId]!;
+    final existingIndex = storeItems.indexWhere((cartItem) => cartItem.id == item.id);
     
     if (existingIndex >= 0) {
       // Item exists, increment quantity
-      _items[existingIndex] = _items[existingIndex].copyWith(
-        quantity: _items[existingIndex].quantity + 1,
+      storeItems[existingIndex] = storeItems[existingIndex].copyWith(
+        quantity: storeItems[existingIndex].quantity + 1,
       );
     } else {
       // Add new item
-      _items.add(item);
+      storeItems.add(item);
     }
     
     notifyListeners();
@@ -84,24 +225,16 @@ class CartProvider extends ChangeNotifier {
   }
 
   void removeFromCart(String productId) {
-    _items.removeWhere((item) => item.id == productId);
-    notifyListeners();
-    
-    // Only save to Firestore if user is authenticated
-    if (isAuthenticated) {
-      _saveToFirestore();
-    }
-  }
-
-  void updateQuantity(String productId, int quantity) {
-    if (quantity <= 0) {
-      removeFromCart(productId);
-      return;
-    }
-    
-    final index = _items.indexWhere((item) => item.id == productId);
-    if (index >= 0) {
-      _items[index] = _items[index].copyWith(quantity: quantity);
+    if (_currentStoreId != null) {
+      final storeItems = _storeCarts[_currentStoreId]!;
+      storeItems.removeWhere((item) => item.id == productId);
+      
+      // If store cart is empty, remove the store
+      if (storeItems.isEmpty) {
+        _storeCarts.remove(_currentStoreId);
+        _currentStoreId = _storeCarts.isNotEmpty ? _storeCarts.keys.first : null;
+      }
+      
       notifyListeners();
       
       // Only save to Firestore if user is authenticated
@@ -111,8 +244,47 @@ class CartProvider extends ChangeNotifier {
     }
   }
 
+  void updateQuantity(String productId, int quantity) {
+    if (quantity <= 0) {
+      removeFromCart(productId);
+      return;
+    }
+    
+    if (_currentStoreId != null) {
+      final storeItems = _storeCarts[_currentStoreId]!;
+      final index = storeItems.indexWhere((item) => item.id == productId);
+      if (index >= 0) {
+        storeItems[index] = storeItems[index].copyWith(quantity: quantity);
+        notifyListeners();
+        
+        // Only save to Firestore if user is authenticated
+        if (isAuthenticated) {
+          _saveToFirestore();
+        }
+      }
+    }
+  }
+
   void clearCart() {
-    _items.clear();
+    _storeCarts.clear();
+    _currentStoreId = null;
+    notifyListeners();
+    
+    // Only save to Firestore if user is authenticated
+    if (isAuthenticated) {
+      _saveToFirestore();
+    }
+  }
+  
+  // Clear cart for a specific store
+  void clearStoreCart(String storeId) {
+    _storeCarts.remove(storeId);
+    
+    // If we cleared the current store, switch to another one
+    if (_currentStoreId == storeId) {
+      _currentStoreId = _storeCarts.isNotEmpty ? _storeCarts.keys.first : null;
+    }
+    
     notifyListeners();
     
     // Only save to Firestore if user is authenticated
@@ -123,7 +295,8 @@ class CartProvider extends ChangeNotifier {
 
   // Clear cart when user changes (for logout/login scenarios)
   void clearCartOnUserChange() {
-    _items.clear();
+    _storeCarts.clear();
+    _currentStoreId = null;
     notifyListeners();
   }
 
@@ -150,16 +323,22 @@ class CartProvider extends ChangeNotifier {
         await doc.reference.delete();
       }
       
-      // Add current cart items
-      for (var item in _items) {
-        await cartRef.doc(item.id).set({
-          'productId': item.id,
-          'name': item.name,
-          'price': item.price,
-          'quantity': item.quantity,
-          'imageUrl': item.imageUrl,
-          'sellerId': item.sellerName,
-        });
+      // Add all store cart items
+      for (var storeId in _storeCarts.keys) {
+        final storeItems = _storeCarts[storeId]!;
+        for (var item in storeItems) {
+          await cartRef.doc('${storeId}_${item.id}').set({
+            'productId': item.id,
+            'name': item.name,
+            'price': item.price,
+            'quantity': item.quantity,
+            'imageUrl': item.imageUrl,
+            'sellerId': item.sellerId,
+            'sellerName': item.sellerName,
+            'storeCategory': item.storeCategory,
+            'storeId': storeId,
+          });
+        }
       }
           
     } catch (e) {
@@ -188,17 +367,36 @@ class CartProvider extends ChangeNotifier {
       
       final cartSnapshot = await cartRef.get();
       
-      _items = cartSnapshot.docs.map((doc) {
+      // Group items by store
+      final Map<String, List<CartItem>> storeCarts = {};
+      
+      for (var doc in cartSnapshot.docs) {
         final data = doc.data();
-        return CartItem(
-          id: data['productId'] ?? doc.id,
-          name: data['name'] ?? '',
-          price: (data['price'] ?? 0).toDouble(),
-          quantity: data['quantity'] ?? 1,
-          imageUrl: data['imageUrl'] ?? '',
-          sellerName: data['sellerId'] ?? '',
-        );
-      }).toList();
+        final storeId = data['storeId'] ?? data['sellerId'] ?? '';
+        
+        if (storeId.isNotEmpty) {
+          if (!storeCarts.containsKey(storeId)) {
+            storeCarts[storeId] = [];
+          }
+          
+          storeCarts[storeId]!.add(CartItem(
+            id: data['productId'] ?? doc.id,
+            name: data['name'] ?? '',
+            price: (data['price'] ?? 0).toDouble(),
+            quantity: data['quantity'] ?? 1,
+            imageUrl: data['imageUrl'] ?? '',
+            sellerId: data['sellerId'] ?? storeId,
+            sellerName: data['sellerName'] ?? '',
+            storeCategory: data['storeCategory'] ?? '',
+          ));
+        }
+      }
+      
+      _storeCarts = storeCarts;
+      _currentStoreId = storeCarts.isNotEmpty ? storeCarts.keys.first : null;
+      
+      print('🔍 DEBUG: Loaded ${storeCarts.length} store carts');
+      notifyListeners();
       
     } catch (e) {
       _error = 'Failed to load cart: $e';
@@ -229,24 +427,26 @@ class CartProvider extends ChangeNotifier {
 
   // Cart validation
   bool get isCartValid {
-    return _items.isNotEmpty && _items.every((item) => item.quantity > 0);
+    return _currentStoreId != null && 
+           _storeCarts[_currentStoreId]!.isNotEmpty && 
+           _storeCarts[_currentStoreId]!.every((item) => item.quantity > 0);
   }
 
-  // Get unique sellers in cart
-  List<String> get uniqueSellers {
-    return _items.map((item) => item.sellerName).toSet().toList();
+  // Get unique stores in cart
+  List<String> get uniqueStores {
+    return _storeCarts.keys.toList();
   }
 
-  // Get cart items by seller
-  List<CartItem> getItemsBySeller(String sellerName) {
-    return _items.where((item) => item.sellerName == sellerName).toList();
+  // Get cart items by store
+  List<CartItem> getItemsByStore(String storeId) {
+    return _storeCarts[storeId] ?? [];
   }
 
   // Calculate shipping cost (placeholder)
   double get shippingCost {
-    if (_items.isEmpty) return 0.0;
+    if (_currentStoreId == null || _storeCarts[_currentStoreId]!.isEmpty) return 0.0;
     // Simple shipping calculation - could be more complex
-    return uniqueSellers.length * 5.0; // R5 per seller
+    return 25.0; // Base shipping cost per store
   }
 
   double get totalWithShipping => totalPrice + shippingCost;

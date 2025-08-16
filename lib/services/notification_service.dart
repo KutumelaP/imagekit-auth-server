@@ -4,7 +4,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/foundation.dart';
-import 'dart:js' as js;
+import 'package:marketplace_app/utils/web_js_stub.dart'
+    if (dart.library.html) 'package:marketplace_app/utils/web_js_real.dart' as js;
 import 'sound_service.dart';
 
 
@@ -726,6 +727,9 @@ class NotificationService {
         'timestamp': FieldValue.serverTimestamp(),
         'read': false,
         'userId': userId,
+        'route': '/order-tracking',
+        'deeplink': 'foodmarketplace://order/$orderId',
+        'screen': 'OrderTrackingScreen',
       };
 
       print('🔍 DEBUG: Notification data prepared: $notificationData');

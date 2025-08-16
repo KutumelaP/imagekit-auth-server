@@ -14,6 +14,11 @@ class PayFastService {
   
   static bool _isProduction = false;
 
+  // Callback URLs (update to your deployed Cloud Functions URLs)
+  static String returnUrl = 'https://us-central1-your-project.cloudfunctions.net/payfastReturn';
+  static String cancelUrl = 'https://us-central1-your-project.cloudfunctions.net/payfastCancel';
+  static String notifyUrl = 'https://us-central1-your-project.cloudfunctions.net/payfastNotify';
+
   static void setProductionMode(bool isProduction) {
     _isProduction = isProduction;
   }
@@ -44,9 +49,9 @@ class PayFastService {
       Map<String, String> paymentData = {
         'merchant_id': _merchantId,
         'merchant_key': _merchantKey,
-        'return_url': 'https://your-app.com/payment/success',
-        'cancel_url': 'https://your-app.com/payment/cancel',
-        'notify_url': 'https://your-app.com/payment/notify',
+        'return_url': returnUrl,
+        'cancel_url': cancelUrl,
+        'notify_url': notifyUrl,
         'amount': amount,
         'item_name': itemName,
         'item_description': itemDescription,
@@ -83,6 +88,15 @@ class PayFastService {
         'error': 'Failed to create payment: $e',
       };
     }
+  }
+
+  // Build a GET redirect URL as a fallback when POST form submission isn't available
+  static String buildRedirectUrl(String paymentUrl, Map<String, String> paymentData) {
+    final params = paymentData.entries
+        .where((e) => e.value.isNotEmpty)
+        .map((e) => '${Uri.encodeQueryComponent(e.key)}=${Uri.encodeQueryComponent(e.value)}')
+        .join('&');
+    return '$paymentUrl?$params';
   }
 
   /// Generate PayFast signature

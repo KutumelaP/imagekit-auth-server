@@ -105,9 +105,9 @@ class DeliveryFulfillmentService {
       
       for (var doc in driversSnapshot.docs) {
         final driverData = doc.data();
-        final driverLat = driverData['latitude'] as double? ?? 0.0;
-        final driverLng = driverData['longitude'] as double? ?? 0.0;
-        final maxDistance = driverData['maxDistance'] as double? ?? 50.0;
+        final driverLat = (driverData['latitude'] as num?)?.toDouble() ?? 0.0;
+        final driverLng = (driverData['longitude'] as num?)?.toDouble() ?? 0.0;
+        final maxDistance = (driverData['maxDistance'] as num?)?.toDouble() ?? 50.0;
 
         // Calculate distances
         final distanceToPickup = Geolocator.distanceBetween(
@@ -163,8 +163,8 @@ class DeliveryFulfillmentService {
       
       for (var doc in driversSnapshot.docs) {
         final driverData = doc.data();
-        final driverLat = driverData['latitude'] as double? ?? 0.0;
-        final driverLng = driverData['longitude'] as double? ?? 0.0;
+        final driverLat = (driverData['latitude'] as num?)?.toDouble() ?? 0.0;
+        final driverLng = (driverData['longitude'] as num?)?.toDouble() ?? 0.0;
         final capabilities = List<String>.from(driverData['capabilities'] ?? []);
 
         // Check if driver can handle this category
@@ -179,7 +179,7 @@ class DeliveryFulfillmentService {
         );
 
         final totalDistance = distanceToPickup + pickupToDelivery;
-        final maxDistance = driverData['maxDistance'] as double? ?? 25.0;
+        final maxDistance = (driverData['maxDistance'] as num?)?.toDouble() ?? 25.0;
 
         if (totalDistance <= maxDistance && driverData['rating'] >= 4.2) {
           availableDrivers.add({

@@ -10,6 +10,9 @@ class SafeNetworkImage extends StatelessWidget {
   final double? height;
   final BoxFit? fit;
   final BorderRadius? borderRadius;
+  // Cache/versioning controls
+  final Object? cacheVersion; // e.g. a timestamp or version string to bust cache on updates
+  final bool bypassCache;     // if true, append a micro-timestamp to URL to force refresh
   final Widget? placeholder;
   final Widget? errorWidget;
   final Widget Function(BuildContext, Widget, ImageChunkEvent?)? loadingBuilder;
@@ -26,6 +29,8 @@ class SafeNetworkImage extends StatelessWidget {
     this.errorWidget,
     this.loadingBuilder,
     this.errorBuilder,
+    this.cacheVersion,
+    this.bypassCache = false,
   });
 
   @override
@@ -34,20 +39,17 @@ class SafeNetworkImage extends StatelessWidget {
       return _buildFallbackImage();
     }
 
+    final effectiveUrl = _buildEffectiveUrl(imageUrl!);
+
     return ClipRRect(
       borderRadius: borderRadius ?? BorderRadius.zero,
       child: CachedNetworkImage(
-        imageUrl: imageUrl!,
+        imageUrl: effectiveUrl,
         width: width,
         height: height,
         fit: fit,
-        placeholder: (context, url) {
-          if (loadingBuilder != null) {
-            // Convert CachedNetworkImage placeholder to old loadingBuilder format
-            return loadingBuilder!(context, Container(), null);
-          }
-          return placeholder ?? _buildLoadingPlaceholder();
-        },
+        // Use ONLY progressIndicatorBuilder (do not set placeholder simultaneously)
+        progressIndicatorBuilder: (context, url, progress) => _buildLoadingPlaceholder(progress: progress.progress),
         errorWidget: (context, url, error) {
           if (errorBuilder != null) {
             return errorBuilder!(context, error, StackTrace.current);
@@ -63,9 +65,19 @@ class SafeNetworkImage extends StatelessWidget {
         },
         maxWidthDiskCache: 1024,
         maxHeightDiskCache: 1024,
-        cacheKey: _generateCacheKey(imageUrl!),
+        cacheKey: _generateCacheKey(effectiveUrl),
       ),
     );
+  }
+
+  String _buildEffectiveUrl(String rawUrl) {
+    // Append cache-busting version if provided
+    final hasQuery = rawUrl.contains('?');
+    final versionParam = cacheVersion != null
+        ? 'v=${Uri.encodeComponent(cacheVersion.toString())}'
+        : (bypassCache ? 'v=${DateTime.now().microsecondsSinceEpoch}' : null);
+    if (versionParam == null) return rawUrl;
+    return hasQuery ? '$rawUrl&$versionParam' : '$rawUrl?$versionParam';
   }
 
   Widget _buildDirectDownloadImage() {
@@ -169,7 +181,7 @@ class SafeNetworkImage extends StatelessWidget {
     return url.startsWith('http://') || url.startsWith('https://');
   }
 
-  Widget _buildLoadingPlaceholder() {
+  Widget _buildLoadingPlaceholder({double? progress}) {
     return Container(
       width: width,
       height: height,
@@ -177,9 +189,15 @@ class SafeNetworkImage extends StatelessWidget {
         color: AppTheme.cloud,
         borderRadius: borderRadius ?? BorderRadius.zero,
       ),
-      child: const Center(
-        child: CircularProgressIndicator(
-          valueColor: AlwaysStoppedAnimation<Color>(AppTheme.deepTeal),
+      child: Center(
+        child: SizedBox(
+          width: 22,
+          height: 22,
+          child: CircularProgressIndicator(
+            value: (progress != null && progress > 0 && progress <= 1) ? progress : null,
+            strokeWidth: 2.2,
+            valueColor: const AlwaysStoppedAnimation<Color>(AppTheme.deepTeal),
+          ),
         ),
       ),
     );
@@ -211,6 +229,8 @@ class SafeProductImage extends StatelessWidget {
   final double? height;
   final BoxFit? fit;
   final BorderRadius? borderRadius;
+  final Object? cacheVersion;
+  final bool bypassCache;
 
   const SafeProductImage({
     super.key,
@@ -219,6 +239,8 @@ class SafeProductImage extends StatelessWidget {
     this.height,
     this.fit,
     this.borderRadius,
+    this.cacheVersion,
+    this.bypassCache = false,
   });
 
   @override
@@ -229,6 +251,8 @@ class SafeProductImage extends StatelessWidget {
       height: height,
       fit: fit,
       borderRadius: borderRadius,
+      cacheVersion: cacheVersion,
+      bypassCache: bypassCache,
     );
   }
 }
@@ -239,6 +263,8 @@ class SafeStoreImage extends StatelessWidget {
   final double? height;
   final BoxFit? fit;
   final BorderRadius? borderRadius;
+  final Object? cacheVersion;
+  final bool bypassCache;
 
   const SafeStoreImage({
     super.key,
@@ -247,6 +273,8 @@ class SafeStoreImage extends StatelessWidget {
     this.height,
     this.fit,
     this.borderRadius,
+    this.cacheVersion,
+    this.bypassCache = false,
   });
 
   @override
@@ -257,6 +285,8 @@ class SafeStoreImage extends StatelessWidget {
       height: height,
       fit: fit,
       borderRadius: borderRadius,
+      cacheVersion: cacheVersion,
+      bypassCache: bypassCache,
     );
   }
 } 

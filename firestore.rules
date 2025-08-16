@@ -1,3 +1,4 @@
+// Removed duplicate block
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -16,6 +17,26 @@ service cloud.firestore {
       return isAuthenticated() && request.auth.uid == userId;
     }
     
+    // Sellers must be approved to be publicly visible and followable
+    function isSellerApproved(data) {
+      return data.role == 'seller' && data.status == 'approved';
+    }
+
+    // Only allow follower field to change during public follower updates
+    function onlyFollowersChanged() {
+      return resource.data.diff(request.resource.data).changedKeys().hasOnly(['followers']);
+    }
+
+    // Compute follower delta: +1 for follow, -1 for unfollow
+    function followersDelta() {
+      return request.resource.data.followers - resource.data.followers;
+    }
+
+    // The follow doc for the acting user and a seller, after the current write
+    function followDoc(sellerId) {
+      return getAfter(/databases/$(database)/documents/users/$(request.auth.uid)/follows/$(sellerId));
+    }
+    
     function isParticipant(chatData) {
       return isAuthenticated() && (
         chatData.buyerId == request.auth.uid || 
@@ -29,6 +50,15 @@ service cloud.firestore {
       allow read: if isOwner(userId) || isAdmin() || 
         (resource.data.role == 'seller') || true; // Allow public read for store browsing
       allow write: if isOwner(userId) || isAdmin();
+
+      // Allow safe public follower count updates with proper follow/unfollow doc in same commit
+      allow update: if isAuthenticated()
+                    && isSellerApproved(resource.data)
+                    && onlyFollowersChanged()
+                    && (
+                      (followersDelta() == 1 && followDoc(userId).exists == true) ||
+                      (followersDelta() == -1 && followDoc(userId).exists == false)
+                    );
       
       // FAVORITES subcollection - Allow users to manage their favorites
       match /favorites/{favoriteId} {
@@ -38,6 +68,11 @@ service cloud.firestore {
       // FAVORITE STORES subcollection - Allow users to manage their favorite stores
       match /favoriteStores/{storeId} {
         allow read, write: if isOwner(userId);
+      }
+
+      // DRIVERS subcollection under users - Only the owner (seller) or admin
+      match /drivers/{driverId} {
+        allow read, write: if isOwner(userId) || isAdmin();
       }
       
       // WISHLIST subcollection - Allow users to manage their wishlist
@@ -63,6 +98,26 @@ service cloud.firestore {
       // CHAT ANALYTICS subcollection - Allow users to manage their chat analytics
       match /chat_analytics/{analyticsId} {
         allow read, write: if isOwner(userId);
+      }
+
+      // FOLLOWS subcollection - users/{uid}/follows/{storeId}
+      match /follows/{storeId} {
+        // Only the owner can read their own follows
+        allow get, list, read: if isOwner(userId);
+
+        // Owner can create a follow doc
+        allow create: if isOwner(userId)
+                      && request.resource.data.storeId == storeId
+                      && request.resource.data.createdAt is timestamp
+                      && request.resource.data.notify is bool;
+
+        // Owner can toggle notify only
+        allow update: if isOwner(userId)
+                      && request.resource.data.diff(resource.data).changedKeys().hasOnly(['notify'])
+                      && request.resource.data.notify is bool;
+
+        // Owner can unfollow
+        allow delete: if isOwner(userId);
       }
     }
 
@@ -118,6 +173,11 @@ service cloud.firestore {
       allow read, update, delete: if isAuthenticated() && (
         resource.data.buyerId == request.auth.uid ||
         resource.data.sellerId == request.auth.uid ||
+        // Allow user to update only their own lastViewed_* field even if participant check fails
+        (request.method == 'update' &&
+          request.resource.data.diff(resource.data).changedKeys().hasOnly(['lastViewed_' + request.auth.uid]) &&
+          request.resource.data['lastViewed_' + request.auth.uid] is timestamp
+        ) ||
         isAdmin()
       );
       

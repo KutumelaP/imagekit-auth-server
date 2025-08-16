@@ -967,20 +967,7 @@ class _StunningProductBrowserState extends State<StunningProductBrowser>
       // Show loading indicator
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Row(
-            children: [
-              const SizedBox(
-                width: 16,
-                height: 16,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Text('Adding ${data['name'] ?? 'product'} to cart...'),
-            ],
-          ),
+          content: Text('Adding ${data['name'] ?? 'product'} to cart...'),
           backgroundColor: AppTheme.deepTeal,
           duration: const Duration(seconds: 1),
         ),
@@ -992,19 +979,15 @@ class _StunningProductBrowserState extends State<StunningProductBrowser>
         (data['price'] ?? 0.0).toDouble(),
         data['imageUrl'] ?? '',
         data['ownerId'] ?? data['sellerId'] ?? '',
+        data['storeName'] ?? 'Unknown Store',
+        data['storeCategory'] ?? 'Other',
         availableStock: stock.toInt(),
       );
 
       if (success) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Row(
-              children: [
-                const Icon(Icons.check_circle, color: Colors.white),
-                const SizedBox(width: 8),
-                Text('${data['name'] ?? 'Product'} added to cart!'),
-              ],
-            ),
+            content: Text('${data['name'] ?? 'Product'} added to cart!'),
             backgroundColor: AppTheme.primaryGreen,
             action: SnackBarAction(
               label: 'View Cart',
@@ -1019,13 +1002,7 @@ class _StunningProductBrowserState extends State<StunningProductBrowser>
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Row(
-              children: [
-                const Icon(Icons.warning, color: Colors.white),
-                const SizedBox(width: 8),
-                Text('Cannot add more ${data['name'] ?? 'items'} - insufficient stock!'),
-              ],
-            ),
+            content: Text('Cannot add more ${data['name'] ?? 'items'} - insufficient stock!'),
             backgroundColor: Colors.orange,
             duration: const Duration(seconds: 3),
           ),
@@ -1034,13 +1011,7 @@ class _StunningProductBrowserState extends State<StunningProductBrowser>
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Row(
-            children: [
-              const Icon(Icons.error, color: Colors.white),
-              const SizedBox(width: 8),
-              Text('Failed to add to cart: ${e.toString()}'),
-            ],
-          ),
+          content: Text('Failed to add to cart: ${e.toString()}'),
           backgroundColor: AppTheme.error,
           duration: const Duration(seconds: 3),
         ),
