@@ -158,6 +158,57 @@ class _SellerOrderDetailScreenState extends State<SellerOrderDetailScreen>
 
   @override
   Widget build(BuildContext context) {
+    // Validate orderId before proceeding
+    if (widget.orderId.isEmpty) {
+      return Scaffold(
+        backgroundColor: AppTheme.whisper,
+        appBar: AppBar(
+          backgroundColor: AppTheme.error,
+          foregroundColor: Colors.white,
+          title: const Text('Invalid Order'),
+        ),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.error_outline,
+                size: 64,
+                color: AppTheme.error,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Invalid Order ID',
+                style: TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                  color: AppTheme.error,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'The order ID provided is invalid or missing.',
+                style: TextStyle(
+                  fontSize: 16,
+                  color: AppTheme.breeze,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 24),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.error,
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('Go Back'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     final orderRef = FirebaseFirestore.instance.collection('orders').doc(widget.orderId);
     
     return Scaffold(
