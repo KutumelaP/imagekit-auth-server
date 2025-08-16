@@ -23,7 +23,7 @@ messaging.onBackgroundMessage((payload) => {
   let url = '/#/'
   if (type === 'chat_message' && data.chatId) {
     url = `/#/chat?chatId=${encodeURIComponent(data.chatId)}`;
-  } else if ((type === 'order_status' || type === 'new_order_seller' || type === 'new_order_buyer') && data.orderId) {
+  } else if ((type === 'order_status' || type === 'new_order_seller' || type === 'new_order_buyer') && data.orderId && data.orderId.trim() !== '') {
     url = `/#/seller-order-detail?orderId=${encodeURIComponent(data.orderId)}`;
   }
 

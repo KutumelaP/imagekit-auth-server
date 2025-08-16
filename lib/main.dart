@@ -169,12 +169,16 @@ class MyApp extends StatelessWidget {
           if (settings.name == '/seller-order-detail') {
             final args = settings.arguments as Map<String, dynamic>?;
             final orderId = args?['orderId'] as String?;
+            print('🔔 Route /seller-order-detail called with orderId: "$orderId" (type: ${orderId.runtimeType})');
+            
             if (orderId == null || orderId.isEmpty) {
+              print('⚠️ Invalid orderId, redirecting to home');
               // Redirect to home if no valid orderId
               return MaterialPageRoute(
                 builder: (context) => SimpleHomeScreen(),
               );
             }
+            print('✅ Valid orderId, navigating to SellerOrderDetailScreen');
             return MaterialPageRoute(
               builder: (context) => SellerOrderDetailScreen(orderId: orderId),
             );

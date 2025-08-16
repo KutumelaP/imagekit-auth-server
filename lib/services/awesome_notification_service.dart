@@ -183,13 +183,17 @@ class AwesomeNotificationService {
   /// Handle order notification actions
   void _handleOrderNotification(ReceivedAction receivedAction) {
     final orderId = receivedAction.payload?['orderId'];
-    if (orderId != null) {
+    print('🔔 Order notification action - orderId: "$orderId" (type: ${orderId.runtimeType})');
+    
+    if (orderId != null && orderId.toString().isNotEmpty) {
       // Navigate to order details
       print('🔔 Navigating to order: $orderId');
       try {
         // ignore: unawaited_futures
         NavigationService.navigateTo('/seller-order-detail', arguments: { 'orderId': orderId });
       } catch (_) {}
+    } else {
+      print('⚠️ Cannot navigate to order: orderId is null or empty');
     }
   }
 

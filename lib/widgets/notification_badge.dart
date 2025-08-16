@@ -133,12 +133,17 @@ class _NotificationBadgeState extends State<NotificationBadge> {
                 if (!kIsWeb && type == 'new_order_seller') {
                   final body = data['body'] as String? ?? 'You have a new order';
                   final orderId = (data['data'] as Map<String, dynamic>?)?['orderId'] as String? ?? '';
-                  await an.AwesomeNotificationService().showOrderNotification(
-                    title: 'New Order Received',
-                    body: body,
-                    orderId: orderId,
-                    type: 'new_order_seller',
-                  );
+                  // Only create notification if orderId is not empty
+                  if (orderId.isNotEmpty) {
+                    await an.AwesomeNotificationService().showOrderNotification(
+                      title: 'New Order Received',
+                      body: body,
+                      orderId: orderId,
+                      type: 'new_order_seller',
+                    );
+                  } else {
+                    print('⚠️ Skipping notification creation: orderId is empty');
+                  }
                 }
               }
             }
