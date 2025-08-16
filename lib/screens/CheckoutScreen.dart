@@ -2153,68 +2153,64 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
   Future<void> _processBankTransferEFT() async {
     // Create order with awaiting_payment status, then show bank details dialog
-    await _completeOrder(paymentStatusOverride: 'awaiting_payment');
+    final orderNumber = await _completeOrder(paymentStatusOverride: 'awaiting_payment');
     if (!mounted) return;
-    _showBankDetailsDialog();
+    _showBankDetailsDialog(orderNumber: orderNumber);
   }
 
   Future<void> _processCashOnDelivery() async {
     await _completeOrder(paymentStatusOverride: 'pending');
   }
 
-  void _showBankDetailsDialog() {
+  void _showBankDetailsDialog({String? orderNumber}) {
     showDialog(
       context: context,
       barrierDismissible: true,
       builder: (context) {
         return Dialog(
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: BorderRadius.circular(16),
           ),
           child: Container(
             constraints: BoxConstraints(
-              maxWidth: MediaQuery.of(context).size.width * 0.95,
-              maxHeight: MediaQuery.of(context).size.height * 0.8,
+              maxWidth: MediaQuery.of(context).size.width * 0.92,
+              maxHeight: MediaQuery.of(context).size.height * 0.85,
             ),
             decoration: BoxDecoration(
               color: AppTheme.angel,
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(
-                color: AppTheme.deepTeal.withOpacity(0.3),
-                width: 1.5,
-              ),
+              borderRadius: BorderRadius.circular(16),
               boxShadow: [
                 BoxShadow(
-                  color: AppTheme.deepTeal.withOpacity(0.2),
-                  blurRadius: 20,
-                  offset: Offset(0, 10),
+                  color: AppTheme.deepTeal.withOpacity(0.15),
+                  blurRadius: 25,
+                  offset: Offset(0, 8),
                 ),
               ],
             ),
             child: Column(
               children: [
-                // Simple Header
+                // Clean Header
                 Container(
-                  padding: EdgeInsets.all(20),
+                  padding: EdgeInsets.all(24),
                   decoration: BoxDecoration(
-                    color: AppTheme.deepTeal.withOpacity(0.1),
+                    color: AppTheme.deepTeal,
                     borderRadius: BorderRadius.only(
-                      topLeft: Radius.circular(20),
-                      topRight: Radius.circular(20),
+                      topLeft: Radius.circular(16),
+                      topRight: Radius.circular(16),
                     ),
                   ),
                   child: Row(
                     children: [
                       Container(
-                        padding: EdgeInsets.all(12),
+                        padding: EdgeInsets.all(10),
                         decoration: BoxDecoration(
-                          color: AppTheme.deepTeal,
-                          borderRadius: BorderRadius.circular(12),
+                          color: AppTheme.angel.withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(10),
                         ),
                         child: Icon(
                           Icons.account_balance,
                           color: AppTheme.angel,
-                          size: 24,
+                          size: 22,
                         ),
                       ),
                       SizedBox(width: 16),
@@ -2225,16 +2221,18 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                             SafeUI.safeText(
                               '🏦 Bank Transfer (EFT)',
                               style: TextStyle(
-                                fontSize: ResponsiveUtils.getTitleSize(context) + 2,
+                                fontSize: ResponsiveUtils.getTitleSize(context) + 1,
                                 fontWeight: FontWeight.w800,
-                                color: AppTheme.deepTeal,
+                                color: AppTheme.angel,
+                                letterSpacing: 0.5,
                               ),
                             ),
+                            SizedBox(height: 4),
                             SafeUI.safeText(
                               'Complete your payment via bank transfer',
                               style: TextStyle(
-                                fontSize: ResponsiveUtils.getTitleSize(context) - 2,
-                                color: AppTheme.breeze,
+                                fontSize: ResponsiveUtils.getTitleSize(context) - 3,
+                                color: AppTheme.angel.withOpacity(0.9),
                                 fontWeight: FontWeight.w500,
                               ),
                             ),
@@ -2245,21 +2243,23 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                   ),
                 ),
                 
-                // Single Content Card
+                // Content Area
                 Expanded(
                   child: SingleChildScrollView(
-                    padding: EdgeInsets.all(20),
+                    padding: EdgeInsets.all(24),
                     child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         // Success Message
                         Container(
                           width: double.infinity,
-                          padding: EdgeInsets.all(16),
+                          padding: EdgeInsets.all(18),
                           decoration: BoxDecoration(
                             color: AppTheme.success.withOpacity(0.1),
                             borderRadius: BorderRadius.circular(12),
                             border: Border.all(
                               color: AppTheme.success.withOpacity(0.3),
+                              width: 1,
                             ),
                           ),
                           child: Row(
@@ -2267,16 +2267,17 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                               Icon(
                                 Icons.check_circle_outline,
                                 color: AppTheme.success,
-                                size: 20,
+                                size: 22,
                               ),
-                              SizedBox(width: 12),
+                              SizedBox(width: 14),
                               Expanded(
                                 child: SafeUI.safeText(
-                                  'Order placed successfully! Complete payment to confirm.',
+                                  'Order placed successfully! Complete payment to confirm your order.',
                                   style: TextStyle(
                                     color: AppTheme.success,
                                     fontWeight: FontWeight.w600,
-                                    fontSize: ResponsiveUtils.getTitleSize(context) - 3,
+                                    fontSize: ResponsiveUtils.getTitleSize(context) - 2,
+                                    height: 1.4,
                                   ),
                                 ),
                               ),
@@ -2284,46 +2285,48 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                           ),
                         ),
                         
-                        SizedBox(height: 20),
+                        SizedBox(height: 28),
                         
                         // Bank Details Section
                         SafeUI.safeText(
                           'Bank Account Details',
                           style: TextStyle(
-                            fontSize: ResponsiveUtils.getTitleSize(context) + 2,
+                            fontSize: ResponsiveUtils.getTitleSize(context) + 1,
                             fontWeight: FontWeight.w800,
                             color: AppTheme.deepTeal,
+                            letterSpacing: 0.3,
                           ),
                         ),
                         SizedBox(height: 20),
                         
-                        // Bank Details - Clean Text Layout
-                        _buildCleanBankDetail('Account Name', 'Food Marketplace Pty Ltd'),
-                        _buildCleanBankDetail('Bank', 'First National Bank (FNB)'),
-                        _buildCleanBankDetail('Account Number', '62612345678'),
-                        _buildCleanBankDetail('Branch Code', '250655'),
-                        _buildCleanBankDetail('Reference', 'Use your Order Number'),
+                        // Bank Details - Much Better Layout
+                        _buildSuperReadableBankDetail('Account Name', 'Food Marketplace Pty Ltd', Icons.person),
+                        _buildSuperReadableBankDetail('Bank', 'First National Bank (FNB)', Icons.account_balance),
+                        _buildSuperReadableBankDetail('Account Number', '62612345678', Icons.credit_card),
+                        _buildSuperReadableBankDetail('Branch Code', '250655', Icons.location_on),
+                        _buildSuperReadableBankDetail('Reference', orderNumber ?? 'Use your Order Number', Icons.receipt),
                         
-                        SizedBox(height: 30),
+                        SizedBox(height: 32),
                         
                         // Instructions Section
                         SafeUI.safeText(
                           'Important Instructions',
                           style: TextStyle(
-                            fontSize: ResponsiveUtils.getTitleSize(context) + 2,
+                            fontSize: ResponsiveUtils.getTitleSize(context) + 1,
                             fontWeight: FontWeight.w800,
                             color: AppTheme.warning,
+                            letterSpacing: 0.3,
                           ),
                         ),
                         SizedBox(height: 20),
                         
-                        // Instructions - Clean Text Layout
-                        _buildCleanInstruction('📝 Use Order Number as payment reference'),
-                        _buildCleanInstruction('⏰ Payment processing takes 2-3 business days'),
-                        _buildCleanInstruction('✅ Your order will be confirmed once payment is received'),
-                        _buildCleanInstruction('📱 Keep your payment confirmation for your records'),
+                        // Instructions - Much Better Layout
+                        _buildSuperReadableInstruction('📝 Use ${orderNumber ?? 'your Order Number'} as the payment reference when making the transfer'),
+                        _buildSuperReadableInstruction('⏰ Payment processing typically takes 2-3 business days to complete'),
+                        _buildSuperReadableInstruction('✅ Your order will be automatically confirmed once payment is received and verified'),
+                        _buildSuperReadableInstruction('📱 Please keep your payment confirmation or receipt for your records'),
                         
-                        SizedBox(height: 20),
+                        SizedBox(height: 28),
                         
                         // Action Buttons
                         Row(
@@ -2336,7 +2339,7 @@ Account Name: Food Marketplace Pty Ltd
 Bank: First National Bank (FNB)
 Account Number: 62612345678
 Branch Code: 250655
-Reference: Use your Order Number''';
+Reference: ${orderNumber ?? 'Use your Order Number'}''';
                                   Clipboard.setData(ClipboardData(text: bankDetails));
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     SnackBar(
@@ -2348,20 +2351,20 @@ Reference: Use your Order Number''';
                                 },
                                 style: OutlinedButton.styleFrom(
                                   foregroundColor: AppTheme.deepTeal,
-                                  side: BorderSide(color: AppTheme.deepTeal),
-                                  padding: EdgeInsets.symmetric(vertical: 14),
+                                  side: BorderSide(color: AppTheme.deepTeal, width: 1.5),
+                                  padding: EdgeInsets.symmetric(vertical: 16),
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(12),
                                   ),
                                 ),
-                                icon: Icon(Icons.copy_all, size: 18),
+                                icon: Icon(Icons.copy_all, size: 20),
                                 label: SafeUI.safeText(
-                                  'Copy Details',
+                                  'Copy All Details',
                                   style: TextStyle(fontWeight: FontWeight.w600),
                                 ),
                               ),
                             ),
-                            SizedBox(width: 12),
+                            SizedBox(width: 16),
                             Expanded(
                               child: ElevatedButton.icon(
                                 onPressed: () {
@@ -2371,14 +2374,14 @@ Reference: Use your Order Number''';
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: AppTheme.primaryGreen,
                                   foregroundColor: AppTheme.angel,
-                                  padding: EdgeInsets.symmetric(vertical: 14),
+                                  padding: EdgeInsets.symmetric(vertical: 16),
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(12),
                                   ),
                                 ),
-                                icon: Icon(Icons.open_in_new, size: 18),
+                                icon: Icon(Icons.open_in_new, size: 20),
                                 label: SafeUI.safeText(
-                                  'Open FNB',
+                                  'Open FNB Banking',
                                   style: TextStyle(fontWeight: FontWeight.w600),
                                 ),
                               ),
@@ -2393,13 +2396,13 @@ Reference: Use your Order Number''';
                 // Bottom Button
                 Container(
                   width: double.infinity,
-                  padding: EdgeInsets.all(20),
+                  padding: EdgeInsets.all(24),
                   child: ElevatedButton(
                     onPressed: () {
                       Navigator.of(context).pop();
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
-                          content: Text('Payment instructions saved! Complete your transfer.'),
+                          content: Text('Payment instructions saved! Please complete your bank transfer.'),
                           backgroundColor: AppTheme.success,
                           behavior: SnackBarBehavior.floating,
                         ),
@@ -2408,13 +2411,13 @@ Reference: Use your Order Number''';
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppTheme.deepTeal,
                       foregroundColor: AppTheme.angel,
-                      padding: EdgeInsets.symmetric(vertical: 16),
+                      padding: EdgeInsets.symmetric(vertical: 18),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
                       ),
                     ),
                     child: SafeUI.safeText(
-                      'Got It!',
+                      'Got It! I\'ll Complete the Transfer',
                       style: TextStyle(
                         fontWeight: FontWeight.w700,
                         fontSize: ResponsiveUtils.getTitleSize(context) - 1,
@@ -2427,6 +2430,123 @@ Reference: Use your Order Number''';
           ),
         );
       },
+    );
+  }
+
+  Widget _buildSuperReadableBankDetail(String label, String value, IconData icon) {
+    return Container(
+      margin: EdgeInsets.only(bottom: 16),
+      padding: EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppTheme.angel,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: AppTheme.deepTeal.withOpacity(0.1),
+          width: 1,
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: AppTheme.deepTeal.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(
+              icon,
+              color: AppTheme.deepTeal,
+              size: 20,
+            ),
+          ),
+          SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SafeUI.safeText(
+                  label,
+                  style: TextStyle(
+                    fontSize: ResponsiveUtils.getTitleSize(context) - 3,
+                    fontWeight: FontWeight.w600,
+                    color: AppTheme.deepTeal.withOpacity(0.8),
+                    letterSpacing: 0.3,
+                  ),
+                ),
+                SizedBox(height: 4),
+                SafeUI.safeText(
+                  value,
+                  style: TextStyle(
+                    fontSize: ResponsiveUtils.getTitleSize(context) - 1,
+                    fontWeight: FontWeight.w700,
+                    color: AppTheme.deepTeal,
+                    height: 1.3,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            onPressed: () {
+              Clipboard.setData(ClipboardData(text: value));
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('$label copied to clipboard!'),
+                  backgroundColor: AppTheme.success,
+                  behavior: SnackBarBehavior.floating,
+                ),
+              );
+            },
+            icon: Icon(
+              Icons.copy,
+              color: AppTheme.deepTeal.withOpacity(0.6),
+              size: 20,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSuperReadableInstruction(String instruction) {
+    return Container(
+      margin: EdgeInsets.only(bottom: 12),
+      padding: EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppTheme.warning.withOpacity(0.05),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: AppTheme.warning.withOpacity(0.2),
+          width: 1,
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            margin: EdgeInsets.only(top: 2),
+            width: 6,
+            height: 6,
+            decoration: BoxDecoration(
+              color: AppTheme.warning,
+              shape: BoxShape.circle,
+            ),
+          ),
+          SizedBox(width: 16),
+          Expanded(
+            child: SafeUI.safeText(
+              instruction,
+              style: TextStyle(
+                fontSize: ResponsiveUtils.getTitleSize(context) - 2,
+                color: AppTheme.deepTeal,
+                fontWeight: FontWeight.w500,
+                height: 1.4,
+                letterSpacing: 0.2,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -3132,11 +3252,11 @@ Reference: Use your Order Number''';
     );
   }
 
-  Future<void> _completeOrder({String? paymentStatusOverride}) async {
+  Future<String?> _completeOrder({String? paymentStatusOverride}) async {
     // Prevent duplicate orders
     if (_orderCompleted) {
       print('🔍 DEBUG: Order already completed, preventing duplicate');
-      return;
+      return null;
     }
     
     // Check if store is currently open
@@ -3152,11 +3272,13 @@ Reference: Use your Order Number''';
           ),
         );
       }
-      return;
+      return null;
     }
     
     print('🔍 DEBUG: Starting _completeOrder for payment method: $_selectedPaymentMethod');
     setState(() => _isLoading = true);
+    
+    String? orderNumber;
 
     try {
       // Fetch cart items
@@ -3341,7 +3463,7 @@ Reference: Use your Order Number''';
       _orderCompleted = true; // Mark order as completed
       setState(() => _isLoading = false);
 
-      if (!mounted) return;
+      if (!mounted) return orderNumber;
 
       // Show popup notification with driver information
       
@@ -3383,6 +3505,8 @@ Reference: Use your Order Number''';
         ),
       );
     }
+    
+    return orderNumber;
   }
 
   Future<void> _sendOrderNotifications(String sellerId, String orderId, String orderNumber) async {
