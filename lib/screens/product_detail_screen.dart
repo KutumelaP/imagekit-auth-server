@@ -57,7 +57,7 @@ class ProductDetailScreen extends StatelessWidget {
     final isOutOfStock = stock <= 0;
 
     // Buy Now functionality
-    void _buyNow(BuildContext context) {
+    Future<void> _buyNow(BuildContext context) async {
       // Get cart provider
       final cartProvider = Provider.of<CartProvider>(context, listen: false);
       

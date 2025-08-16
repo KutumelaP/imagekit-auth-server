@@ -838,7 +838,7 @@ class _StunningProductDetailState extends State<StunningProductDetail>
 
 
 
-  void _buyNow() {
+  Future<void> _buyNow() async {
     // Add current item to cart first
     final cartProvider = Provider.of<CartProvider>(context, listen: false);
     
