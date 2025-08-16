@@ -2173,8 +2173,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           ),
           child: Container(
             constraints: BoxConstraints(
-              maxWidth: MediaQuery.of(context).size.width * 0.9,
-              maxHeight: MediaQuery.of(context).size.height * 0.85,
+              maxWidth: MediaQuery.of(context).size.width * 0.95,
+              maxHeight: MediaQuery.of(context).size.height * 0.9,
             ),
             decoration: BoxDecoration(
               gradient: LinearGradient(
@@ -2201,310 +2201,308 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             ),
             child: Column(
               children: [
-                // Enhanced Header
+                // Single Responsive EFT Card - No Outer Container
                 Container(
-                  padding: EdgeInsets.all(24),
+                  width: double.infinity,
+                  padding: EdgeInsets.all(ResponsiveUtils.getHorizontalPadding(context)),
+                  margin: EdgeInsets.symmetric(
+                    horizontal: ResponsiveUtils.getHorizontalPadding(context) * 0.5,
+                    vertical: ResponsiveUtils.getVerticalPadding(context) * 0.5,
+                  ),
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
                       colors: [
-                        AppTheme.deepTeal.withOpacity(0.4),
-                        AppTheme.primaryGreen.withOpacity(0.2),
+                        AppTheme.angel,
+                        AppTheme.whisper.withOpacity(0.3),
                       ],
                     ),
-                    borderRadius: BorderRadius.only(
-                      topLeft: Radius.circular(24),
-                      topRight: Radius.circular(24),
-                    ),
+                    borderRadius: BorderRadius.circular(ResponsiveUtils.getHorizontalPadding(context)),
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppTheme.deepTeal.withOpacity(0.08),
+                        blurRadius: ResponsiveUtils.getHorizontalPadding(context),
+                        offset: Offset(0, ResponsiveUtils.getVerticalPadding(context) * 0.4),
+                      ),
+                    ],
                   ),
                   child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      // Responsive Header
                       Row(
                         children: [
                           Container(
-                            padding: EdgeInsets.all(20),
+                            padding: EdgeInsets.all(ResponsiveUtils.getHorizontalPadding(context) * 0.6),
                             decoration: BoxDecoration(
-                              color: AppTheme.angel.withOpacity(0.3),
-                              borderRadius: BorderRadius.circular(20),
-                              border: Border.all(
-                                color: AppTheme.angel.withOpacity(0.5),
-                                width: 2,
+                              gradient: LinearGradient(
+                                colors: [AppTheme.deepTeal, AppTheme.deepTeal.withOpacity(0.8)],
                               ),
+                              borderRadius: BorderRadius.circular(ResponsiveUtils.getHorizontalPadding(context) * 0.6),
                             ),
                             child: Icon(
-                              Icons.account_balance,
-                              color: AppTheme.deepTeal,
-                              size: 32,
+                              Icons.account_balance_wallet,
+                              color: AppTheme.angel,
+                              size: ResponsiveUtils.getIconSize(context, baseSize: 20),
                             ),
                           ),
-                          SizedBox(width: 20),
+                          SizedBox(width: ResponsiveUtils.getHorizontalPadding(context) * 0.8),
                           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                                SafeUI.safeText(
-                                  '🏦 Bank Transfer (EFT)',
-                                  style: TextStyle(
-                                    fontSize: ResponsiveUtils.getTitleSize(context) + 4,
-                                    fontWeight: FontWeight.w900,
-                                    color: AppTheme.deepTeal,
-                                    letterSpacing: 0.5,
-                                  ),
-                                  maxLines: 1,
-                                ),
-                                SafeUI.safeText(
-                                  'Complete your payment via bank transfer',
-                                  style: TextStyle(
-                                    fontSize: ResponsiveUtils.getTitleSize(context) - 1,
-                                    color: AppTheme.angel,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                  maxLines: 1,
-                                ),
-                              ],
+                            child: SafeUI.safeText(
+                              'Bank Transfer Details',
+                              style: TextStyle(
+                                fontSize: ResponsiveUtils.getTitleSize(context),
+                                fontWeight: FontWeight.w800,
+                                color: AppTheme.deepTeal,
+                                letterSpacing: -0.5,
+                              ),
                             ),
                           ),
                         ],
                       ),
-                      SizedBox(height: 16),
+                      SizedBox(height: ResponsiveUtils.getVerticalPadding(context)),
                       
-                      // Payment Status Info
-                      Container(
-                        padding: EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: AppTheme.success.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(
-                            color: AppTheme.success.withOpacity(0.3),
-                          ),
-                        ),
-                        child: Row(
-                          children: [
-                            Icon(
-                              Icons.info_outline,
-                              color: AppTheme.success,
-                              size: 20,
-                            ),
-                            SizedBox(width: 12),
-                            Expanded(
-                              child: SafeUI.safeText(
-                                'Your order has been placed successfully! Complete the payment to confirm.',
-                                style: TextStyle(
-                                  color: AppTheme.success,
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: ResponsiveUtils.getTitleSize(context) - 3,
-                                ),
+                      // Responsive Bank Details List
+                      _buildResponsiveBankDetail('Account Name', 'Food Marketplace Pty Ltd', Icons.person),
+                      _buildResponsiveBankDetail('Bank', 'First National Bank (FNB)', Icons.account_balance),
+                      _buildResponsiveBankDetail('Account Number', '62612345678', Icons.credit_card),
+                      _buildResponsiveBankDetail('Branch Code', '250655', Icons.location_city),
+                      _buildResponsiveBankDetail('Reference', 'Use your Order Number', Icons.tag),
+                      
+                      SizedBox(height: ResponsiveUtils.getVerticalPadding(context)),
+                      
+                                                // Responsive Instructions
+                          Container(
+                            padding: EdgeInsets.all(ResponsiveUtils.getHorizontalPadding(context) * 1.2),
+                            margin: EdgeInsets.symmetric(vertical: ResponsiveUtils.getVerticalPadding(context) * 0.3),
+                            decoration: BoxDecoration(
+                              color: AppTheme.warning.withOpacity(0.08),
+                              borderRadius: BorderRadius.circular(ResponsiveUtils.getHorizontalPadding(context) * 0.8),
+                              border: Border.all(
+                                color: AppTheme.warning.withOpacity(0.2),
+                                width: 1,
                               ),
                             ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.lightbulb_outline,
+                                  color: AppTheme.warning,
+                                  size: ResponsiveUtils.getIconSize(context, baseSize: 18),
+                                ),
+                                SizedBox(width: ResponsiveUtils.getHorizontalPadding(context) * 0.6),
+                                SafeUI.safeText(
+                                  'Important',
+                                  style: TextStyle(
+                                    fontSize: ResponsiveUtils.getTitleSize(context) - 1,
+                                    fontWeight: FontWeight.w700,
+                                    color: AppTheme.warning,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            SizedBox(height: ResponsiveUtils.getVerticalPadding(context) * 0.6),
+                            _buildResponsiveInstruction('Always use your Order Number as payment reference'),
+                            _buildResponsiveInstruction('Payment processing takes 2-3 business days'),
+                            _buildResponsiveInstruction('Order confirmed once payment is received'),
+                            _buildResponsiveInstruction('Keep your payment confirmation for reference'),
                           ],
                         ),
                       ),
-                    ],
-                  ),
-                ),
-                
-                                // Bank Details Section - Clean & Stunning Design
-                Expanded(
-                  child: SingleChildScrollView(
-                    padding: EdgeInsets.all(24),
-                    child: Column(
-                      children: [
-                        // Single Clean Bank Details Card
-                        Container(
-                          padding: EdgeInsets.all(24),
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                              colors: [
-                                AppTheme.angel,
-                                AppTheme.whisper.withOpacity(0.3),
-                              ],
-                            ),
-                            borderRadius: BorderRadius.circular(20),
-                            boxShadow: [
-                              BoxShadow(
-                                color: AppTheme.deepTeal.withOpacity(0.08),
-                                blurRadius: 20,
-                                offset: Offset(0, 8),
-                              ),
-                            ],
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              // Clean Header
-                              Row(
-                                children: [
-                                  Container(
-                                    padding: EdgeInsets.all(12),
-                                    decoration: BoxDecoration(
-                                      gradient: LinearGradient(
-                                        colors: [AppTheme.deepTeal, AppTheme.deepTeal.withOpacity(0.8)],
+                      
+                      SizedBox(height: ResponsiveUtils.getVerticalPadding(context)),
+                      
+                      // Responsive Action Buttons
+                      LayoutBuilder(
+                        builder: (context, constraints) {
+                          // Stack buttons vertically on small screens
+                          if (constraints.maxWidth < 600) {
+                            return Column(
+                              children: [
+                                SizedBox(
+                                  width: double.infinity,
+                                  child: ElevatedButton.icon(
+                                    onPressed: () {
+                                      final url = Uri.parse('https://www.fnb.co.za/');
+                                      launchUrl(url, mode: LaunchMode.externalApplication);
+                                    },
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: AppTheme.primaryGreen,
+                                      foregroundColor: AppTheme.angel,
+                                      padding: EdgeInsets.symmetric(
+                                        vertical: ResponsiveUtils.getVerticalPadding(context) * 0.8,
                                       ),
-                                      borderRadius: BorderRadius.circular(12),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(ResponsiveUtils.getHorizontalPadding(context) * 0.6),
+                                      ),
+                                      elevation: 2,
                                     ),
-                                    child: Icon(
-                                      Icons.account_balance_wallet,
-                                      color: AppTheme.angel,
-                                      size: 24,
+                                    icon: Icon(Icons.open_in_new, size: ResponsiveUtils.getIconSize(context, baseSize: 18)),
+                                    label: SafeUI.safeText(
+                                      'Open FNB App',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: ResponsiveUtils.getTitleSize(context) - 2,
+                                      ),
                                     ),
-                                  ),
-                                  SizedBox(width: 16),
-                                  SafeUI.safeText(
-                                    'Bank Transfer Details',
-                                    style: TextStyle(
-                                      fontSize: ResponsiveUtils.getTitleSize(context) + 2,
-                                      fontWeight: FontWeight.w800,
-                                      color: AppTheme.deepTeal,
-                                      letterSpacing: -0.5,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              SizedBox(height: 24),
-                              
-                              // Clean Bank Details List
-                              _buildCleanBankDetail('Account Name', 'Food Marketplace Pty Ltd', Icons.person),
-                              _buildCleanBankDetail('Bank', 'First National Bank (FNB)', Icons.account_balance),
-                              _buildCleanBankDetail('Account Number', '62612345678', Icons.credit_card),
-                              _buildCleanBankDetail('Branch Code', '250655', Icons.location_city),
-                              _buildCleanBankDetail('Reference', 'Use your Order Number', Icons.tag),
-                              
-                              SizedBox(height: 24),
-                              
-                              // Clean Instructions
-                              Container(
-                                padding: EdgeInsets.all(20),
-                                decoration: BoxDecoration(
-                                  color: AppTheme.warning.withOpacity(0.08),
-                                  borderRadius: BorderRadius.circular(16),
-                                  border: Border.all(
-                                    color: AppTheme.warning.withOpacity(0.2),
-                                    width: 1,
                                   ),
                                 ),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Row(
-                                      children: [
-                                        Icon(
-                                          Icons.lightbulb_outline,
-                                          color: AppTheme.warning,
-                                          size: 20,
-                                        ),
-                                        SizedBox(width: 12),
-                                        SafeUI.safeText(
-                                          'Important',
-                                          style: TextStyle(
-                                            fontSize: ResponsiveUtils.getTitleSize(context) - 1,
-                                            fontWeight: FontWeight.w700,
-                                            color: AppTheme.warning,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                    SizedBox(height: 12),
-                                    _buildCleanInstruction('Always use your Order Number as payment reference'),
-                                    _buildCleanInstruction('Payment processing takes 2-3 business days'),
-                                    _buildCleanInstruction('Order confirmed once payment is received'),
-                                  ],
-                                ),
-                              ),
-                              
-                              SizedBox(height: 24),
-                              
-                              // Clean Action Buttons
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: ElevatedButton.icon(
-                                      onPressed: () {
-                                        final url = Uri.parse('https://www.fnb.co.za/');
-                                        launchUrl(url, mode: LaunchMode.externalApplication);
-                                      },
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor: AppTheme.primaryGreen,
-                                        foregroundColor: AppTheme.angel,
-                                        padding: EdgeInsets.symmetric(vertical: 16),
-                                        shape: RoundedRectangleBorder(
-                                          borderRadius: BorderRadius.circular(12),
-                                        ),
-                                        elevation: 2,
-                                      ),
-                                      icon: Icon(Icons.open_in_new, size: 20),
-                                      label: SafeUI.safeText(
-                                        'Open FNB App',
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.w700,
-                                          fontSize: ResponsiveUtils.getTitleSize(context) - 2,
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                  SizedBox(width: 12),
-                                  Expanded(
-                                    child: OutlinedButton.icon(
-                                      onPressed: () {
-                                        final bankDetails = '''Bank Transfer Details:
+                                SizedBox(height: ResponsiveUtils.getVerticalPadding(context) * 0.6),
+                                SizedBox(
+                                  width: double.infinity,
+                                  child: OutlinedButton.icon(
+                                    onPressed: () {
+                                      final bankDetails = '''Bank Transfer Details:
 Account Name: Food Marketplace Pty Ltd
 Bank: First National Bank (FNB)
 Account Number: 62612345678
 Branch Code: 250655
 Reference: Use your Order Number''';
-                                        Clipboard.setData(ClipboardData(text: bankDetails));
-                                        ScaffoldMessenger.of(context).showSnackBar(
-                                          SnackBar(
-                                            content: Row(
-                                              children: [
-                                                Icon(Icons.copy, color: Colors.white, size: 20),
-                                                SizedBox(width: 8),
-                                                Expanded(
-                                                  child: Text(
-                                                    'Bank details copied!',
-                                                    style: TextStyle(fontWeight: FontWeight.w600),
-                                                  ),
+                                      Clipboard.setData(ClipboardData(text: bankDetails));
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(
+                                          content: Row(
+                                            children: [
+                                              Icon(Icons.copy, color: Colors.white, size: ResponsiveUtils.getIconSize(context, baseSize: 16)),
+                                              SizedBox(width: ResponsiveUtils.getHorizontalPadding(context) * 0.4),
+                                              Expanded(
+                                                child: Text(
+                                                  'Bank details copied!',
+                                                  style: TextStyle(fontWeight: FontWeight.w600),
                                                 ),
-                                              ],
-                                            ),
-                                            backgroundColor: AppTheme.success,
-                                            behavior: SnackBarBehavior.floating,
-                                            shape: RoundedRectangleBorder(
-                                              borderRadius: BorderRadius.circular(12),
-                                            ),
+                                              ),
+                                            ],
                                           ),
-                                        );
-                                      },
-                                      style: OutlinedButton.styleFrom(
-                                        foregroundColor: AppTheme.deepTeal,
-                                        side: BorderSide(
-                                          color: AppTheme.deepTeal.withOpacity(0.4),
-                                          width: 1.5,
+                                          backgroundColor: AppTheme.success,
+                                          behavior: SnackBarBehavior.floating,
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(ResponsiveUtils.getHorizontalPadding(context) * 0.6),
+                                          ),
                                         ),
-                                        padding: EdgeInsets.symmetric(vertical: 16),
-                                        shape: RoundedRectangleBorder(
-                                          borderRadius: BorderRadius.circular(12),
-                                        ),
+                                      );
+                                    },
+                                    style: OutlinedButton.styleFrom(
+                                      foregroundColor: AppTheme.deepTeal,
+                                      side: BorderSide(
+                                        color: AppTheme.deepTeal.withOpacity(0.4),
+                                        width: 1.5,
                                       ),
-                                      icon: Icon(Icons.copy_all, size: 20),
-                                      label: SafeUI.safeText(
-                                        'Copy Details',
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.w700,
-                                          fontSize: ResponsiveUtils.getTitleSize(context) - 2,
-                                        ),
+                                      padding: EdgeInsets.symmetric(
+                                        vertical: ResponsiveUtils.getVerticalPadding(context) * 0.8,
+                                      ),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(ResponsiveUtils.getHorizontalPadding(context) * 0.6),
+                                      ),
+                                    ),
+                                    icon: Icon(Icons.copy_all, size: ResponsiveUtils.getIconSize(context, baseSize: 18)),
+                                    label: SafeUI.safeText(
+                                      'Copy Details',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: ResponsiveUtils.getTitleSize(context) - 2,
                                       ),
                                     ),
                                   ),
-                                ],
+                                ),
+                              ],
+                            );
+                          }
+                          
+                          // Side by side on larger screens
+                          return Row(
+                            children: [
+                              Expanded(
+                                child: ElevatedButton.icon(
+                                  onPressed: () {
+                                    final url = Uri.parse('https://www.fnb.co.za/');
+                                    launchUrl(url, mode: LaunchMode.externalApplication);
+                                  },
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: AppTheme.primaryGreen,
+                                    foregroundColor: AppTheme.angel,
+                                    padding: EdgeInsets.symmetric(
+                                      vertical: ResponsiveUtils.getVerticalPadding(context) * 0.8,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(ResponsiveUtils.getHorizontalPadding(context) * 0.6),
+                                    ),
+                                    elevation: 2,
+                                  ),
+                                  icon: Icon(Icons.open_in_new, size: ResponsiveUtils.getIconSize(context, baseSize: 18)),
+                                  label: SafeUI.safeText(
+                                    'Open FNB App',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: ResponsiveUtils.getTitleSize(context) - 2,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              SizedBox(width: ResponsiveUtils.getHorizontalPadding(context) * 0.6),
+                              Expanded(
+                                child: OutlinedButton.icon(
+                                  onPressed: () {
+                                    final bankDetails = '''Bank Transfer Details:
+Account Name: Food Marketplace Pty Ltd
+Bank: First National Bank (FNB)
+Account Number: 62612345678
+Branch Code: 250655
+Reference: Use your Order Number''';
+                                    Clipboard.setData(ClipboardData(text: bankDetails));
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Row(
+                                          children: [
+                                            Icon(Icons.copy, color: Colors.white, size: ResponsiveUtils.getIconSize(context, baseSize: 16)),
+                                            SizedBox(width: ResponsiveUtils.getHorizontalPadding(context) * 0.4),
+                                            Expanded(
+                                              child: Text(
+                                                'Bank details copied!',
+                                                style: TextStyle(fontWeight: FontWeight.w600),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        backgroundColor: AppTheme.success,
+                                        behavior: SnackBarBehavior.floating,
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(ResponsiveUtils.getHorizontalPadding(context) * 0.6),
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: AppTheme.deepTeal,
+                                    side: BorderSide(
+                                      color: AppTheme.deepTeal.withOpacity(0.4),
+                                      width: 1.5,
+                                    ),
+                                    padding: EdgeInsets.symmetric(
+                                      vertical: ResponsiveUtils.getVerticalPadding(context) * 0.8,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(ResponsiveUtils.getHorizontalPadding(context) * 0.6),
+                                    ),
+                                  ),
+                                  icon: Icon(Icons.copy_all, size: ResponsiveUtils.getIconSize(context, baseSize: 18)),
+                                  label: SafeUI.safeText(
+                                    'Copy Details',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: ResponsiveUtils.getTitleSize(context) - 2,
+                                    ),
+                                  ),
+                                ),
                               ),
                             ],
-                          ),
-                        ),
-                      ],
-                    ),
+                          );
+                        },
+                      ),
+                    ],
                   ),
                 ),
                 
@@ -2634,25 +2632,25 @@ Reference: Use your Order Number''';
     );
   }
 
-  // Clean bank detail row - simplified and stunning
-  Widget _buildCleanBankDetail(String label, String value, IconData icon) {
+  // Responsive bank detail row - fully responsive design
+  Widget _buildResponsiveBankDetail(String label, String value, IconData icon) {
     return Padding(
-      padding: EdgeInsets.only(bottom: 16),
+      padding: EdgeInsets.only(bottom: ResponsiveUtils.getVerticalPadding(context) * 0.8),
       child: Row(
         children: [
           Container(
-            padding: EdgeInsets.all(10),
+            padding: EdgeInsets.all(ResponsiveUtils.getHorizontalPadding(context) * 0.5),
             decoration: BoxDecoration(
               color: AppTheme.deepTeal.withOpacity(0.08),
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(ResponsiveUtils.getHorizontalPadding(context) * 0.5),
             ),
             child: Icon(
               icon,
               color: AppTheme.deepTeal,
-              size: 20,
+              size: ResponsiveUtils.getIconSize(context, baseSize: 18),
             ),
           ),
-          SizedBox(width: 16),
+          SizedBox(width: ResponsiveUtils.getHorizontalPadding(context) * 0.8),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -2660,18 +2658,20 @@ Reference: Use your Order Number''';
                 SafeUI.safeText(
                   label,
                   style: TextStyle(
-                    fontSize: ResponsiveUtils.getTitleSize(context) - 4,
+                    fontSize: ResponsiveUtils.getTitleSize(context) - 3,
                     color: AppTheme.breeze,
-                    fontWeight: FontWeight.w500,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.3,
                   ),
                 ),
-                SizedBox(height: 4),
+                SizedBox(height: ResponsiveUtils.getVerticalPadding(context) * 0.3),
                 SafeUI.safeText(
                   value,
                   style: TextStyle(
-                    fontSize: ResponsiveUtils.getTitleSize(context) - 1,
+                    fontSize: ResponsiveUtils.getTitleSize(context),
                     color: AppTheme.deepTeal,
-                    fontWeight: FontWeight.w700,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.2,
                   ),
                 ),
               ],
@@ -2685,8 +2685,8 @@ Reference: Use your Order Number''';
                 SnackBar(
                   content: Row(
                     children: [
-                      Icon(Icons.copy, color: Colors.white, size: 16),
-                      SizedBox(width: 8),
+                      Icon(Icons.copy, color: Colors.white, size: ResponsiveUtils.getIconSize(context, baseSize: 16)),
+                      SizedBox(width: ResponsiveUtils.getHorizontalPadding(context) * 0.4),
                       Expanded(
                         child: Text(
                           '$label copied!',
@@ -2699,7 +2699,7 @@ Reference: Use your Order Number''';
                   duration: Duration(seconds: 2),
                   behavior: SnackBarBehavior.floating,
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: BorderRadius.circular(ResponsiveUtils.getHorizontalPadding(context) * 0.4),
                   ),
                 ),
               );
@@ -2707,12 +2707,12 @@ Reference: Use your Order Number''';
             icon: Icon(
               Icons.copy,
               color: AppTheme.deepTeal.withOpacity(0.6),
-              size: 20,
+              size: ResponsiveUtils.getIconSize(context, baseSize: 18),
             ),
-            padding: EdgeInsets.all(8),
+            padding: EdgeInsets.all(ResponsiveUtils.getHorizontalPadding(context) * 0.4),
             constraints: BoxConstraints(
-              minWidth: 36,
-              minHeight: 36,
+              minWidth: ResponsiveUtils.getHorizontalPadding(context) * 1.8,
+              minHeight: ResponsiveUtils.getHorizontalPadding(context) * 1.8,
             ),
           ),
         ],
@@ -2720,32 +2720,35 @@ Reference: Use your Order Number''';
     );
   }
 
-  // Clean instruction row for EFT modal
-  Widget _buildCleanInstruction(String instruction) {
+  // Responsive instruction row for EFT modal
+  Widget _buildResponsiveInstruction(String instruction) {
     return Padding(
-      padding: EdgeInsets.symmetric(vertical: 6),
+      padding: EdgeInsets.symmetric(vertical: ResponsiveUtils.getVerticalPadding(context) * 0.4),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
-            width: 6,
-            height: 6,
-            margin: EdgeInsets.only(top: 8),
+            width: ResponsiveUtils.getHorizontalPadding(context) * 0.4,
+            height: ResponsiveUtils.getHorizontalPadding(context) * 0.4,
+            margin: EdgeInsets.only(top: ResponsiveUtils.getVerticalPadding(context) * 0.3),
             decoration: BoxDecoration(
               color: AppTheme.warning,
               shape: BoxShape.circle,
             ),
           ),
-          SizedBox(width: 12),
+          SizedBox(width: ResponsiveUtils.getHorizontalPadding(context) * 0.8),
           Expanded(
             child: SafeUI.safeText(
               instruction,
               style: TextStyle(
-                fontSize: ResponsiveUtils.getTitleSize(context) - 3,
+                fontSize: ResponsiveUtils.getTitleSize(context) - 2,
                 color: AppTheme.deepTeal,
                 fontWeight: FontWeight.w500,
-                height: 1.3,
+                height: 1.4,
+                letterSpacing: 0.2,
               ),
+              textAlign: TextAlign.left,
+              maxLines: null,
             ),
           ),
         ],
