@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
 import '../services/address_search_service.dart';
@@ -116,6 +117,21 @@ class _AddressInputFieldState extends State<AddressInputField> {
   }
 
   Future<void> _useMyLocation() async {
+    // Skip geolocation on web platform
+    if (kIsWeb) {
+      print('🔍 Geolocation not supported on web platform');
+      // Show a helpful message for web users
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Please enter your address manually on web platform'),
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
+      return;
+    }
+
     try {
       setState(() { _isReverseGeocoding = true; });
       LocationPermission perm = await Geolocator.checkPermission();
@@ -127,7 +143,7 @@ class _AddressInputFieldState extends State<AddressInputField> {
         return;
       }
       final pos = await Geolocator.getCurrentPosition(timeLimit: const Duration(seconds: 6));
-      // Use Nominatim reverse via AddressSearchService’s public method if added in future
+      // Use Nominatim reverse via AddressSearchService's public method if added in future
       // For now, create a suggestion with coordinates and let parent do map confirm
       final approx = 'Current location (${pos.latitude.toStringAsFixed(5)}, ${pos.longitude.toStringAsFixed(5)})';
       final controller = widget.controller ?? _textController;

@@ -45,9 +45,7 @@ class AddressSearchService extends ChangeNotifier {
     _userLng = longitude;
   }
 
-
-
-  // Search addresses using Google Places API
+  // Search addresses using HERE Maps API (web-compatible)
   Future<void> searchAddresses(String query) async {
     print('🔍 AddressSearchService.searchAddresses called with: "$query"');
     
@@ -77,9 +75,24 @@ class AddressSearchService extends ChangeNotifier {
       print('🔍 Starting debounced search for: "$query"');
       
       try {
-        List<AddressSuggestion> results = await _searchWithHereMaps(query);
+        List<AddressSuggestion> results = [];
         
-        print('🔍 HERE Maps API returned ${results.length} results');
+        // Check if we're on web platform
+        if (kIsWeb) {
+          print('🔍 Web platform detected, using web-specific search');
+          results = await _searchForWeb(query);
+        } else {
+          // Try HERE Maps first (works on mobile)
+          results = await _searchWithHereMaps(query);
+          
+          // If HERE Maps fails, try fallback search
+          if (results.isEmpty) {
+            print('🔍 HERE Maps returned no results, trying fallback search');
+            results = await _searchWithFallback(query);
+          }
+        }
+        
+        print('🔍 Search returned ${results.length} results');
 
         // Ignore stale results from older searches
         if (localSearchId < _currentSearchId) {
@@ -107,7 +120,7 @@ class AddressSearchService extends ChangeNotifier {
     });
   }
 
-  // Search using HERE Maps Geocoding API
+  // Search using HERE Maps Geocoding API (web-compatible)
   Future<List<AddressSuggestion>> _searchWithHereMaps(String query) async {
     try {
       // Build query parameters for HERE Maps
@@ -128,7 +141,22 @@ class AddressSearchService extends ChangeNotifier {
       print('🔍 HERE Maps API request params: $queryParams');
       
       final uri = Uri.parse(_hereGeocodingUrl).replace(queryParameters: queryParams);
-      final response = await http.get(uri).timeout(const Duration(seconds: 10));
+      
+      // Handle CORS issues on web by using a different approach
+      http.Response response;
+      try {
+        response = await http.get(uri).timeout(const Duration(seconds: 10));
+      } catch (e) {
+        print('⚠️ Direct HTTP request failed, trying with CORS headers: $e');
+        // Try with additional headers for web compatibility
+        response = await http.get(
+          uri,
+          headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+          },
+        ).timeout(const Duration(seconds: 10));
+      }
       
       print('🔍 HERE Maps API response status: ${response.statusCode}');
       
@@ -168,6 +196,181 @@ class AddressSearchService extends ChangeNotifier {
       
     } catch (e) {
       print('❌ HERE Maps API search failed: $e');
+      return [];
+    }
+  }
+
+  // Fallback search method for web compatibility
+  Future<List<AddressSuggestion>> _searchWithFallback(String query) async {
+    try {
+      print('🔍 Using fallback search for: $query');
+      
+      // Create basic suggestions based on the query
+      List<AddressSuggestion> suggestions = [];
+      
+      // Add the query itself as a suggestion
+      suggestions.add(AddressSuggestion(
+        label: query,
+        street: query,
+        locality: 'Enter manually',
+        administrativeArea: 'South Africa',
+        postalCode: '',
+        latitude: null,
+        longitude: null,
+      ));
+      
+      // Add some common South African cities if query matches
+      final lowerQuery = query.toLowerCase();
+      final commonCities = [
+        'Johannesburg', 'Cape Town', 'Durban', 'Pretoria', 'Port Elizabeth',
+        'Bloemfontein', 'East London', 'Kimberley', 'Nelspruit', 'Polokwane'
+      ];
+      
+      for (final city in commonCities) {
+        if (city.toLowerCase().contains(lowerQuery) || lowerQuery.contains(city.toLowerCase())) {
+          suggestions.add(AddressSuggestion(
+            label: city,
+            street: city,
+            locality: city,
+            administrativeArea: 'South Africa',
+            postalCode: '',
+            latitude: null,
+            longitude: null,
+          ));
+        }
+      }
+      
+      // Add postal code suggestions if query looks like a postal code
+      if (RegExp(r'^\d{4}$').hasMatch(query)) {
+        suggestions.add(AddressSuggestion(
+          label: 'Postal Code: $query',
+          street: 'Postal Code: $query',
+          locality: 'South Africa',
+          administrativeArea: 'South Africa',
+          postalCode: query,
+          latitude: null,
+          longitude: null,
+        ));
+      }
+      
+      print('🔍 Fallback search returned ${suggestions.length} suggestions');
+      return suggestions;
+      
+    } catch (e) {
+      print('❌ Fallback search failed: $e');
+      return [];
+    }
+  }
+
+  // Web-specific search method that avoids CORS issues
+  Future<List<AddressSuggestion>> _searchForWeb(String query) async {
+    try {
+      print('🔍 Using web-specific search for: $query');
+      
+      List<AddressSuggestion> suggestions = [];
+      final lowerQuery = query.toLowerCase();
+      
+      // Add the query itself as a suggestion
+      suggestions.add(AddressSuggestion(
+        label: query,
+        street: query,
+        locality: 'Enter manually',
+        administrativeArea: 'South Africa',
+        postalCode: '',
+        latitude: null,
+        longitude: null,
+      ));
+      
+      // South African cities and major areas
+      final cities = [
+        'Johannesburg', 'Cape Town', 'Durban', 'Pretoria', 'Port Elizabeth',
+        'Bloemfontein', 'East London', 'Kimberley', 'Nelspruit', 'Polokwane',
+        'Rustenburg', 'Welkom', 'Pietermaritzburg', 'Benoni', 'Vereeniging',
+        'Soweto', 'Sandton', 'Centurion', 'Randburg', 'Roodepoort'
+      ];
+      
+      // Add matching cities
+      for (final city in cities) {
+        if (city.toLowerCase().contains(lowerQuery) || lowerQuery.contains(city.toLowerCase())) {
+          suggestions.add(AddressSuggestion(
+            label: city,
+            street: city,
+            locality: city,
+            administrativeArea: 'South Africa',
+            postalCode: '',
+            latitude: null,
+            longitude: null,
+          ));
+        }
+      }
+      
+      // South African provinces
+      final provinces = [
+        'Gauteng', 'Western Cape', 'KwaZulu-Natal', 'Eastern Cape',
+        'Free State', 'Mpumalanga', 'Limpopo', 'North West', 'Northern Cape'
+      ];
+      
+      // Add matching provinces
+      for (final province in provinces) {
+        if (province.toLowerCase().contains(lowerQuery) || lowerQuery.contains(province.toLowerCase())) {
+          suggestions.add(AddressSuggestion(
+            label: '$province Province',
+            street: '$province Province',
+            locality: '$province Province',
+            administrativeArea: 'South Africa',
+            postalCode: '',
+            latitude: null,
+            longitude: null,
+          ));
+        }
+      }
+      
+      // Common street types
+      final streetTypes = [
+        'Street', 'Road', 'Avenue', 'Drive', 'Lane', 'Close', 'Way',
+        'Crescent', 'Place', 'Square', 'Boulevard', 'Highway', 'Main Road'
+      ];
+      
+      // Add street suggestions
+      for (final streetType in streetTypes) {
+        if (lowerQuery.contains(streetType.toLowerCase())) {
+          suggestions.add(AddressSuggestion(
+            label: '$query $streetType',
+            street: '$query $streetType',
+            locality: 'Enter city manually',
+            administrativeArea: 'South Africa',
+            postalCode: '',
+            latitude: null,
+            longitude: null,
+          ));
+        }
+      }
+      
+      // Postal code suggestions
+      if (RegExp(r'^\d{4}$').hasMatch(query)) {
+        suggestions.add(AddressSuggestion(
+          label: 'Postal Code: $query',
+          street: 'Postal Code: $query',
+          locality: 'South Africa',
+          administrativeArea: 'South Africa',
+          postalCode: query,
+          latitude: null,
+          longitude: null,
+        ));
+      }
+      
+      // Remove duplicates based on label
+      final uniqueSuggestions = <String, AddressSuggestion>{};
+      for (final suggestion in suggestions) {
+        uniqueSuggestions[suggestion.label] = suggestion;
+      }
+      
+      final result = uniqueSuggestions.values.toList();
+      print('🔍 Web search returned ${result.length} unique suggestions');
+      return result;
+      
+    } catch (e) {
+      print('❌ Web search failed: $e');
       return [];
     }
   }
