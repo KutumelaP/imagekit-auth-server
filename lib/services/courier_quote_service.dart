@@ -266,7 +266,7 @@ class CourierQuoteService {
     }
   }
   
-  // Create fallback pickup points when real ones aren't available
+        // Create fallback pickup points when real ones aren't available
   static Future<List<PickupPoint>> _createFallbackPickupPoints(
     double latitude, 
     double longitude
@@ -293,7 +293,57 @@ class CourierQuoteService {
         postalCode = '0046';
       }
       
-      // Common pickup point types
+      // Add Pargo pickup points (mock data for testing)
+      final pargoTypes = [
+        {
+          'type': 'Pargo Pickup Point',
+          'fee': 25.0,
+          'hours': 'Mon-Sat 8AM-6PM, Sun 9AM-4PM',
+          'name': 'Pargo - ${mainLocation} Shopping Center',
+          'address': '${mainLocation} Shopping Center, Ground Floor',
+        },
+        {
+          'type': 'Pargo Pickup Point',
+          'fee': 30.0,
+          'hours': 'Mon-Fri 7AM-9PM, Sat-Sun 8AM-8PM',
+          'name': 'Pargo - ${mainLocation} Mall',
+          'address': '${mainLocation} Mall, Level 1, Near Food Court',
+        },
+        {
+          'type': 'Pargo Pickup Point',
+          'fee': 20.0,
+          'hours': 'Daily 6AM-10PM',
+          'name': 'Pargo - ${mainLocation} Gas Station',
+          'address': 'Engen Service Station, ${mainLocation}',
+        },
+      ];
+      
+      // Generate Pargo pickup points
+      for (int i = 0; i < pargoTypes.length; i++) {
+        final type = pargoTypes[i];
+        
+        // Create Pargo pickup points around the user's location
+        final latOffset = (i + 1) * 0.001; // Closer spacing for Pargo points
+        final lngOffset = (i + 1) * 0.002;
+        
+        final pickupPoint = PickupPoint(
+          id: 'pargo_${i + 1}',
+          name: type['name'] as String,
+          address: type['address'] as String,
+          latitude: latitude + latOffset,
+          longitude: longitude + lngOffset,
+          type: type['type'] as String,
+          distance: (i + 1) * 0.5, // Closer distance for Pargo
+          fee: type['fee'] as double,
+          operatingHours: type['hours'] as String,
+          isPargoPoint: true, // These are mock Pargo points
+          pargoId: 'pargo_${i + 1}',
+        );
+        
+        pickupPoints.add(pickupPoint);
+      }
+      
+      // Common pickup point types (non-Pargo)
       final commonTypes = [
         {
           'type': 'Post Office', 
@@ -351,7 +401,7 @@ class CourierQuoteService {
         pickupPoints.add(pickupPoint);
       }
       
-      print('🔍 Created ${pickupPoints.length} fallback pickup points');
+      print('🔍 Created ${pickupPoints.length} fallback pickup points (${pargoTypes.length} Pargo, ${commonTypes.length} local)');
       return pickupPoints;
       
     } catch (e) {

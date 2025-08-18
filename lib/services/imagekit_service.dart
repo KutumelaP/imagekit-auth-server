@@ -7,8 +7,15 @@ import 'package:flutter/foundation.dart';
 import 'package:image_picker/image_picker.dart';
 
 class ImageKitService {
-  static const String _publicKey = 'public_tAO0SkfLl/37FQN+23c/bkAyfYg=';
-  static const String _authServerUrl = 'https://imagekit-auth-server-f4te.onrender.com/auth';
+  // Remove hardcoded public key - will get it from server
+  // static const String _publicKey = 'public_tAO0SkfLl/37FQN+23c/bkAyfYg=';
+  
+  // Multiple authentication server URLs for fallback
+  static const List<String> _authServerUrls = [
+    'https://imagekit-auth-server-f4te.onrender.com/auth', // Try remote first
+    'http://localhost:3001/auth', // Local fallback
+  ];
+  
   static const String _uploadUrl = 'https://upload.imagekit.io/api/v1/files/upload';
 
   /// Upload image to ImageKit with authentication
@@ -27,23 +34,52 @@ class ImageKitService {
 
       print('🔍 Getting ImageKit auth parameters...');
       
-      // Get authentication parameters from backend
-      final response = await http.get(
-        Uri.parse(_authServerUrl),
-        headers: {'Content-Type': 'application/json'},
-      ).timeout(const Duration(seconds: 30)); // Increased from 10 to 30 seconds
+      // Try multiple authentication servers
+      Map<String, dynamic>? authParams;
+      String? workingServer;
+      
+      for (String serverUrl in _authServerUrls) {
+        try {
+          print('🔍 Trying authentication server: $serverUrl');
+          
+          final response = await http.get(
+            Uri.parse(serverUrl),
+            headers: {'Content-Type': 'application/json'},
+          ).timeout(const Duration(seconds: 15));
 
-      if (response.statusCode != 200) {
-        print('❌ Failed to get ImageKit auth parameters: ${response.statusCode}');
-        throw Exception('Failed to get authentication parameters: ${response.statusCode}');
+          if (response.statusCode == 200) {
+            authParams = Map<String, dynamic>.from(json.decode(response.body));
+            workingServer = serverUrl;
+            print('✅ Got ImageKit auth params from: $workingServer');
+            break;
+          } else {
+            print('⚠️ Server $serverUrl returned status: ${response.statusCode}');
+          }
+        } catch (e) {
+          print('⚠️ Failed to connect to $serverUrl: $e');
+          continue;
+        }
       }
 
-      final authParams = Map<String, dynamic>.from(json.decode(response.body));
-      print('✅ Got ImageKit auth params');
+      if (authParams == null) {
+        throw Exception('All authentication servers failed. Please check your ImageKit configuration.');
+      }
 
       // Validate auth parameters
       if (authParams['token'] == null || authParams['signature'] == null || authParams['expire'] == null) {
-        throw Exception('Invalid authentication parameters received');
+        throw Exception('Invalid authentication parameters received from $workingServer');
+      }
+
+      // Get public key from server config to ensure signature matches
+      String publicKey;
+      if (authParams['publicKey'] != null) {
+        // Use public key from server response (recommended)
+        publicKey = authParams['publicKey'];
+        print('🔑 Using public key from server: ${publicKey.substring(0, 20)}...');
+      } else {
+        // Fallback to hardcoded key (for backward compatibility)
+        publicKey = 'public_tAO0SkfLl/37FQN+23c/bkAyfYg=';
+        print('⚠️ Using fallback public key: ${publicKey.substring(0, 20)}...');
       }
 
       // Handle file reading based on platform
@@ -68,7 +104,7 @@ class ImageKitService {
       final request = http.MultipartRequest('POST', Uri.parse(_uploadUrl));
 
       request.fields.addAll({
-        'publicKey': _publicKey,
+        'publicKey': publicKey,
         'token': authParams['token'],
         'signature': authParams['signature'],
         'expire': authParams['expire'].toString(),
@@ -158,7 +194,7 @@ class ImageKitService {
       final request = http.MultipartRequest('POST', Uri.parse(_uploadUrl));
 
       request.fields.addAll({
-        'publicKey': _publicKey,
+        'publicKey': 'public_tAO0SkfLl/37FQN+23c/bkAyfYg=', // Hardcoded for public upload
         'fileName': fileName,
         'folder': folder,
         'useUniqueFileName': 'true',

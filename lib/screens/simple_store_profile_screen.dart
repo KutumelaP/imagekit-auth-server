@@ -432,7 +432,7 @@ class _SimpleStoreProfileScreenState extends State<SimpleStoreProfileScreen>
   Future<void> _showQrDialog() async {
     final shareUrl = (() {
       final storeId = widget.store['storeId'] as String?;
-      final webBase = const String.fromEnvironment('PUBLIC_BASE_URL', defaultValue: 'https://yourdomain.com');
+      final webBase = const String.fromEnvironment('PUBLIC_BASE_URL', defaultValue: 'https://marketplace-8d6bd.web.app');
       final deepLink = (storeId != null) ? '$webBase/store/$storeId' : webBase;
       final utmSource = const String.fromEnvironment('UTM_SOURCE', defaultValue: '');
       final utmMedium = const String.fromEnvironment('UTM_MEDIUM', defaultValue: '');

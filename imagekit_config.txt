@@ -1,0 +1,14 @@
+# ImageKit Configuration - Copy this to .env file
+# Rename this file to .env (with the dot)
+
+IMAGEKIT_PUBLIC_KEY=public_tAO0SkfLl/37FQN+23c/bkAyfYg=
+IMAGEKIT_PRIVATE_KEY=private_cZ0y1MLeTaZbOYoxDAVI7fTIbTM=
+IMAGEKIT_URL_ENDPOINT=https://ik.imagekit.io/tkhb6zllk
+PORT=3001
+
+# Instructions:
+# 1. Copy all the lines above (starting with IMAGEKIT_)
+# 2. Create a new file named exactly ".env" (with the dot)
+# 3. Paste the configuration lines
+# 4. Save the file in your project root (C:\food_marketplace_app)
+# 5. Restart your server

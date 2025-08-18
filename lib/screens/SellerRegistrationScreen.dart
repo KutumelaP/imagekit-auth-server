@@ -862,7 +862,7 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
 
         // Show store link and QR so seller can advertise immediately
         final storeId = user.uid;
-        final base = const String.fromEnvironment('PUBLIC_BASE_URL', defaultValue: 'https://yourdomain.com');
+        final base = const String.fromEnvironment('PUBLIC_BASE_URL', defaultValue: 'https://marketplace-8d6bd.web.app');
         final storeUrl = '$base/store/$storeId';
         if (!mounted) return;
         await showDialog(

@@ -67,15 +67,19 @@ class NotificationService {
       }
 
       // Check current permission status
-      final permission = js.context.callMethod('Notification', ['permission']);
+      final permission = js.context.callMethod('eval', ['Notification.permission']);
       print('🔔 Current notification permission: $permission');
 
       if (permission == 'default') {
         print('🔔 Requesting notification permissions...');
-        // Request permission
-        js.context.callMethod('Notification', ['requestPermission']).then((result) {
-          print('🔔 Notification permission result: $result');
-        });
+        // Request permission using proper Promise handling
+        js.context.callMethod('eval', ['''
+          Notification.requestPermission().then(function(result) {
+            console.log('🔔 Notification permission result:', result);
+          }).catch(function(error) {
+            console.error('❌ Error requesting permission:', error);
+          });
+        ''']);
       } else if (permission == 'granted') {
         print('✅ Notification permissions already granted');
       } else {
@@ -128,9 +132,32 @@ class NotificationService {
   Future<bool> requestPermissions() async {
     try {
       if (kIsWeb) {
-        // Web: Request browser notification permissions
-        final permission = js.context.callMethod('Notification', ['requestPermission']);
-        return permission == 'granted';
+        // Web: Check current permission status first
+        final currentPermission = js.context.callMethod('eval', ['Notification.permission']);
+        
+        if (currentPermission == 'granted') {
+          return true;
+        } else if (currentPermission == 'denied') {
+          return false;
+        } else {
+          // Permission is 'default', request it
+          print('🔔 Requesting notification permissions...');
+          
+          // Use a simpler approach - just trigger the permission request
+          // The actual permission result will be handled by the browser
+          js.context.callMethod('eval', ['''
+            Notification.requestPermission().then(function(result) {
+              console.log('🔔 Notification permission result:', result);
+            }).catch(function(error) {
+              console.error('❌ Error requesting permission:', error);
+            });
+          ''']);
+          
+          // For now, return based on current status
+          // In a real app, you might want to implement a more sophisticated
+          // permission checking mechanism
+          return currentPermission == 'granted';
+        }
       } else {
         // Mobile: For now, return true (will be implemented later)
         return true;
@@ -284,7 +311,7 @@ class NotificationService {
       }
 
       // Check permission
-      final permission = js.context.callMethod('Notification', ['permission']);
+      final permission = js.context.callMethod('eval', ['Notification.permission']);
       if (permission != 'granted') {
         print('❌ Notification permission not granted');
         return;
@@ -300,11 +327,9 @@ class NotificationService {
         'silent': false,
       });
 
-      // Create notification using the correct constructor
+      // Create notification using proper JavaScript interop
       final notification = js.JsObject.fromBrowserObject(
-        js.context.callMethod('eval', [
-          'new Notification("$title", ${js.JsObject.jsify(options).toString()})'
-        ])
+        js.context.callMethod('Notification', [title, options])
       );
 
       // Add click event listener

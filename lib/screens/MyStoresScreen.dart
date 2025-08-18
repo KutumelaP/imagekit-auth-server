@@ -300,7 +300,7 @@ class _MyStoresScreenState extends State<MyStoresScreen> {
 	}
 
 	Future<void> _shareStore(String storeId, String storeName) async {
-		final base = const String.fromEnvironment('PUBLIC_BASE_URL', defaultValue: 'https://yourdomain.com');
+		    final base = const String.fromEnvironment('PUBLIC_BASE_URL', defaultValue: 'https://marketplace-8d6bd.web.app');
 		final url = '$base/store/$storeId';
 		await Share.share('Check out $storeName on Mzansi Marketplace\n$url');
 	}

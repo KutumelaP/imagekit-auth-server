@@ -1,0 +1,156 @@
+[1mdiff --git a/lib/screens/CheckoutScreen.dart b/lib/screens/CheckoutScreen.dart[m
+[1mindex e9ec172..c257fb6 100644[m
+[1m--- a/lib/screens/CheckoutScreen.dart[m
+[1m+++ b/lib/screens/CheckoutScreen.dart[m
+[36m@@ -324,9 +324,10 @@[m [mclass _CheckoutScreenState extends State<CheckoutScreen> {[m
+         for (var doc in cartSnapshot.docs) {[m
+           final data = doc.data();[m
+           print('🔍 DEBUG: Cart item data: ${data.toString()}');[m
+[31m-          final category = data['category']?.toString().toLowerCase() ?? '';[m
+[32m+[m[32m          final category = data['storeCategory']?.toString().toLowerCase() ?? '';[m
+           print('🔍 DEBUG: Checking category: "$category" from data: ${data['category']}');[m
+[31m-          if (category == 'food') {[m
+[32m+[m[32m          // Check for food categories (case-insensitive)[m
+[32m+[m[32m          if (category == 'food' || category == 'restaurant' || category == 'cafe') {[m
+             hasFood = true;[m
+             print('🔍 DEBUG: Found food item!');[m
+             break;[m
+[36m@@ -338,6 +339,13 @@[m [mclass _CheckoutScreenState extends State<CheckoutScreen> {[m
+         });[m
+         [m
+         print('🔍 DEBUG: Product category detected: $_productCategory');[m
+[32m+[m[32m        print('🔍 DEBUG: Cart items: ${cartSnapshot.docs.length}');[m
+[32m+[m[32m        for (var doc in cartSnapshot.docs) {[m
+[32m+[m[32m          final data = doc.data();[m
+[32m+[m[32m          final category = data['storeCategory']?.toString() ?? 'unknown';[m
+[32m+[m[32m          final name = data['name'] ?? 'unknown';[m
+[32m+[m[32m          print('🔍 DEBUG: Item: $name, Category: $category');[m
+[32m+[m[32m        }[m
+       }[m
+     } catch (e) {[m
+       print('❌ Error detecting product category: $e');[m
+[36m@@ -458,7 +466,6 @@[m [mclass _CheckoutScreenState extends State<CheckoutScreen> {[m
+                           letterSpacing: 0.5,[m
+                   ),[m
+                   maxLines: 2,[m
+[31m-                  textAlign: TextAlign.center,[m
+                 ),[m
+                       SizedBox(height: 12),[m
+                 [m
+[36m@@ -1702,7 +1709,78 @@[m [mclass _CheckoutScreenState extends State<CheckoutScreen> {[m
+     return parts.join(', ');[m
+   }[m
+ [m
+[31m-[m
+[32m+[m[32m  /// Gets the user's current location and sets it as the pickup location[m
+[32m+[m[32m  /// This method is called when the user taps pickup mode without having coordinates set[m
+[32m+[m[32m  Future<void> _getCurrentLocationForPickup() async {[m
+[32m+[m[32m    print('📍 Getting current location for pickup...');[m
+[32m+[m[41m    [m
+[32m+[m[32m    try {[m
+[32m+[m[32m      // Check location permissions first[m
+[32m+[m[32m      LocationPermission permission = await Geolocator.checkPermission();[m
+[32m+[m[32m      if (permission == LocationPermission.denied) {[m
+[32m+[m[32m        permission = await Geolocator.requestPermission();[m
+[32m+[m[32m        if (permission == LocationPermission.denied) {[m
+[32m+[m[32m          throw Exception('Location permission denied');[m
+[32m+[m[32m        }[m
+[32m+[m[32m      }[m
+[32m+[m[41m      [m
+[32m+[m[32m      if (permission == LocationPermission.deniedForever) {[m
+[32m+[m[32m        throw Exception('Location permission permanently denied');[m
+[32m+[m[32m      }[m
+[32m+[m[41m      [m
+[32m+[m[32m      // Get current position[m
+[32m+[m[32m      Position position = await Geolocator.getCurrentPosition([m
+[32m+[m[32m        desiredAccuracy: LocationAccuracy.high,[m
+[32m+[m[32m        timeLimit: Duration(seconds: 10),[m
+[32m+[m[32m      );[m
+[32m+[m[41m      [m
+[32m+[m[32m      print('📍 Current location obtained: ${position.latitude}, ${position.longitude}');[m
+[32m+[m[41m      [m
+[32m+[m[32m      // Set the coordinates[m
+[32m+[m[32m      setState(() {[m
+[32m+[m[32m        _selectedLat = position.latitude;[m
+[32m+[m[32m        _selectedLng = position.longitude;[m
+[32m+[m[32m      });[m
+[32m+[m[41m      [m
+[32m+[m[32m      // Try to get address from coordinates for better UX[m
+[32m+[m[32m      try {[m
+[32m+[m[32m        List<Placemark> placemarks = await placemarkFromCoordinates([m
+[32m+[m[32m          position.latitude,[m
+[32m+[m[32m          position.longitude,[m
+[32m+[m[32m        );[m
+[32m+[m[41m        [m
+[32m+[m[32m        if (placemarks.isNotEmpty) {[m
+[32m+[m[32m          Placemark placemark = placemarks.first;[m
+[32m+[m[32m          String address = _formatAddress(placemark);[m
+[32m+[m[41m          [m
+[32m+[m[32m          setState(() {[m
+[32m+[m[32m            _addressController.text = address;[m
+[32m+[m[32m          });[m
+[32m+[m[41m          [m
+[32m+[m[32m          print('📍 Address from coordinates: $address');[m
+[32m+[m[32m        }[m
+[32m+[m[32m      } catch (e) {[m
+[32m+[m[32m        print('⚠️ Could not get address from coordinates: $e');[m
+[32m+[m[32m        // Still continue with coordinates even if address lookup fails[m
+[32m+[m[32m      }[m
+[32m+[m[41m      [m
+[32m+[m[32m      // Now load pickup points with the current coordinates[m
+[32m+[m[32m      await _loadPickupPointsForCoordinates(position.latitude, position.longitude);[m
+[32m+[m[41m      [m
+[32m+[m[32m      // Show success message[m
+[32m+[m[32m      ScaffoldMessenger.of(context).showSnackBar([m
+[32m+[m[32m        SnackBar([m
+[32m+[m[32m          content: Text('Using your current location for pickup points'),[m
+[32m+[m[32m          duration: Duration(seconds: 2),[m
+[32m+[m[32m          backgroundColor: Colors.green,[m
+[32m+[m[32m        ),[m
+[32m+[m[32m      );[m
+[32m+[m[41m      [m
+[32m+[m[32m    } catch (e) {[m
+[32m+[m[32m      print('❌ Error getting current location: $e');[m
+[32m+[m[32m      rethrow; // Re-throw to be handled by the caller[m
+[32m+[m[32m    }[m
+[32m+[m[32m  }[m
+ [m
+   Future<void> _calculateDeliveryFeeAndCheckStore() async {[m
+     if (currentUser == null) {[m
+[36m@@ -3817,7 +3895,7 @@[m [mReference: ${orderNumber ?? 'Use your Order Number'}''';[m
+     );[m
+   }[m
+ [m
+[31m-  Widget _buildDeliverySection() {[m
+[32m+[m[32m    Widget _buildDeliverySection() {[m
+     return Container([m
+       padding: EdgeInsets.all(ResponsiveUtils.getHorizontalPadding(context)),[m
+       decoration: BoxDecoration([m
+[36m@@ -3832,6 +3910,7 @@[m [mReference: ${orderNumber ?? 'Use your Order Number'}''';[m
+       child: Column([m
+         crossAxisAlignment: CrossAxisAlignment.start,[m
+         children: [[m
+[32m+[m[41m          [m
+           // Debug: Print current values[m
+           Builder([m
+             builder: (context) {[m
+[36m@@ -3997,14 +4076,38 @@[m [mReference: ${orderNumber ?? 'Use your Order Number'}''';[m
+               SizedBox(width: ResponsiveUtils.getHorizontalPadding(context) * 0.5),[m
+               Expanded([m
+                 child: GestureDetector([m
+[31m-                  onTap: () {[m
+[32m+[m[32m                  onTap: () async {[m
+[32m+[m[32m                    print('🔍 DEBUG: Pickup button tapped');[m
+[32m+[m[32m                    print('🔍 DEBUG: Current _isDelivery: $_isDelivery');[m
+[32m+[m[32m                    print('🔍 DEBUG: Current _productCategory: $_productCategory');[m
+[32m+[m[32m                    print('🔍 DEBUG: Current coordinates: $_selectedLat, $_selectedLng');[m
+[32m+[m[41m                    [m
+                     setState(() {[m
+                       _isDelivery = false;[m
+                       _calculateDeliveryFeeAndCheckStore();[m
+                     });[m
+[32m+[m[41m                    [m
+[32m+[m[32m                    print('🔍 DEBUG: After setState - _isDelivery: $_isDelivery');[m
+[32m+[m[32m                    print('🔍 DEBUG: Should show Pargo: ${!_isDelivery && _productCategory.toLowerCase() != 'food'}');[m
+[32m+[m[41m                    [m
+                     // Lo
