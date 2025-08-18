@@ -1,0 +1,5 @@
+# ImageKit Configuration - Rename this file to .env
+IMAGEKIT_PUBLIC_KEY=public_tAO0SkfLl/37FQN+23c/bkAyfYg=
+IMAGEKIT_PRIVATE_KEY=private_cZ0y1MLeTaZbOYoxDAVI7fTIbTM=
+IMAGEKIT_URL_ENDPOINT=https://ik.imagekit.io/tkhb6zllk
+PORT=3001

@@ -44,24 +44,39 @@ const imagekit = config
 app.get('/auth', async (req, res) => {
   try {
     if (!imagekit) {
-      return res.status(503).json({ error: 'ImageKit not configured on server' });
+      console.error('❌ /auth endpoint called but ImageKit not configured');
+      return res.status(503).json({ 
+        error: 'ImageKit not configured on server',
+        message: 'Please configure IMAGEKIT_PRIVATE_KEY in your .env file',
+        help: 'Get your credentials from https://imagekit.io/dashboard/developer/api-keys'
+      });
     }
     console.log('🔐 Generating ImageKit authentication parameters...');
     const authParams = imagekit.getAuthenticationParameters();
+    
+    // Add public key to response so client uses the same key for signature validation
+    authParams.publicKey = config.publicKey;
+    
     console.log('✅ Auth parameters generated successfully');
     res.json(authParams);
   } catch (error) {
     console.error('❌ Error generating auth parameters:', error);
     res.status(500).json({
       error: 'Failed to generate authentication parameters',
-      details: error.message
+      details: error.message,
+      help: 'Check your ImageKit credentials and try again'
     });
   }
 });
 
 // Health check endpoint
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  res.json({ 
+    status: 'ok', 
+    timestamp: new Date().toISOString(),
+    imagekit: config ? 'configured' : 'not configured',
+    auth_endpoint: config ? 'available' : 'unavailable'
+  });
 });
 
 // Pargo proxy for web (avoid CORS in browser)
@@ -152,6 +167,26 @@ app.post('/notify/send', async (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`🚀 ImageKit Auth Server running at http://localhost:${PORT}`);
-  console.log(`📡 Health check available at http://localhost:${PORT}/health`);
+  console.log('🚀 ImageKit Authentication Server Started');
+  console.log('=' * 50);
+  console.log(`📍 Server running at: http://localhost:${PORT}`);
+  console.log(`🔍 Health check: http://localhost:${PORT}/health`);
+  console.log(`🔐 Auth endpoint: http://localhost:${PORT}/auth`);
+  console.log('=' * 50);
+  
+  if (config) {
+    console.log('✅ ImageKit is properly configured and ready');
+    console.log('📸 Image uploads should work correctly');
+  } else {
+    console.log('⚠️  ImageKit is NOT configured');
+    console.log('📝 To fix this:');
+    console.log('   1. Create a .env file in your project root');
+    console.log('   2. Add your ImageKit credentials:');
+    console.log('      IMAGEKIT_PUBLIC_KEY=your_public_key');
+    console.log('      IMAGEKIT_PRIVATE_KEY=your_private_key');
+    console.log('      IMAGEKIT_URL_ENDPOINT=your_url_endpoint');
+    console.log('   3. Get credentials from: https://imagekit.io/dashboard/developer/api-keys');
+    console.log('   4. Restart this server');
+  }
+  console.log('=' * 50);
 });
