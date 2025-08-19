@@ -158,11 +158,8 @@ exports.sitemap = functions.https.onRequest(async (req, res) => {
   }
 });
 
-const functions = require('firebase-functions');
-const admin = require('firebase-admin');
+// ImageKit functions
 const axios = require('axios');
-
-admin.initializeApp();
 
 const IK_API_BASE = 'https://api.imagekit.io/v1';
 

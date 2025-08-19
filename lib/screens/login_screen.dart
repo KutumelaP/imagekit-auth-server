@@ -112,7 +112,7 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
         }
       }
 
-      // Reload user data in provider
+      // Load user data in provider (only once)
       if (mounted) {
         final userProvider = Provider.of<UserProvider>(context, listen: false);
         await userProvider.loadUserData();
@@ -125,9 +125,8 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
       // Navigate to SimpleHomeScreen on successful login/signup
       if (!mounted) return;
       
-      // Check if user is already a seller
+      // Check if user is already a seller (user data already loaded above)
       final userProvider = Provider.of<UserProvider>(context, listen: false);
-      await userProvider.loadUserData();
       
       if (userProvider.isSeller) {
         // User is already a seller, go directly to home

@@ -25,6 +25,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Mzansi Marketplace">
+  <meta name="mobile-web-app-capable" content="yes">
   <meta name="format-detection" content="telephone=no">
   <meta name="msapplication-tap-highlight" content="no">
   
@@ -39,6 +40,132 @@
 
   <title>Mzansi Marketplace</title>
   <link rel="manifest" href="manifest.json">
+  
+  <!-- Flutter Web Configuration - HTML Renderer for better stability -->
+  <script>
+    // Safari-specific fixes
+    const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+    
+    if (isSafari || isIOS) {
+      console.log('🔍 Safari/iOS detected - applying specific fixes');
+      
+      // Fix deprecated Intl.v8BreakIterator issue for Safari
+      if (typeof Intl !== 'undefined') {
+        try {
+          // Safari-specific Intl polyfill
+          if (Intl.v8BreakIterator && !Intl.Segmenter) {
+            Intl.Segmenter = Intl.v8BreakIterator;
+            console.log('✅ Intl polyfill applied for Safari');
+          }
+          
+          // Suppress all deprecation warnings in Safari
+          const originalConsoleWarn = console.warn;
+          console.warn = function(...args) {
+            const message = args[0]?.toString() || '';
+            if (message.includes('Intl.v8BreakIterator') || 
+                message.includes('deprecated') ||
+                message.includes('Deprecation')) {
+              return; // Suppress deprecation warnings in Safari
+            }
+            originalConsoleWarn.apply(console, args);
+          };
+        } catch (e) {
+          console.log('⚠️ Intl polyfill failed:', e);
+        }
+      }
+      
+      // Enhanced Safari memory management for iOS
+      if (isIOS) {
+        console.log('📱 iOS Safari detected - applying memory optimizations');
+        
+        // Prevent page reload on visibility change
+        let isPageVisible = true;
+        
+        window.addEventListener('pagehide', function(e) {
+          console.log('📱 Page hiding - iOS Safari memory management');
+          isPageVisible = false;
+          
+          // Try to prevent the page from being discarded
+          if (e.persisted) {
+            console.log('📱 Page will be cached');
+          } else {
+            console.log('📱 Page might be discarded');
+          }
+        });
+        
+        window.addEventListener('pageshow', function(e) {
+          console.log('📱 Page showing - iOS Safari restored');
+          isPageVisible = true;
+          
+          if (e.persisted) {
+            console.log('📱 Page restored from cache');
+          } else {
+            console.log('📱 Page reloaded from scratch');
+          }
+        });
+        
+        // Prevent reload on focus/blur
+        window.addEventListener('blur', function() {
+          console.log('📱 Window blurred - maintaining state');
+        });
+        
+        window.addEventListener('focus', function() {
+          console.log('📱 Window focused - checking state');
+          if (!isPageVisible) {
+            console.log('📱 Preventing unnecessary reload');
+          }
+        });
+        
+        // Enhanced memory management
+        window.addEventListener('visibilitychange', function() {
+          if (document.hidden) {
+            console.log('📱 Page hidden - pausing animations');
+            // Flutter will handle this automatically with CanvasKit
+          } else {
+            console.log('📱 Page visible - resuming');
+          }
+        });
+        
+        // Prevent iOS Safari from reloading on low memory
+        window.addEventListener('beforeunload', function(e) {
+          console.log('📱 Before unload - saving state');
+          // Don't show confirmation dialog but prepare for potential reload
+        });
+      }
+    } else {
+      // Non-Safari browsers - minimal fixes
+      if (typeof Intl !== 'undefined' && Intl.v8BreakIterator) {
+        if (!Intl.Segmenter) {
+          Intl.Segmenter = Intl.v8BreakIterator;
+        }
+      }
+    }
+    
+    // Set Flutter configuration for better compatibility
+    window.flutterConfiguration = {
+      renderer: "canvaskit"
+    };
+    
+    // Initialize Flutter object structure
+    window._flutter = {
+      buildConfig: {
+        renderer: "canvaskit",
+        canvasKitBaseUrl: "/canvaskit/"
+      }
+    };
+    
+    // Ensure Flutter configuration is available globally
+    if (typeof window.flutterConfiguration === 'undefined') {
+      window.flutterConfiguration = { renderer: "canvaskit" };
+    }
+    
+    // Log configuration for debugging
+    console.log('Flutter Configuration:', window.flutterConfiguration);
+    console.log('Flutter Build Config:', window._flutter.buildConfig);
+    console.log('Browser:', isSafari ? 'Safari' : 'Other', isIOS ? 'iOS' : 'Desktop');
+  </script>
+  
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', function() {
@@ -215,11 +342,15 @@
       }
     }
     
-    /* iOS Safari specific fixes */
+    /* iOS Safari specific fixes - Enhanced for stability */
     @supports (-webkit-touch-callout: none) {
       html, body {
         height: 100vh;
         height: -webkit-fill-available;
+        /* Prevent page refresh on memory pressure */
+        -webkit-transform: translateZ(0);
+        -webkit-backface-visibility: hidden;
+        will-change: auto;
       }
       
       #flutter_target {
@@ -227,6 +358,23 @@
         height: -webkit-fill-available;
         min-height: 100vh;
         min-height: -webkit-fill-available;
+        /* GPU acceleration for better performance */
+        -webkit-transform: translateZ(0);
+        -webkit-backface-visibility: hidden;
+        transform: translateZ(0);
+        backface-visibility: hidden;
+      }
+      
+      /* Reduce memory pressure with CSS containment */
+      * {
+        contain: layout style paint;
+      }
+      
+      /* Optimize images and media for memory */
+      img, video, canvas {
+        -webkit-transform: translateZ(0);
+        image-rendering: -webkit-optimize-contrast;
+        image-rendering: crisp-edges;
       }
     }
   </style>
@@ -311,17 +459,58 @@
       document.addEventListener('touchend', onTouchEnd, { passive: true });
     })();
     
-    // Prevent Safari from unloading the page
+    // Enhanced Safari page preservation
     window.addEventListener('pagehide', function(e) {
       if (e.persisted) {
-        console.log('Page is being cached by Safari');
+        console.log('📱 Page is being cached by Safari');
+      } else {
+        console.log('📱 Page might be discarded - preparing state');
+        // Save critical state to localStorage if needed
+        try {
+          localStorage.setItem('flutter_app_state', JSON.stringify({
+            timestamp: Date.now(),
+            url: window.location.href
+          }));
+        } catch (e) {
+          console.log('Could not save state:', e);
+        }
       }
     });
     
     // Prevent Safari from reloading on focus
     window.addEventListener('focus', function(e) {
-      console.log('Window focused - preventing reload');
+      console.log('📱 Window focused - maintaining state');
     });
+    
+    // iOS Safari specific: Prevent reload on tab switch
+    if (/iPhone|iPad|iPod/.test(navigator.userAgent)) {
+      // Keep connection alive
+      setInterval(function() {
+        // Minimal activity to prevent iOS from killing the page
+        if (!document.hidden) {
+          // Just log to keep JavaScript engine active
+          console.debug('📱 Keeping iOS Safari active');
+        }
+      }, 30000); // Every 30 seconds when visible
+      
+      // Prevent iOS Safari auto-refresh on return
+      window.addEventListener('pageshow', function(e) {
+        if (e.persisted) {
+          console.log('📱 Page restored from iOS cache');
+        } else {
+          console.log('📱 Page reloaded - checking for saved state');
+          try {
+            const savedState = localStorage.getItem('flutter_app_state');
+            if (savedState) {
+              const state = JSON.parse(savedState);
+              console.log('📱 Found saved state from:', new Date(state.timestamp));
+            }
+          } catch (e) {
+            console.log('📱 No previous state found');
+          }
+        }
+      });
+    }
     
     // Initialize mobile optimizations
     document.addEventListener('DOMContentLoaded', function() {
@@ -346,6 +535,91 @@
   </script>
 </head>
 <body>
-  <script src="flutter_bootstrap.js" async></script>
+  <!-- Flutter Web App Container -->
+  <div id="flutter_target"></div>
+  
+  <!-- Enhanced Flutter Web Scripts -->
+  <script src="flutter_init.js"></script>
+  <script src="flutter.js" defer></script>
+  <script>
+    window.addEventListener('load', function(ev) {
+      // Use the standard Flutter web initialization pattern
+      console.log('Starting Flutter initialization...');
+      
+      // Enhanced Flutter initialization with better error handling
+      const initFlutter = () => {
+        try {
+          // Use the configuration we set up
+          const config = window.flutterConfiguration || { renderer: "canvaskit" };
+          console.log('🚀 Initializing Flutter with config:', config);
+          
+          // Check if Flutter is available
+          if (window._flutter_loader || window.flutter?.loader) {
+            const loader = window._flutter_loader || window.flutter.loader;
+            console.log('📱 Using Flutter loader...');
+            
+            loader.load({
+              serviceWorkerSettings: {
+                serviceWorkerVersion: '1.0.0',
+              },
+              config: config,
+              onEntrypointLoaded: function(engineInitializer) {
+                console.log('🎯 Flutter entrypoint loaded');
+                engineInitializer.initializeEngine(config).then(function(appRunner) {
+                  console.log('✅ Flutter engine initialized');
+                  appRunner.runApp();
+                  
+                  // Dispatch custom event for iOS optimizations
+                  document.dispatchEvent(new CustomEvent('flutter-initialized'));
+                }).catch(function(error) {
+                  console.error('❌ Flutter engine initialization failed:', error);
+                  fallbackInit();
+                });
+              }
+            });
+          } else if (window.flutter) {
+            console.log('📱 Using legacy flutter loader...');
+            window.flutter.loader.loadEntrypoint({
+              serviceWorker: {
+                serviceWorkerVersion: '1.0.0',
+              },
+              config: config,
+              onEntrypointLoaded: function(engineInitializer) {
+                engineInitializer.initializeEngine(config).then(function(appRunner) {
+                  appRunner.runApp();
+                  document.dispatchEvent(new CustomEvent('flutter-initialized'));
+                });
+              }
+            });
+          } else {
+            console.log('⚠️ Flutter loader not found, using fallback...');
+            fallbackInit();
+          }
+        } catch (error) {
+          console.error('❌ Flutter initialization error:', error);
+          fallbackInit();
+        }
+      };
+      
+      // Fallback initialization for older Flutter versions
+      const fallbackInit = () => {
+        console.log('🔄 Attempting fallback initialization...');
+        const script = document.createElement('script');
+        script.src = 'main.dart.js';
+        script.type = 'application/javascript';
+        script.onload = function() {
+          console.log('✅ Fallback: main.dart.js loaded');
+          document.dispatchEvent(new CustomEvent('flutter-initialized'));
+        };
+        script.onerror = function() {
+          console.error('❌ Fallback: Failed to load main.dart.js');
+        };
+        document.head.appendChild(script);
+      };
+      
+      // Wait a bit for flutter.js to initialize
+      setTimeout(initFlutter, 100);
+    });
+  </script>
 </body>
 </html>

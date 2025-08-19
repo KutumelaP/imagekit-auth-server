@@ -120,6 +120,10 @@ class MyApp extends StatelessWidget {
         debugShowCheckedModeBanner: false,
         theme: AppTheme.lightTheme,
           navigatorKey: NavigationService.navigatorKey,
+        navigatorObservers: [
+          // Add navigation logging for debugging
+          _DebugNavigatorObserver(),
+        ],
         home: InAppNotificationWidget(
           child: NotificationBadge(
             child: SplashWrapper(),
@@ -161,26 +165,17 @@ class MyApp extends StatelessWidget {
           if (settings.name == '/chat') {
             final args = settings.arguments as Map<String, dynamic>?;
             final chatId = args?['chatId'] as String?;
-            if (chatId == null || chatId.isEmpty) {
-              return MaterialPageRoute(builder: (_) => const SimpleHomeScreen());
-            }
-            return MaterialPageRoute(builder: (_) => ChatRoute(chatId: chatId));
+            // Remove automatic redirect - let the ChatRoute handle missing chatId
+            return MaterialPageRoute(builder: (_) => ChatRoute(chatId: chatId ?? ''));
           }
           if (settings.name == '/seller-order-detail') {
             final args = settings.arguments as Map<String, dynamic>?;
             final orderId = args?['orderId'] as String?;
             print('🔔 Route /seller-order-detail called with orderId: "$orderId" (type: ${orderId.runtimeType})');
             
-            if (orderId == null || orderId.isEmpty) {
-              print('⚠️ Invalid orderId, redirecting to home');
-              // Redirect to home if no valid orderId
-              return MaterialPageRoute(
-                builder: (context) => SimpleHomeScreen(),
-              );
-            }
-            print('✅ Valid orderId, navigating to SellerOrderDetailScreen');
+            // Remove automatic redirect - let the screen handle missing orderId
             return MaterialPageRoute(
-              builder: (context) => SellerOrderDetailScreen(orderId: orderId),
+              builder: (context) => SellerOrderDetailScreen(orderId: orderId ?? ''),
             );
           }
           if (settings.name == '/seller-orders') {
@@ -231,5 +226,28 @@ class _SplashWrapperState extends State<SplashWrapper> {
   @override
   Widget build(BuildContext context) {
     return SimpleSplashScreen();
+  }
+}
+
+// Debug navigator observer to track all navigation events
+class _DebugNavigatorObserver extends NavigatorObserver {
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    print("➡️ NAVIGATION: PUSH ${route.settings.name}");
+  }
+
+  @override
+  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    print("⬅️ NAVIGATION: POP ${route.settings.name}");
+  }
+
+  @override
+  void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) {
+    print("🔄 NAVIGATION: REPLACE ${newRoute?.settings.name}");
+  }
+
+  @override
+  void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    print("🗑️ NAVIGATION: REMOVE ${route.settings.name}");
   }
 }

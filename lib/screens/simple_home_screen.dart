@@ -56,10 +56,16 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
     // Start global message listener for chat notifications
     GlobalMessageListener().startListening();
     
-    // Initialize user provider data
+    // Initialize user provider data - only if not already loaded
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final userProvider = Provider.of<UserProvider>(context, listen: false);
-      userProvider.loadUserData();
+      // Only load user data if not already loaded to prevent refresh loops
+      if (userProvider.user == null && !userProvider.isLoading) {
+        print('🔍 DEBUG: Loading user data from home screen');
+        userProvider.loadUserData();
+      } else {
+        print('🔍 DEBUG: User data already loaded or loading, skipping');
+      }
     });
     
     // Request location permission when app starts

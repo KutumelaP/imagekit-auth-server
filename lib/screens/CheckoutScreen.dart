@@ -80,6 +80,16 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   String _productCategory = 'other'; // Default category - will be set based on cart items
   String? _sellerDeliveryPreference; // 'custom' or 'system'
   
+  // Mixed cart handling
+  bool _hasFoodItems = false;
+  bool _hasNonFoodItems = false;
+  List<Map<String, dynamic>> _foodItems = [];
+  List<Map<String, dynamic>> _nonFoodItems = [];
+  
+  // Pickup address search
+  final TextEditingController _pickupAddressController = TextEditingController();
+  List<Placemark> _pickupAddressSuggestions = [];
+  
   // Address search variables
   List<Placemark> _addressSuggestions = [];
   Timer? _addressSearchTimer;
@@ -93,13 +103,13 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
   User? get currentUser => FirebaseAuth.instance.currentUser;
 
-  // PayFast configuration for development/sandbox
-  static const String payfastMerchantId = '10004002';
-  static const String payfastMerchantKey = 'q1cd2rdny4a53';
-  static const String payfastReturnUrl = 'https://your-app.com/payment/success';
-  static const String payfastCancelUrl = 'https://your-app.com/payment/cancel';
-  static const String payfastNotifyUrl = 'https://your-app.com/payment/notify';
-  static const bool payfastSandbox = true; // Set to false for production
+  // PayFast configuration for production
+  static const String payfastMerchantId = '23918934';
+  static const String payfastMerchantKey = 'fxuj8ymlgqwra';
+  static const String payfastReturnUrl = 'https://us-central1-marketplace-8d6bd.cloudfunctions.net/payfastReturn';
+  static const String payfastCancelUrl = 'https://us-central1-marketplace-8d6bd.cloudfunctions.net/payfastCancel';
+  static const String payfastNotifyUrl = 'https://us-central1-marketplace-8d6bd.cloudfunctions.net/payfastNotify';
+  static const bool payfastSandbox = false; // Set to false for production
 
   // System delivery model pricing (South African market rates)
   static const Map<String, Map<String, dynamic>> _systemDeliveryModel = {
@@ -319,25 +329,48 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       
       if (cartSnapshot.docs.isNotEmpty) {
         print('🔍 DEBUG: Cart has ${cartSnapshot.docs.length} items');
-        // Check if any item is food
+        
+        // Separate food and non-food items
+        List<Map<String, dynamic>> foodItems = [];
+        List<Map<String, dynamic>> nonFoodItems = [];
         bool hasFood = false;
+        bool hasNonFood = false;
+        
         for (var doc in cartSnapshot.docs) {
           final data = doc.data();
           print('🔍 DEBUG: Cart item data: ${data.toString()}');
           final category = data['category']?.toString().toLowerCase() ?? '';
           print('🔍 DEBUG: Checking category: "$category" from data: ${data['category']}');
+          
           if (category == 'food') {
             hasFood = true;
-            print('🔍 DEBUG: Found food item!');
-            break;
+            foodItems.add(data);
+            print('🔍 DEBUG: Found food item: ${data['name'] ?? 'Unknown'}');
+          } else {
+            hasNonFood = true;
+            nonFoodItems.add(data);
+            print('🔍 DEBUG: Found non-food item: ${data['name'] ?? 'Unknown'}');
           }
         }
         
         setState(() {
-          _productCategory = hasFood ? 'food' : 'other';
+          _hasFoodItems = hasFood;
+          _hasNonFoodItems = hasNonFood;
+          _foodItems = foodItems;
+          _nonFoodItems = nonFoodItems;
+          
+          // Set primary category based on majority or mixed
+          if (hasFood && hasNonFood) {
+            _productCategory = 'mixed';
+          } else if (hasFood) {
+            _productCategory = 'food';
+          } else {
+            _productCategory = 'other';
+          }
         });
         
         print('🔍 DEBUG: Product category detected: $_productCategory');
+        print('🔍 DEBUG: Has food: $_hasFoodItems, Has non-food: $_hasNonFoodItems');
       }
     } catch (e) {
       print('❌ Error detecting product category: $e');
@@ -365,8 +398,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 end: Alignment.bottomRight,
                 colors: point.isPargoPoint 
                     ? [
-                        AppTheme.primaryGreen.withOpacity(0.15),
-                        AppTheme.primaryGreen.withOpacity(0.05),
+                        AppTheme.deepTeal.withOpacity(0.15),
+                        AppTheme.deepTeal.withOpacity(0.05),
                         AppTheme.angel,
                       ]
                     : [
@@ -378,14 +411,14 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               borderRadius: BorderRadius.circular(24),
               border: Border.all(
                 color: point.isPargoPoint 
-                    ? AppTheme.primaryGreen.withOpacity(0.4)
+                    ? AppTheme.deepTeal.withOpacity(0.4)
                     : AppTheme.deepTeal.withOpacity(0.4),
                 width: 2,
               ),
               boxShadow: [
                 BoxShadow(
                 color: point.isPargoPoint 
-                    ? AppTheme.primaryGreen.withOpacity(0.3)
+                    ? AppTheme.deepTeal.withOpacity(0.3)
                     : AppTheme.deepTeal.withOpacity(0.3),
                   blurRadius: 20,
                   offset: Offset(0, 10),
@@ -404,8 +437,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                       end: Alignment.bottomRight,
                       colors: point.isPargoPoint 
                           ? [
-                              AppTheme.primaryGreen.withOpacity(0.3),
-                              AppTheme.primaryGreen.withOpacity(0.1),
+                              AppTheme.deepTeal.withOpacity(0.3),
+                              AppTheme.deepTeal.withOpacity(0.1),
                             ]
                           : [
                               AppTheme.deepTeal.withOpacity(0.3),
@@ -424,12 +457,12 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                         padding: EdgeInsets.all(20),
                   decoration: BoxDecoration(
                     color: point.isPargoPoint 
-                        ? AppTheme.primaryGreen.withOpacity(0.2)
+                        ? AppTheme.deepTeal.withOpacity(0.2)
                         : AppTheme.deepTeal.withOpacity(0.2),
                           borderRadius: BorderRadius.circular(20),
                           border: Border.all(
                             color: point.isPargoPoint 
-                                ? AppTheme.primaryGreen.withOpacity(0.5)
+                                ? AppTheme.deepTeal.withOpacity(0.5)
                                 : AppTheme.deepTeal.withOpacity(0.5),
                             width: 2,
                           ),
@@ -439,7 +472,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                         ? Icons.local_shipping
                         : Icons.storefront,
                     color: point.isPargoPoint 
-                        ? AppTheme.primaryGreen
+                        ? AppTheme.deepTeal
                         : AppTheme.deepTeal,
                           size: 40,
                   ),
@@ -453,7 +486,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                           fontSize: ResponsiveUtils.getTitleSize(context) + 2,
                           fontWeight: FontWeight.w800,
                     color: point.isPargoPoint 
-                        ? AppTheme.primaryGreen
+                        ? AppTheme.deepTeal
                         : AppTheme.deepTeal,
                           letterSpacing: 0.5,
                   ),
@@ -469,8 +502,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                           gradient: LinearGradient(
                             colors: point.isPargoPoint 
                                 ? [
-                                    AppTheme.primaryGreen.withOpacity(0.3),
-                                    AppTheme.primaryGreen.withOpacity(0.1),
+                                    AppTheme.deepTeal.withOpacity(0.3),
+                                    AppTheme.deepTeal.withOpacity(0.1),
                                   ]
                                 : [
                                     AppTheme.deepTeal.withOpacity(0.3),
@@ -480,7 +513,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                           borderRadius: BorderRadius.circular(25),
                     border: Border.all(
                       color: point.isPargoPoint 
-                                ? AppTheme.primaryGreen.withOpacity(0.6)
+                                ? AppTheme.deepTeal.withOpacity(0.6)
                                 : AppTheme.deepTeal.withOpacity(0.6),
                             width: 1.5,
                           ),
@@ -493,7 +526,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                   ? Icons.verified
                                   : Icons.store,
                               color: point.isPargoPoint 
-                                  ? AppTheme.primaryGreen
+                                  ? AppTheme.deepTeal
                                   : AppTheme.deepTeal,
                               size: 16,
                             ),
@@ -504,7 +537,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                 fontSize: ResponsiveUtils.getTitleSize(context) - 3,
                                 fontWeight: FontWeight.w700,
                       color: point.isPargoPoint 
-                          ? AppTheme.primaryGreen
+                          ? AppTheme.deepTeal
                           : AppTheme.deepTeal,
                     ),
                   ),
@@ -547,7 +580,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                 point.address,
                                 Icons.location_on,
                                 point.isPargoPoint 
-                                    ? AppTheme.primaryGreen
+                                    ? AppTheme.deepTeal
                                     : AppTheme.deepTeal,
                               ),
                               SizedBox(height: 16),
@@ -558,7 +591,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                 '${point.distance.toStringAsFixed(1)} km from your location',
                                 Icons.straighten,
                                 point.isPargoPoint 
-                                    ? AppTheme.primaryGreen
+                                    ? AppTheme.deepTeal
                                     : AppTheme.deepTeal,
                               ),
                               SizedBox(height: 16),
@@ -569,7 +602,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                 'R${point.fee.toStringAsFixed(2)}',
                                 Icons.payment,
                                 point.isPargoPoint 
-                                    ? AppTheme.primaryGreen
+                                    ? AppTheme.deepTeal
                                     : AppTheme.deepTeal,
                               ),
                               SizedBox(height: 16),
@@ -580,7 +613,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                 point.type,
                                 Icons.category,
                                 point.isPargoPoint 
-                                    ? AppTheme.primaryGreen
+                                    ? AppTheme.deepTeal
                                     : AppTheme.deepTeal,
                               ),
                               SizedBox(height: 16),
@@ -591,7 +624,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                 point.operatingHours,
                                 Icons.access_time,
                                 point.isPargoPoint 
-                                    ? AppTheme.primaryGreen
+                                    ? AppTheme.deepTeal
                                     : AppTheme.deepTeal,
                               ),
                               SizedBox(height: 16),
@@ -602,7 +635,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                 '${point.latitude.toStringAsFixed(6)}, ${point.longitude.toStringAsFixed(6)}',
                                 Icons.gps_fixed,
                                 point.isPargoPoint 
-                                    ? AppTheme.primaryGreen
+                                    ? AppTheme.deepTeal
                                     : AppTheme.deepTeal,
                               ),
                               
@@ -613,7 +646,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                   '🆔 Pargo ID',
                                   point.pargoId!,
                                   Icons.qr_code,
-                                  AppTheme.primaryGreen,
+                                  AppTheme.deepTeal,
                                 ),
                               ],
                     ],
@@ -702,13 +735,13 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                             decoration: BoxDecoration(
                               gradient: LinearGradient(
                                 colors: [
-                                  AppTheme.primaryGreen.withOpacity(0.1),
-                                  AppTheme.primaryGreen.withOpacity(0.05),
+                                  AppTheme.deepTeal.withOpacity(0.1),
+                                  AppTheme.deepTeal.withOpacity(0.05),
                                 ],
                               ),
                               borderRadius: BorderRadius.circular(12),
                               border: Border.all(
-                                color: AppTheme.primaryGreen.withOpacity(0.3),
+                                color: AppTheme.deepTeal.withOpacity(0.3),
                               ),
                             ),
                             child: Column(
@@ -717,7 +750,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                   children: [
                                     Icon(
                                       Icons.info_outline,
-                                      color: AppTheme.primaryGreen,
+                                      color: AppTheme.deepTeal,
                                       size: 20,
                                     ),
                                     SizedBox(width: 8),
@@ -726,7 +759,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                       style: TextStyle(
                                         fontSize: ResponsiveUtils.getTitleSize(context) - 2,
                                         fontWeight: FontWeight.w700,
-                                        color: AppTheme.primaryGreen,
+                                        color: AppTheme.deepTeal,
                                       ),
                                     ),
                                   ],
@@ -916,7 +949,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                   ],
                                 ),
                                 backgroundColor: point.isPargoPoint 
-                                    ? AppTheme.primaryGreen
+                                    ? AppTheme.deepTeal
                                     : AppTheme.deepTeal,
                                 duration: Duration(seconds: 3),
                                 behavior: SnackBarBehavior.floating,
@@ -928,7 +961,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                         },
                         style: ElevatedButton.styleFrom(
                           backgroundColor: point.isPargoPoint 
-                              ? AppTheme.primaryGreen
+                              ? AppTheme.deepTeal
                               : AppTheme.deepTeal,
                           foregroundColor: AppTheme.angel,
                             padding: EdgeInsets.symmetric(vertical: 16),
@@ -937,7 +970,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                             ),
                             elevation: 4,
                             shadowColor: point.isPargoPoint 
-                                ? AppTheme.primaryGreen.withOpacity(0.4)
+                                ? AppTheme.deepTeal.withOpacity(0.4)
                                 : AppTheme.deepTeal.withOpacity(0.4),
                           ),
                           child: Row(
@@ -1044,7 +1077,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             width: 6,
             height: 6,
             decoration: BoxDecoration(
-              color: AppTheme.primaryGreen,
+              color: AppTheme.deepTeal,
               shape: BoxShape.circle,
             ),
           ),
@@ -1098,7 +1131,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 end: Alignment.bottomRight,
                 colors: [
                   AppTheme.deepTeal.withOpacity(0.15),
-                  AppTheme.primaryGreen.withOpacity(0.1),
+                  AppTheme.deepTeal.withOpacity(0.1),
                   AppTheme.angel,
                 ],
               ),
@@ -1126,7 +1159,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                       end: Alignment.bottomRight,
                       colors: [
                         AppTheme.deepTeal.withOpacity(0.4),
-                        AppTheme.primaryGreen.withOpacity(0.2),
+                        AppTheme.deepTeal.withOpacity(0.2),
                       ],
                     ),
                     borderRadius: BorderRadius.only(
@@ -1223,10 +1256,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                             child: Container(
                               padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                               decoration: BoxDecoration(
-                                color: AppTheme.primaryGreen.withOpacity(0.2),
+                                color: AppTheme.deepTeal.withOpacity(0.2),
                                 borderRadius: BorderRadius.circular(20),
                                 border: Border.all(
-                                  color: AppTheme.primaryGreen.withOpacity(0.4),
+                                  color: AppTheme.deepTeal.withOpacity(0.4),
                                 ),
                               ),
                               child: Row(
@@ -1234,14 +1267,14 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                 children: [
                                   Icon(
                                     Icons.local_shipping,
-                                    color: AppTheme.primaryGreen,
+                                    color: AppTheme.deepTeal,
                                     size: 18,
                                   ),
                                   SizedBox(width: 8),
                                   SafeUI.safeText(
                                     'Pargo Only',
                                     style: TextStyle(
-                                      color: AppTheme.primaryGreen,
+                                      color: AppTheme.deepTeal,
                                       fontWeight: FontWeight.w600,
                                     ),
                                   ),
@@ -1270,8 +1303,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                             end: Alignment.bottomRight,
                             colors: point.isPargoPoint 
                                 ? [
-                                    AppTheme.primaryGreen.withOpacity(0.15),
-                                    AppTheme.primaryGreen.withOpacity(0.05),
+                                    AppTheme.deepTeal.withOpacity(0.15),
+                                    AppTheme.deepTeal.withOpacity(0.05),
                                     AppTheme.angel,
                                   ]
                                 : [
@@ -1283,14 +1316,14 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                           borderRadius: BorderRadius.circular(18),
                           border: Border.all(
                             color: point.isPargoPoint 
-                                ? AppTheme.primaryGreen.withOpacity(0.4)
+                                ? AppTheme.deepTeal.withOpacity(0.4)
                                 : AppTheme.deepTeal.withOpacity(0.4),
                             width: 2,
                           ),
                           boxShadow: [
                             BoxShadow(
                               color: point.isPargoPoint 
-                                  ? AppTheme.primaryGreen.withOpacity(0.15)
+                                  ? AppTheme.deepTeal.withOpacity(0.15)
                                   : AppTheme.deepTeal.withOpacity(0.15),
                               blurRadius: 15,
                               offset: Offset(0, 6),
@@ -1316,8 +1349,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                       gradient: LinearGradient(
                                         colors: point.isPargoPoint 
                                             ? [
-                                                AppTheme.primaryGreen.withOpacity(0.4),
-                                                AppTheme.primaryGreen.withOpacity(0.1),
+                                                AppTheme.deepTeal.withOpacity(0.4),
+                                                AppTheme.deepTeal.withOpacity(0.1),
                                               ]
                                             : [
                                                 AppTheme.deepTeal.withOpacity(0.4),
@@ -1327,7 +1360,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                       borderRadius: BorderRadius.circular(16),
                                       border: Border.all(
                                         color: point.isPargoPoint 
-                                            ? AppTheme.primaryGreen.withOpacity(0.6)
+                                            ? AppTheme.deepTeal.withOpacity(0.6)
                                             : AppTheme.deepTeal.withOpacity(0.6),
                                         width: 2,
                                       ),
@@ -1337,7 +1370,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                           ? Icons.local_shipping
                                           : Icons.storefront,
                                       color: point.isPargoPoint 
-                                          ? AppTheme.primaryGreen
+                                          ? AppTheme.deepTeal
                                           : AppTheme.deepTeal,
                                       size: 28,
                                     ),
@@ -1356,7 +1389,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                             fontSize: ResponsiveUtils.getTitleSize(context) + 1,
                                             fontWeight: FontWeight.w900,
                                             color: point.isPargoPoint 
-                                                ? AppTheme.primaryGreen
+                                                ? AppTheme.deepTeal
                                                 : AppTheme.deepTeal,
                                             letterSpacing: 0.3,
                                           ),
@@ -1396,12 +1429,12 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                               padding: EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                                               decoration: BoxDecoration(
                                                 color: point.isPargoPoint 
-                                                    ? AppTheme.primaryGreen.withOpacity(0.3)
+                                                    ? AppTheme.deepTeal.withOpacity(0.3)
                                                     : AppTheme.deepTeal.withOpacity(0.3),
                                                 borderRadius: BorderRadius.circular(15),
                                                 border: Border.all(
                                                   color: point.isPargoPoint 
-                                                      ? AppTheme.primaryGreen.withOpacity(0.5)
+                                                      ? AppTheme.deepTeal.withOpacity(0.5)
                                                       : AppTheme.deepTeal.withOpacity(0.5),
                                                 ),
                                               ),
@@ -1413,7 +1446,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                                   fontSize: ResponsiveUtils.getTitleSize(context) - 4,
                                                   fontWeight: FontWeight.w700,
                                                   color: point.isPargoPoint 
-                                                      ? AppTheme.primaryGreen
+                                                      ? AppTheme.deepTeal
                                                       : AppTheme.deepTeal,
                                                 ),
                                               ),
@@ -1497,7 +1530,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                   Icon(
                                     Icons.arrow_forward_ios,
                                     color: point.isPargoPoint 
-                                        ? AppTheme.primaryGreen.withOpacity(0.6)
+                                        ? AppTheme.deepTeal.withOpacity(0.6)
                                         : AppTheme.deepTeal.withOpacity(0.6),
                                     size: 20,
                                   ),
@@ -1577,7 +1610,15 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       print('🔍 Searching for address: $query');
 
       try {
-        // Search for addresses using geocoding
+        // For web platform, use free OpenStreetMap Nominatim API
+        if (kIsWeb) {
+          print('🌐 Web platform detected - using free Nominatim geocoding');
+          
+          await _searchWithNominatim(query);
+          return;
+        }
+        
+        // For mobile platforms, use geocoding API
         final locations = await locationFromAddress(query);
         print('🔍 Found ${locations.length} locations for query: $query');
         
@@ -1626,12 +1667,153 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       }
     } catch (e) {
         print('❌ Error searching addresses: $e');
-      setState(() {
-          _addressSuggestions = [];
+        // Fallback for any platform: allow user to use entered address
+        setState(() {
+          _addressSuggestions = [
+            Placemark(
+              name: query,
+              locality: query,
+              administrativeArea: '',
+              country: 'South Africa',
+              street: query,
+              postalCode: '',
+            ),
+          ];
           _isSearchingAddress = false;
         });
       }
     });
+  }
+
+  // Free OpenStreetMap Nominatim geocoding for web
+  Future<void> _searchWithNominatim(String query) async {
+    try {
+      final encodedQuery = Uri.encodeComponent('$query, South Africa');
+      final url = 'https://nominatim.openstreetmap.org/search?q=$encodedQuery&format=json&limit=5&countrycodes=za&addressdetails=1';
+      
+      print('🌐 Nominatim request: $url');
+      
+      final response = await http.get(
+        Uri.parse(url),
+        headers: {
+          'User-Agent': 'MzansiMarketplace/1.0 (https://marketplace-8d6bd.web.app)',
+        },
+      );
+      
+      if (response.statusCode == 200) {
+        final List<dynamic> data = json.decode(response.body);
+        print('🌐 Nominatim response: ${data.length} results');
+        
+        List<Placemark> suggestions = [];
+        
+        for (final item in data) {
+          final address = item['address'] ?? {};
+          final displayName = item['display_name'] ?? '';
+          final lat = double.tryParse(item['lat']?.toString() ?? '');
+          final lon = double.tryParse(item['lon']?.toString() ?? '');
+          
+          if (lat != null && lon != null) {
+            suggestions.add(
+              Placemark(
+                name: displayName,
+                street: address['road'] ?? address['house_number'] ?? '',
+                locality: address['city'] ?? address['town'] ?? address['village'] ?? address['suburb'] ?? '',
+                administrativeArea: address['state'] ?? address['province'] ?? '',
+                postalCode: address['postcode'] ?? '',
+                country: 'South Africa',
+              ),
+            );
+            
+            // Store coordinates for pickup points loading
+            if (suggestions.length == 1) {
+              _selectedLat = lat;
+              _selectedLng = lon;
+              if (!_isDelivery) {
+                _loadPickupPointsForCoordinates(lat, lon);
+              }
+            }
+          }
+        }
+        
+        // If no results, allow user to use their entered address
+        if (suggestions.isEmpty) {
+          suggestions.add(
+            Placemark(
+              name: query,
+              locality: query,
+              administrativeArea: '',
+              country: 'South Africa',
+              street: query,
+              postalCode: '',
+            ),
+          );
+        }
+        
+        setState(() {
+          _addressSuggestions = suggestions;
+          _isSearchingAddress = false;
+        });
+        
+        print('🌐 Created ${suggestions.length} Nominatim suggestions');
+      } else {
+        throw Exception('Nominatim API returned ${response.statusCode}');
+      }
+    } catch (e) {
+      print('❌ Nominatim geocoding error: $e');
+      
+      // Fallback to manual suggestions
+      List<Placemark> fallbackSuggestions = [];
+      final queryLower = query.toLowerCase();
+      
+      // Major South African cities for fallback
+      final locations = [
+        'Cape Town, Western Cape',
+        'Johannesburg, Gauteng', 
+        'Durban, KwaZulu-Natal',
+        'Pretoria, Gauteng',
+        'Port Elizabeth, Eastern Cape',
+        'Bloemfontein, Free State',
+        'East London, Eastern Cape',
+        'Nelspruit, Mpumalanga',
+        'Polokwane, Limpopo',
+        'Kimberley, Northern Cape',
+      ];
+      
+      // Filter locations that match the query
+      for (final loc in locations) {
+        if (loc.toLowerCase().contains(queryLower)) {
+          fallbackSuggestions.add(
+            Placemark(
+              name: loc,
+              locality: loc.split(',').first,
+              administrativeArea: loc.split(',').last.trim(),
+              country: 'South Africa',
+              street: '',
+              postalCode: '',
+            ),
+          );
+        }
+      }
+      
+      // Always allow user to use their entered address
+      fallbackSuggestions.add(
+        Placemark(
+          name: query,
+          locality: query,
+          administrativeArea: '',
+          country: 'South Africa',
+          street: query,
+          postalCode: '',
+        ),
+      );
+      
+      setState(() {
+        _addressSuggestions = fallbackSuggestions;
+        _isSearchingAddress = false;
+      });
+      
+      print('🔍 Used fallback suggestions: ${fallbackSuggestions.length} items');
+    }
   }
 
   Future<void> _loadPickupPointsForCurrentAddress() async {
@@ -1647,6 +1829,302 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       }
     } catch (_) {
       // ignore
+    } finally {
+      setState(() => _isLoadingPickupPoints = false);
+    }
+  }
+
+  // Search for pickup addresses
+  Future<void> _searchPickupAddress(String query) async {
+    if (query.trim().isEmpty) {
+      setState(() {
+        _pickupAddressSuggestions = [];
+      });
+      return;
+    }
+
+    try {
+      List<Location> locations = await locationFromAddress(query);
+      if (locations.isNotEmpty) {
+        List<Placemark> placemarks = await placemarkFromCoordinates(
+          locations.first.latitude, 
+          locations.first.longitude
+        );
+        setState(() {
+          _pickupAddressSuggestions = placemarks.take(5).toList();
+        });
+      }
+    } catch (e) {
+      print('❌ Error searching pickup address: $e');
+    }
+  }
+
+  // Format address from placemark
+  String _formatAddress(Placemark placemark) {
+    final parts = [
+      placemark.name,
+      placemark.locality,
+      placemark.subAdministrativeArea,
+      placemark.administrativeArea,
+    ].where((part) => part != null && part.isNotEmpty).toList();
+    return parts.join(', ');
+  }
+
+  // Show pickup point details dialog
+  void _showPickupPointDetails(PickupPoint point) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          title: Row(
+            children: [
+              Icon(
+                point.isPargoPoint ? Icons.store : Icons.location_on,
+                color: AppTheme.deepTeal,
+                size: 24,
+              ),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  point.name,
+                  style: TextStyle(
+                    color: AppTheme.deepTeal,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Address
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(Icons.location_on, color: AppTheme.breeze, size: 20),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        point.address,
+                        style: TextStyle(
+                          color: AppTheme.angel,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                SizedBox(height: 16),
+                
+                // Pickup fee
+                Row(
+                  children: [
+                    Container(
+                      padding: EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        color: AppTheme.deepTeal,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        'R',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    SizedBox(width: 8),
+                    Text(
+                      'Pickup Fee: R${point.fee.toStringAsFixed(2)}',
+                      style: TextStyle(
+                        color: AppTheme.deepTeal,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+                SizedBox(height: 16),
+                
+                // Operating hours (if available)
+                if (point.operatingHours != null && point.operatingHours!.isNotEmpty) ...[
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(Icons.access_time, color: AppTheme.breeze, size: 20),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Operating Hours:',
+                              style: TextStyle(
+                                color: AppTheme.angel,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            SizedBox(height: 4),
+                            Text(
+                              point.operatingHours!,
+                              style: TextStyle(
+                                color: AppTheme.breeze,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  SizedBox(height: 16),
+                ],
+                
+                // Pickup instructions
+                Container(
+                  padding: EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppTheme.deepTeal.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: AppTheme.deepTeal.withOpacity(0.3)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(Icons.info_outline, color: AppTheme.deepTeal, size: 18),
+                          SizedBox(width: 8),
+                          Text(
+                            'Pickup Instructions:',
+                            style: TextStyle(
+                              color: AppTheme.deepTeal,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                      SizedBox(height: 8),
+                      Text(
+                        point.isPargoPoint 
+                            ? '📦 Collect from Pargo counter with ID verification. Bring your order confirmation and a valid ID. Items are held for 7 days.'
+                            : '🏪 Collect from store counter. Show your order confirmation to the staff. Please call ahead to confirm availability.',
+                        style: TextStyle(
+                          color: AppTheme.deepTeal,
+                          fontSize: 13,
+                          height: 1.4,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                
+                // Pargo ID (if available)
+                if (point.pargoId != null && point.pargoId!.isNotEmpty) ...[
+                  SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Icon(Icons.qr_code, color: AppTheme.deepTeal, size: 20),
+                      SizedBox(width: 8),
+                      Text(
+                        'Pargo ID: ${point.pargoId}',
+                        style: TextStyle(
+                          color: AppTheme.deepTeal,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: Text(
+                'Close',
+                style: TextStyle(color: AppTheme.breeze),
+              ),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                setState(() {
+                  _selectedPickupPoint = point;
+                  _deliveryFee = point.fee;
+                });
+                Navigator.of(context).pop();
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.deepTeal,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+              child: Text('Select This Point'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  // Load pickup points for specific address
+  Future<void> _loadPickupPointsForAddress(String address) async {
+    print('🚚 DEBUG: Loading pickup points for address: $address');
+    try {
+      List<Location> locations = await locationFromAddress(address);
+      if (locations.isNotEmpty) {
+        await _loadPickupPointsForCoordinates(
+          locations.first.latitude,
+          locations.first.longitude,
+        );
+      }
+    } catch (e) {
+      print('❌ Error loading pickup points for address: $e');
+    }
+  }
+
+  Future<void> _loadPickupPointsForCurrentLocation() async {
+    try {
+      print('🚚 DEBUG: Loading pickup points for current location...');
+      setState(() => _isLoadingPickupPoints = true);
+      
+      // Try to get current position
+      final position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+        timeLimit: Duration(seconds: 10),
+      );
+      
+      print('🚚 DEBUG: Got current position: ${position.latitude}, ${position.longitude}');
+      
+      // Set coordinates and load pickup points
+      _selectedLat = position.latitude;
+      _selectedLng = position.longitude;
+      
+      await _loadPickupPointsForCoordinates(position.latitude, position.longitude);
+      
+    } catch (e) {
+      print('❌ DEBUG: Could not get current location: $e');
+      // Fallback: Load pickup points for a default location (Pretoria)
+      print('🚚 DEBUG: Using fallback location (Pretoria)');
+      _selectedLat = -26.0625279;
+      _selectedLng = 28.227473;
+      await _loadPickupPointsForCoordinates(-26.0625279, 28.227473);
     } finally {
       setState(() => _isLoadingPickupPoints = false);
     }
@@ -1671,6 +2149,11 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           _selectedPickupPoint = _pickupPoints.first;
           _deliveryFee = _selectedPickupPoint!.fee;
           print('🚚 DEBUG: Selected pickup point: ${_selectedPickupPoint!.name}');
+          print('🚚 DEBUG: After loading pickup points - UI visibility check:');
+          print('  - _isDelivery: $_isDelivery');
+          print('  - _productCategory: $_productCategory');
+          print('  - _hasNonFoodItems: $_hasNonFoodItems');
+          print('  - UI should show: ${!_isDelivery && (_productCategory.toLowerCase() != 'food' || _hasNonFoodItems)}');
         }
       });
     } catch (e) {
@@ -1679,30 +2162,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       setState(() => _isLoadingPickupPoints = false);
     }
   }
-
-  String _formatAddress(Placemark placemark) {
-    List<String> parts = [];
-    
-    if (placemark.street != null && placemark.street!.isNotEmpty) {
-      parts.add(placemark.street!);
-    }
-    if (placemark.subLocality != null && placemark.subLocality!.isNotEmpty) {
-      parts.add(placemark.subLocality!);
-    }
-    if (placemark.locality != null && placemark.locality!.isNotEmpty) {
-      parts.add(placemark.locality!);
-    }
-    if (placemark.administrativeArea != null && placemark.administrativeArea!.isNotEmpty) {
-      parts.add(placemark.administrativeArea!);
-    }
-    if (placemark.postalCode != null && placemark.postalCode!.isNotEmpty) {
-      parts.add(placemark.postalCode!);
-    }
-    
-    return parts.join(', ');
-  }
-
-
 
   Future<void> _calculateDeliveryFeeAndCheckStore() async {
     if (currentUser == null) {
@@ -2168,231 +2627,123 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       barrierDismissible: true,
       builder: (context) {
         return Dialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           child: Container(
-            constraints: BoxConstraints(
-              maxWidth: MediaQuery.of(context).size.width * 0.92,
-              maxHeight: MediaQuery.of(context).size.height * 0.85,
-            ),
+            constraints: BoxConstraints(maxWidth: 400),
+            padding: EdgeInsets.all(24),
             decoration: BoxDecoration(
               color: AppTheme.angel,
               borderRadius: BorderRadius.circular(16),
               boxShadow: [
                 BoxShadow(
-                  color: AppTheme.deepTeal.withOpacity(0.15),
-                  blurRadius: 25,
+                  color: AppTheme.deepTeal.withOpacity(0.1),
+                  blurRadius: 20,
                   offset: Offset(0, 8),
                 ),
               ],
             ),
             child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 // Header
+                Row(
+                  children: [
+                    Container(
+                      padding: EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: AppTheme.deepTeal.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Icon(Icons.account_balance, color: AppTheme.deepTeal, size: 20),
+                    ),
+                    SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'Bank Transfer Details',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: AppTheme.deepTeal,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      icon: Icon(Icons.close, color: AppTheme.breeze),
+                      constraints: BoxConstraints(minWidth: 32, minHeight: 32),
+                    ),
+                  ],
+                ),
+                
+                SizedBox(height: 20),
+                
+                // Bank Details
+                _buildSimpleBankRow('Account Name', 'Food Marketplace Pty Ltd'),
+                _buildSimpleBankRow('Bank', 'First National Bank'),
+                _buildSimpleBankRow('Account Number', '62612345678'),
+                _buildSimpleBankRow('Branch Code', '250655'),
+                _buildSimpleBankRow('Reference', orderNumber ?? 'Your Order Number'),
+                
+                SizedBox(height: 20),
+                
+                // Instructions
                 Container(
-                  padding: EdgeInsets.all(20),
+                  padding: EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: AppTheme.deepTeal,
-                    borderRadius: BorderRadius.only(
-                      topLeft: Radius.circular(16),
-                      topRight: Radius.circular(16),
-                    ),
+                    color: AppTheme.whisper,
+                    borderRadius: BorderRadius.circular(8),
                   ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.account_balance,
-                        color: AppTheme.angel,
-                        size: 24,
-                      ),
-                      SizedBox(width: 16),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              '🏦 Bank Transfer (EFT)',
-                              style: TextStyle(
-                                fontSize: 20,
-                                fontWeight: FontWeight.bold,
-                                color: AppTheme.angel,
-                              ),
-                            ),
-                            SizedBox(height: 4),
-                            Text(
-                              'Complete your payment via bank transfer',
-                              style: TextStyle(
-                                fontSize: 14,
-                                color: AppTheme.angel.withOpacity(0.9),
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                
-                // Content Area
-                Expanded(
-                  child: SingleChildScrollView(
-                    padding: EdgeInsets.all(24),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // Success Message
-                        Container(
-                          width: double.infinity,
-                          padding: EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: AppTheme.success.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: AppTheme.success.withOpacity(0.3)),
-                          ),
-                          child: Row(
-                            children: [
-                              Icon(
-                                Icons.check_circle_outline,
-                                color: AppTheme.success,
-                                size: 20,
-                              ),
-                              SizedBox(width: 12),
-                              Expanded(
-                                child: Text(
-                                  'Order placed successfully! Complete payment to confirm your order.',
-                                  style: TextStyle(
-                                    color: AppTheme.success,
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: 14,
-                                    height: 1.4,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        
-                        SizedBox(height: 28),
-                        
-                        // Bank Details Section
-                        Text(
-                          'Bank Account Details',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            color: AppTheme.deepTeal,
-                          ),
-                        ),
-                        SizedBox(height: 20),
-                        
-                        // Bank Details - Much Better Layout
-                        _buildSuperReadableBankDetail('Account Name', 'Food Marketplace Pty Ltd', Icons.person),
-                        _buildSuperReadableBankDetail('Bank', 'First National Bank (FNB)', Icons.account_balance),
-                        _buildSuperReadableBankDetail('Account Number', '62612345678', Icons.credit_card),
-                        _buildSuperReadableBankDetail('Branch Code', '250655', Icons.location_on),
-                        _buildSuperReadableBankDetail('Reference', orderNumber ?? 'Use your Order Number', Icons.receipt),
-                        
-                        SizedBox(height: 32),
-                        
-                        // Instructions Section
-                        Text(
-                          'Important Instructions',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            color: AppTheme.warning,
-                          ),
-                        ),
-                        SizedBox(height: 20),
-                        
-                        // Instructions - Much Better Layout
-                        _buildSuperReadableInstruction('📝 Use ${orderNumber ?? 'your Order Number'} as the payment reference when making the transfer'),
-                        _buildSuperReadableInstruction('⏰ Payment processing typically takes 2-3 business days to complete'),
-                        _buildSuperReadableInstruction('✅ Your order will be automatically confirmed once payment is received and verified'),
-                        _buildSuperReadableInstruction('📱 Please keep your payment confirmation or receipt for your records'),
-                        
-                        SizedBox(height: 28),
-                        
-                        // Action Buttons
-                        Column(
-                          children: [
-                            SizedBox(
-                              width: double.infinity,
-                              child: OutlinedButton.icon(
-                                onPressed: () {
-                                  final bankDetails = '''Bank Transfer Details:
-Account Name: Food Marketplace Pty Ltd
-Bank: First National Bank (FNB)
-Account Number: 62612345678
-Branch Code: 250655
-Reference: ${orderNumber ?? 'Use your Order Number'}''';
-                                  Clipboard.setData(ClipboardData(text: bankDetails));
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text('Bank details copied to clipboard!'),
-                                      backgroundColor: AppTheme.success,
-                                      behavior: SnackBarBehavior.floating,
-                                    ),
-                                  );
-                                },
-                                icon: Icon(Icons.copy_all, size: 18),
-                                label: Text('Copy All Details'),
-                                style: OutlinedButton.styleFrom(
-                                  foregroundColor: AppTheme.deepTeal,
-                                  side: BorderSide(color: AppTheme.deepTeal),
-                                  padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                                ),
-                              ),
-                            ),
-                            SizedBox(height: 12),
-                            SizedBox(
-                              width: double.infinity,
-                              child: ElevatedButton.icon(
-                                onPressed: () {
-                                  final url = Uri.parse('https://www.fnb.co.za/');
-                                  launchUrl(url, mode: LaunchMode.externalApplication);
-                                },
-                                icon: Icon(Icons.open_in_new, size: 18),
-                                label: Text('Open FNB Banking'),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: AppTheme.primaryGreen,
-                                  foregroundColor: AppTheme.angel,
-                                  padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
+                  child: Text(
+                    '💡 Use your order number as reference when making the transfer. Payment confirmation takes 1-2 business days.',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: AppTheme.deepTeal,
+                      height: 1.4,
                     ),
                   ),
                 ),
                 
-                // Bottom Button
-                Container(
-                  width: double.infinity,
-                  padding: EdgeInsets.all(16),
-                  child: ElevatedButton.icon(
-                    onPressed: () {
-                      Navigator.of(context).pop();
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('Payment instructions saved! Please complete your bank transfer.'),
-                          backgroundColor: AppTheme.success,
-                          behavior: SnackBarBehavior.floating,
+                SizedBox(height: 20),
+                
+                // Action Buttons
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () {
+                          final details = 'Food Marketplace Pty Ltd\nFNB: 62612345678\nBranch: 250655\nRef: ${orderNumber ?? 'Order Number'}';
+                          Clipboard.setData(ClipboardData(text: details));
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Bank details copied!'),
+                              backgroundColor: AppTheme.deepTeal,
+                              behavior: SnackBarBehavior.floating,
+                            ),
+                          );
+                        },
+                        icon: Icon(Icons.copy, size: 16),
+                        label: Text('Copy'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppTheme.deepTeal,
+                          side: BorderSide(color: AppTheme.deepTeal),
+                          padding: EdgeInsets.symmetric(vertical: 12),
                         ),
-                      );
-                    },
-                    icon: Icon(Icons.check_circle_outline, size: 20),
-                    label: Text('Got It! I\'ll Complete the Transfer'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppTheme.deepTeal,
-                      foregroundColor: AppTheme.angel,
-                      padding: EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                      ),
                     ),
-                  ),
+                    SizedBox(width: 12),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        child: Text('Done'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppTheme.deepTeal,
+                          foregroundColor: AppTheme.angel,
+                          padding: EdgeInsets.symmetric(vertical: 12),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -2725,53 +3076,52 @@ Reference: ${orderNumber ?? 'Use your Order Number'}''';
   // Simple bank row for simplified EFT modal
   Widget _buildSimpleBankRow(String label, String value) {
     return Container(
-      width: double.infinity,
-      padding: EdgeInsets.symmetric(vertical: 12, horizontal: 16),
       margin: EdgeInsets.only(bottom: 8),
+      padding: EdgeInsets.symmetric(vertical: 8, horizontal: 12),
       decoration: BoxDecoration(
-        color: AppTheme.angel,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(
-          color: AppTheme.deepTeal.withOpacity(0.2),
-        ),
+        color: AppTheme.whisper,
+        borderRadius: BorderRadius.circular(6),
       ),
       child: Row(
         children: [
           Expanded(
-            child: SafeUI.safeText(
+            flex: 2,
+            child: Text(
               label,
               style: TextStyle(
-                fontSize: ResponsiveUtils.getTitleSize(context) - 4,
+                fontSize: 12,
                 color: AppTheme.breeze,
                 fontWeight: FontWeight.w500,
               ),
             ),
           ),
-          SizedBox(width: 12),
           Expanded(
-            child: SafeUI.safeText(
+            flex: 3,
+            child: Text(
               value,
               style: TextStyle(
-                fontSize: ResponsiveUtils.getTitleSize(context) - 3,
+                fontSize: 14,
                 color: AppTheme.deepTeal,
-                fontWeight: FontWeight.w700,
+                fontWeight: FontWeight.w600,
               ),
             ),
           ),
-          IconButton(
-            onPressed: () {
+          InkWell(
+            onTap: () {
               Clipboard.setData(ClipboardData(text: value));
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
                   content: Text('$label copied!'),
-                  backgroundColor: AppTheme.success,
+                  backgroundColor: AppTheme.deepTeal,
                   behavior: SnackBarBehavior.floating,
                 ),
               );
             },
-            icon: Icon(Icons.copy, color: AppTheme.deepTeal, size: 18),
-            padding: EdgeInsets.all(4),
-            constraints: BoxConstraints(minWidth: 32, minHeight: 32),
+            borderRadius: BorderRadius.circular(4),
+            child: Padding(
+              padding: EdgeInsets.all(4),
+              child: Icon(Icons.copy, color: AppTheme.breeze, size: 14),
+            ),
           ),
         ],
       ),
@@ -3310,13 +3660,22 @@ Reference: ${orderNumber ?? 'Use your Order Number'}''';
             'longitude': _selectedPickupPoint!.longitude,
           } : null,
           'pickupInstructions': _selectedPickupPoint?.isPargoPoint == true 
-              ? '📦 Collect from Pargo counter with ID verification. Bring your order number and ID.'
+              ? (_productCategory == 'mixed' 
+                  ? '📦 Collect NON-FOOD items from Pargo counter with ID verification. Food items must be collected from restaurant.'
+                  : '📦 Collect from Pargo counter with ID verification. Bring your order number and ID.')
               : '🏪 Collect from store counter. Bring your order number.',
           'pickupPointFee': _selectedPickupPoint?.fee ?? 0.0,
           'pickupPointDistance': _selectedPickupPoint?.distance ?? 0.0,
           'pickupPointSummary': _selectedPickupPoint != null 
               ? '${_selectedPickupPoint!.isPargoPoint ? "🚚 Pargo" : "🏪 Local Store"}: ${_selectedPickupPoint!.name} - ${_selectedPickupPoint!.address}'
               : null,
+          
+          // Mixed cart handling
+          'isMixedCart': _productCategory == 'mixed',
+          'hasFoodItems': _hasFoodItems,
+          'hasNonFoodItems': _hasNonFoodItems,
+          'foodItemsCount': _foodItems.length,
+          'nonFoodItemsCount': _nonFoodItems.length,
         }),
         
         'trackingUpdates': [
@@ -3589,6 +3948,7 @@ Reference: ${orderNumber ?? 'Use your Order Number'}''';
         ),
         child: Stack(
         children: [
+
           Form(
             key: _formKey,
               child: CustomScrollView(
@@ -3612,6 +3972,7 @@ Reference: ${orderNumber ?? 'Use your Order Number'}''';
                         _buildOrderSummary(grandTotal),
                         SizedBox(height: ResponsiveUtils.getVerticalPadding(context) * 2),
                         
+
                         _buildPlaceOrderButton(),
                         SizedBox(height: ResponsiveUtils.getVerticalPadding(context)),
                       ]),
@@ -3767,7 +4128,7 @@ Reference: ${orderNumber ?? 'Use your Order Number'}''';
                 width: 8,
                 height: 8,
                 decoration: BoxDecoration(
-                  color: _isStoreCurrentlyOpen() ? Colors.green : Colors.red,
+                  color: _isStoreCurrentlyOpen() ? AppTheme.deepTeal : Colors.red,
                   shape: BoxShape.circle,
                 ),
               ),
@@ -3777,7 +4138,7 @@ Reference: ${orderNumber ?? 'Use your Order Number'}''';
                 style: TextStyle(
                   fontSize: ResponsiveUtils.getTitleSize(context) - 2,
                   fontWeight: FontWeight.w600,
-                  color: _isStoreCurrentlyOpen() ? Colors.green : Colors.red,
+                  color: _isStoreCurrentlyOpen() ? AppTheme.deepTeal : Colors.red,
                 ),
                 maxLines: 1,
               ),
@@ -3952,14 +4313,14 @@ Reference: ${orderNumber ?? 'Use your Order Number'}''';
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(
                         color: _isDelivery 
-                            ? AppTheme.primaryGreen.withOpacity(0.5)
+                            ? AppTheme.deepTeal.withOpacity(0.5)
                             : AppTheme.breeze.withOpacity(0.3),
                         width: _isDelivery ? 2 : 1,
                       ),
                       boxShadow: _isDelivery 
                           ? [
                               BoxShadow(
-                                color: AppTheme.primaryGreen.withOpacity(0.3),
+                                color: AppTheme.deepTeal.withOpacity(0.3),
                                 blurRadius: 8,
                                 offset: Offset(0, 4),
                               ),
@@ -3998,14 +4359,17 @@ Reference: ${orderNumber ?? 'Use your Order Number'}''';
               Expanded(
                 child: GestureDetector(
                   onTap: () {
+                    print('🔴 DEBUG: PICKUP BUTTON 1 CLICKED!');
+                    print('🔴 DEBUG: Before setState - _isDelivery: $_isDelivery');
                     setState(() {
                       _isDelivery = false;
+                      print('🔴 DEBUG: Inside setState - _isDelivery: $_isDelivery');
                       _calculateDeliveryFeeAndCheckStore();
                     });
+                    print('🔴 DEBUG: After setState - _isDelivery: $_isDelivery');
+                    print('🔴 DEBUG: About to load pickup points...');
                     // Load pickup points when switching to pickup mode
-                    if (_selectedLat != null && _selectedLng != null) {
-                      _loadPickupPointsForCoordinates(_selectedLat!, _selectedLng!);
-                    }
+                    _loadPickupPointsForCurrentLocation();
                   },
                   child: Container(
                     padding: EdgeInsets.all(ResponsiveUtils.getHorizontalPadding(context)),
@@ -4064,6 +4428,348 @@ Reference: ${orderNumber ?? 'Use your Order Number'}''';
           ),
           
           SizedBox(height: ResponsiveUtils.getVerticalPadding(context)),
+          
+          // Pargo Pickup Points Section
+          if (!_isDelivery && (_productCategory.toLowerCase() != 'food' || _hasNonFoodItems) && _pickupPoints.isNotEmpty) ...[
+            Container(
+              margin: EdgeInsets.symmetric(vertical: ResponsiveUtils.getVerticalPadding(context) * 0.5),
+              padding: EdgeInsets.all(ResponsiveUtils.getHorizontalPadding(context)),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    AppTheme.deepTeal.withOpacity(0.15),
+                    AppTheme.deepTeal.withOpacity(0.05),
+                  ],
+                ),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color: AppTheme.deepTeal.withOpacity(0.4),
+                  width: 2,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: AppTheme.deepTeal.withOpacity(0.1),
+                    blurRadius: 15,
+                    offset: Offset(0, 5),
+                  ),
+                ],
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.location_on,
+                        color: AppTheme.deepTeal,
+                        size: ResponsiveUtils.getTitleSize(context),
+                      ),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: SafeUI.safeText(
+                          '🚚 Pargo Pickup Points',
+                          style: TextStyle(
+                            fontSize: ResponsiveUtils.getTitleSize(context),
+                            fontWeight: FontWeight.w900,
+                            color: AppTheme.deepTeal,
+                            letterSpacing: 0.5,
+                          ),
+                          maxLines: 1,
+                        ),
+                      ),
+                    ],
+                  ),
+                  SizedBox(height: 8),
+                  SafeUI.safeText(
+                    'Choose from our network of secure pickup locations',
+                    style: TextStyle(
+                      fontSize: ResponsiveUtils.getTitleSize(context) - 4,
+                      color: AppTheme.breeze,
+                      fontStyle: FontStyle.italic,
+                    ),
+                    maxLines: 2,
+                  ),
+                  SizedBox(height: 12),
+                  
+                  // Address search for pickup points
+                  Container(
+                    padding: EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AppTheme.deepTeal.withOpacity(0.3), width: 1),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(Icons.search_outlined, color: AppTheme.deepTeal, size: 20),
+                            SizedBox(width: 8),
+                            Flexible(
+                              child: Text(
+                                'Search pickup points in different areas',
+                                style: TextStyle(
+                                  color: AppTheme.deepTeal,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        SizedBox(height: 8),
+                        TextFormField(
+                          controller: _pickupAddressController,
+                          onChanged: (value) => _searchPickupAddress(value),
+                          decoration: InputDecoration(
+                            hintText: 'Enter area to find pickup points...',
+                            hintStyle: TextStyle(color: AppTheme.breeze),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                              borderSide: BorderSide(color: AppTheme.deepTeal.withOpacity(0.5)),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                              borderSide: BorderSide(color: AppTheme.deepTeal.withOpacity(0.5)),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                              borderSide: BorderSide(color: AppTheme.deepTeal, width: 2),
+                            ),
+                            prefixIcon: Icon(Icons.location_city, color: AppTheme.deepTeal),
+                            contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                          ),
+                        ),
+                        
+                        // Pickup address suggestions
+                        if (_pickupAddressSuggestions.isNotEmpty) ...[
+                          SizedBox(height: 8),
+                          Container(
+                            constraints: BoxConstraints(maxHeight: 150),
+                            decoration: BoxDecoration(
+                              color: AppTheme.deepTeal.withOpacity(0.05),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: AppTheme.deepTeal.withOpacity(0.2)),
+                            ),
+                            child: ListView.builder(
+                              shrinkWrap: true,
+                              itemCount: _pickupAddressSuggestions.length,
+                              itemBuilder: (context, index) {
+                                final placemark = _pickupAddressSuggestions[index];
+                                final address = _formatAddress(placemark);
+                                return ListTile(
+                                  dense: true,
+                                  leading: Icon(Icons.location_on, color: AppTheme.deepTeal, size: 16),
+                                  title: Text(
+                                    address,
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      color: AppTheme.angel,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  onTap: () {
+                                    _pickupAddressController.text = address;
+                                    setState(() {
+                                      _pickupAddressSuggestions = [];
+                                    });
+                                    // Load pickup points for this address
+                                    _loadPickupPointsForAddress(address);
+                                  },
+                                );
+                              },
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  
+                  SizedBox(height: 12),
+                  if (_selectedPickupPoint != null) ...[
+                    Container(
+                      padding: EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: AppTheme.deepTeal.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: AppTheme.deepTeal, width: 2),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(Icons.check_circle, color: AppTheme.deepTeal, size: 20),
+                              SizedBox(width: 8),
+                              Text(
+                                'Selected Pickup Point',
+                                style: TextStyle(
+                                  color: AppTheme.deepTeal,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ],
+                          ),
+                          SizedBox(height: 8),
+                          Text(
+                            _selectedPickupPoint!.name,
+                            style: TextStyle(
+                              color: AppTheme.angel,
+                              fontSize: 15,
+                              fontWeight: FontWeight.w600,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          SizedBox(height: 4),
+                          Text(
+                            _selectedPickupPoint!.address,
+                            style: TextStyle(
+                              color: AppTheme.breeze,
+                              fontSize: 13,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                            maxLines: 2,
+                          ),
+                          SizedBox(height: 8),
+                          Row(
+                            children: [
+                              Container(
+                                padding: EdgeInsets.all(2),
+                                decoration: BoxDecoration(
+                                  color: AppTheme.deepTeal,
+                                  borderRadius: BorderRadius.circular(3),
+                                ),
+                                child: Text(
+                                  'R',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                              SizedBox(width: 4),
+                              Text(
+                                'Fee: R${_selectedPickupPoint!.fee.toStringAsFixed(2)}',
+                                style: TextStyle(
+                                  color: AppTheme.deepTeal,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              Spacer(),
+                              TextButton(
+                                onPressed: () => _showPickupPointDetails(_selectedPickupPoint!),
+                                child: Text(
+                                  'View Details',
+                                  style: TextStyle(
+                                    color: AppTheme.deepTeal,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    SizedBox(height: 12),
+                    // Pickup points list header
+                    Text(
+                      'Available Pickup Points (${_pickupPoints.length})',
+                      style: TextStyle(
+                        color: AppTheme.deepTeal,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    SizedBox(height: 8),
+                    Container(
+                      constraints: BoxConstraints(maxHeight: 200),
+                      child: ListView.builder(
+                        shrinkWrap: true,
+                        itemCount: _pickupPoints.length,
+                        itemBuilder: (context, index) {
+                          final point = _pickupPoints[index];
+                          final isSelected = _selectedPickupPoint?.id == point.id;
+                          return Container(
+                            margin: EdgeInsets.only(bottom: 8),
+                            decoration: BoxDecoration(
+                              color: isSelected 
+                                  ? AppTheme.deepTeal.withOpacity(0.1)
+                                  : Colors.white,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: isSelected 
+                                    ? AppTheme.deepTeal
+                                    : AppTheme.deepTeal.withOpacity(0.3),
+                                width: isSelected ? 2 : 1,
+                              ),
+                            ),
+                            child: ListTile(
+                              dense: true,
+                              leading: Icon(
+                                point.isPargoPoint ? Icons.store : Icons.location_on,
+                                color: isSelected ? AppTheme.deepTeal : AppTheme.deepTeal,
+                                size: 20,
+                              ),
+                              title: Text(
+                                point.name,
+                                style: TextStyle(
+                                  color: AppTheme.angel,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              subtitle: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    point.address,
+                                    style: TextStyle(
+                                      color: AppTheme.breeze,
+                                      fontSize: 12,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                    maxLines: 1,
+                                  ),
+                                  Text(
+                                    'Fee: R${point.fee.toStringAsFixed(2)}',
+                                    style: TextStyle(
+                                      color: AppTheme.deepTeal,
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              trailing: Icon(
+                                Icons.info_outline,
+                                color: AppTheme.deepTeal,
+                                size: 18,
+                              ),
+                              onTap: () {
+                                setState(() {
+                                  _selectedPickupPoint = point;
+                                  _deliveryFee = point.fee;
+                                });
+                              },
+                              onLongPress: () => _showPickupPointDetails(point),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
           
           // Address Field (for delivery) or Pickup Location (for pickup)
           if (_isDelivery) ...[
@@ -4384,8 +5090,70 @@ Reference: ${orderNumber ?? 'Use your Order Number'}''';
               ),
             ],
             
+            // Mixed cart information
+            if (!_isDelivery && _productCategory == 'mixed') ...[
+              Container(
+                margin: EdgeInsets.symmetric(
+                  vertical: ResponsiveUtils.getVerticalPadding(context) * 0.5,
+                ),
+                padding: EdgeInsets.all(ResponsiveUtils.getHorizontalPadding(context) * 0.8),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [AppTheme.deepTeal.withOpacity(0.1), AppTheme.deepTeal.withOpacity(0.05)],
+                  ),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: AppTheme.deepTeal.withOpacity(0.3),
+                    width: 1,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: AppTheme.deepTeal.withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Icon(
+                        Icons.info_outline,
+                        color: AppTheme.deepTeal,
+                        size: ResponsiveUtils.getIconSize(context, baseSize: 18),
+                      ),
+                    ),
+                    SizedBox(width: ResponsiveUtils.getHorizontalPadding(context) * 0.5),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          SafeUI.safeText(
+                            'Mixed Cart Pickup',
+                            style: TextStyle(
+                              fontSize: ResponsiveUtils.getTitleSize(context) - 1,
+                              fontWeight: FontWeight.w600,
+                              color: AppTheme.deepTeal,
+                            ),
+                            maxLines: 1,
+                          ),
+                          SafeUI.safeText(
+                            '🍕 Food items: Collect from restaurant\n📦 Other items: Available via Pargo pickup points',
+                            style: TextStyle(
+                              fontSize: ResponsiveUtils.getTitleSize(context) - 3,
+                              color: AppTheme.deepTeal,
+                              height: 1.4,
+                            ),
+                            maxLines: 2,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+            
             // Pargo Pickup Points (for non-food pickup orders only)
-            if (!_isDelivery && _productCategory.toLowerCase() != 'food') ...[
+            if (!_isDelivery && (_productCategory.toLowerCase() != 'food' || _hasNonFoodItems)) ...[
               SafeUI.safeText(
                 'Pargo Pickup Points',
                 style: TextStyle(
@@ -4441,8 +5209,8 @@ Reference: ${orderNumber ?? 'Use your Order Number'}''';
                       end: Alignment.bottomRight,
                       colors: point.isPargoPoint 
                           ? [
-                              AppTheme.primaryGreen.withOpacity(0.1),
-                              AppTheme.primaryGreen.withOpacity(0.05),
+                              AppTheme.deepTeal.withOpacity(0.1),
+                              AppTheme.deepTeal.withOpacity(0.05),
                               AppTheme.angel,
                             ]
                           : [
@@ -4454,14 +5222,14 @@ Reference: ${orderNumber ?? 'Use your Order Number'}''';
                     borderRadius: BorderRadius.circular(16),
                     border: Border.all(
                       color: point.isPargoPoint 
-                          ? AppTheme.primaryGreen.withOpacity(0.4)
+                          ? AppTheme.deepTeal.withOpacity(0.4)
                           : AppTheme.deepTeal.withOpacity(0.4),
                       width: 2,
                     ),
                     boxShadow: [
                       BoxShadow(
                         color: point.isPargoPoint 
-                            ? AppTheme.primaryGreen.withOpacity(0.2)
+                            ? AppTheme.deepTeal.withOpacity(0.2)
                             : AppTheme.deepTeal.withOpacity(0.2),
                         blurRadius: 12,
                         offset: Offset(0, 6),
@@ -4489,8 +5257,8 @@ Reference: ${orderNumber ?? 'Use your Order Number'}''';
                                 gradient: LinearGradient(
                                   colors: point.isPargoPoint 
                                       ? [
-                                          AppTheme.primaryGreen.withOpacity(0.3),
-                                          AppTheme.primaryGreen.withOpacity(0.1),
+                                          AppTheme.deepTeal.withOpacity(0.3),
+                                          AppTheme.deepTeal.withOpacity(0.1),
                                         ]
                                       : [
                                           AppTheme.deepTeal.withOpacity(0.3),
@@ -4500,7 +5268,7 @@ Reference: ${orderNumber ?? 'Use your Order Number'}''';
                                 borderRadius: BorderRadius.circular(12),
                                 border: Border.all(
                                   color: point.isPargoPoint 
-                                      ? AppTheme.primaryGreen.withOpacity(0.6)
+                                      ? AppTheme.deepTeal.withOpacity(0.6)
                                       : AppTheme.deepTeal.withOpacity(0.6),
                                   width: 1.5,
                                 ),
@@ -4510,7 +5278,7 @@ Reference: ${orderNumber ?? 'Use your Order Number'}''';
                                     ? Icons.local_shipping
                                     : Icons.storefront,
                                 color: point.isPargoPoint 
-                                    ? AppTheme.primaryGreen
+                                    ? AppTheme.deepTeal
                                     : AppTheme.deepTeal,
                                 size: 24,
                               ),
@@ -4532,7 +5300,7 @@ Reference: ${orderNumber ?? 'Use your Order Number'}''';
                                             fontSize: ResponsiveUtils.getTitleSize(context) - 2,
                                             fontWeight: FontWeight.w800,
                                             color: point.isPargoPoint 
-                                                ? AppTheme.primaryGreen
+                                                ? AppTheme.deepTeal
                                                 : AppTheme.deepTeal,
                                             letterSpacing: 0.3,
                                           ),
@@ -4546,12 +5314,12 @@ Reference: ${orderNumber ?? 'Use your Order Number'}''';
                                           shape: BoxShape.circle,
                                           color: _selectedPickupPoint?.id == point.id
                                               ? (point.isPargoPoint 
-                                                  ? AppTheme.primaryGreen
+                                                  ? AppTheme.deepTeal
                                                   : AppTheme.deepTeal)
                                               : Colors.transparent,
                                           border: Border.all(
                                             color: point.isPargoPoint 
-                                                ? AppTheme.primaryGreen.withOpacity(0.6)
+                                                ? AppTheme.deepTeal.withOpacity(0.6)
                                                 : AppTheme.deepTeal.withOpacity(0.6),
                                             width: 2,
                                           ),
@@ -4601,8 +5369,8 @@ Reference: ${orderNumber ?? 'Use your Order Number'}''';
                                           gradient: LinearGradient(
                                             colors: point.isPargoPoint 
                                                 ? [
-                                                    AppTheme.primaryGreen.withOpacity(0.2),
-                                                    AppTheme.primaryGreen.withOpacity(0.1),
+                                                    AppTheme.deepTeal.withOpacity(0.2),
+                                                    AppTheme.deepTeal.withOpacity(0.1),
                                                   ]
                                                 : [
                                                     AppTheme.deepTeal.withOpacity(0.2),
@@ -4612,7 +5380,7 @@ Reference: ${orderNumber ?? 'Use your Order Number'}''';
                                           borderRadius: BorderRadius.circular(12),
                                           border: Border.all(
                                             color: point.isPargoPoint 
-                                                ? AppTheme.primaryGreen.withOpacity(0.4)
+                                                ? AppTheme.deepTeal.withOpacity(0.4)
                                                 : AppTheme.deepTeal.withOpacity(0.4),
                                             width: 1,
                                           ),
@@ -4625,7 +5393,7 @@ Reference: ${orderNumber ?? 'Use your Order Number'}''';
                                                   ? Icons.local_shipping
                                                   : Icons.store,
                                               color: point.isPargoPoint 
-                                                  ? AppTheme.primaryGreen
+                                                  ? AppTheme.deepTeal
                                                   : AppTheme.deepTeal,
                                               size: 12,
                                             ),
@@ -4636,7 +5404,7 @@ Reference: ${orderNumber ?? 'Use your Order Number'}''';
                                                 fontSize: ResponsiveUtils.getTitleSize(context) - 5,
                                                 fontWeight: FontWeight.w600,
                                                 color: point.isPargoPoint 
-                                                    ? AppTheme.primaryGreen
+                                                    ? AppTheme.deepTeal
                                                     : AppTheme.deepTeal,
                                               ),
                                             ),
@@ -5024,13 +5792,13 @@ Reference: ${orderNumber ?? 'Use your Order Number'}''';
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   colors: [
-                    AppTheme.primaryGreen.withOpacity(0.1),
-                    AppTheme.primaryGreen.withOpacity(0.05),
+                    AppTheme.deepTeal.withOpacity(0.1),
+                    AppTheme.deepTeal.withOpacity(0.05),
                   ],
                 ),
                 borderRadius: BorderRadius.circular(10),
                 border: Border.all(
-                  color: AppTheme.primaryGreen.withOpacity(0.3),
+                  color: AppTheme.deepTeal.withOpacity(0.3),
                   width: 1,
                 ),
               ),
@@ -5039,12 +5807,12 @@ Reference: ${orderNumber ?? 'Use your Order Number'}''';
                   Container(
                     padding: const EdgeInsets.all(6),
                     decoration: BoxDecoration(
-                      color: AppTheme.primaryGreen.withOpacity(0.2),
+                      color: AppTheme.deepTeal.withOpacity(0.2),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: const Icon(
                       Icons.restaurant,
-                      color: AppTheme.primaryGreen,
+                      color: AppTheme.deepTeal,
                       size: 16,
                     ),
                   ),
@@ -5055,7 +5823,7 @@ Reference: ${orderNumber ?? 'Use your Order Number'}''';
                       style: TextStyle(
                         fontSize: ResponsiveUtils.getTitleSize(context) - 3,
                         fontWeight: FontWeight.w600,
-                        color: AppTheme.primaryGreen,
+                        color: AppTheme.deepTeal,
                       ),
                       maxLines: 1,
                     ),
@@ -5163,12 +5931,17 @@ Reference: ${orderNumber ?? 'Use your Order Number'}''';
                     Expanded(
                       child: GestureDetector(
                         onTap: _productCategory.toLowerCase() == 'food' ? null : () {
+                          print('🔴 DEBUG: PICKUP BUTTON 2 CLICKED!');
+                          print('🔴 DEBUG: Before setState - _isDelivery: $_isDelivery');
                           setState(() {
                             _isDelivery = false;
                             _deliveryFee = 0.0;
                             _deliveryDistance = 0.0;
+                            print('🔴 DEBUG: Inside setState - _isDelivery: $_isDelivery');
                           });
-                          _loadPickupPointsForCurrentAddress();
+                          print('🔴 DEBUG: After setState - _isDelivery: $_isDelivery');
+                          print('🔴 DEBUG: About to load pickup points...');
+                          _loadPickupPointsForCurrentLocation();
                         },
                         child: Container(
                           padding: EdgeInsets.all(ResponsiveUtils.getHorizontalPadding(context) * 0.8),
@@ -5304,11 +6077,11 @@ Reference: ${orderNumber ?? 'Use your Order Number'}''';
                           itemBuilder: (context, index) {
                             if (index == _addressSuggestions.length) {
                               return ListTile(
-                                leading: Icon(Icons.edit, color: AppTheme.primaryGreen),
+                                leading: Icon(Icons.edit, color: AppTheme.deepTeal),
                                 title: Text(
                                   'Use entered address',
                                   style: TextStyle(
-                                    color: AppTheme.primaryGreen,
+                                    color: AppTheme.deepTeal,
                                     fontWeight: FontWeight.w600,
                                   ),
                                 ),
@@ -5362,23 +6135,34 @@ Reference: ${orderNumber ?? 'Use your Order Number'}''';
                       ],
                   ),
               
-              // Pickup points (Pargo) selector when in Pickup mode
-              if (!_isDelivery && _productCategory.toLowerCase() != 'food') ...[
-                SizedBox(height: ResponsiveUtils.getVerticalPadding(context) * 0.5),
+
+              
+              // Pickup points (Pargo) selector when in Pickup mode  
+              // Show Pargo for non-food only carts OR mixed carts (non-food items can use Pargo)
+              if (!_isDelivery && (_productCategory.toLowerCase() != 'food' || _hasNonFoodItems)) ...[
+                SizedBox(height: ResponsiveUtils.getVerticalPadding(context) * 1.5),
+                // SUPER PROMINENT PARGO SECTION - ELEVATED ABOVE OTHER CONTENT
                 Container(
+                  margin: EdgeInsets.all(ResponsiveUtils.getHorizontalPadding(context)),
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
                       colors: [
-                        AppTheme.deepTeal.withOpacity(0.15),
-                        AppTheme.deepTeal.withOpacity(0.05),
+                        Colors.red.withOpacity(0.8),  // Make it super visible
+                        Colors.orange.withOpacity(0.6),
                       ],
                     ),
                     borderRadius: BorderRadius.circular(20),
                     border: Border.all(
-                      color: AppTheme.deepTeal.withOpacity(0.4),
-                      width: 2,
+                      color: Colors.black,
+                      width: 4,  // Thick border
                     ),
                     boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.8),
+                        blurRadius: 20,
+                        offset: Offset(0, 10),
+                        spreadRadius: 5,
+                      ),
                       BoxShadow(
                         color: AppTheme.deepTeal.withOpacity(0.1),
                         blurRadius: 15,
@@ -5400,7 +6184,7 @@ Reference: ${orderNumber ?? 'Use your Order Number'}''';
                           end: Alignment.bottomRight,
                                 colors: [
                             AppTheme.deepTeal.withOpacity(0.4),
-                            AppTheme.primaryGreen.withOpacity(0.2),
+                            AppTheme.deepTeal.withOpacity(0.2),
                                 ],
                               ),
                         borderRadius: BorderRadius.circular(16),
@@ -5438,21 +6222,23 @@ Reference: ${orderNumber ?? 'Use your Order Number'}''';
                                   maxLines: 1,
                                 ),
                                 SafeUI.safeText(
-                                  'Choose from our network of secure pickup locations',
+                                  _productCategory == 'mixed' 
+                                    ? 'For non-food items in your cart'
+                                    : 'Choose from our network of secure pickup locations',
                                   style: TextStyle(
                               fontSize: ResponsiveUtils.getTitleSize(context) - 2,
                                     color: AppTheme.breeze,
                                     fontStyle: FontStyle.italic,
                               height: 1.3,
                             ),
-                            maxLines: 1,
+                            maxLines: 2,
                           ),
                           SizedBox(height: 4),
                           SafeUI.safeText(
                             'Secure • Convenient • Professional Service',
                             style: TextStyle(
                               fontSize: ResponsiveUtils.getTitleSize(context) - 4,
-                              color: AppTheme.primaryGreen,
+                              color: AppTheme.deepTeal,
                               fontWeight: FontWeight.w600,
                                   ),
                                   maxLines: 1,
@@ -5466,13 +6252,13 @@ Reference: ${orderNumber ?? 'Use your Order Number'}''';
                         decoration: BoxDecoration(
                           gradient: LinearGradient(
                             colors: [
-                              AppTheme.primaryGreen.withOpacity(0.2),
-                              AppTheme.primaryGreen.withOpacity(0.1),
+                              AppTheme.deepTeal.withOpacity(0.2),
+                              AppTheme.deepTeal.withOpacity(0.1),
                             ],
                           ),
                           borderRadius: BorderRadius.circular(12),
                           border: Border.all(
-                            color: AppTheme.primaryGreen.withOpacity(0.4),
+                            color: AppTheme.deepTeal.withOpacity(0.4),
                           ),
                         ),
                         child: TextButton(
@@ -5489,14 +6275,14 @@ Reference: ${orderNumber ?? 'Use your Order Number'}''';
                             children: [
                               Icon(
                                 Icons.list_alt,
-                                color: AppTheme.primaryGreen,
+                                color: AppTheme.deepTeal,
                                 size: 16,
                               ),
                               SizedBox(width: 8),
                               SafeUI.safeText(
                                 'View All',
                                 style: TextStyle(
-                                  color: AppTheme.primaryGreen,
+                                  color: AppTheme.deepTeal,
                                   fontWeight: FontWeight.w700,
                                   fontSize: ResponsiveUtils.getTitleSize(context) - 4,
                                 ),
@@ -5543,8 +6329,8 @@ Reference: ${orderNumber ?? 'Use your Order Number'}''';
                                     end: Alignment.bottomRight,
                                     colors: point.isPargoPoint 
                                         ? [
-                                            AppTheme.primaryGreen.withOpacity(0.1),
-                                            AppTheme.primaryGreen.withOpacity(0.05),
+                                            AppTheme.deepTeal.withOpacity(0.1),
+                                            AppTheme.deepTeal.withOpacity(0.05),
                                             AppTheme.angel,
                                           ]
                                         : [
@@ -5556,14 +6342,14 @@ Reference: ${orderNumber ?? 'Use your Order Number'}''';
                                   borderRadius: BorderRadius.circular(16),
                                             border: Border.all(
                                               color: point.isPargoPoint 
-                                        ? AppTheme.primaryGreen.withOpacity(0.4)
+                                        ? AppTheme.deepTeal.withOpacity(0.4)
                                         : AppTheme.deepTeal.withOpacity(0.4),
                                     width: 2,
                                             ),
                                             boxShadow: [
                                               BoxShadow(
                                       color: point.isPargoPoint 
-                                          ? AppTheme.primaryGreen.withOpacity(0.15)
+                                          ? AppTheme.deepTeal.withOpacity(0.15)
                                           : AppTheme.deepTeal.withOpacity(0.15),
                                       blurRadius: 12,
                                       offset: Offset(0, 4),
@@ -5588,8 +6374,8 @@ Reference: ${orderNumber ?? 'Use your Order Number'}''';
                                               gradient: LinearGradient(
                                                 colors: point.isPargoPoint 
                                                     ? [
-                                                        AppTheme.primaryGreen.withOpacity(0.3),
-                                                        AppTheme.primaryGreen.withOpacity(0.1),
+                                                        AppTheme.deepTeal.withOpacity(0.3),
+                                                        AppTheme.deepTeal.withOpacity(0.1),
                                                       ]
                                                     : [
                                                         AppTheme.deepTeal.withOpacity(0.3),
@@ -5599,7 +6385,7 @@ Reference: ${orderNumber ?? 'Use your Order Number'}''';
                                               borderRadius: BorderRadius.circular(12),
                                               border: Border.all(
                                                 color: point.isPargoPoint 
-                                                    ? AppTheme.primaryGreen.withOpacity(0.5)
+                                                    ? AppTheme.deepTeal.withOpacity(0.5)
                                                     : AppTheme.deepTeal.withOpacity(0.5),
                                                 width: 1.5,
                                               ),
@@ -5609,7 +6395,7 @@ Reference: ${orderNumber ?? 'Use your Order Number'}''';
                                                   ? Icons.local_shipping
                                                   : Icons.storefront,
                                               color: point.isPargoPoint 
-                                                  ? AppTheme.primaryGreen
+                                                  ? AppTheme.deepTeal
                                                   : AppTheme.deepTeal,
                                               size: 24,
                                             ),
@@ -5631,7 +6417,7 @@ Reference: ${orderNumber ?? 'Use your Order Number'}''';
                                                           fontSize: ResponsiveUtils.getTitleSize(context),
                                                           fontWeight: FontWeight.w800,
                                                 color: point.isPargoPoint 
-                                                              ? AppTheme.primaryGreen
+                                                              ? AppTheme.deepTeal
                                                               : AppTheme.deepTeal,
                                                           letterSpacing: 0.3,
                                               ),
@@ -5646,13 +6432,13 @@ Reference: ${orderNumber ?? 'Use your Order Number'}''';
                                                         shape: BoxShape.circle,
                                                         color: _selectedPickupPoint == point
                                                             ? (point.isPargoPoint 
-                                                                ? AppTheme.primaryGreen
+                                                                ? AppTheme.deepTeal
                                                                 : AppTheme.deepTeal)
                                                             : Colors.transparent,
                                                         border: Border.all(
                                                           color: _selectedPickupPoint == point
                                                               ? (point.isPargoPoint 
-                                                                  ? AppTheme.primaryGreen
+                                                                  ? AppTheme.deepTeal
                                                                   : AppTheme.deepTeal)
                                                               : AppTheme.breeze.withOpacity(0.4),
                                                           width: 2,
@@ -5702,12 +6488,12 @@ Reference: ${orderNumber ?? 'Use your Order Number'}''';
                                                       padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                                                       decoration: BoxDecoration(
                                                         color: point.isPargoPoint 
-                                                            ? AppTheme.primaryGreen.withOpacity(0.2)
+                                                            ? AppTheme.deepTeal.withOpacity(0.2)
                                                             : AppTheme.deepTeal.withOpacity(0.2),
                                                         borderRadius: BorderRadius.circular(12),
                                                 border: Border.all(
                                                   color: point.isPargoPoint 
-                                                              ? AppTheme.primaryGreen.withOpacity(0.4)
+                                                              ? AppTheme.deepTeal.withOpacity(0.4)
                                                               : AppTheme.deepTeal.withOpacity(0.4),
                                                 ),
                                               ),
@@ -5719,7 +6505,7 @@ Reference: ${orderNumber ?? 'Use your Order Number'}''';
                                                           fontSize: ResponsiveUtils.getTitleSize(context) - 5,
                                                           fontWeight: FontWeight.w600,
                                                 color: point.isPargoPoint 
-                                                              ? AppTheme.primaryGreen
+                                                              ? AppTheme.deepTeal
                                                               : AppTheme.deepTeal,
                                               ),
                                             ),
@@ -5803,7 +6589,7 @@ Reference: ${orderNumber ?? 'Use your Order Number'}''';
                                           Icon(
                                             Icons.arrow_forward_ios,
                                             color: point.isPargoPoint 
-                                                ? AppTheme.primaryGreen.withOpacity(0.6)
+                                                ? AppTheme.deepTeal.withOpacity(0.6)
                                                 : AppTheme.deepTeal.withOpacity(0.6),
                                             size: 18,
                                           ),
@@ -6067,7 +6853,7 @@ Reference: ${orderNumber ?? 'Use your Order Number'}''';
                     padding: EdgeInsets.all(8),
                     decoration: BoxDecoration(
                       color: _selectedPaymentMethod == 'PayFast (Card)' 
-                          ? AppTheme.primaryGreen.withOpacity(0.2)
+                          ? AppTheme.deepTeal.withOpacity(0.2)
                           : _selectedPaymentMethod == 'Bank Transfer (EFT)'
                               ? AppTheme.deepTeal.withOpacity(0.2)
                               : AppTheme.breeze.withOpacity(0.2),
@@ -6080,7 +6866,7 @@ Reference: ${orderNumber ?? 'Use your Order Number'}''';
                               ? Icons.account_balance
                               : Icons.money_off,
                       color: _selectedPaymentMethod == 'PayFast (Card)' 
-                          ? AppTheme.primaryGreen
+                          ? AppTheme.deepTeal
                           : _selectedPaymentMethod == 'Bank Transfer (EFT)'
                               ? AppTheme.deepTeal
                               : AppTheme.breeze,
@@ -6102,7 +6888,7 @@ Reference: ${orderNumber ?? 'Use your Order Number'}''';
                             fontSize: ResponsiveUtils.getTitleSize(context) - 2,
                             fontWeight: FontWeight.w600,
                             color: _selectedPaymentMethod == 'PayFast (Card)' 
-                                ? AppTheme.primaryGreen
+                                ? AppTheme.deepTeal
                                 : _selectedPaymentMethod == 'Bank Transfer (EFT)'
                                     ? AppTheme.deepTeal
                                     : AppTheme.breeze,
@@ -6269,7 +7055,7 @@ Reference: ${orderNumber ?? 'Use your Order Number'}''';
                   style: TextStyle(
                     fontSize: ResponsiveUtils.getTitleSize(context),
                     fontWeight: FontWeight.w600,
-                    color: AppTheme.primaryGreen,
+                    color: AppTheme.deepTeal,
                   ),
                   maxLines: 1,
                 ),
@@ -6712,7 +7498,7 @@ class _AddressSearchScreenState extends State<AddressSearchScreen> {
                         }
                       },
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: AppTheme.primaryGreen,
+                        backgroundColor: AppTheme.deepTeal,
                         foregroundColor: AppTheme.angel,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),

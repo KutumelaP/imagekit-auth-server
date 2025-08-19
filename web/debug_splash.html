@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Splash Screen Debug</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background: #f0f0f0;
+        }
+        .debug-section {
+            background: white;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+        }
+        .success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .warning { background: #fff3cd; color: #856404; border: 1px solid #ffeaa7; }
+        .info { background: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb; }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover { background: #0056b3; }
+        pre {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+        }
+        iframe {
+            width: 100%;
+            height: 600px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+        }
+    </style>
+</head>
+<body>
+    <h1>🐛 Splash Screen Debug Tool</h1>
+    
+    <div class="debug-section">
+        <h2>1. Console Error Check</h2>
+        <div id="console-status"></div>
+        <button onclick="checkConsoleErrors()">Check Console Errors</button>
+        <button onclick="clearConsole()">Clear Console</button>
+    </div>
+    
+    <div class="debug-section">
+        <h2>2. App Loading Test</h2>
+        <div id="app-status"></div>
+        <button onclick="testAppLoading()">Test App Loading</button>
+        <button onclick="openMainApp()">Open Main App</button>
+    </div>
+    
+    <div class="debug-section">
+        <h2>3. Flutter Web Status</h2>
+        <div id="flutter-status"></div>
+        <button onclick="checkFlutterStatus()">Check Flutter Status</button>
+    </div>
+    
+    <div class="debug-section">
+        <h2>4. Live App Test (iframe)</h2>
+        <div id="iframe-status"></div>
+        <button onclick="loadAppInIframe()">Load App in Iframe</button>
+        <button onclick="reloadIframe()">Reload Iframe</button>
+        <div id="iframe-container"></div>
+    </div>
+    
+    <div class="debug-section">
+        <h2>5. Performance Monitor</h2>
+        <div id="performance-status"></div>
+        <button onclick="startPerformanceMonitor()">Start Monitoring</button>
+        <button onclick="stopPerformanceMonitor()">Stop Monitoring</button>
+    </div>
+
+    <script>
+        let performanceInterval;
+        let errorCount = 0;
+        let warningCount = 0;
+        
+        // Test 1: Console Error Check
+        function checkConsoleErrors() {
+            const statusDiv = document.getElementById('console-status');
+            
+            // Override console methods to catch errors
+            const originalError = console.error;
+            const originalWarn = console.warn;
+            
+            console.error = function(...args) {
+                errorCount++;
+                originalError.apply(console, args);
+                updateConsoleStatus();
+            };
+            
+            console.warn = function(...args) {
+                warningCount++;
+                originalWarn.apply(console, args);
+                updateConsoleStatus();
+            };
+            
+            updateConsoleStatus();
+        }
+        
+        function updateConsoleStatus() {
+            const statusDiv = document.getElementById('console-status');
+            statusDiv.innerHTML = `
+                <div class="status info">📊 Console Status</div>
+                <div class="status ${errorCount > 0 ? 'error' : 'success'}">Errors: ${errorCount}</div>
+                <div class="status ${warningCount > 0 ? 'warning' : 'success'}">Warnings: ${warningCount}</div>
+            `;
+        }
+        
+        function clearConsole() {
+            errorCount = 0;
+            warningCount = 0;
+            updateConsoleStatus();
+        }
+        
+        // Test 2: App Loading Test
+        function testAppLoading() {
+            const statusDiv = document.getElementById('app-status');
+            
+            statusDiv.innerHTML = '<div class="status info">🔄 Testing app loading...</div>';
+            
+            // Test if we can access the main app
+            fetch('https://marketplace-8d6bd.web.app')
+                .then(response => {
+                    if (response.ok) {
+                        statusDiv.innerHTML = `
+                            <div class="status success">✅ Main App Accessible</div>
+                            <div class="status info">Status: ${response.status} ${response.statusText}</div>
+                            <div class="status info">Content-Type: ${response.headers.get('content-type')}</div>
+                        `;
+                    } else {
+                        statusDiv.innerHTML = `
+                            <div class="status warning">⚠️ Main App Response: ${response.status}</div>
+                        `;
+                    }
+                })
+                .catch(error => {
+                    statusDiv.innerHTML = `
+                        <div class="status error">❌ Main App Error: ${error.message}</div>
+                    `;
+                });
+        }
+        
+        function openMainApp() {
+            window.open('https://marketplace-8d6bd.web.app', '_blank');
+        }
+        
+        // Test 3: Flutter Web Status
+        function checkFlutterStatus() {
+            const statusDiv = document.getElementById('flutter-status');
+            
+            try {
+                const info = {
+                    flutter: !!window.flutter,
+                    flutter_web_optimizer: !!window.flutter_web_optimizer,
+                    _flutter: !!window._flutter,
+                    flutterConfiguration: window.flutterConfiguration,
+                    userAgent: navigator.userAgent,
+                    platform: navigator.platform,
+                    onLine: navigator.onLine,
+                };
+                
+                statusDiv.innerHTML = `
+                    <div class="status info">📱 Flutter Web Status</div>
+                    <pre>${JSON.stringify(info, null, 2)}</pre>
+                `;
+            } catch (error) {
+                statusDiv.innerHTML = `
+                    <div class="status error">❌ Error checking Flutter status: ${error.message}</div>
+                `;
+            }
+        }
+        
+        // Test 4: Live App Test
+        function loadAppInIframe() {
+            const container = document.getElementById('iframe-container');
+            const statusDiv = document.getElementById('iframe-status');
+            
+            statusDiv.innerHTML = '<div class="status info">🔄 Loading app in iframe...</div>';
+            
+            const iframe = document.createElement('iframe');
+            iframe.src = 'https://marketplace-8d6bd.web.app';
+            iframe.id = 'app-iframe';
+            iframe.onload = function() {
+                statusDiv.innerHTML = `
+                    <div class="status success">✅ App loaded in iframe</div>
+                    <div class="status info">Check iframe below for splash screen behavior</div>
+                `;
+            };
+            iframe.onerror = function() {
+                statusDiv.innerHTML = `
+                    <div class="status error">❌ Failed to load app in iframe</div>
+                `;
+            };
+            
+            container.innerHTML = '';
+            container.appendChild(iframe);
+        }
+        
+        function reloadIframe() {
+            const iframe = document.getElementById('app-iframe');
+            if (iframe) {
+                iframe.src = iframe.src;
+            }
+        }
+        
+        // Test 5: Performance Monitor
+        function startPerformanceMonitor() {
+            const statusDiv = document.getElementById('performance-status');
+            
+            statusDiv.innerHTML = '<div class="status info">📊 Performance monitoring started...</div>';
+            
+            performanceInterval = setInterval(() => {
+                const memory = performance.memory;
+                const timing = performance.timing;
+                
+                const info = {
+                    memory: {
+                        usedJSHeapSize: Math.round(memory.usedJSHeapSize / 1024 / 1024) + ' MB',
+                        totalJSHeapSize: Math.round(memory.totalJSHeapSize / 1024 / 1024) + ' MB',
+                        jsHeapSizeLimit: Math.round(memory.jsHeapSizeLimit / 1024 / 1024) + ' MB',
+                    },
+                    timing: {
+                        navigationStart: new Date(timing.navigationStart).toLocaleTimeString(),
+                        loadEventEnd: new Date(timing.loadEventEnd).toLocaleTimeString(),
+                        domContentLoaded: new Date(timing.domContentLoadedEventEnd).toLocaleTimeString(),
+                    },
+                    errors: errorCount,
+                    warnings: warningCount,
+                };
+                
+                statusDiv.innerHTML = `
+                    <div class="status info">📊 Performance Monitor (Live)</div>
+                    <pre>${JSON.stringify(info, null, 2)}</pre>
+                `;
+            }, 1000);
+        }
+        
+        function stopPerformanceMonitor() {
+            if (performanceInterval) {
+                clearInterval(performanceInterval);
+                performanceInterval = null;
+                document.getElementById('performance-status').innerHTML = '<div class="status info">⏹️ Performance monitoring stopped</div>';
+            }
+        }
+        
+        // Auto-run basic checks on page load
+        window.addEventListener('load', function() {
+            setTimeout(() => {
+                checkFlutterStatus();
+                checkConsoleErrors();
+            }, 500);
+        });
+    </script>
+</body>
+</html>

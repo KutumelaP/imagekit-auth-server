@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Flutter Web Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background: #f0f0f0;
+        }
+        .test-section {
+            background: white;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+        }
+        .success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .warning { background: #fff3cd; color: #856404; border: 1px solid #ffeaa7; }
+        .info { background: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb; }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover { background: #0056b3; }
+        pre {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+        }
+    </style>
+</head>
+<body>
+    <h1>🧪 Flutter Web Configuration Test</h1>
+    
+    <div class="test-section">
+        <h2>1. Flutter Configuration Check</h2>
+        <div id="flutter-config-status"></div>
+        <button onclick="checkFlutterConfig()">Check Flutter Config</button>
+    </div>
+    
+    <div class="test-section">
+        <h2>2. Flutter Loader Test</h2>
+        <div id="flutter-loader-status"></div>
+        <button onclick="testFlutterLoader()">Test Flutter Loader</button>
+    </div>
+    
+    <div class="test-section">
+        <h2>3. Console Error Check</h2>
+        <div id="console-status"></div>
+        <button onclick="checkConsoleErrors()">Check Console</button>
+    </div>
+    
+    <div class="test-section">
+        <h2>4. Main App Test</h2>
+        <div id="main-app-status"></div>
+        <button onclick="testMainApp()">Test Main App</button>
+        <button onclick="openMainApp()">Open Main App</button>
+    </div>
+    
+    <div class="test-section">
+        <h2>5. Browser Information</h2>
+        <div id="browser-info"></div>
+        <button onclick="showBrowserInfo()">Show Browser Info</button>
+    </div>
+
+    <script>
+        // Test 1: Flutter Configuration
+        function checkFlutterConfig() {
+            const statusDiv = document.getElementById('flutter-config-status');
+            
+            try {
+                // Check if Flutter configuration exists
+                if (window.flutterConfiguration) {
+                    statusDiv.innerHTML = `
+                        <div class="status success">✅ Flutter Configuration Found</div>
+                        <pre>${JSON.stringify(window.flutterConfiguration, null, 2)}</pre>
+                    `;
+                } else {
+                    statusDiv.innerHTML = '<div class="status error">❌ Flutter Configuration Missing</div>';
+                }
+                
+                // Check if _flutter buildConfig exists
+                if (window._flutter && window._flutter.buildConfig) {
+                    statusDiv.innerHTML += `
+                        <div class="status success">✅ Flutter Build Config Found</div>
+                        <pre>${JSON.stringify(window._flutter.buildConfig, null, 2)}</pre>
+                    `;
+                } else {
+                    statusDiv.innerHTML += '<div class="status error">❌ Flutter Build Config Missing</div>';
+                }
+                
+            } catch (error) {
+                statusDiv.innerHTML = `<div class="status error">❌ Error: ${error.message}</div>`;
+            }
+        }
+        
+        // Test 2: Flutter Loader Test
+        function testFlutterLoader() {
+            const statusDiv = document.getElementById('flutter-loader-status');
+            
+            try {
+                if (window._flutter && window._flutter.loader) {
+                    statusDiv.innerHTML = `
+                        <div class="status success">✅ Flutter Loader Found</div>
+                        <div class="status info">Loader methods: ${Object.keys(window._flutter.loader).join(', ')}</div>
+                    `;
+                } else {
+                    statusDiv.innerHTML = '<div class="status error">❌ Flutter Loader Not Found</div>';
+                }
+            } catch (error) {
+                statusDiv.innerHTML = `<div class="status error">❌ Error: ${error.message}</div>`;
+            }
+        }
+        
+        // Test 3: Console Error Check
+        function checkConsoleErrors() {
+            const statusDiv = document.getElementById('console-status');
+            
+            // Override console.error to catch errors
+            const originalError = console.error;
+            const errors = [];
+            
+            console.error = function(...args) {
+                errors.push(args.join(' '));
+                originalError.apply(console, args);
+            };
+            
+            // Check for existing errors
+            setTimeout(() => {
+                if (errors.length > 0) {
+                    statusDiv.innerHTML = `
+                        <div class="status warning">⚠️ Console Errors Detected</div>
+                        <div class="status info">Found ${errors.length} error(s)</div>
+                        <pre>${errors.join('\n')}</pre>
+                    `;
+                } else {
+                    statusDiv.innerHTML = '<div class="status success">✅ No Console Errors Detected</div>';
+                }
+                
+                // Restore original console.error
+                console.error = originalError;
+            }, 1000);
+        }
+        
+        // Test 4: Main App Test
+        function testMainApp() {
+            const statusDiv = document.getElementById('main-app-status');
+            
+            // Test if we can access the main app
+            fetch('https://marketplace-8d6bd.web.app')
+                .then(response => {
+                    if (response.ok) {
+                        statusDiv.innerHTML = `
+                            <div class="status success">✅ Main App Accessible</div>
+                            <div class="status info">Status: ${response.status} ${response.statusText}</div>
+                        `;
+                    } else {
+                        statusDiv.innerHTML = `
+                            <div class="status warning">⚠️ Main App Response: ${response.status}</div>
+                        `;
+                    }
+                })
+                .catch(error => {
+                    statusDiv.innerHTML = `
+                        <div class="status error">❌ Main App Error: ${error.message}</div>
+                    `;
+                });
+        }
+        
+        function openMainApp() {
+            window.open('https://marketplace-8d6bd.web.app', '_blank');
+        }
+        
+        // Test 5: Browser Information
+        function showBrowserInfo() {
+            const statusDiv = document.getElementById('browser-info');
+            
+            const info = {
+                userAgent: navigator.userAgent,
+                platform: navigator.platform,
+                language: navigator.language,
+                cookieEnabled: navigator.cookieEnabled,
+                onLine: navigator.onLine,
+                serviceWorker: 'serviceWorker' in navigator,
+                localStorage: (() => {
+                    try {
+                        localStorage.setItem('test', 'test');
+                        localStorage.removeItem('test');
+                        return true;
+                    } catch (e) {
+                        return false;
+                    }
+                })(),
+                viewport: {
+                    width: window.innerWidth,
+                    height: window.innerHeight,
+                    devicePixelRatio: window.devicePixelRatio
+                }
+            };
+            
+            statusDiv.innerHTML = `
+                <div class="status info">📱 Browser Information</div>
+                <pre>${JSON.stringify(info, null, 2)}</pre>
+            `;
+        }
+        
+        // Auto-run basic checks on page load
+        window.addEventListener('load', function() {
+            setTimeout(() => {
+                checkFlutterConfig();
+                testFlutterLoader();
+                showBrowserInfo();
+            }, 500);
+        });
+    </script>
+</body>
+</html>
