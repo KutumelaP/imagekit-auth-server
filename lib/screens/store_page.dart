@@ -1,4 +1,3 @@
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'product_browsing_screen.dart';
@@ -373,8 +372,8 @@ class _StoreSelectionScreenState extends State<StoreSelectionScreen> {
       // This ensures all approved sellers are visible
           
       final review = await _getStoreReviewSummary(storeId);
-      final storeLat = userData['latitude'];
-      final storeLng = userData['longitude'];
+      final storeLat = _parseCoordinate(userData['latitude']);
+      final storeLng = _parseCoordinate(userData['longitude']);
       final deliveryRange = (userData['deliveryRange'] ?? 1000.0).toDouble(); // Use new deliveryRange field
       double? distance;
       bool inRange = true;
@@ -481,6 +480,18 @@ class _StoreSelectionScreenState extends State<StoreSelectionScreen> {
       print('ERROR in _getApprovedStores: $e');
       return [];
     }
+  }
+
+  // Helper method to parse coordinates from various types
+  double? _parseCoordinate(dynamic value) {
+    if (value == null) return null;
+    if (value is double) return value;
+    if (value is int) return value.toDouble();
+    if (value is String) {
+      final parsed = double.tryParse(value);
+      return parsed;
+    }
+    return null;
   }
 
   bool userLatLngValid(Position? userPos, dynamic storeLat, dynamic storeLng, double deliveryRange) {

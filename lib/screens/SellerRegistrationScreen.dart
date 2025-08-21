@@ -75,6 +75,12 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
   TimeOfDay _storeOpenTime = const TimeOfDay(hour: 8, minute: 0);
   TimeOfDay _storeCloseTime = const TimeOfDay(hour: 18, minute: 0);
 
+  // PAXI Service variables
+  bool _paxiEnabled = false;
+  
+  // Pargo Service variables
+  bool _pargoEnabled = false;
+
   dynamic _storeImage; // Can be File or XFile
   // String? _storeImageUrl;
   List<dynamic> _extraPhotos = []; // Can contain File or XFile
@@ -738,6 +744,28 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
       return;
     }
 
+    // Additional validation for PAXI service
+    if (_paxiEnabled && (_latitude == null || _longitude == null)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('PAXI service requires store location coordinates. Please enable location services and try again.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    // Additional validation for Pargo service
+    if (_pargoEnabled && (_latitude == null || _longitude == null)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Pargo service requires store location coordinates. Please enable location services and try again.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
     setState(() => _isLoading = true);
     final user = FirebaseAuth.instance.currentUser;
 
@@ -832,6 +860,8 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
         'passion': _passionController.text.trim(),
         'latitude': _latitude,
         'longitude': _longitude,
+        'paxiEnabled': _paxiEnabled,
+        'pargoEnabled': _pargoEnabled,
         'status': 'pending',
         'verified': false,
         'paused': false,
@@ -2557,6 +2587,230 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
                               ],
                             ),
                           ),
+                        
+                        // PAXI Pickup Service Section
+                        Container(
+                          margin: const EdgeInsets.only(bottom: 16),
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: AppTheme.angel,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: AppTheme.breeze.withOpacity(0.3),
+                            ),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Icon(
+                                    Icons.local_shipping,
+                                    color: AppTheme.deepTeal,
+                                    size: 20,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    'PAXI Pickup Service',
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w600,
+                                      color: AppTheme.deepTeal,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 12),
+                              Text(
+                                'Allow customers to collect orders from this store via PAXI pickup points.',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: AppTheme.mediumGrey,
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                              
+                              // PAXI Service Toggle
+                              SwitchListTile(
+                                title: Text(
+                                  'Enable PAXI Pickup Service',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppTheme.deepTeal,
+                                  ),
+                                ),
+                                subtitle: Text(
+                                  'Customers can select this store for PAXI pickup',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: AppTheme.mediumGrey,
+                                  ),
+                                ),
+                                value: _paxiEnabled,
+                                onChanged: (value) {
+                                  setState(() {
+                                    _paxiEnabled = value;
+                                  });
+                                },
+                                activeColor: AppTheme.primaryGreen,
+                              ),
+                              
+                              // Show PAXI details only if enabled
+                              if (_paxiEnabled) ...[
+                                const SizedBox(height: 16),
+                                
+                                // PAXI Information Card
+                                Container(
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    color: AppTheme.primaryGreen.withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(
+                                      color: AppTheme.primaryGreen.withOpacity(0.3),
+                                    ),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        Icons.info_outline,
+                                        size: 16,
+                                        color: AppTheme.primaryGreen,
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          '✅ Customers can select your store for pickup\n'
+                                          '✅ Automatic distance calculations\n'
+                                          '✅ Admin-configured pricing\n'
+                                          '✅ Uses your existing operating hours\n'
+                                          '✅ No additional setup required',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            color: AppTheme.primaryGreen,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                        
+                        // Pargo Pickup Service Section
+                        Container(
+                          margin: const EdgeInsets.only(bottom: 16),
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: AppTheme.angel,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: AppTheme.breeze.withOpacity(0.3),
+                            ),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Icon(
+                                    Icons.local_shipping,
+                                    color: AppTheme.deepTeal,
+                                    size: 20,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    'Pargo Pickup Service',
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w600,
+                                      color: AppTheme.deepTeal,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 12),
+                              Text(
+                                'Allow customers to collect orders from this store via Pargo pickup points.',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: AppTheme.mediumGrey,
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                              
+                              // Pargo Service Toggle
+                              SwitchListTile(
+                                title: Text(
+                                  'Enable Pargo Pickup Service',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppTheme.deepTeal,
+                                  ),
+                                ),
+                                subtitle: Text(
+                                  'Customers can select this store for Pargo pickup',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: AppTheme.mediumGrey,
+                                  ),
+                                ),
+                                value: _pargoEnabled,
+                                onChanged: (value) {
+                                  setState(() {
+                                    _pargoEnabled = value;
+                                  });
+                                },
+                                activeColor: AppTheme.primaryGreen,
+                              ),
+                              
+                              // Show Pargo details only if enabled
+                              if (_pargoEnabled) ...[
+                                const SizedBox(height: 16),
+                                
+                                // Pargo Information Card
+                                Container(
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    color: AppTheme.primaryGreen.withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(
+                                      color: AppTheme.primaryGreen.withOpacity(0.3),
+                                    ),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        Icons.info_outline,
+                                        size: 16,
+                                        color: AppTheme.primaryGreen,
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          '✅ Customers can select your store for pickup\n'
+                                          '✅ Automatic distance calculations\n'
+                                          '✅ Admin-configured pricing\n'
+                                          '✅ Uses your existing operating hours\n'
+                                          '✅ No additional setup required',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            color: AppTheme.primaryGreen,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
                         
                         // Delivery Hours Section
                         Container(

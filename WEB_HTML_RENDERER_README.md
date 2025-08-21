@@ -81,3 +81,4 @@ If you encounter issues:
 - Minimize complex animations
 - Optimize images and assets
 - Consider lazy loading for heavy components
+

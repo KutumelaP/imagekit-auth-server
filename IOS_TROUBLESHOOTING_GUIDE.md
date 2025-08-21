@@ -180,3 +180,4 @@ Safari → Share Button → Add to Home Screen
 4. **CanvasKit renderer** memory usage
 
 **Try the diagnostic tests above and let me know what you find!** 🚀
+

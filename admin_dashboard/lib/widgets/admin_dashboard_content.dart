@@ -45,6 +45,7 @@ import 'data_export_section.dart';
 import 'roles_permissions_section.dart';
 import 'seller_delivery_management.dart';
 import 'image_management_section.dart';
+import 'paxi_pricing_management.dart';
 
 class AdminDashboardContent extends StatefulWidget {
   final String adminEmail;
@@ -100,6 +101,7 @@ class _AdminDashboardContentState extends State<AdminDashboardContent> {
     'Urban Delivery Management',
     'Driver Management',
     'Seller Delivery Management',
+    'PAXI Pricing Management',
   ];
 
   @override
@@ -471,7 +473,8 @@ class _AdminDashboardContentState extends State<AdminDashboardContent> {
       case 25: return RuralDriverManagement(); // Rural Driver Management
       case 26: return UrbanDeliveryManagement(); // Urban Delivery Management
       case 27: return DriverManagementScreen(); // Driver Management
-      case 28: return SellerDeliveryManagement(); // Seller Delivery Management
+              case 28: return SellerDeliveryManagement(); // Seller Delivery Management
+        case 29: return PaxiPricingManagement(); // PAXI Pricing Management
       default: return const SizedBox();
     }
   }

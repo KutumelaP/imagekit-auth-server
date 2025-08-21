@@ -171,3 +171,4 @@ class NavigationStateManager {
     return null;
   }
 }
+
