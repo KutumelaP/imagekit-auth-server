@@ -88,6 +88,14 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen>
   
   User? get currentUser => FirebaseAuth.instance.currentUser;
 
+  // Pagination state
+  final ScrollController _scrollController = ScrollController();
+  final List<DocumentSnapshot> _orders = [];
+  DocumentSnapshot? _lastDoc;
+  bool _isLoading = false;
+  bool _hasMore = true;
+  static const int _pageSize = 15;
+
   @override
   void initState() {
     super.initState();
@@ -135,6 +143,14 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen>
     _pulseController.repeat(reverse: true);
     _shimmerController.repeat();
     _floatingController.repeat(reverse: true);
+
+    // Load initial orders and set up pagination
+    _loadInitialOrders();
+    _scrollController.addListener(() {
+      if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 200) {
+        _loadMoreOrders();
+      }
+    });
   }
 
   @override
@@ -145,7 +161,61 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen>
     _pulseController.dispose();
     _shimmerController.dispose();
     _floatingController.dispose();
+    _scrollController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadInitialOrders() async {
+    if (_isLoading) return;
+    if (currentUser == null) return;
+    setState(() { _isLoading = true; _orders.clear(); _lastDoc = null; _hasMore = true; });
+    try {
+      Query q = FirebaseFirestore.instance
+          .collection('orders')
+          .where('buyerId', isEqualTo: currentUser!.uid)
+          .orderBy('timestamp', descending: true)
+          .limit(_pageSize);
+      final snap = await q.get();
+      if (snap.docs.isNotEmpty) {
+        _orders.addAll(snap.docs);
+        _lastDoc = snap.docs.last;
+        _hasMore = snap.docs.length >= _pageSize;
+      } else {
+        _hasMore = false;
+      }
+    } finally {
+      if (mounted) setState(() { _isLoading = false; });
+    }
+  }
+
+  Future<void> _loadMoreOrders() async {
+    if (_isLoading || !_hasMore) return;
+    if (currentUser == null) return;
+    setState(() { _isLoading = true; });
+    try {
+      Query q = FirebaseFirestore.instance
+          .collection('orders')
+          .where('buyerId', isEqualTo: currentUser!.uid)
+          .orderBy('timestamp', descending: true)
+          .limit(_pageSize);
+      if (_lastDoc != null) {
+        q = q.startAfter([_lastDoc!['timestamp']]);
+      }
+      final snap = await q.get();
+      if (snap.docs.isNotEmpty) {
+        _orders.addAll(snap.docs);
+        _lastDoc = snap.docs.last;
+        _hasMore = snap.docs.length >= _pageSize;
+      } else {
+        _hasMore = false;
+      }
+    } finally {
+      if (mounted) setState(() { _isLoading = false; });
+    }
+  }
+
+  Future<void> _onRefresh() async {
+    await _loadInitialOrders();
   }
 
   Color _statusColor(String status) {
@@ -183,28 +253,14 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen>
           const SizedBox(width: 16),
         ],
       ),
-      body: StreamBuilder<QuerySnapshot>(
-        stream: FirebaseFirestore.instance
-            .collection('orders')
-            .where('buyerId', isEqualTo: currentUser?.uid)
-            .orderBy('timestamp', descending: true)
-            .snapshots(),
-        builder: (context, snapshot) {
-          if (snapshot.hasError) {
-            return Center(
-              child: Text('Error: ${snapshot.error}'),
-            );
-          }
-
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(
-              child: CircularProgressIndicator(),
-            );
-          }
-
-          final orders = snapshot.data?.docs ?? [];
-          
-          if (orders.isEmpty) {
+      body: Builder(builder: (context) {
+        if (currentUser == null) {
+          return _buildAuthRequiredScreen();
+        }
+        if (_orders.isEmpty && _isLoading) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (_orders.isEmpty) {
             return Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -236,20 +292,30 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen>
             );
           }
 
-          return Padding(
+        return RefreshIndicator(
+          onRefresh: _onRefresh,
+          color: AppTheme.deepTeal,
+          child: Padding(
             padding: EdgeInsets.all(isSmallScreen ? 8.0 : 16.0),
             child: ListView.builder(
-              itemCount: orders.length,
+              controller: _scrollController,
+              itemCount: _orders.length + (_isLoading ? 1 : 0),
               itemBuilder: (context, index) {
-                final orderDoc = orders[index];
+                if (index >= _orders.length) {
+                  return const Padding(
+                    padding: EdgeInsets.all(16),
+                    child: Center(child: CircularProgressIndicator()),
+                  );
+                }
+                final orderDoc = _orders[index];
                 final orderId = orderDoc.id;
                 final orderData = orderDoc.data() as Map<String, dynamic>;
                 return _buildOrderCard(orderId, orderData, isSmallScreen);
               },
             ),
-          );
-        },
-      ),
+          ),
+        );
+      }),
     );
   }
 

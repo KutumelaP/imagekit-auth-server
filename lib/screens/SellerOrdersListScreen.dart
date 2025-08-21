@@ -270,7 +270,7 @@ class _SellerOrdersListScreenState extends State<SellerOrdersListScreen>
       // Use direct Firestore query instead of OptimizedFirestoreQuery for now
       Query query = _firestore.collection('orders')
           .where('sellerId', isEqualTo: sellerId)
-          // .orderBy('timestamp', descending: true) // Temporarily removed for testing
+          .orderBy('timestamp', descending: true)
           .limit(15);
 
       final snapshot = await query.get().timeout(

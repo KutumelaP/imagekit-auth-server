@@ -17,13 +17,14 @@ class NotificationListScreen extends StatefulWidget {
   State<NotificationListScreen> createState() => _NotificationListScreenState();
 }
 
-class _NotificationListScreenState extends State<NotificationListScreen> {
+class _NotificationListScreenState extends State<NotificationListScreen> with WidgetsBindingObserver {
   final NotificationService _notificationService = NotificationService();
   bool _isLoading = false;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _refreshNotifications();
   }
 
@@ -94,6 +95,19 @@ class _NotificationListScreenState extends State<NotificationListScreen> {
           ),
         );
       }
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _refreshNotifications();
     }
   }
 
@@ -442,6 +456,7 @@ class _NotificationListScreenState extends State<NotificationListScreen> {
           return _buildEmptyState();
         }
 
+        // Basic pagination via Query cursor
         return RefreshIndicator(
           onRefresh: _refreshNotifications,
           color: AppTheme.deepTeal,

@@ -4,37 +4,18 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../screens/product_detail_screen.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../theme/app_theme.dart';
 import '../widgets/optimized_image.dart';
 import '../services/performance_service.dart';
-import '../constants/app_constants.dart';
+// import '../constants/app_constants.dart';
 import '../providers/cart_provider.dart';
 import '../widgets/enhanced_filter_widget.dart';
 
 const String googleMapsApiKey = 'YOUR_GOOGLE_MAPS_API_KEY'; // TODO: Replace with your real key
 
-Future<int> _getRealisticDeliveryTime(double storeLat, double storeLng, double userLat, double userLng) async {
-  if (googleMapsApiKey == 'YOUR_GOOGLE_MAPS_API_KEY') {
-    // Fallback: 5 min per km
-    final distance = Geolocator.distanceBetween(userLat, userLng, storeLat, storeLng) / 1000;
-    return (distance * 5).round();
-  }
-  final url = Uri.parse(
-    'https://maps.googleapis.com/maps/api/distancematrix/json?origins=$storeLat,$storeLng&destinations=$userLat,$userLng&mode=driving&key=$googleMapsApiKey',
-  );
-  final response = await http.get(url);
-  if (response.statusCode == 200) {
-    final data = json.decode(response.body);
-    final duration = data['rows'][0]['elements'][0]['duration']['value']; // seconds
-    return (duration / 60).round();
-  } else {
-    // Fallback: 5 min per km
-    final distance = Geolocator.distanceBetween(userLat, userLng, storeLat, storeLng) / 1000;
-    return (distance * 5).round();
-  }
-}
+// Removed unused Google Distance API helper to reduce size
 
 class ProductBrowsingScreen extends StatefulWidget {
   final String? categoryFilter;
@@ -70,11 +51,13 @@ class _ProductBrowsingScreenState extends State<ProductBrowsingScreen>
   String _sortBy = 'name';
 
   QuerySnapshot? _latestSnapshot;
-  DocumentSnapshot? _lastProductDoc;
+  DocumentSnapshot? _lastProductDoc; // reserved for future pagination
   List<DocumentSnapshot> _allLoadedProducts = [];
-  bool _hasMoreProducts = true;
-  bool _isLoadingMore = false;
+  bool _hasMoreProducts = true; // reserved for future pagination
+  bool _isLoadingMore = false; // reserved for future pagination
   bool _isGridView = false;
+  final ScrollController _scrollController = ScrollController();
+  static const String _prefsKey = 'pbs_state_v1';
 
   final PerformanceService _performanceService = PerformanceService();
 
@@ -116,13 +99,72 @@ class _ProductBrowsingScreenState extends State<ProductBrowsingScreen>
     if (widget.storeId != null) {
       _loadStoreName();
     }
+    // Restore persisted filters/scroll
+    _restoreState();
+    _scrollController.addListener(_persistScroll);
   }
 
   @override
   void dispose() {
     _fadeController.dispose();
     _slideController.dispose();
+    _scrollController.removeListener(_persistScroll);
+    _scrollController.dispose();
     super.dispose();
+  }
+
+  // ===== Persistence =====
+  Future<void> _restoreState() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final jsonStr = prefs.getString(_prefsKey);
+      if (jsonStr == null) return;
+      final map = json.decode(jsonStr) as Map<String, dynamic>;
+      setState(() {
+        _filterSubcategory = map['sub'] as String?;
+        _searchQuery = map['q'] as String? ?? '';
+        _minPrice = (map['min'] as num?)?.toDouble() ?? _minPrice;
+        _maxPrice = (map['max'] as num?)?.toDouble() ?? _maxPrice;
+        _inStockOnly = map['stock'] == true;
+        _sortBy = map['sort'] as String? ?? _sortBy;
+        _isGridView = map['grid'] == true;
+      });
+      final offset = (map['offset'] as num?)?.toDouble();
+      if (offset != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (_scrollController.hasClients) {
+            _scrollController.jumpTo(offset);
+          }
+        });
+      }
+    } catch (_) {}
+  }
+
+  void _persistScroll() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final current = prefs.getString(_prefsKey);
+      Map<String, dynamic> map = {};
+      if (current != null) map = json.decode(current) as Map<String, dynamic>;
+      map['offset'] = _scrollController.position.pixels;
+      await prefs.setString(_prefsKey, json.encode(map));
+    } catch (_) {}
+  }
+
+  Future<void> _persistFilters() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final map = {
+        'sub': _filterSubcategory,
+        'q': _searchQuery,
+        'min': _minPrice,
+        'max': _maxPrice,
+        'stock': _inStockOnly,
+        'sort': _sortBy,
+        'grid': _isGridView,
+      };
+      await prefs.setString(_prefsKey, json.encode(map));
+    } catch (_) {}
   }
 
   Future<void> _loadStoreName() async {
@@ -582,6 +624,7 @@ class _ProductBrowsingScreenState extends State<ProductBrowsingScreen>
     
     return GridView.builder(
       padding: const EdgeInsets.all(16),
+      controller: _scrollController,
       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: crossAxisCount,
         crossAxisSpacing: 12,
@@ -614,6 +657,7 @@ class _ProductBrowsingScreenState extends State<ProductBrowsingScreen>
   Widget _buildListView(List<DocumentSnapshot> docs) {
     return ListView.builder(
       padding: const EdgeInsets.all(16),
+      controller: _scrollController,
       addAutomaticKeepAlives: false,
       addRepaintBoundaries: true,
       addSemanticIndexes: false,
@@ -1475,24 +1519,28 @@ class _ProductBrowsingScreenState extends State<ProductBrowsingScreen>
       _minPrice = min;
       _maxPrice = max;
     });
+    _persistFilters();
   }
 
   void _onStockFilterChanged(bool inStockOnly) {
     setState(() {
       _inStockOnly = inStockOnly;
     });
+    _persistFilters();
   }
 
   void _onSortByChanged(String sortBy) {
     setState(() {
       _sortBy = sortBy;
     });
+    _persistFilters();
   }
 
   void _onSearchChanged(String searchQuery) {
     setState(() {
       _searchQuery = searchQuery;
     });
+    _persistFilters();
   }
 }
 

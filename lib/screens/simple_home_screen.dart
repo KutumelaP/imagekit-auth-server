@@ -34,11 +34,14 @@ class SimpleHomeScreen extends StatefulWidget {
 }
 
 class _SimpleHomeScreenState extends State<SimpleHomeScreen> 
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   List<Map<String, dynamic>> _categories = [];
   bool _isLoading = true;
   String? _error;
-  StreamSubscription<QuerySnapshot>? _messageListener;
+  // Chat listeners
+  StreamSubscription<QuerySnapshot>? _buyerChatsSub;
+  StreamSubscription<QuerySnapshot>? _sellerChatsSub;
+  final Map<String, StreamSubscription<QuerySnapshot>> _chatMessageSubs = {};
   Map<String, String> _lastMessageIds = {}; // Track last message ID for each chat
   final ScrollController _scrollController = ScrollController();
   late final VoidCallback _scrollListener;
@@ -52,6 +55,7 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _initializeAnimations();
     _initializeScreen();
     _setupMessageListener();
@@ -136,30 +140,34 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
     if (currentUser == null) return;
 
     // Listen for new messages in user's chats (simplified approach)
-    _messageListener = FirebaseFirestore.instance
+    _buyerChatsSub?.cancel();
+    _buyerChatsSub = FirebaseFirestore.instance
         .collection('chats')
         .where('buyerId', isEqualTo: currentUser.uid)
         .snapshots()
         .listen((snapshot) {
       for (final chatDoc in snapshot.docs) {
-        _listenForNewMessagesInChat(chatDoc.id, currentUser.uid);
+        _attachChatListener(chatDoc.id, currentUser.uid);
       }
     });
 
     // Also listen for seller chats
-    FirebaseFirestore.instance
+    _sellerChatsSub?.cancel();
+    _sellerChatsSub = FirebaseFirestore.instance
         .collection('chats')
         .where('sellerId', isEqualTo: currentUser.uid)
         .snapshots()
         .listen((snapshot) {
       for (final chatDoc in snapshot.docs) {
-        _listenForNewMessagesInChat(chatDoc.id, currentUser.uid);
+        _attachChatListener(chatDoc.id, currentUser.uid);
       }
     });
   }
 
-  void _listenForNewMessagesInChat(String chatId, String currentUserId) {
-    FirebaseFirestore.instance
+  void _attachChatListener(String chatId, String currentUserId) {
+    // Avoid duplicate listeners per chat
+    _chatMessageSubs.remove(chatId)?.cancel();
+    final sub = FirebaseFirestore.instance
         .collection('chats')
         .doc(chatId)
         .collection('messages')
@@ -181,6 +189,7 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
         }
       }
     });
+    _chatMessageSubs[chatId] = sub;
   }
 
   // void _showIncomingMessageNotification(Map<String, dynamic> messageData, String chatId) {
@@ -285,10 +294,30 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
   @override
   void dispose() {
     _fadeController.dispose();
-    _messageListener?.cancel(); // Cancel the listener
+    _cancelAllChatListeners();
     _scrollController.removeListener(_scrollListener);
     _scrollController.dispose();
+    WidgetsBinding.instance.removeObserver(this);
     super.dispose();
+  }
+
+  void _cancelAllChatListeners() {
+    _buyerChatsSub?.cancel();
+    _sellerChatsSub?.cancel();
+    for (final sub in _chatMessageSubs.values) {
+      sub.cancel();
+    }
+    _chatMessageSubs.clear();
+  }
+
+  // Pause/resume background listeners based on app lifecycle
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive) {
+      _cancelAllChatListeners();
+    } else if (state == AppLifecycleState.resumed) {
+      _setupMessageListener();
+    }
   }
 
   Future<void> _initializeScreen() async {
