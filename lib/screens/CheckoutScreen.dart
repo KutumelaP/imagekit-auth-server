@@ -3820,7 +3820,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
       // Generate order number
       final now = DateTime.now();
-      final orderNumber = 'ORD-${now.day.toString().padLeft(2, '0')}${now.month.toString().padLeft(2, '0')}${now.year}-${now.hour.toString().padLeft(2, '0')}${now.minute.toString().padLeft(2, '0')}-${currentUser!.uid.substring(0, 3).toUpperCase()}';
+      final computedOrderNumber = 'ORD-${now.day.toString().padLeft(2, '0')}${now.month.toString().padLeft(2, '0')}${now.year}-${now.hour.toString().padLeft(2, '0')}${now.minute.toString().padLeft(2, '0')}-${currentUser!.uid.substring(0, 3).toUpperCase()}';
+      orderNumber = computedOrderNumber;
       
       print('🔍 DEBUG: Order number: $orderNumber');
 
