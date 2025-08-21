@@ -352,7 +352,12 @@ class CourierQuoteService {
       print('🔍 Finding real PAXI partner stores for lat: $latitude, lng: $longitude');
       
       // Increase search radius for PAXI stores to cover larger metropolitan areas
-      final paxiSearchRadius = radiusKm * 3; // 3x the normal radius (30km instead of 10km)
+      // Expand radius to ensure sufficient PAXI results in metros
+      double paxiSearchRadius = (radiusKm * 3);
+      // If around Gauteng metro (rough bbox), allow up to 60km to bridge Pretoria/JHB
+      final inGautengApprox = (latitude > -26.6 && latitude < -25.5 && longitude > 27.0 && longitude < 29.0);
+      final maxCap = inGautengApprox ? 100.0 : 35.0;
+      paxiSearchRadius = paxiSearchRadius.clamp(15.0, maxCap);
       print('🔍 PAXI search radius: ${radiusKm}km normal, ${paxiSearchRadius}km for PAXI stores');
       
       final pickupPoints = <PickupPoint>[];
@@ -383,31 +388,27 @@ class CourierQuoteService {
               final distance = Geolocator.distanceBetween(
                 latitude, longitude, store['latitude'], store['longitude']
               ) / 1000; // Convert to km
-              
-              // Only include stores within PAXI radius
-              if (distance <= paxiSearchRadius) {
-                print('✅ $brand store within radius: ${distance.toStringAsFixed(1)}km - ${store['address']}');
-                
-                final pickupPoint = PickupPoint(
-                  id: 'paxi_here_${store['id']}',
-                  name: 'PAXI - $brand',
-                  address: store['address'],
-                  latitude: store['latitude'],
-                  longitude: store['longitude'],
-                  type: 'PAXI Partner Store',
-                  distance: distance,
-                  fee: 59.95, // Standard PAXI fee
-                  operatingHours: 'Mon-Sun 8AM-8PM', // Default hours
-                  pargoId: null,
-                  isPargoPoint: false,
-                  paxiId: store['id'],
-                  isPaxiPoint: true,
-                );
-                
-                pickupPoints.add(pickupPoint);
-              } else {
-                print('⚠️ $brand store outside radius: ${distance.toStringAsFixed(1)}km > ${paxiSearchRadius}km - ${store['address']}');
-              }
+
+              // HERE already applies the radius; include all returned results
+              print('✅ $brand store: ${distance.toStringAsFixed(1)}km - ${store['address']}');
+
+              final pickupPoint = PickupPoint(
+                id: 'paxi_here_${store['id']}',
+                name: 'PAXI - $brand',
+                address: store['address'],
+                latitude: store['latitude'],
+                longitude: store['longitude'],
+                type: 'PAXI Partner Store',
+                distance: distance,
+                fee: 59.95, // Standard PAXI fee
+                operatingHours: 'Mon-Sun 8AM-8PM', // Default hours
+                pargoId: null,
+                isPargoPoint: false,
+                paxiId: store['id'],
+                isPaxiPoint: true,
+              );
+
+              pickupPoints.add(pickupPoint);
             }
           } else {
             print('🔍 No $brand stores found via HERE Maps API');
@@ -459,6 +460,7 @@ class CourierQuoteService {
         'apiKey': HereConfig.validatedApiKey,
         'at': '$latitude,$longitude', // Center search around coordinates
         'radius': '${(radiusKm * 1000).round()}', // Convert km to meters
+        'in': 'countryCode:ZAF', // Restrict to South Africa
       };
       
       final uri = Uri.parse(HereConfig.discoverUrl).replace(queryParameters: queryParams);
