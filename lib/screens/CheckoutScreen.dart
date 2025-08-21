@@ -4182,7 +4182,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                         ),
                         SizedBox(height: ResponsiveUtils.getVerticalPadding(context)),
                         SafeUI.safeText(
-                          'Processing your order...',
+                          _isLoading ? 'Processing your order...' : 'Finding pickup points...',
                           style: TextStyle(
                             fontSize: ResponsiveUtils.getTitleSize(context),
                         fontWeight: FontWeight.w600,
@@ -4190,6 +4190,17 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                             ),
                             maxLines: 1,
                         ),
+                        if (_isLoadingPickupPoints && _pickupPoints.isEmpty) ...[
+                          SizedBox(height: ResponsiveUtils.getVerticalPadding(context) * 0.5),
+                          SafeUI.safeText(
+                            'This can take a few seconds while we search nearby PAXI and Pargo stores.',
+                            style: TextStyle(
+                              fontSize: ResponsiveUtils.getTitleSize(context) - 4,
+                              color: AppTheme.breeze,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ],
                       ],
                     ),
                   ),
@@ -5037,6 +5048,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                     _pickupAddressController.text = address;
                                     setState(() {
                                       _pickupAddressSuggestions = [];
+                                      // Keep pickup UI visible during geocode + fetch
+                                      _isDelivery = false;
+                                      _isLoadingPickupPoints = true;
                                     });
 
                                     try {
@@ -5065,6 +5079,12 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                       }
                                     } catch (e) {
                                       print('❌ Error converting pickup address to coordinates: $e');
+                                    } finally {
+                                      if (mounted) {
+                                        setState(() {
+                                          _isLoadingPickupPoints = false;
+                                        });
+                                      }
                                     }
                                   },
                                 );
@@ -5831,20 +5851,32 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               // Loading indicator
               if (_isLoadingPickupPoints) ...[
                 Container(
-                  padding: EdgeInsets.all(ResponsiveUtils.getVerticalPadding(context)),
+                  margin: EdgeInsets.symmetric(vertical: 8),
+                  padding: EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppTheme.deepTeal.withOpacity(0.06),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AppTheme.deepTeal.withOpacity(0.2)),
+                  ),
                   child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      CircularProgressIndicator(
-                        valueColor: AlwaysStoppedAnimation<Color>(AppTheme.deepTeal),
-                        strokeWidth: 2,
+                      SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          valueColor: AlwaysStoppedAnimation<Color>(AppTheme.deepTeal),
+                          strokeWidth: 2,
+                        ),
                       ),
-                      SizedBox(width: ResponsiveUtils.getHorizontalPadding(context) * 0.5),
-                      SafeUI.safeText(
-                        'Loading pickup points...',
-                        style: TextStyle(
-                          fontSize: ResponsiveUtils.getTitleSize(context) - 3,
-                          color: AppTheme.breeze,
+                      SizedBox(width: 10),
+                      Expanded(
+                        child: SafeUI.safeText(
+                          'Finding pickup points near you...',
+                          style: TextStyle(
+                            fontSize: ResponsiveUtils.getTitleSize(context) - 4,
+                            color: AppTheme.breeze,
+                          ),
+                          maxLines: 2,
                         ),
                       ),
                     ],
