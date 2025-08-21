@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:marketplace_app/utils/web_js_stub.dart'
     if (dart.library.html) 'package:marketplace_app/utils/web_js_real.dart' as js;
 import 'sound_service.dart';
+import 'package:marketplace_app/utils/web_env.dart';
 
 
 
@@ -59,9 +60,8 @@ class NotificationService {
   /// Initialize web notifications
   Future<void> _initializeWebNotifications() async {
     try {
-      // Check if browser supports notifications
-      final hasNotificationSupport = js.context.hasProperty('Notification');
-      if (!hasNotificationSupport) {
+      // Gate by environment to avoid Safari tab errors and memory pressure
+      if (!WebEnv.isWebPushSupported) {
         print('❌ Browser does not support notifications');
         return;
       }
@@ -132,6 +132,12 @@ class NotificationService {
   Future<bool> requestPermissions() async {
     try {
       if (kIsWeb) {
+        // Web: Ensure Notification API exists before checking permission
+        if (!WebEnv.hasNotificationApi) {
+          print('❌ Browser does not support notifications');
+          return false;
+        }
+
         // Web: Check current permission status first
         final currentPermission = js.context.callMethod('eval', ['Notification.permission']);
         

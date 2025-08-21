@@ -22,8 +22,7 @@
     // Prevent memory pressure refreshes
     flutterConfig.memoryOptimization = true;
     
-    // Reduce canvas memory usage
-    flutterConfig.canvasKitVariant = "chromium"; // Smaller memory footprint
+    // Use default CanvasKit variant for Safari (no chromium variant)
     
     // Keep app alive
     let keepAliveInterval;

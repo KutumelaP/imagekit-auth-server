@@ -40,7 +40,7 @@ class _CompactRecommendedStoresState extends State<CompactRecommendedStores> {
       final storesSnapshot = await FirebaseFirestore.instance
           .collection('users')
           .where('role', isEqualTo: 'seller')
-          .where('status', isEqualTo: 'active')
+          .where('status', isEqualTo: 'approved')
           .where('storeCategory', isEqualTo: widget.category)
           .get();
 

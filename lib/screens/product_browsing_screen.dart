@@ -588,6 +588,10 @@ class _ProductBrowsingScreenState extends State<ProductBrowsingScreen>
         mainAxisSpacing: 12,
         childAspectRatio: childAspectRatio,
       ),
+      addAutomaticKeepAlives: false,
+      addRepaintBoundaries: true,
+      addSemanticIndexes: false,
+      cacheExtent: 1200,
       itemCount: docs.length,
       itemBuilder: (context, index) {
         final doc = docs[index];
@@ -610,6 +614,10 @@ class _ProductBrowsingScreenState extends State<ProductBrowsingScreen>
   Widget _buildListView(List<DocumentSnapshot> docs) {
     return ListView.builder(
       padding: const EdgeInsets.all(16),
+      addAutomaticKeepAlives: false,
+      addRepaintBoundaries: true,
+      addSemanticIndexes: false,
+      cacheExtent: 1000,
       itemCount: docs.length,
       itemBuilder: (context, index) {
         final doc = docs[index];

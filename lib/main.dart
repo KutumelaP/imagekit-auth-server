@@ -14,6 +14,7 @@ import 'services/error_tracking_service.dart';
 import 'services/fcm_config_service.dart';
 import 'services/awesome_notification_service.dart';
 import 'services/navigation_service.dart';
+import 'services/route_persistence_observer.dart';
 import 'screens/NotificationSettingsScreen.dart';
 import 'screens/ChatRoute.dart';
 import 'services/global_message_listener.dart';
@@ -38,7 +39,9 @@ import 'screens/MyStoresScreen.dart';
 
 import 'dart:async';
 import 'utils/safari_optimizer.dart';
+import 'utils/web_memory_guard.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'utils/web_env.dart';
 
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
@@ -52,14 +55,14 @@ void main() async {
   // Initialize Safari optimizations
   SafariOptimizer.initialize();
   
-  // Safari-specific optimizations
+  // Basic web optimizations
   if (kIsWeb) {
-    // Reduce memory pressure for Safari
-    PaintingBinding.instance.imageCache.maximumSize = 200; // Reduced from default
-    PaintingBinding.instance.imageCache.maximumSizeBytes = 25 << 20; // 25MB
-    
-    // Disable some features that cause issues in Safari
-    debugPrintRebuildDirtyWidgets = false;
+    // Basic memory management for web
+    // Lower limits to reduce iOS Safari evictions
+    PaintingBinding.instance.imageCache.maximumSize = 120;
+    PaintingBinding.instance.imageCache.maximumSizeBytes = 12 << 20; // ~12MB
+    // Initialize guard to clear caches when hidden/backgrounded
+    WebMemoryGuard().initialize();
   }
   
   // Initialize Firebase with options
@@ -81,15 +84,20 @@ void main() async {
   // Initialize Awesome Notifications for local banners (mobile)
   await AwesomeNotificationService().initialize();
   
-  // Initialize location permissions
+  // Initialize location permissions (skip on iOS Safari web to avoid reloads)
   try {
-    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    if (serviceEnabled) {
-      LocationPermission permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        print('🔍 DEBUG: Requesting location permission on app start...');
-        await Geolocator.requestPermission();
+    final skipLocationOnIOSWeb = WebEnv.isIOSWeb && !WebEnv.isStandalonePWA;
+    if (!skipLocationOnIOSWeb) {
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (serviceEnabled) {
+        LocationPermission permission = await Geolocator.checkPermission();
+        if (permission == LocationPermission.denied) {
+          print('🔍 DEBUG: Requesting location permission on app start...');
+          await Geolocator.requestPermission();
+        }
       }
+    } else {
+      print('🔍 DEBUG: Skipping location permission on iOS Safari tab');
     }
   } catch (e) {
     print('🔍 DEBUG: Error initializing location permissions: $e');
@@ -98,8 +106,8 @@ void main() async {
   // Initialize error tracking
   ErrorTrackingService.initialize();
   
-  // Initialize global message listener for notifications with reduced frequency
-  if (!kIsWeb) { // Only start on mobile to reduce Safari memory pressure
+  // Initialize global message listener for notifications
+  if (!kIsWeb) {
     await GlobalMessageListener().startListening();
   }
   
@@ -121,8 +129,8 @@ class MyApp extends StatelessWidget {
         theme: AppTheme.lightTheme,
           navigatorKey: NavigationService.navigatorKey,
         navigatorObservers: [
-          // Add navigation logging for debugging
           _DebugNavigatorObserver(),
+          RoutePersistenceObserver(),
         ],
         home: InAppNotificationWidget(
           child: NotificationBadge(
@@ -130,12 +138,13 @@ class MyApp extends StatelessWidget {
           ),
         ),
         builder: (context, child) {
-          // Handle keyboard properly to prevent blank page issues
+          // Global bottom SafeArea to avoid iPhone home indicator overlap
+          final wrapped = SafeArea(top: false, bottom: true, child: child!);
           return MediaQuery(
             data: MediaQuery.of(context).copyWith(
               viewInsets: MediaQuery.of(context).viewInsets,
             ),
-            child: child!,
+            child: wrapped,
           );
         },
         routes: {
@@ -215,11 +224,13 @@ class _SplashWrapperState extends State<SplashWrapper> {
   @override
   void initState() {
     super.initState();
-    // Navigate to home screen after 3 seconds
-    Future.delayed(const Duration(seconds: 3), () {
-      if (mounted) {
-        Navigator.of(context).pushReplacementNamed('/home');
-      }
+    // Navigate to last route if available, else home
+    Future.delayed(const Duration(seconds: 1), () async {
+      if (!mounted) return;
+      final last = await RoutePersistenceObserver.getLastRoute();
+      final target = (last != null && last.isNotEmpty) ? last : '/home';
+      if (!mounted) return;
+      Navigator.of(context).pushReplacementNamed(target);
     });
   }
 

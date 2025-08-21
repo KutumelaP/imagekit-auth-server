@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Clear Service Worker</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 24px; }
+    .log { white-space: pre-wrap; background:#f7f7f7; padding:12px; border-radius:8px; }
+  </style>
+</head>
+<body>
+  <h2>Clearing Service Workers and Caches…</h2>
+  <div class="log" id="log">Starting…</div>
+  <script>
+    (async function(){
+      const log = (m)=>{ document.getElementById('log').textContent += '\n' + m; };
+      try {
+        if ('serviceWorker' in navigator) {
+          const regs = await navigator.serviceWorker.getRegistrations();
+          for (const r of regs) { await r.unregister(); log('Unregistered SW: ' + (r.scope||'')); }
+        }
+      } catch(e){ log('SW error: ' + e); }
+      try {
+        if (window.caches && caches.keys) {
+          const keys = await caches.keys();
+          for (const k of keys) { await caches.delete(k); log('Deleted cache: ' + k); }
+        }
+      } catch(e){ log('Cache error: ' + e); }
+      log('Done. Redirecting…');
+      setTimeout(()=>{ location.replace('/?v=' + Date.now()); }, 800);
+    })();
+  </script>
+</body>
+</html>
+
+

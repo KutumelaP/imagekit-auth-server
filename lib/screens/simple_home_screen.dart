@@ -23,6 +23,8 @@ import '../services/global_message_listener.dart';
 import '../widgets/notification_badge.dart';
 import '../widgets/chat_badge.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../widgets/safe_network_image.dart';
 
 class SimpleHomeScreen extends StatefulWidget {
   const SimpleHomeScreen({super.key});
@@ -38,6 +40,8 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
   String? _error;
   StreamSubscription<QuerySnapshot>? _messageListener;
   Map<String, String> _lastMessageIds = {}; // Track last message ID for each chat
+  final ScrollController _scrollController = ScrollController();
+  late final VoidCallback _scrollListener;
   
   // Smooth animations
   late AnimationController _fadeController;
@@ -70,6 +74,28 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
     
     // Request location permission when app starts
     _requestLocationPermission();
+
+    // Restore scroll position if available (inline to avoid order issues)
+    (() async {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        final offset = prefs.getDouble(_homeScrollKey);
+        if (offset != null) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (_scrollController.hasClients) {
+              _scrollController.jumpTo(offset);
+            }
+          });
+        }
+      } catch (_) {}
+    })();
+    _scrollListener = () async {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setDouble(_homeScrollKey, _scrollController.position.pixels);
+      } catch (_) {}
+    };
+    _scrollController.addListener(_scrollListener);
   }
   
   Future<void> _requestLocationPermission() async {
@@ -260,6 +286,8 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
   void dispose() {
     _fadeController.dispose();
     _messageListener?.cancel(); // Cancel the listener
+    _scrollController.removeListener(_scrollListener);
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -282,6 +310,13 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
       }
     }
   }
+
+  // ===== Scroll persistence =====
+  static const String _homeScrollKey = 'home_scroll_offset_v1';
+
+  // Backward-compat placeholders (not used after inline impl)
+  void _persistScrollPosition() {}
+  Future<void> _restoreScrollPosition() async {}
 
   Future<void> _loadCategories() async {
     try {
@@ -367,6 +402,8 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
             tooltip: 'Upload Product',
           ) : null,
       body: SafeArea(
+        top: true,
+        bottom: true,
         child: FadeTransition(
           opacity: _fadeAnimation,
           child: _buildBody(),
@@ -560,7 +597,9 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
         return RefreshIndicator(
           onRefresh: _loadCategories,
           child: CustomScrollView(
+            controller: _scrollController,
             physics: const BouncingScrollPhysics(),
+            cacheExtent: 600,
             slivers: [
               _buildStunningAppBar(),
               _buildWelcomeHero(),
@@ -1615,53 +1654,20 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
       return _buildDefaultCategoryImage(categoryName);
     }
     
-    // Try to load the original image first
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(8),
-      child: Image.network(
-        imageUrl.toString(),
-        width: double.infinity,
-        height: double.infinity,
-        fit: BoxFit.cover,
-        errorBuilder: (context, error, stackTrace) {
-          print('🔍 DEBUG: Category image failed to load: $categoryName - $error');
-          // Try to use default image for specific categories
-          return _buildDefaultCategoryImage(categoryName);
-        },
-        loadingBuilder: (context, child, loadingProgress) {
-          if (loadingProgress == null) return child;
-          return Container(
-            width: double.infinity,
-            height: double.infinity,
-            decoration: BoxDecoration(
-              color: AppTheme.breeze.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Center(
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                valueColor: AlwaysStoppedAnimation<Color>(AppTheme.deepTeal),
-              ),
-            ),
-          );
-        },
-        // Add cache headers for better performance
-        headers: const {
-          'Cache-Control': 'max-age=3600',
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        },
-        // Add frameBuilder for better loading experience
-        frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
-          if (wasSynchronouslyLoaded) return child;
-          return AnimatedOpacity(
-            opacity: frame == null ? 0 : 1,
-            duration: const Duration(milliseconds: 300),
-            child: child,
-          );
-        },
-        // Add retry mechanism for mobile
-        gaplessPlayback: true,
-      ),
+    // Use SafeNetworkImage for downscaled, cached rendering
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: SafeNetworkImage(
+            imageUrl: imageUrl.toString(),
+            width: constraints.maxWidth.isFinite ? constraints.maxWidth : null,
+            height: constraints.maxHeight.isFinite ? constraints.maxHeight : null,
+            fit: BoxFit.cover,
+            borderRadius: BorderRadius.circular(8),
+          ),
+        );
+      },
     );
   }
 
@@ -1669,48 +1675,23 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
     final defaultImageUrl = _getDefaultCategoryImage(categoryName);
     print('🔍 DEBUG: Loading default image for category: $categoryName - URL: $defaultImageUrl');
     
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(8),
-      child: Image.network(
-        defaultImageUrl,
-        width: double.infinity,
-        height: double.infinity,
-        fit: BoxFit.cover,
-        errorBuilder: (context, error, stackTrace) {
-          print('🔍 DEBUG: Default image also failed for category: $categoryName - $error');
-          return _buildCategoryIconFallback(categoryName);
-        },
-        loadingBuilder: (context, child, loadingProgress) {
-          if (loadingProgress == null) return child;
-          return Container(
-            width: double.infinity,
-            height: double.infinity,
-            decoration: BoxDecoration(
-              color: AppTheme.breeze.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Center(
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                valueColor: AlwaysStoppedAnimation<Color>(AppTheme.deepTeal),
-              ),
-            ),
-          );
-        },
-        headers: const {
-          'Cache-Control': 'max-age=3600',
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        },
-        frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
-          if (wasSynchronouslyLoaded) return child;
-          return AnimatedOpacity(
-            opacity: frame == null ? 0 : 1,
-            duration: const Duration(milliseconds: 300),
-            child: child,
-          );
-        },
-        gaplessPlayback: true,
-      ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: SafeNetworkImage(
+            imageUrl: defaultImageUrl,
+            width: constraints.maxWidth.isFinite ? constraints.maxWidth : null,
+            height: constraints.maxHeight.isFinite ? constraints.maxHeight : null,
+            fit: BoxFit.cover,
+            borderRadius: BorderRadius.circular(8),
+            errorBuilder: (context, error, stack) {
+              print('🔍 DEBUG: Default image also failed for category: $categoryName - $error');
+              return _buildCategoryIconFallback(categoryName);
+            },
+          ),
+        );
+      },
     );
   }
 

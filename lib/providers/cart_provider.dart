@@ -2,9 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/cart_item.dart';
+import 'dart:convert';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class CartProvider extends ChangeNotifier {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  static const String _localCartKey = 'local_cart_v1';
   
   // Store-separated carts: Map<storeId, List<CartItem>>
   Map<String, List<CartItem>> _storeCarts = {};
@@ -18,6 +21,10 @@ class CartProvider extends ChangeNotifier {
   // Add new fields for better error handling
   String? lastAddError;
   bool lastAddBlocked = false;
+
+  CartProvider() {
+    _loadFromLocal();
+  }
 
   // Getters
   List<CartItem> get items => _currentStoreId != null ? _storeCarts[_currentStoreId] ?? [] : [];
@@ -124,6 +131,7 @@ class CartProvider extends ChangeNotifier {
     
     lastAddedQuantity = quantityToAdd;
     notifyListeners();
+    _saveToLocal();
     
     // Only save to Firestore if user is authenticated
     if (isAuthenticated) {
@@ -139,6 +147,7 @@ class CartProvider extends ChangeNotifier {
       _currentStoreId = storeId;
       print('🔍 DEBUG: Switched to store: $storeId');
       notifyListeners();
+      _saveToLocal();
     }
   }
   
@@ -231,6 +240,7 @@ class CartProvider extends ChangeNotifier {
     }
     
     notifyListeners();
+    _saveToLocal();
     
     // Only save to Firestore if user is authenticated
     if (isAuthenticated) {
@@ -250,6 +260,7 @@ class CartProvider extends ChangeNotifier {
       }
       
       notifyListeners();
+      _saveToLocal();
       
       // Only save to Firestore if user is authenticated
       if (isAuthenticated) {
@@ -270,6 +281,7 @@ class CartProvider extends ChangeNotifier {
       if (index >= 0) {
         storeItems[index] = storeItems[index].copyWith(quantity: quantity);
         notifyListeners();
+        _saveToLocal();
         
         // Only save to Firestore if user is authenticated
         if (isAuthenticated) {
@@ -283,6 +295,7 @@ class CartProvider extends ChangeNotifier {
     _storeCarts.clear();
     _currentStoreId = null;
     notifyListeners();
+    _saveToLocal();
     
     // Only save to Firestore if user is authenticated
     if (isAuthenticated) {
@@ -300,6 +313,7 @@ class CartProvider extends ChangeNotifier {
     }
     
     notifyListeners();
+    _saveToLocal();
     
     // Only save to Firestore if user is authenticated
     if (isAuthenticated) {
@@ -312,6 +326,7 @@ class CartProvider extends ChangeNotifier {
     _storeCarts.clear();
     _currentStoreId = null;
     notifyListeners();
+    _saveToLocal();
   }
 
   // Firestore operations
@@ -361,6 +376,50 @@ class CartProvider extends ChangeNotifier {
     } finally {
       _isLoading = false;
       notifyListeners();
+    }
+  }
+
+  // ================= LOCAL PERSISTENCE =================
+  Future<void> _saveToLocal() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final Map<String, dynamic> data = {
+        'currentStoreId': _currentStoreId,
+        'storeCarts': _storeCarts.map((storeId, items) => MapEntry(
+              storeId,
+              items.map((e) => e.toMap()).toList(),
+            )),
+      };
+      await prefs.setString(_localCartKey, jsonEncode(data));
+    } catch (e) {
+      print('❌ Failed to save local cart: $e');
+    }
+  }
+
+  Future<void> _loadFromLocal() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_localCartKey);
+      if (raw == null || raw.isEmpty) return;
+      final decoded = jsonDecode(raw) as Map<String, dynamic>;
+      final currentId = decoded['currentStoreId'] as String?;
+      final storeCartsRaw = decoded['storeCarts'] as Map<String, dynamic>?;
+      final Map<String, List<CartItem>> restored = {};
+      if (storeCartsRaw != null) {
+        storeCartsRaw.forEach((storeId, list) {
+          final items = (list as List<dynamic>)
+              .map((it) => CartItem.fromMap(Map<String, dynamic>.from(it as Map)))
+              .toList();
+          if (items.isNotEmpty) {
+            restored[storeId] = items;
+          }
+        });
+      }
+      _storeCarts = restored;
+      _currentStoreId = currentId ?? (restored.isNotEmpty ? restored.keys.first : null);
+      notifyListeners();
+    } catch (e) {
+      print('❌ Failed to load local cart: $e');
     }
   }
 

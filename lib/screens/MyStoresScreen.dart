@@ -22,6 +22,34 @@ class _MyStoresScreenState extends State<MyStoresScreen> {
 	bool _alertsOnly = false;
 	_SortMode _sortMode = _SortMode.recent;
 	final Set<String> _selected = <String>{};
+	// Cache for store details to avoid per-item live streams
+	final Map<String, Map<String, dynamic>> _storeCache = {};
+
+	Future<Map<String, Map<String, dynamic>>> _getStoreDetailsBatch(List<String> storeIds) async {
+		final result = <String, Map<String, dynamic>>{};
+		final toFetch = <String>[];
+		for (final id in storeIds) {
+			if (_storeCache.containsKey(id)) {
+				result[id] = _storeCache[id]!;
+			} else {
+				toFetch.add(id);
+			}
+		}
+		// Firestore whereIn limit is 10 per query; chunk requests
+		for (var i = 0; i < toFetch.length; i += 10) {
+			final chunk = toFetch.sublist(i, i + 10 > toFetch.length ? toFetch.length : i + 10);
+			final snap = await FirebaseFirestore.instance
+				.collection('users')
+				.where(FieldPath.documentId, whereIn: chunk)
+				.get();
+			for (final doc in snap.docs) {
+				final data = doc.data();
+				_storeCache[doc.id] = data;
+				result[doc.id] = data;
+			}
+		}
+		return result;
+	}
 
 	User? get _user => FirebaseAuth.instance.currentUser;
 
@@ -115,35 +143,61 @@ class _MyStoresScreenState extends State<MyStoresScreen> {
 										});
 									}
 
-														return ListView.separated(
-															padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-															itemCount: docs.length,
-															separatorBuilder: (_, __) => const SizedBox(height: 12),
-															itemBuilder: (ctx, i) {
-											final data = docs[i].data() as Map<String, dynamic>;
-											final storeId = data['storeId'] as String?;
-											final storeName = data['storeName'] as String? ?? 'Store';
-											final notify = (data['notify'] as bool?) ?? true;
-											if (storeId == null) return const SizedBox.shrink();
-																return Center(
-																	child: ConstrainedBox(
-																		constraints: const BoxConstraints(maxWidth: 720),
-																		child: _FollowedStoreCard(
-																			storeId: storeId,
-																			storeName: storeName,
-																			notify: notify,
-																			selected: _selected.contains(storeId),
-																			onToggleNotify: () => _toggleNotify(storeId, notify),
-																			onOpen: () => _openStore(storeId),
-																			onChat: (contact, name) => _openWhatsApp(contact, name),
-																			onShare: () => _shareStore(storeId, storeName),
-																			onLongPress: () => _toggleSelected(storeId),
-																			onTapSelectMode: () => _selected.isNotEmpty ? _toggleSelected(storeId) : _openStore(storeId),
-																		),
-																	),
-																);
-															},
-														);
+									final storeIds = docs
+											.map((d) => (d.data() as Map<String, dynamic>)['storeId'] as String?)
+											.whereType<String>()
+											.toList();
+
+									return FutureBuilder<Map<String, Map<String, dynamic>>>(
+										future: _getStoreDetailsBatch(storeIds),
+										builder: (ctx, detailsSnap) {
+											final details = detailsSnap.data ?? const <String, Map<String, dynamic>>{};
+											return ListView.separated(
+											padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+											itemCount: docs.length,
+											addAutomaticKeepAlives: false,
+											addRepaintBoundaries: true,
+											addSemanticIndexes: false,
+											cacheExtent: 600,
+											separatorBuilder: (_, __) => const SizedBox(height: 12),
+											itemBuilder: (ctx, i) {
+												final data = docs[i].data() as Map<String, dynamic>;
+												final storeId = data['storeId'] as String?;
+												final storeName = data['storeName'] as String? ?? 'Store';
+												final notify = (data['notify'] as bool?) ?? true;
+												if (storeId == null) return const SizedBox.shrink();
+												final sd = details[storeId] ?? const {};
+												final profileImageUrl = sd['profileImageUrl'] as String?;
+												final category = sd['storeCategory'] as String?;
+												final followers = (sd['followers'] as num?)?.toInt();
+												final rating = (sd['rating'] as num?)?.toDouble();
+												final verified = (sd['verified'] as bool?) ?? (sd['isVerified'] as bool?) ?? false;
+												return Center(
+													child: ConstrainedBox(
+														constraints: const BoxConstraints(maxWidth: 720),
+														child: _FollowedStoreCard(
+															storeId: storeId,
+															storeName: storeName,
+															notify: notify,
+															selected: _selected.contains(storeId),
+															onToggleNotify: () => _toggleNotify(storeId, notify),
+															onOpen: () => _openStore(storeId),
+															onChat: (contact, name) => _openWhatsApp(contact, name),
+															onShare: () => _shareStore(storeId, storeName),
+															onLongPress: () => _toggleSelected(storeId),
+															onTapSelectMode: () => _selected.isNotEmpty ? _toggleSelected(storeId) : _openStore(storeId),
+															profileImageUrl: profileImageUrl,
+															category: category,
+															followers: followers,
+															rating: rating,
+															verified: verified,
+														),
+													),
+												);
+											},
+										);
+										},
+									);
 								},
 							),
 						),
@@ -395,6 +449,11 @@ class _FollowedStoreCard extends StatelessWidget {
 	final VoidCallback onShare;
 	final VoidCallback onLongPress;
 	final VoidCallback onTapSelectMode;
+	final String? profileImageUrl;
+	final String? category;
+	final int? followers;
+	final double? rating;
+	final bool? verified;
 
 	const _FollowedStoreCard({
 		super.key,
@@ -408,6 +467,11 @@ class _FollowedStoreCard extends StatelessWidget {
 		required this.onShare,
 		required this.onLongPress,
 		required this.onTapSelectMode,
+		this.profileImageUrl,
+		this.category,
+		this.followers,
+		this.rating,
+		this.verified,
 	});
 
 	@override
@@ -436,19 +500,12 @@ class _FollowedStoreCard extends StatelessWidget {
                                   child: SizedBox(
                                     width: 48,
                                     height: 48,
-                                    child: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-											stream: FirebaseFirestore.instance.collection('users').doc(storeId).snapshots(),
-											builder: (context, snap) {
-												final img = (snap.data?.data()?['profileImageUrl'] as String?) ?? '';
-												if (img.isEmpty) {
-													return Container(
-														color: AppTheme.deepTeal.withOpacity(0.08),
-														child: const Icon(Icons.storefront, color: AppTheme.deepTeal),
-													);
-												}
-                                                return SafeNetworkImage(imageUrl: img, fit: BoxFit.cover);
-                                              },
-                                            ),
+                                    child: (profileImageUrl == null || profileImageUrl!.isEmpty)
+										? Container(
+											color: AppTheme.deepTeal.withOpacity(0.08),
+											child: const Icon(Icons.storefront, color: AppTheme.deepTeal),
+										)
+										: SafeNetworkImage(imageUrl: profileImageUrl, fit: BoxFit.cover),
                                   ),
                                 ),
 								const SizedBox(width: 10),
@@ -457,69 +514,59 @@ class _FollowedStoreCard extends StatelessWidget {
 										crossAxisAlignment: CrossAxisAlignment.start,
 										children: [
 											Text(storeName, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold)),
-											StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-												stream: FirebaseFirestore.instance.collection('users').doc(storeId).snapshots(),
-												builder: (context, snap) {
-													final data = snap.data?.data() ?? const {};
-													final category = (data['storeCategory'] as String?) ?? '';
-													final followers = (data['followers'] as num?)?.toInt() ?? 0;
-													final rating = (data['rating'] as num?)?.toDouble() ?? 0.0;
-											final verified = (data['verified'] as bool?) ?? (data['isVerified'] as bool?) ?? false;
-											return Wrap(
-													spacing: 8,
-													runSpacing: 4,
-													crossAxisAlignment: WrapCrossAlignment.center,
-													children: [
-														if (category.isNotEmpty)
-															Text(category, style: TextStyle(color: Colors.grey.shade600), overflow: TextOverflow.ellipsis),
-														if (verified)
-															LayoutBuilder(
-																builder: (context, constraints) {
-																	final isVeryTight = constraints.maxWidth < 60;
-																	return Container(
-																		padding: EdgeInsets.symmetric(horizontal: isVeryTight ? 4 : 8, vertical: 4),
-																		decoration: BoxDecoration(
-																			color: AppTheme.primaryGreen.withOpacity(0.12),
-																			borderRadius: BorderRadius.circular(10),
-																		),
-																		child: isVeryTight
-																			? const Icon(Icons.verified_rounded, color: AppTheme.primaryGreen, size: 12)
-																			: const Row(
-																				mainAxisSize: MainAxisSize.min,
-																				children: [
-																					Icon(Icons.verified_rounded, color: AppTheme.primaryGreen, size: 14),
-																					SizedBox(width: 4),
-																					Text('Verified', style: TextStyle(color: AppTheme.primaryGreen, fontSize: 11, fontWeight: FontWeight.w600)),
-																				],
-																			),
-																	);
-																},
-															),
 														Wrap(
-															spacing: 6,
-															runSpacing: 2,
+															spacing: 8,
+															runSpacing: 4,
 															crossAxisAlignment: WrapCrossAlignment.center,
 															children: [
-																Icon(Icons.star, color: Colors.amber.shade600, size: 16),
-																Text(rating > 0 ? rating.toStringAsFixed(1) : '0.0', style: TextStyle(color: Colors.grey.shade700)),
-																const Icon(Icons.favorite, color: Colors.red, size: 16),
-																Text('$followers', style: TextStyle(color: Colors.grey.shade700)),
-															],
-														),
-													],
-											);
-											},
+																if ((category ?? '').isNotEmpty)
+																	Text(category!, style: TextStyle(color: Colors.grey.shade600), overflow: TextOverflow.ellipsis),
+																if (verified == true)
+																	LayoutBuilder(
+																		builder: (context, constraints) {
+																			final isVeryTight = constraints.maxWidth < 60;
+																			return Container(
+																				padding: EdgeInsets.symmetric(horizontal: isVeryTight ? 4 : 8, vertical: 4),
+																				decoration: BoxDecoration(
+																					color: AppTheme.primaryGreen.withOpacity(0.12),
+																					borderRadius: BorderRadius.circular(10),
+																				),
+																				child: isVeryTight
+																					? const Icon(Icons.verified_rounded, color: AppTheme.primaryGreen, size: 12)
+																					: const Row(
+																						mainAxisSize: MainAxisSize.min,
+																						children: [
+																							Icon(Icons.verified_rounded, color: AppTheme.primaryGreen, size: 14),
+																							SizedBox(width: 4),
+																							Text('Verified', style: TextStyle(color: AppTheme.primaryGreen, fontSize: 11, fontWeight: FontWeight.w600)),
+																						],
+																				),
+																			);
+																		},
+																	),
+															Wrap(
+																spacing: 6,
+																runSpacing: 2,
+																crossAxisAlignment: WrapCrossAlignment.center,
+																children: [
+																	Icon(Icons.star, color: Colors.amber.shade600, size: 16),
+																	Text((rating != null && rating! > 0) ? rating!.toStringAsFixed(1) : '0.0', style: TextStyle(color: Colors.grey.shade700)),
+																	const Icon(Icons.favorite, color: Colors.red, size: 16),
+																	Text('${followers ?? 0}', style: TextStyle(color: Colors.grey.shade700)),
+																],
+															),
+														],
+													),
+												],
+											),
+										),
+										IconButton(
+											tooltip: notify ? 'Disable alerts' : 'Enable alerts',
+											icon: Icon(notify ? Icons.notifications_active : Icons.notifications_off, color: notify ? AppTheme.primaryGreen : Colors.grey),
+											onPressed: onToggleNotify,
 										),
 									],
 								),
-							),
-							IconButton(
-								tooltip: notify ? 'Disable alerts' : 'Enable alerts',
-								icon: Icon(notify ? Icons.notifications_active : Icons.notifications_off, color: notify ? AppTheme.primaryGreen : Colors.grey),
-								onPressed: onToggleNotify,
-							),
-						],
-					),
 						const SizedBox(height: 12),
 						LayoutBuilder(
 							builder: (ctx, constraints) {

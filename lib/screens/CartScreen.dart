@@ -35,8 +35,10 @@ class _CartScreenState extends State<CartScreen> {
           const SizedBox(width: 16),
         ],
       ),
-      body: Consumer<CartProvider>(
-        builder: (context, cartProvider, child) {
+      body: SafeArea(
+        bottom: true,
+        child: Consumer<CartProvider>(
+          builder: (context, cartProvider, child) {
           final cartItems = cartProvider.items;
           
           if (cartItems.isEmpty) {
@@ -177,47 +179,51 @@ class _CartScreenState extends State<CartScreen> {
                   },
                 ),
               ),
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  border: Border(top: BorderSide(color: AppTheme.cloud.withOpacity(0.3))),
-                  color: AppTheme.angel,
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      'Total: R${cartProvider.totalPrice.toStringAsFixed(2)}',
-                        style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    ElevatedButton(
-                      onPressed: cartItems.isNotEmpty ? () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => CheckoutScreen(totalPrice: cartProvider.totalPrice),
-                          ),
-                        );
-                      } : null,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppTheme.deepTeal,
-                        foregroundColor: AppTheme.angel,
-                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
+              SafeArea(
+                top: false,
+                child: Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    border: Border(top: BorderSide(color: AppTheme.cloud.withOpacity(0.3))),
+                    color: AppTheme.angel,
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'Total: R${cartProvider.totalPrice.toStringAsFixed(2)}',
+                          style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
                         ),
                       ),
-                      child: const Text('Checkout'),
-                    ),
-                  ],
+                      ElevatedButton(
+                        onPressed: cartItems.isNotEmpty ? () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => CheckoutScreen(totalPrice: cartProvider.totalPrice),
+                            ),
+                          );
+                        } : null,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppTheme.deepTeal,
+                          foregroundColor: AppTheme.angel,
+                          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                        child: const Text('Checkout'),
+                      ),
+                    ],
+                  ),
                 ),
               )
             ],
           );
         },
+        ),
       ),
     );
   }

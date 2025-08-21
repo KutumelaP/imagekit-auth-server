@@ -39,7 +39,8 @@ class SafeNetworkImage extends StatelessWidget {
       return _buildFallbackImage();
     }
 
-    final effectiveUrl = _buildEffectiveUrl(imageUrl!);
+    final transformed = _transformForCdn(imageUrl!, context);
+    final effectiveUrl = _buildEffectiveUrl(transformed);
 
     return ClipRRect(
       borderRadius: borderRadius ?? BorderRadius.zero,
@@ -78,6 +79,37 @@ class SafeNetworkImage extends StatelessWidget {
         : (bypassCache ? 'v=${DateTime.now().microsecondsSinceEpoch}' : null);
     if (versionParam == null) return rawUrl;
     return hasQuery ? '$rawUrl&$versionParam' : '$rawUrl?$versionParam';
+  }
+
+  String _transformForCdn(String rawUrl, BuildContext context) {
+    // Only transform ImageKit URLs; leave others unchanged
+    try {
+      final uri = Uri.parse(rawUrl);
+      if (!uri.host.contains('imagekit.io')) return rawUrl;
+
+      // Avoid duplicating transformations if 'tr=' already present
+      if ((uri.queryParametersAll.keys).any((k) => k.toLowerCase() == 'tr')) {
+        return rawUrl;
+      }
+
+      final devicePixelRatio = MediaQuery.maybeOf(context)?.devicePixelRatio ?? 1.0;
+      final targetW = (width != null && width!.isFinite) ? (width! * devicePixelRatio).round() : null;
+      final targetH = (height != null && height!.isFinite) ? (height! * devicePixelRatio).round() : null;
+
+      final List<String> tr = [];
+      if (targetW != null && targetW > 0) tr.add('w-$targetW');
+      if (targetH != null && targetH > 0) tr.add('h-$targetH');
+      tr.add('q-70');
+      tr.add('fo-auto');
+      tr.add('c-at_max');
+
+      final trParam = tr.join(',');
+      final hasQuery = rawUrl.contains('?');
+      final joined = hasQuery ? '$rawUrl&tr=$trParam' : '$rawUrl?tr=$trParam';
+      return joined;
+    } catch (_) {
+      return rawUrl;
+    }
   }
 
   Widget _buildDirectDownloadImage() {

@@ -6,7 +6,11 @@ import 'dart:convert';
 import '../firebase_options.dart';
 import 'awesome_notification_service.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:marketplace_app/utils/web_env.dart';
 import 'package:http/http.dart' as http;
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:marketplace_app/utils/web_js_stub.dart'
+    if (dart.library.html) 'package:marketplace_app/utils/web_js_real.dart' as js;
 
 class FCMConfigService {
   static final FCMConfigService _instance = FCMConfigService._internal();
@@ -41,11 +45,15 @@ class FCMConfigService {
       // Validate configuration
       await _validateConfiguration();
       
-      // Request permissions
-      await _requestPermissions();
-      
-      // Get FCM token
-      await _getFCMToken();
+      // On web, gate FCM permission/token to supported environments only
+      if (WebEnv.isWebPushSupported) {
+        // Request permissions
+        await _requestPermissions();
+        // Get FCM token
+        await _getFCMToken();
+      } else {
+        print('⚠️ Web push not supported in this environment (skipping permission/token).');
+      }
       
       // Set up message handlers
       await _setupMessageHandlers();
@@ -57,6 +65,8 @@ class FCMConfigService {
       _isConfigured = false;
     }
   }
+
+  // Old method removed; using WebEnv.isWebPushSupported
 
   /// Load configuration from firebase_options.dart and SharedPreferences
   Future<void> _loadConfiguration() async {
