@@ -221,9 +221,16 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       _detectProductCategory();
       _calculateDeliveryFeeAndCheckStore();
     }
+    // Restore any saved draft and set up autosave listeners
+    _restoreCheckoutDraft();
+    _nameController.addListener(_saveCheckoutDraft);
+    _addressController.addListener(_saveCheckoutDraft);
+    _phoneController.addListener(_saveCheckoutDraft);
+    _deliveryInstructionsController.addListener(_saveCheckoutDraft);
     _addressFocusNode.addListener(() {
       if (!_addressFocusNode.hasFocus) {
         _calculateDeliveryFeeAndCheckStore();
+        _saveCheckoutDraft();
       }
     });
   }
@@ -237,7 +244,63 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     _specialRequestsController.dispose();
     _addressFocusNode.dispose();
     _addressSearchTimer?.cancel();
+    // Final save (just in case) before disposing
+    _saveCheckoutDraft();
     super.dispose();
+  }
+
+  // ===== Checkout draft persistence =====
+  static const String _ckNameKey = 'checkout_name';
+  static const String _ckAddressKey = 'checkout_address';
+  static const String _ckPhoneKey = 'checkout_phone';
+  static const String _ckInstructionsKey = 'checkout_instructions';
+  static const String _ckIsDeliveryKey = 'checkout_is_delivery';
+  static const String _ckPaymentKey = 'checkout_payment_method';
+
+  Future<void> _restoreCheckoutDraft() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final name = prefs.getString(_ckNameKey);
+      final addr = prefs.getString(_ckAddressKey);
+      final phone = prefs.getString(_ckPhoneKey);
+      final instr = prefs.getString(_ckInstructionsKey);
+      final isDel = prefs.getBool(_ckIsDeliveryKey);
+      final pay = prefs.getString(_ckPaymentKey);
+
+      if (name != null && name.isNotEmpty) _nameController.text = name;
+      if (addr != null && addr.isNotEmpty) _addressController.text = addr;
+      if (phone != null && phone.isNotEmpty) _phoneController.text = phone;
+      if (instr != null && instr.isNotEmpty) _deliveryInstructionsController.text = instr;
+      if (isDel != null) _isDelivery = isDel;
+      if (pay != null && pay.isNotEmpty) _selectedPaymentMethod = pay;
+      setState(() {});
+    } catch (_) {}
+  }
+
+  Future<void> _saveCheckoutDraft() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_ckNameKey, _nameController.text.trim());
+      await prefs.setString(_ckAddressKey, _addressController.text.trim());
+      await prefs.setString(_ckPhoneKey, _phoneController.text.trim());
+      await prefs.setString(_ckInstructionsKey, _deliveryInstructionsController.text.trim());
+      await prefs.setBool(_ckIsDeliveryKey, _isDelivery);
+      if (_selectedPaymentMethod != null) {
+        await prefs.setString(_ckPaymentKey, _selectedPaymentMethod!);
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _clearCheckoutDraft() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_ckNameKey);
+      await prefs.remove(_ckAddressKey);
+      await prefs.remove(_ckPhoneKey);
+      await prefs.remove(_ckInstructionsKey);
+      await prefs.remove(_ckIsDeliveryKey);
+      await prefs.remove(_ckPaymentKey);
+    } catch (_) {}
   }
 
   // Calculate delivery fee using system model
@@ -3449,6 +3512,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
       setState(() => _isLoading = false);
 
+      // Create 'awaiting_payment' order record before redirecting
+      await _completeOrder(paymentStatusOverride: 'awaiting_payment');
+
       // Show payment confirmation
       final shouldProceed = await _showPaymentConfirmationDialog(totalAmount);
       if (!shouldProceed) return;
@@ -3684,7 +3750,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 onPressed: () {
                   Navigator.of(context).pop();
                   // Payment successful - complete the order
-                  _completeOrder();
+                  // Do not mark as paid here; webhook/notifier will update paymentStatus
                 },
                 child: SafeUI.safeText(
                   'Payment Success',
@@ -7865,7 +7931,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         }
 
   Widget _buildPlaceOrderButton() {
-    return Container(
+    return SafeArea(
+      bottom: true,
+      top: false,
+      child: Container(
       width: double.infinity,
       decoration: BoxDecoration(
         gradient: AppTheme.primaryButtonGradient,
