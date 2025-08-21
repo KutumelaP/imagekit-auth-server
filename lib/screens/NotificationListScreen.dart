@@ -20,23 +20,22 @@ class NotificationListScreen extends StatefulWidget {
 class _NotificationListScreenState extends State<NotificationListScreen> with WidgetsBindingObserver {
   final NotificationService _notificationService = NotificationService();
   bool _isLoading = false;
+  final List<Map<String, dynamic>> _notifications = <Map<String, dynamic>>[];
+  DocumentSnapshot? _lastDocument;
+  bool _isLoadingMore = false;
+  bool _hasMore = true;
+  final ScrollController _scrollController = ScrollController();
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _refreshNotifications();
+    _scrollController.addListener(_onScroll);
+    _loadInitial();
   }
 
   Future<void> _refreshNotifications() async {
-    setState(() => _isLoading = true);
-    try {
-      await _notificationService.refreshNotifications();
-    } catch (e) {
-      print('Error refreshing notifications: $e');
-    } finally {
-      setState(() => _isLoading = false);
-    }
+    await _loadInitial();
   }
 
   Future<void> _deleteNotification(String notificationId) async {
@@ -101,6 +100,7 @@ class _NotificationListScreenState extends State<NotificationListScreen> with Wi
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -108,6 +108,99 @@ class _NotificationListScreenState extends State<NotificationListScreen> with Wi
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       _refreshNotifications();
+    }
+  }
+
+  Future<void> _loadInitial() async {
+    setState(() {
+      _isLoading = true;
+      _hasMore = true;
+      _lastDocument = null;
+      _notifications.clear();
+    });
+
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) {
+        setState(() => _isLoading = false);
+        return;
+      }
+
+      final query = FirebaseFirestore.instance
+          .collection('notifications')
+          .where('userId', isEqualTo: user.uid)
+          .orderBy('timestamp', descending: true)
+          .limit(20);
+
+      final snapshot = await query.get();
+      final items = snapshot.docs
+          .map((d) => {
+                'id': d.id,
+                ...d.data() as Map<String, dynamic>,
+              })
+          .where((n) => n['type'] != 'chat_message')
+          .toList();
+
+      setState(() {
+        _notifications.addAll(items);
+        _lastDocument = snapshot.docs.isNotEmpty ? snapshot.docs.last : null;
+        _hasMore = snapshot.docs.length == 20;
+        _isLoading = false;
+      });
+    } catch (e) {
+      print('❌ Error loading notifications: $e');
+      setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _loadMore() async {
+    if (_isLoadingMore || !_hasMore) return;
+    setState(() => _isLoadingMore = true);
+
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) {
+        setState(() => _isLoadingMore = false);
+        return;
+      }
+
+      Query query = FirebaseFirestore.instance
+          .collection('notifications')
+          .where('userId', isEqualTo: user.uid)
+          .orderBy('timestamp', descending: true)
+          .limit(20);
+
+      if (_lastDocument != null) {
+        query = (query as Query<Map<String, dynamic>>)
+            .startAfterDocument(_lastDocument!);
+      }
+
+      final snapshot = await query.get();
+      final items = snapshot.docs
+          .map((d) => {
+                'id': d.id,
+                ...d.data() as Map<String, dynamic>,
+              })
+          .where((n) => n['type'] != 'chat_message')
+          .toList();
+
+      setState(() {
+        _notifications.addAll(items);
+        _lastDocument = snapshot.docs.isNotEmpty ? snapshot.docs.last : _lastDocument;
+        _hasMore = snapshot.docs.length == 20;
+        _isLoadingMore = false;
+      });
+    } catch (e) {
+      print('❌ Error loading more notifications: $e');
+      setState(() => _isLoadingMore = false);
+    }
+  }
+
+  void _onScroll() {
+    if (!_hasMore || _isLoadingMore) return;
+    if (_scrollController.position.pixels >=
+        _scrollController.position.maxScrollExtent - 300) {
+      _loadMore();
     }
   }
 
@@ -136,8 +229,7 @@ class _NotificationListScreenState extends State<NotificationListScreen> with Wi
     final data = notificationData['data'] ?? {};
     final orderId = data['orderId'] ?? notificationData['orderId'];
     final chatId = data['chatId'] ?? notificationData['chatId'];
-    final buyerId = data['buyerId'] ?? notificationData['buyerId'];
-    final sellerId = data['sellerId'] ?? notificationData['sellerId'];
+    // buyerId / sellerId currently unused here; navigation uses senderId/orderId
     final senderId = data['senderId'] ?? notificationData['senderId'];
     
     print('🔍 DEBUG: Notification tap - Type: $type');
@@ -435,40 +527,33 @@ class _NotificationListScreenState extends State<NotificationListScreen> with Wi
   }
 
   Widget _buildNotificationList() {
-    return StreamBuilder<QuerySnapshot>(
-      stream: _notificationService.getNotificationsWithValidation(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
-        }
+    if (_isLoading && _notifications.isEmpty) {
+      return const Center(child: CircularProgressIndicator());
+    }
 
-        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-          return _buildEmptyState();
-        }
+    if (_notifications.isEmpty) {
+      return _buildEmptyState();
+    }
 
-        // Filter out chat messages - they should only appear in the chat tab
-        final notifications = snapshot.data!.docs
-            .map((doc) => {'id': doc.id, ...doc.data() as Map<String, dynamic>})
-            .where((notification) => notification['type'] != 'chat_message')
-            .toList();
-
-        if (notifications.isEmpty) {
-          return _buildEmptyState();
-        }
-
-        // Basic pagination via Query cursor
-        return RefreshIndicator(
-          onRefresh: _refreshNotifications,
-          color: AppTheme.deepTeal,
-          child: ListView.builder(
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            itemCount: notifications.length,
-            itemBuilder: (context, index) {
-              return _buildNotificationCard(notifications[index]);
-            },
-          ),
-        );
-      },
+    return RefreshIndicator(
+      onRefresh: _refreshNotifications,
+      color: AppTheme.deepTeal,
+      child: ListView.builder(
+        controller: _scrollController,
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        itemCount: _notifications.length + (_isLoadingMore ? 1 : 0),
+        itemBuilder: (context, index) {
+          if (index >= _notifications.length) {
+            return const Padding(
+              padding: EdgeInsets.symmetric(vertical: 16),
+              child: Center(
+                child: CircularProgressIndicator(),
+              ),
+            );
+          }
+          return _buildNotificationCard(_notifications[index]);
+        },
+      ),
     );
   }
 

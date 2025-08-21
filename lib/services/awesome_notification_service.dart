@@ -86,7 +86,7 @@ class AwesomeNotificationService {
     // Listen to notification action buttons
     AwesomeNotifications().setListeners(
       onActionReceivedMethod: (ReceivedAction receivedAction) async {
-      _handleNotificationAction(receivedAction);
+        _handleNotificationAction(receivedAction);
       },
       onNotificationCreatedMethod: (ReceivedNotification receivedNotification) async {
         print('🔔 Notification created: ${receivedNotification.title}');
@@ -128,11 +128,12 @@ class AwesomeNotificationService {
     final chatId = receivedAction.payload?['chatId'];
     if (chatId != null) {
       final actionKey = receivedAction.buttonKeyPressed;
-      final replyText = receivedAction.buttonKeyInput?.trim();
-      if (actionKey == 'REPLY' && (replyText?.isNotEmpty ?? false)) {
+      final replyRaw = receivedAction.buttonKeyInput;
+      final replyText = replyRaw != null ? replyRaw.trim() : null;
+      if (actionKey == 'REPLY' && (replyText != null && replyText.isNotEmpty)) {
         print('🔔 Quick reply from notification to chat $chatId');
         // ignore: unawaited_futures
-        _sendQuickReply(chatId, replyText!);
+        _sendQuickReply(chatId, replyText);
       } else {
         // Navigate to chat screen (VIEW or tap on body)
         print('🔔 Navigating to chat: $chatId');
@@ -469,6 +470,12 @@ class AwesomeNotificationService {
         'timestamp': FieldValue.serverTimestamp(),
         'read': false,
         'userId': userId,
+        // Align with web NotificationService for consistent deep-linking
+        'route': '/order-tracking',
+        'deeplink': data != null && data['orderId'] != null
+            ? 'foodmarketplace://order/${data['orderId']}'
+            : null,
+        'screen': 'OrderTrackingScreen',
       };
 
       final docRef = await _firestore

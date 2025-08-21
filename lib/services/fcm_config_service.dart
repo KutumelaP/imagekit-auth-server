@@ -8,7 +8,6 @@ import 'awesome_notification_service.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:marketplace_app/utils/web_env.dart';
 import 'package:http/http.dart' as http;
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:marketplace_app/utils/web_js_stub.dart'
     if (dart.library.html) 'package:marketplace_app/utils/web_js_real.dart' as js;
 

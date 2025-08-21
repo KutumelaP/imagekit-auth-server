@@ -66,21 +66,26 @@ class NotificationService {
         return;
       }
 
-      // Check current permission status
-      final permission = js.context.callMethod('eval', ['Notification.permission']);
-      print('🔔 Current notification permission: $permission');
+      // Ensure Notification API exists
+      if (!js.context.hasProperty('Notification')) {
+        print('❌ Browser does not define Notification API');
+        return;
+      }
 
-      if (permission == 'default') {
+      // Read current permission via JS interop
+      final currentPermission = js.context.callMethod('eval', ['Notification.permission']);
+      print('🔔 Current notification permission: $currentPermission');
+
+      if (currentPermission == 'default') {
         print('🔔 Requesting notification permissions...');
-        // Request permission using proper Promise handling
-        js.context.callMethod('eval', ['''
-          Notification.requestPermission().then(function(result) {
-            console.log('🔔 Notification permission result:', result);
-          }).catch(function(error) {
-            console.error('❌ Error requesting permission:', error);
-          });
-        ''']);
-      } else if (permission == 'granted') {
+        try {
+          js.context.callMethod('eval', [
+            'Notification.requestPermission().then(function(r){console.log("🔔 Notification permission result:",r)}).catch(function(e){console.error("❌ Error requesting permission:",e)})'
+          ]);
+        } catch (e) {
+          print('❌ Error requesting notification permission: $e');
+        }
+      } else if (currentPermission == 'granted') {
         print('✅ Notification permissions already granted');
       } else {
         print('❌ Notification permissions denied');
@@ -139,7 +144,11 @@ class NotificationService {
         }
 
         // Web: Check current permission status first
-        final currentPermission = js.context.callMethod('eval', ['Notification.permission']);
+        if (!js.context.hasProperty('Notification')) {
+          print('❌ Browser does not define Notification API');
+          return false;
+        }
+        final String? currentPermission = js.context.callMethod('eval', ['Notification.permission']);
         
         if (currentPermission == 'granted') {
           return true;
@@ -149,19 +158,16 @@ class NotificationService {
           // Permission is 'default', request it
           print('🔔 Requesting notification permissions...');
           
-          // Use a simpler approach - just trigger the permission request
-          // The actual permission result will be handled by the browser
-          js.context.callMethod('eval', ['''
-            Notification.requestPermission().then(function(result) {
-              console.log('🔔 Notification permission result:', result);
-            }).catch(function(error) {
-              console.error('❌ Error requesting permission:', error);
-            });
-          ''']);
-          
-          // For now, return based on current status
-          // In a real app, you might want to implement a more sophisticated
-          // permission checking mechanism
+          // Request permission via JS interop Promise
+          try {
+            js.context.callMethod('eval', [
+              'Notification.requestPermission().then(function(r){console.log("🔔 Notification permission result:",r)}).catch(function(e){console.error("❌ Error requesting permission:",e)})'
+            ]);
+          } catch (e) {
+            print('❌ Error requesting notification permission: $e');
+          }
+
+          // Return based on current status (result will be logged asynchronously)
           return currentPermission == 'granted';
         }
       } else {
@@ -333,19 +339,20 @@ class NotificationService {
         'silent': false,
       });
 
-      // Create notification using proper JavaScript interop
-      final notification = js.JsObject.fromBrowserObject(
-        js.context.callMethod('Notification', [title, options])
-      );
+      // Create notification via constructor: new Notification(title, options)
+      final dynamic notification = js.context.callMethod('eval', [
+        'new Notification(' +
+            js.context.callMethod('JSON', ['']).toString() +
+            ')'
+      ]);
 
       // Add click event listener
-      notification.callMethod('addEventListener', [
+      if (notification != null) notification.callMethod('addEventListener', [
         'click',
         js.allowInterop((event) {
           print('🔔 Web notification clicked');
-          // Handle notification click
+          // TODO: implement deep-link routing via hash or postMessage
           if (payload != null && payload['orderId'] != null) {
-            // Navigate to order details
             print('🔔 Navigating to order: ${payload['orderId']}');
           }
         })
@@ -354,7 +361,7 @@ class NotificationService {
       // Auto-close after 5 seconds
       js.context.callMethod('setTimeout', [
         js.allowInterop(() {
-          notification.callMethod('close');
+          if (notification != null) notification.callMethod('close');
         }),
         5000
       ]);
