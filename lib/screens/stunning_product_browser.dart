@@ -249,7 +249,13 @@ class _StunningProductBrowserState extends State<StunningProductBrowser>
             _buildProductGrid(isMobile, isTablet),
         ],
       ),
-      floatingActionButton: _buildFilterFab(),
+      floatingActionButton: Builder(builder: (context){
+        final pad = MediaQuery.of(context).padding.bottom;
+        return Padding(
+          padding: EdgeInsets.only(bottom: (pad > 0 ? pad : 12) + 8, right: 4),
+          child: _buildFilterFab(),
+        );
+      }),
     );
   }
 

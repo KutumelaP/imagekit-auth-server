@@ -386,23 +386,33 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
       builder: (context, userProvider, child) {
     return Scaffold(
       backgroundColor: AppTheme.angel,
-          floatingActionButton: userProvider.isSeller ? FloatingActionButton(
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const StunningProductUpload(
-                        storeId: 'all',
-                        storeName: 'My Store',
-                      )),
-              );
-            },
-            backgroundColor: AppTheme.deepTeal,
-            foregroundColor: Colors.white,
-            child: const Icon(Icons.add_shopping_cart),
-            tooltip: 'Upload Product',
-          ) : null,
+          floatingActionButton: userProvider.isSeller
+              ? Builder(builder: (context){
+                  final pad = MediaQuery.of(context).padding.bottom;
+                  return Padding(
+                    padding: EdgeInsets.only(bottom: (pad > 0 ? pad : 12) + 8, right: 4),
+                    child: FloatingActionButton(
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const StunningProductUpload(
+                              storeId: 'all',
+                              storeName: 'My Store',
+                            ),
+                          ),
+                        );
+                      },
+                      backgroundColor: AppTheme.deepTeal,
+                      foregroundColor: Colors.white,
+                      child: const Icon(Icons.add_shopping_cart),
+                      tooltip: 'Upload Product',
+                    ),
+                  );
+                })
+              : null,
       body: SafeArea(
-        top: true,
+        top: false,
         bottom: true,
         child: FadeTransition(
           opacity: _fadeAnimation,
@@ -601,6 +611,9 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
             physics: const BouncingScrollPhysics(),
             cacheExtent: 600,
             slivers: [
+              SliverToBoxAdapter(
+                child: SizedBox(height: MediaQuery.of(context).padding.top),
+              ),
               _buildStunningAppBar(),
               _buildWelcomeHero(),
               _buildCategoriesHeaderSliver(),
@@ -619,6 +632,9 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
   Widget _buildStunningAppBar() {
     return SliverAppBar(
       pinned: true,
+      snap: false,
+      floating: false,
+      toolbarHeight: 64,
       backgroundColor: AppTheme.deepTeal,
       automaticallyImplyLeading: false,
       title: _buildSimpleHeader(),

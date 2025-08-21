@@ -222,6 +222,7 @@ class _StunningProductDetailState extends State<StunningProductDetail>
       expandedHeight: isMobile ? screenHeight * 0.4 : screenHeight * 0.5,
       floating: false,
       pinned: true,
+      snap: false,
       backgroundColor: AppTheme.deepTeal,
       foregroundColor: Colors.white,
       leading: IconButton(
@@ -749,19 +750,20 @@ class _StunningProductDetailState extends State<StunningProductDetail>
   }
 
   Widget _buildBottomBar(bool isMobile, bool isOutOfStock) {
-    return Container(
-      padding: EdgeInsets.all(isMobile ? 16 : 20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 10,
-            offset: const Offset(0, -4),
-          ),
-        ],
-      ),
-      child: SafeArea(
+    return Builder(builder: (context){
+      final pad = MediaQuery.of(context).padding.bottom;
+      return Container(
+        padding: EdgeInsets.fromLTRB(16, isMobile ? 16 : 20, 16, ((pad > 0 ? pad : 12) + 8)),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.1),
+              blurRadius: 10,
+              offset: const Offset(0, -4),
+            ),
+          ],
+        ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -832,8 +834,8 @@ class _StunningProductDetailState extends State<StunningProductDetail>
             ),
           ],
         ),
-      ),
-    );
+      );
+    });
   }
 
 

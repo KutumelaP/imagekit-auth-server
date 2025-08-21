@@ -139,7 +139,12 @@ class MyApp extends StatelessWidget {
         ),
         builder: (context, child) {
           // Global bottom SafeArea to avoid iPhone home indicator overlap
-          final wrapped = SafeArea(top: false, bottom: true, child: child!);
+          final wrapped = SafeArea(
+            top: false,
+            bottom: true,
+            minimum: const EdgeInsets.only(bottom: 34),
+            child: child!,
+          );
           return MediaQuery(
             data: MediaQuery.of(context).copyWith(
               viewInsets: MediaQuery.of(context).viewInsets,
