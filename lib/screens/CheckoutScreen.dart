@@ -2230,6 +2230,15 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           print('  - _hasNonFoodItems: $_hasNonFoodItems');
           print('  - UI should show: ${!_isDelivery && (_productCategory.toLowerCase() != 'food' || _hasNonFoodItems)}');
         }
+
+        // Auto-select service filter based on seller capabilities
+        if (_sellerPargoEnabled && !_sellerPaxiEnabled) {
+          _selectedServiceFilter = 'pargo';
+          _pickupPoints = _allPickupPoints.where((p) => p.isPargoPoint).toList();
+        } else if (_sellerPaxiEnabled && !_sellerPargoEnabled) {
+          _selectedServiceFilter = 'paxi';
+          _pickupPoints = _allPickupPoints.where((p) => p.isPaxiPoint).toList();
+        }
       });
     } catch (e) {
       print('❌ DEBUG: Error loading pickup points: $e');
@@ -4551,6 +4560,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                     print('🔴 DEBUG: Before setState - _isDelivery: $_isDelivery');
                     setState(() {
                       _isDelivery = false;
+                      _isLoadingPickupPoints = true; // show inline spinner immediately
                       print('🔴 DEBUG: Inside setState - _isDelivery: $_isDelivery');
                       _calculateDeliveryFeeAndCheckStore();
                     });
@@ -4617,8 +4627,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           
           SizedBox(height: ResponsiveUtils.getVerticalPadding(context)),
           
-          // Pargo Pickup Points Section
-          if (!_isDelivery && (_productCategory.toLowerCase() != 'food' || _hasNonFoodItems) && _pickupPoints.isNotEmpty) ...[
+          // Pargo/PAXI Pickup Points Section (always visible in pickup mode)
+          if (!_isDelivery && (_productCategory.toLowerCase() != 'food' || _hasNonFoodItems)) ...[
             Container(
               margin: EdgeInsets.symmetric(vertical: ResponsiveUtils.getVerticalPadding(context) * 0.5),
               padding: EdgeInsets.all(ResponsiveUtils.getHorizontalPadding(context)),
@@ -4679,10 +4689,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                   ),
                   SizedBox(height: 12),
                   
-                  // Service selection buttons
+                  // Service selection buttons (respect seller capabilities)
                   Row(
                     children: [
-                      Expanded(
+                      if (_sellerPargoEnabled) Expanded(
                         child: Container(
                           decoration: BoxDecoration(
                             gradient: LinearGradient(
@@ -4748,8 +4758,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                           ),
                         ),
                       ),
-                      SizedBox(width: 12),
-                      Expanded(
+                      if (_sellerPargoEnabled && _sellerPaxiEnabled) SizedBox(width: 12),
+                      if (_sellerPaxiEnabled) Expanded(
                         child: Container(
                           decoration: BoxDecoration(
                             gradient: LinearGradient(
@@ -6622,6 +6632,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                             _isDelivery = false;
                             _deliveryFee = 0.0;
                             _deliveryDistance = 0.0;
+                            _isLoadingPickupPoints = true; // show inline spinner immediately
                             print('🔴 DEBUG: Inside setState - _isDelivery: $_isDelivery');
                           });
                           print('🔴 DEBUG: After setState - _isDelivery: $_isDelivery');
