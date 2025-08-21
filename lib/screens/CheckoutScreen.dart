@@ -4205,7 +4205,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                             'This can take a few seconds while we search nearby PAXI and Pargo stores.',
                             style: TextStyle(
                               fontSize: ResponsiveUtils.getTitleSize(context) - 4,
-                              color: AppTheme.breeze,
+                              color: AppTheme.deepTeal.withOpacity(0.7),
                             ),
                             textAlign: TextAlign.center,
                           ),
@@ -4665,7 +4665,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                       SizedBox(width: 8),
                       Expanded(
                         child:                       SafeUI.safeText(
-                        '🚚 Pickup Points',
+                        '📦Pickup Points',
                         style: TextStyle(
                           fontSize: ResponsiveUtils.getTitleSize(context),
                           fontWeight: FontWeight.w900,
@@ -4682,7 +4682,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                     'Choose from our network of secure pickup locations',
                     style: TextStyle(
                       fontSize: ResponsiveUtils.getTitleSize(context) - 4,
-                      color: AppTheme.breeze,
+                      color: AppTheme.deepTeal.withOpacity(0.65),
                       fontStyle: FontStyle.italic,
                     ),
                     maxLines: 2,
@@ -4695,23 +4695,11 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                       if (_sellerPargoEnabled) Expanded(
                         child: Container(
                           decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              colors: _selectedServiceFilter == 'pargo'
-                                  ? [
-                                      AppTheme.deepTeal.withOpacity(0.3),
-                                      AppTheme.deepTeal.withOpacity(0.2),
-                                    ]
-                                  : [
-                                      AppTheme.deepTeal.withOpacity(0.1),
-                                      AppTheme.deepTeal.withOpacity(0.05),
-                                    ],
-                            ),
+                            gradient: LinearGradient(colors: AppTheme.primaryGradient),
                             borderRadius: BorderRadius.circular(12),
                             border: Border.all(
-                              color: _selectedServiceFilter == 'pargo'
-                                  ? AppTheme.deepTeal
-                                  : AppTheme.deepTeal.withOpacity(0.3),
-                              width: _selectedServiceFilter == 'pargo' ? 2 : 1,
+                              color: AppTheme.deepTeal,
+                              width: 1.5,
                             ),
                           ),
                           child: Material(
@@ -4725,18 +4713,14 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                   children: [
                                     Icon(
                                       Icons.local_shipping,
-                                      color: _selectedServiceFilter == 'pargo'
-                                          ? AppTheme.deepTeal
-                                          : AppTheme.deepTeal.withOpacity(0.7),
+                                      color: AppTheme.deepTeal,
                                       size: 24,
                                     ),
                                     SizedBox(height: 8),
                                     Text(
                                       'Pargo',
                                       style: TextStyle(
-                                        color: _selectedServiceFilter == 'pargo'
-                                            ? AppTheme.deepTeal
-                                            : AppTheme.deepTeal.withOpacity(0.7),
+                                        color: AppTheme.deepTeal,
                                         fontSize: 14,
                                         fontWeight: FontWeight.w700,
                                       ),
@@ -4744,9 +4728,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                     Text(
                                       'Verified Points',
                                       style: TextStyle(
-                                        color: _selectedServiceFilter == 'pargo'
-                                            ? AppTheme.deepTeal
-                                            : AppTheme.breeze,
+                                        color: AppTheme.deepTeal.withOpacity(0.7),
                                         fontSize: 12,
                                         fontWeight: FontWeight.w500,
                                       ),
@@ -4762,23 +4744,11 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                       if (_sellerPaxiEnabled) Expanded(
                         child: Container(
                           decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              colors: _selectedServiceFilter == 'paxi'
-                                  ? [
-                                      AppTheme.deepTeal.withOpacity(0.3),
-                                      AppTheme.deepTeal.withOpacity(0.2),
-                                    ]
-                                  : [
-                                      AppTheme.deepTeal.withOpacity(0.1),
-                                      AppTheme.deepTeal.withOpacity(0.05),
-                                    ],
-                            ),
+                            gradient: LinearGradient(colors: AppTheme.primaryGradient),
                             borderRadius: BorderRadius.circular(12),
                             border: Border.all(
-                              color: _selectedServiceFilter == 'paxi'
-                                  ? AppTheme.deepTeal
-                                  : AppTheme.deepTeal.withOpacity(0.3),
-                              width: _selectedServiceFilter == 'paxi' ? 2 : 1,
+                              color: AppTheme.deepTeal,
+                              width: 1.5,
                             ),
                           ),
                           child: Material(
@@ -4792,28 +4762,21 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                   children: [
                                     Icon(
                                       Icons.inventory_2,
-                                      color: _selectedServiceFilter == 'paxi'
-                                          ? AppTheme.deepTeal
-                                          : AppTheme.deepTeal.withOpacity(0.7),
+                                      color: AppTheme.deepTeal,
                                       size: 24,
                                     ),
                                     SizedBox(height: 8),
                                     Text(
                                       'PAXI',
                                       style: TextStyle(
-                                        color: _selectedServiceFilter == 'paxi'
-                                            ? AppTheme.deepTeal
-                                            : AppTheme.deepTeal.withOpacity(0.7),
+                                        color: AppTheme.deepTeal,
                                         fontSize: 14,
-                                        fontWeight: FontWeight.w700,
+                                        fontWeight: FontWeight.w700),
                                       ),
-                                    ),
                                     Text(
                                       'Secure Points',
                                       style: TextStyle(
-                                        color: _selectedServiceFilter == 'paxi'
-                                            ? AppTheme.deepTeal
-                                            : AppTheme.breeze,
+                                        color: AppTheme.deepTeal.withOpacity(0.7),
                                         fontSize: 12,
                                         fontWeight: FontWeight.w500,
                                       ),
@@ -4938,13 +4901,13 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                       },
                       icon: Icon(
                         Icons.refresh,
-                        color: AppTheme.breeze,
+                        color: AppTheme.deepTeal.withOpacity(0.7),
                         size: 16,
                       ),
                       label: Text(
                         'Reload Points',
                         style: TextStyle(
-                          color: AppTheme.breeze,
+                          color: AppTheme.deepTeal.withOpacity(0.7),
                           fontSize: 12,
                           fontWeight: FontWeight.w500,
                         ),
@@ -4962,7 +4925,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                   Container(
                     padding: EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: Colors.white,
+                      color: AppTheme.deepTeal.withOpacity(0.05),
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(color: AppTheme.deepTeal.withOpacity(0.3), width: 1),
                     ),
@@ -5008,7 +4971,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                           },
                           decoration: InputDecoration(
                             hintText: 'Enter area to find pickup points...',
-                            hintStyle: TextStyle(color: AppTheme.breeze),
+                            hintStyle: TextStyle(color: AppTheme.deepTeal.withOpacity(0.6)),
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(8),
                               borderSide: BorderSide(color: AppTheme.deepTeal.withOpacity(0.5)),
@@ -5049,7 +5012,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                     address,
                                     style: TextStyle(
                                       fontSize: 13,
-                                      color: AppTheme.angel,
+                                      color: AppTheme.deepTeal,
                                       fontWeight: FontWeight.w500,
                                     ),
                                     overflow: TextOverflow.ellipsis,
@@ -5111,9 +5074,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                     Container(
                       padding: EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: AppTheme.deepTeal.withOpacity(0.1),
+                        color: AppTheme.deepTeal.withOpacity(0.05),
                         borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: AppTheme.deepTeal, width: 2),
+                        border: Border.all(color: AppTheme.deepTeal.withOpacity(0.3), width: 1),
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -5139,7 +5102,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                 child: Text(
                                   _selectedPickupPoint!.name,
                                   style: TextStyle(
-                                    color: AppTheme.angel,
+                                    color: AppTheme.deepTeal,
                                     fontSize: 15,
                                     fontWeight: FontWeight.w600,
                                   ),
@@ -5177,7 +5140,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                           Text(
                             _selectedPickupPoint!.address,
                             style: TextStyle(
-                              color: AppTheme.breeze,
+                              color: AppTheme.deepTeal,
                               fontSize: 13,
                             ),
                             overflow: TextOverflow.ellipsis,
@@ -5189,13 +5152,13 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                               Container(
                                 padding: EdgeInsets.all(2),
                                 decoration: BoxDecoration(
-                                  color: AppTheme.deepTeal,
+                                  color: AppTheme.angel,
                                   borderRadius: BorderRadius.circular(3),
                                 ),
                                 child: Text(
                                   'R',
                                   style: TextStyle(
-                                    color: Colors.white,
+                                    color: AppTheme.deepTeal,
                                     fontSize: 10,
                                     fontWeight: FontWeight.bold,
                                   ),
@@ -5258,6 +5221,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                 color: AppTheme.deepTeal.withOpacity(0.3),
                                 width: 1,
                               ),
+                              
                             ),
                             child: Text(
                               _selectedServiceFilter == 'pargo' ? '🚚 Pargo Only' : '📦 PAXI Only',
@@ -5280,14 +5244,14 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                 SizedBox(height: 20),
                                 Icon(
                                   Icons.location_off,
-                                  color: AppTheme.breeze,
+                                  color: AppTheme.deepTeal.withOpacity(0.7),
                                   size: 48,
                                 ),
                                 SizedBox(height: 16),
                                 Text(
                                   'No pickup points available',
                                   style: TextStyle(
-                                    color: AppTheme.breeze,
+                                    color: AppTheme.deepTeal,
                                     fontSize: 16,
                                     fontWeight: FontWeight.w600,
                                   ),
@@ -5300,7 +5264,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                           ? 'No Pargo pickup points found'
                                           : 'No PAXI pickup points found',
                                   style: TextStyle(
-                                    color: AppTheme.breeze.withOpacity(0.7),
+                                    color: AppTheme.deepTeal.withOpacity(0.7),
                                     fontSize: 14,
                                   ),
                                   textAlign: TextAlign.center,
@@ -5310,14 +5274,14 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                   Text(
                                     'Debug: ${_allPickupPoints.length} total points available',
                                     style: TextStyle(
-                                      color: AppTheme.breeze.withOpacity(0.5),
+                                      color: AppTheme.deepTeal.withOpacity(0.5),
                                       fontSize: 12,
                                     ),
                                   ),
                                   Text(
                                     'Pargo: ${_allPickupPoints.where((p) => p.isPargoPoint).length}, PAXI: ${_allPickupPoints.where((p) => p.isPaxiPoint).length}',
                                     style: TextStyle(
-                                      color: AppTheme.breeze.withOpacity(0.5),
+                                      color: AppTheme.deepTeal.withOpacity(0.5),
                                       fontSize: 12,
                                     ),
                                   ),
@@ -5357,7 +5321,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                           child: Text(
                                             point.name,
                                             style: TextStyle(
-                                              color: AppTheme.angel,
+                                              color: AppTheme.deepTeal,
                                               fontSize: 14,
                                               fontWeight: FontWeight.w600,
                                             ),
@@ -5395,7 +5359,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                   Text(
                                     point.address,
                                     style: TextStyle(
-                                      color: AppTheme.breeze,
+                                      color: AppTheme.deepTeal.withOpacity(0.8),
                                       fontSize: 12,
                                     ),
                                     overflow: TextOverflow.ellipsis,
@@ -5419,7 +5383,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                                 ? '📦 PAXI'
                                                 : '🏪 Local Store',
                                         style: TextStyle(
-                                          color: AppTheme.breeze,
+                                          color: AppTheme.deepTeal.withOpacity(0.8),
                                           fontSize: 11,
                                           fontWeight: FontWeight.w500,
                                         ),
@@ -5864,9 +5828,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                   margin: EdgeInsets.symmetric(vertical: 8),
                   padding: EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: AppTheme.deepTeal.withOpacity(0.06),
+                    color: AppTheme.breeze,
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: AppTheme.deepTeal.withOpacity(0.2)),
+                    border: Border.all(color: AppTheme.breeze),
                   ),
                   child: Row(
                     children: [
@@ -5895,39 +5859,39 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               ] else if (_pickupPoints.isNotEmpty) ...[
                 ..._pickupPoints.take(5).map((point) => Container(
                   margin: EdgeInsets.only(bottom: 12),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: point.isPargoPoint 
-                          ? [
-                              AppTheme.deepTeal.withOpacity(0.1),
-                              AppTheme.deepTeal.withOpacity(0.05),
-                              AppTheme.angel,
-                            ]
-                          : [
-                              AppTheme.deepTeal.withOpacity(0.1),
-                              AppTheme.deepTeal.withOpacity(0.05),
-                              AppTheme.angel,
-                            ],
-                    ),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                      color: point.isPargoPoint 
-                          ? AppTheme.deepTeal.withOpacity(0.4)
-                          : AppTheme.deepTeal.withOpacity(0.4),
-                      width: 2,
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: point.isPargoPoint 
-                            ? AppTheme.deepTeal.withOpacity(0.2)
-                            : AppTheme.deepTeal.withOpacity(0.2),
-                        blurRadius: 12,
-                        offset: Offset(0, 6),
+                                      decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: point.isPargoPoint 
+                            ? [
+                                AppTheme.deepTeal.withOpacity(0.1),
+                                AppTheme.deepTeal.withOpacity(0.05),
+                                AppTheme.angel,
+                              ]
+                            : [
+                                AppTheme.deepTeal.withOpacity(0.1),
+                                AppTheme.deepTeal.withOpacity(0.05),
+                                AppTheme.angel,
+                              ],
                       ),
-                    ],
-                  ),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: point.isPargoPoint 
+                            ? AppTheme.deepTeal.withOpacity(0.4)
+                            : AppTheme.deepTeal.withOpacity(0.4),
+                        width: 2,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: point.isPargoPoint 
+                              ? AppTheme.deepTeal.withOpacity(0.2)
+                              : AppTheme.deepTeal.withOpacity(0.2),
+                          blurRadius: 12,
+                          offset: Offset(0, 6),
+                        ),
+                      ],
+                    ),
                   child: Material(
                     color: Colors.transparent,
                     child: InkWell(
@@ -6228,10 +6192,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 Container(
                   padding: EdgeInsets.all(ResponsiveUtils.getVerticalPadding(context)),
                   decoration: BoxDecoration(
-                    color: AppTheme.breeze.withOpacity(0.1),
+                    color: AppTheme.breeze,
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(
-                      color: AppTheme.breeze.withOpacity(0.3),
+                      color: AppTheme.breeze,
                       width: 1,
                     ),
                   ),

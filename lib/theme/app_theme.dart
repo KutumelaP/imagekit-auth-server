@@ -9,6 +9,13 @@ class AppTheme {
   static const Color whisper = Color(0xFFCCE0E6);       // Whisper #CCE0E6
   static const Color angel = Color(0xFFF2F7F9);         // Angel #F2F7F9
 
+  // Neutral sand palette (provided swatches)
+  static const Color sand0 = Color(0xFFEDEDE9); // EDEDE9
+  static const Color sand1 = Color(0xFFD6CCC2); // D6CCC2
+  static const Color sand2 = Color(0xFFF5EBE0); // F5EBE0
+  static const Color sand3 = Color(0xFFE3D5CA); // E3D5CA
+  static const Color sand4 = Color(0xFFD5BDAF); // D5BDAF
+
   // Complementary Color Palette (for cards and specific elements)
   static const Color paleLinen = Color(0xFFE0E0D9);     // Very light, almost off-white
   static const Color indigo = Color(0xFF354269);         // Deep, muted blue
@@ -63,6 +70,17 @@ class AppTheme {
   static const List<Color> cardGradient = [angel, whisper];
   static const List<Color> buttonGradient = [deepTeal, cloud];
   static const List<Color> accentGradient = [breeze, cloud];
+
+  // Pickup UI tokens (use sand palette)
+  static const LinearGradient pickupCardGradient = LinearGradient(
+    colors: [sand2, sand0],
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+  );
+  static const Color pickupBorder = sand1;
+  static const Color pickupAccent = sand4;
+  static const Color pickupText = Colors.black87;
+  static const Color pickupMuted = sand3;
   
   // Input field gradients and shadows
   static const List<Color> inputBackgroundGradient = [angel, whisper];
