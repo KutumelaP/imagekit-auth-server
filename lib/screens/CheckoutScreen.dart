@@ -7982,7 +7982,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       bottom: true,
       top: false,
       child: Container(
-      width: double.infinity,
+        width: double.infinity,
       decoration: BoxDecoration(
         gradient: AppTheme.primaryButtonGradient,
         borderRadius: BorderRadius.circular(12),
@@ -7994,9 +7994,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           ),
         ],
       ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
           borderRadius: BorderRadius.circular(12),
           onTap: _isLoading ? null : _submitOrder,
           child: Padding(
@@ -8026,6 +8026,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 ),
               ],
             ),
+          ),
           ),
         ),
       ),
