@@ -16,6 +16,7 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:provider/provider.dart';
+import '../services/risk_engine.dart';
 import '../services/notification_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/rural_delivery_widget.dart';
@@ -3245,6 +3246,87 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
     // Validate order before payment
     print('🔍 DEBUG: Validating order before payment...');
+
+    // Fraud/Scam: quick risk evaluation before proceeding
+    try {
+      final uid = currentUser?.uid;
+      if (uid != null) {
+        // Estimate pickup distance if applicable
+        double? pickupDistanceKm;
+        try {
+          if (!_isDelivery && _selectedPickupPoint != null && _selectedLat != null && _selectedLng != null) {
+            pickupDistanceKm = Geolocator.distanceBetween(
+              _selectedLat!, _selectedLng!, _selectedPickupPoint!.latitude, _selectedPickupPoint!.longitude,
+            ) / 1000.0;
+          }
+        } catch (_) {}
+
+        // Country signals (best-effort)
+        final ipCountry = 'ZA'; // TODO: replace with real signal if available
+        final addressCountry = 'ZA'; // delivery/pickup is SA only now
+
+        // Account age (best-effort via createdAt on users/<uid>)
+        int accountAgeDays = 0;
+        try {
+          final userDoc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
+          final ts = userDoc.data()?['createdAt'] as Timestamp?;
+          if (ts != null) {
+            accountAgeDays = DateTime.now().difference(ts.toDate()).inDays;
+          }
+        } catch (_) {}
+
+        // Basic velocity signals (failed payments/orders in last 24h) – optional
+        int failedPayments24h = 0;
+        int recentOrders24h = 0;
+        try {
+          final since = DateTime.now().subtract(Duration(hours: 24));
+          final ordersSnap = await FirebaseFirestore.instance
+              .collection('orders')
+              .where('userId', isEqualTo: uid)
+              .where('createdAt', isGreaterThan: Timestamp.fromDate(since))
+              .get();
+          recentOrders24h = ordersSnap.size;
+          failedPayments24h = 0; // plug real signal later
+        } catch (_) {}
+
+        final result = await RiskEngine.evaluate(
+          userId: uid,
+          orderTotal: widget.totalPrice,
+          isDelivery: _isDelivery,
+          ipCountry: ipCountry,
+          addressCountry: addressCountry,
+          pickupDistanceKm: pickupDistanceKm,
+          accountAgeDays: accountAgeDays,
+          failedPayments24h: failedPayments24h,
+          recentOrders24h: recentOrders24h,
+        );
+
+        await RiskEngine.logRiskEvent(userId: uid, context: 'checkout_submit', result: result);
+
+        // High risk → halt and mark for manual review
+        if (result.isHigh) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('We need to review this order. Please try another payment method or contact support.')),
+            );
+          }
+          // Record a manual review stub
+          try {
+            await FirebaseFirestore.instance.collection('order_reviews').add({
+              'userId': uid,
+              'status': 'pending',
+              'riskScore': result.riskScore,
+              'reasons': result.reasons,
+              'signals': result.signals,
+              'createdAt': Timestamp.now(),
+            });
+          } catch (_) {}
+          return;
+        }
+      }
+    } catch (e) {
+      print('⚠️ Risk engine evaluation failed: $e');
+    }
     if (!await _validateOrderBeforePayment()) {
       print('🔍 DEBUG: Order validation failed');
       return;
