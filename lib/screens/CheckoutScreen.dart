@@ -101,6 +101,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   bool _isSearchingAddress = false;
   // Pickup points (Pargo)
   List<PickupPoint> _pickupPoints = [];
+  // Cache for enriched venue names per coordinate
+  final Map<String, String> _pickupVenueCache = {};
   List<PickupPoint> _allPickupPoints = []; // Store all pickup points
   bool _isLoadingPickupPoints = false;
   PickupPoint? _selectedPickupPoint;
@@ -5420,7 +5422,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                       children: [
                                         Expanded(
                                           child: Text(
-                                            point.name,
+                                            (point.venueTitle != null && point.venueTitle!.isNotEmpty)
+                                                ? point.venueTitle!
+                                                : point.name,
                                             style: TextStyle(
                                               color: AppTheme.deepTeal,
                                               fontSize: 14,

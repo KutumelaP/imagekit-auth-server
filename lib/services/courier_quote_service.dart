@@ -21,6 +21,8 @@ class PickupPoint {
   final bool isPargoPoint; // Whether this is a real Pargo point
   final String? paxiId; // PAXI-specific ID
   final bool isPaxiPoint; // Whether this is a PAXI point
+  // Optional venue title (e.g., "PEP - Festival Mall") enriched from HERE
+  String? venueTitle;
 
   PickupPoint({
     required this.id,
@@ -36,6 +38,7 @@ class PickupPoint {
     this.isPargoPoint = false,
     this.paxiId,
     this.isPaxiPoint = false,
+    this.venueTitle,
   });
 
   factory PickupPoint.fromJson(Map<String, dynamic> json) {
