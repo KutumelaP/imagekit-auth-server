@@ -421,6 +421,23 @@ class NotificationService {
     }
   }
 
+  // Admin alert helper for high-risk events
+  static Future<void> sendAdminAlert({
+    required String title,
+    required String message,
+    Map<String, dynamic>? data,
+  }) async {
+    try {
+      await FirebaseFirestore.instance.collection('admin_notifications').add({
+        'title': title,
+        'message': message,
+        'data': data,
+        'read': false,
+        'timestamp': FieldValue.serverTimestamp(),
+      });
+    } catch (_) {}
+  }
+
   // Test notification method for debugging
   Future<void> testNotification() async {
     try {

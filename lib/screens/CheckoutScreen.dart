@@ -3321,6 +3321,16 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               'signals': result.signals,
               'createdAt': Timestamp.now(),
             });
+            // Admin alert
+            await NotificationService.sendAdminAlert(
+              title: 'High-Risk Order Attempt',
+              message: 'User $uid flagged with score ${result.riskScore}.',
+              data: {
+                'userId': uid,
+                'riskScore': result.riskScore,
+                'reasons': result.reasons,
+              },
+            );
           } catch (_) {}
           return;
         }
