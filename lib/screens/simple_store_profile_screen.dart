@@ -15,10 +15,11 @@ import 'store_reviews_page.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:share_plus/share_plus.dart'; // Added import for share package
 import 'package:firebase_analytics/firebase_analytics.dart';
-import 'package:flutter/services.dart'; // Added import for Clipboard
+import 'package:flutter/services.dart'; // Added import for Clipboard and SystemUiOverlayStyle
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'stunning_product_browser.dart';
+import '../widgets/bottom_action_bar.dart';
 
 class SimpleStoreProfileScreen extends StatefulWidget {
   final Map<String, dynamic> store;
@@ -332,13 +333,16 @@ class _SimpleStoreProfileScreenState extends State<SimpleStoreProfileScreen>
 
   // Modern glass morphism app bar with enhanced design
   Widget _buildStunningAppBar() {
-    return SliverAppBar(
-      expandedHeight: 140,
-      floating: false,
-      pinned: true,
-      elevation: 0,
-      backgroundColor: Colors.transparent,
-      foregroundColor: Colors.white,
+    return SliverSafeArea(
+      top: true,
+      sliver: SliverAppBar(
+        expandedHeight: 140,
+        floating: false,
+        pinned: true,
+        elevation: 0,
+        backgroundColor: Colors.transparent,
+        foregroundColor: Colors.white,
+        systemOverlayStyle: SystemUiOverlayStyle.light,
       title: Row(
         children: [
           const Icon(Icons.storefront_rounded, size: 20, color: Colors.white),
@@ -425,6 +429,7 @@ class _SimpleStoreProfileScreenState extends State<SimpleStoreProfileScreen>
         //   ),
         // ),
       ],
+      ),
     );
   }
 
@@ -1348,59 +1353,28 @@ class _SimpleStoreProfileScreenState extends State<SimpleStoreProfileScreen>
 
   // Bottom action bar (original simple buttons)
   Widget _buildStickyBottomBar() {
-    return SafeArea(
-      top: false,
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
-        decoration: BoxDecoration(
-          color: Colors.white,
-                  boxShadow: [
-                    BoxShadow(
-              color: Colors.black.withOpacity(0.06),
-              blurRadius: 10,
-              offset: const Offset(0, -4),
-            ),
-          ],
-          border: Border(
-            top: BorderSide(color: AppTheme.deepTeal.withOpacity(0.08), width: 1),
-          ),
-        ),
-        child: Row(
-          children: [
-            Expanded(
-              child: SizedBox(
-                height: 44,
-                child: OutlinedButton.icon(
-                  onPressed: _handleChat,
-                  icon: const Icon(Icons.chat_bubble_outline, size: 18),
-                  label: const Text('Chat'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: AppTheme.deepTeal,
-                    side: BorderSide(color: AppTheme.deepTeal.withOpacity(0.3)),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: SizedBox(
-                height: 44,
-                child: ElevatedButton.icon(
-                  onPressed: _handleShop,
-                  icon: const Icon(Icons.storefront, size: 18),
-                  label: const Text('Shop'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppTheme.deepTeal,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
+    return BottomActionBar(
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 24),
+      border: Border(
+        top: BorderSide(color: AppTheme.deepTeal.withOpacity(0.08), width: 1),
       ),
+      children: [
+        ActionButton(
+          onPressed: _handleChat,
+          icon: const Icon(Icons.chat_bubble_outline, size: 18),
+          label: 'Chat',
+          isPrimary: false,
+          height: 44,
+        ),
+        const SizedBox(width: 12),
+        ActionButton(
+          onPressed: _handleShop,
+          icon: const Icon(Icons.storefront, size: 18),
+          label: 'Shop',
+          isPrimary: true,
+          height: 44,
+        ),
+      ],
     );
   }
 

@@ -26,6 +26,13 @@ class AdminTheme {
   static const Color info = Color(0xFF2196F3);
   static const Color primaryOrange = Color(0xFFFF5722);
   
+  // Missing properties for paxi_pricing_management
+  static const Color primaryColor = deepTeal;
+  static const Color accentColor = cloud;
+  static const Color textColor = darkGrey;
+  static const Color infoColor = info;
+  static const Color onPrimaryColor = angel;
+  
   // Gradients using beautiful tints palette
   static const List<Color> primaryGradient = [deepTeal, cloud];
   static const List<Color> secondaryGradient = [cloud, breeze];

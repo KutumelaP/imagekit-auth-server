@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 import '../theme/app_theme.dart';
 import '../services/firebase_admin_service.dart';
 import '../utils/order_utils.dart';
+import 'package:flutter/services.dart';
 
 class SellerOrderDetailScreen extends StatefulWidget {
   final String orderId;
@@ -280,11 +281,14 @@ class _SellerOrderDetailScreenState extends State<SellerOrderDetailScreen>
   }
 
   Widget _buildSliverAppBar(String status) {
-    return SliverAppBar(
-      expandedHeight: 180,
-      floating: false,
-      pinned: true,
-      backgroundColor: _statusColor(status),
+    return SliverSafeArea(
+      top: true,
+      sliver: SliverAppBar(
+        expandedHeight: 180,
+        floating: false,
+        pinned: true,
+        backgroundColor: _statusColor(status),
+        systemOverlayStyle: SystemUiOverlayStyle.light,
       leading: Container(
         margin: const EdgeInsets.all(8),
         decoration: BoxDecoration(
@@ -375,6 +379,7 @@ class _SellerOrderDetailScreenState extends State<SellerOrderDetailScreen>
             ],
           ),
         ),
+      ),
       ),
     );
   }

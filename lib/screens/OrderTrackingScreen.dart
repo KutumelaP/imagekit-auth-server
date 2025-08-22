@@ -10,6 +10,7 @@ import '../services/whatsapp_cloud_service.dart';
 import '../models/order_status.dart';
 import '../services/pargo_tracking_service.dart';
 import 'package:qr_flutter/qr_flutter.dart';
+import 'package:flutter/services.dart';
 
 class OrderTrackingScreen extends StatefulWidget {
   final String orderId;
@@ -326,11 +327,14 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
   Widget _buildSliverAppBar(String status) {
     final color = _statusColor(status);
     
-    return SliverAppBar(
-      expandedHeight: 180,
-      floating: false,
-      pinned: true,
-      backgroundColor: color,
+    return SliverSafeArea(
+      top: true,
+      sliver: SliverAppBar(
+        expandedHeight: 180,
+        floating: false,
+        pinned: true,
+        backgroundColor: color,
+        systemOverlayStyle: SystemUiOverlayStyle.light,
       leading: Container(
         margin: const EdgeInsets.all(8),
         decoration: BoxDecoration(
@@ -421,6 +425,7 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
             ],
           ),
         ),
+      ),
       ),
     );
   }

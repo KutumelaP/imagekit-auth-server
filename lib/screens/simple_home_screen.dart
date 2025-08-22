@@ -25,6 +25,7 @@ import '../widgets/chat_badge.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../widgets/safe_network_image.dart';
+import 'package:flutter/services.dart';
 
 class SimpleHomeScreen extends StatefulWidget {
   const SimpleHomeScreen({super.key});
@@ -640,17 +641,11 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
             physics: const BouncingScrollPhysics(),
             cacheExtent: 600,
             slivers: [
-              SliverToBoxAdapter(
-                child: SizedBox(height: MediaQuery.of(context).padding.top),
-              ),
               _buildStunningAppBar(),
               _buildWelcomeHero(),
               _buildCategoriesHeaderSliver(),
               _buildCategoriesGridSliver(),
               _buildMyPurchasesSection(),
-              SliverToBoxAdapter(
-                child: SizedBox(height: MediaQuery.of(context).size.height * 0.05),
-              ),
             ],
           ),
         );
@@ -659,14 +654,18 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
   }
 
   Widget _buildStunningAppBar() {
-    return SliverAppBar(
-      pinned: true,
-      snap: false,
-      floating: false,
-      toolbarHeight: 64,
-      backgroundColor: AppTheme.deepTeal,
-      automaticallyImplyLeading: false,
-      title: _buildSimpleHeader(),
+    return SliverSafeArea(
+      top: true,
+      sliver: SliverAppBar(
+        pinned: true,
+        snap: false,
+        floating: false,
+        toolbarHeight: 64,
+        backgroundColor: AppTheme.deepTeal,
+        automaticallyImplyLeading: false,
+        systemOverlayStyle: SystemUiOverlayStyle.light,
+        title: _buildSimpleHeader(),
+      ),
     );
   }
 

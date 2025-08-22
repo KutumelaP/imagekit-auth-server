@@ -9,6 +9,7 @@ import 'CheckoutScreen.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../theme/app_theme.dart';
 import '../theme/app_theme.dart' show SafeUI, ResponsiveUtils;
+import '../widgets/bottom_action_bar.dart';
 
 class EnhancedCartScreen extends StatefulWidget {
   const EnhancedCartScreen({super.key});
@@ -823,170 +824,123 @@ class _EnhancedCartScreenState extends State<EnhancedCartScreen>
   }
 
   Widget _buildEnhancedCartSummary(BuildContext context, CartProvider cartProvider) {
-    return Container(
-      margin: EdgeInsets.all(ResponsiveUtils.getHorizontalPadding(context)),
+    return BottomActionBar(
       padding: EdgeInsets.all(ResponsiveUtils.getHorizontalPadding(context)),
-      decoration: BoxDecoration(
-        gradient: AppTheme.cardBackgroundGradient,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: AppTheme.complementaryElevation,
-        border: Border.all(
-          color: AppTheme.breeze.withOpacity(0.2),
-          width: 1,
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SafeUI.safeText(
-            'Order Summary',
-            style: TextStyle(
-              fontSize: ResponsiveUtils.getTitleSize(context) + 2,
-              fontWeight: FontWeight.w600,
-              color: AppTheme.deepTeal,
-            ),
-            maxLines: 1,
-          ),
-          SizedBox(height: ResponsiveUtils.getVerticalPadding(context)),
-          
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      backgroundColor: Colors.transparent,
+      boxShadow: [],
+      children: [
+        Expanded(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               SafeUI.safeText(
-                'Subtotal',
+                'Order Summary',
                 style: TextStyle(
-                  fontSize: ResponsiveUtils.getTitleSize(context),
-                  color: AppTheme.breeze,
-                ),
-                maxLines: 1,
-              ),
-              SafeUI.safeText(
-                'R${cartProvider.totalPrice.toStringAsFixed(2)}',
-                style: TextStyle(
-                  fontSize: ResponsiveUtils.getTitleSize(context),
+                  fontSize: ResponsiveUtils.getTitleSize(context) + 2,
                   fontWeight: FontWeight.w600,
                   color: AppTheme.deepTeal,
                 ),
                 maxLines: 1,
               ),
-            ],
-          ),
-          SizedBox(height: ResponsiveUtils.getVerticalPadding(context) * 0.5),
-          
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              SafeUI.safeText(
-                'Delivery Fee',
-                style: TextStyle(
-                  fontSize: ResponsiveUtils.getTitleSize(context),
-                  color: AppTheme.breeze,
-                ),
-                maxLines: 1,
-              ),
-              SafeUI.safeText(
-                'R${(cartProvider.totalWithShipping - cartProvider.totalPrice).toStringAsFixed(2)}',
-                style: TextStyle(
-                  fontSize: ResponsiveUtils.getTitleSize(context),
-                  fontWeight: FontWeight.w600,
-                  color: AppTheme.deepTeal,
-                ),
-                maxLines: 1,
-              ),
-            ],
-          ),
-          
-          Divider(
-            height: ResponsiveUtils.getVerticalPadding(context) * 2,
-            color: AppTheme.breeze.withOpacity(0.3),
-            thickness: 1,
-          ),
-          
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              SafeUI.safeText(
-                'Total',
-                style: TextStyle(
-                  fontSize: ResponsiveUtils.getTitleSize(context) + 4,
-                  fontWeight: FontWeight.bold,
-                  color: AppTheme.deepTeal,
-                ),
-                maxLines: 1,
-              ),
-              SafeUI.safeText(
-                'R${cartProvider.totalWithShipping.toStringAsFixed(2)}',
-                style: TextStyle(
-                  fontSize: ResponsiveUtils.getTitleSize(context) + 6,
-                  fontWeight: FontWeight.bold,
-                  color: AppTheme.deepTeal,
-                ),
-                maxLines: 1,
-              ),
-            ],
-          ),
-          
-          SizedBox(height: ResponsiveUtils.getVerticalPadding(context)),
-          
-          // Enhanced Checkout Button
-          Container(
-            width: double.infinity,
-            decoration: BoxDecoration(
-              gradient: AppTheme.primaryButtonGradient,
-              borderRadius: BorderRadius.circular(12),
-              boxShadow: [
-                BoxShadow(
-                  color: AppTheme.deepTeal.withOpacity(0.3),
-                  blurRadius: 8,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-            ),
-            child: Material(
-              color: Colors.transparent,
-              child: InkWell(
-                borderRadius: BorderRadius.circular(12),
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => CheckoutScreen(
-                        totalPrice: cartProvider.totalPrice,
-                      ),
+              SizedBox(height: ResponsiveUtils.getVerticalPadding(context) * 0.5),
+              
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  SafeUI.safeText(
+                    'Subtotal',
+                    style: TextStyle(
+                      fontSize: ResponsiveUtils.getTitleSize(context),
+                      color: AppTheme.breeze,
                     ),
-                  );
-                },
-                child: Padding(
-                  padding: EdgeInsets.symmetric(
-                    vertical: ResponsiveUtils.getVerticalPadding(context),
-                    horizontal: ResponsiveUtils.getHorizontalPadding(context),
+                    maxLines: 1,
                   ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        Icons.shopping_cart_checkout_outlined,
-                        color: AppTheme.angel,
-                        size: ResponsiveUtils.getIconSize(context, baseSize: 24),
-                      ),
-                      SizedBox(width: ResponsiveUtils.getHorizontalPadding(context) * 0.5),
-                      SafeUI.safeText(
-                        'Proceed to Checkout',
-                        style: TextStyle(
-                          fontSize: ResponsiveUtils.getTitleSize(context) + 2,
-                          fontWeight: FontWeight.w600,
-                          color: AppTheme.angel,
-                        ),
-                        maxLines: 1,
-                      ),
-                    ],
+                  SafeUI.safeText(
+                    'R${cartProvider.totalPrice.toStringAsFixed(2)}',
+                    style: TextStyle(
+                      fontSize: ResponsiveUtils.getTitleSize(context),
+                      fontWeight: FontWeight.w600,
+                      color: AppTheme.deepTeal,
+                    ),
+                    maxLines: 1,
                   ),
+                ],
+              ),
+              SizedBox(height: ResponsiveUtils.getVerticalPadding(context) * 0.5),
+              
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  SafeUI.safeText(
+                    'Delivery Fee',
+                    style: TextStyle(
+                      fontSize: ResponsiveUtils.getTitleSize(context),
+                      color: AppTheme.breeze,
+                    ),
+                    maxLines: 1,
+                  ),
+                  SafeUI.safeText(
+                    'R${(cartProvider.totalWithShipping - cartProvider.totalPrice).toStringAsFixed(2)}',
+                    style: TextStyle(
+                      fontSize: ResponsiveUtils.getTitleSize(context),
+                      fontWeight: FontWeight.w600,
+                      color: AppTheme.deepTeal,
+                    ),
+                    maxLines: 1,
+                  ),
+                ],
+              ),
+              
+              Divider(
+                height: ResponsiveUtils.getVerticalPadding(context) * 2,
+                color: AppTheme.breeze.withOpacity(0.3),
+                thickness: 1,
+              ),
+              
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  SafeUI.safeText(
+                    'Total',
+                    style: TextStyle(
+                      fontSize: ResponsiveUtils.getTitleSize(context) + 4,
+                      fontWeight: FontWeight.bold,
+                      color: AppTheme.deepTeal,
+                    ),
+                    maxLines: 1,
+                  ),
+                  SafeUI.safeText(
+                    'R${cartProvider.totalWithShipping.toStringAsFixed(2)}',
+                    style: TextStyle(
+                      fontSize: ResponsiveUtils.getTitleSize(context) + 6,
+                      fontWeight: FontWeight.bold,
+                      color: AppTheme.deepTeal,
+                    ),
+                    maxLines: 1,
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        ActionButton(
+          onPressed: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => CheckoutScreen(
+                  totalPrice: cartProvider.totalPrice,
                 ),
               ),
-            ),
-          ),
-        ],
-      ),
+            );
+          },
+          icon: const Icon(Icons.shopping_cart_checkout),
+          label: 'Checkout',
+          isPrimary: true,
+          height: 50,
+        ),
+      ],
     );
   }
 

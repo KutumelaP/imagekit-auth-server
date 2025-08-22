@@ -7,6 +7,7 @@ import '../widgets/safe_network_image.dart';
 import '../constants/app_constants.dart';
 import '../providers/cart_provider.dart';
 import 'stunning_product_detail.dart';
+import 'package:flutter/services.dart';
 
 class StunningProductBrowser extends StatefulWidget {
   final String storeId;
@@ -260,12 +261,15 @@ class _StunningProductBrowserState extends State<StunningProductBrowser>
   }
 
   Widget _buildSliverAppBar(bool isMobile) {
-    return SliverAppBar(
-      expandedHeight: isMobile ? 120 : 160,
-      floating: false,
-      pinned: true,
-      backgroundColor: AppTheme.deepTeal,
-      foregroundColor: Colors.white,
+    return SliverSafeArea(
+      top: true,
+      sliver: SliverAppBar(
+        expandedHeight: isMobile ? 120 : 160,
+        floating: false,
+        pinned: true,
+        backgroundColor: AppTheme.deepTeal,
+        foregroundColor: Colors.white,
+        systemOverlayStyle: SystemUiOverlayStyle.light,
       actions: [
         // Cart with count
         Consumer<CartProvider>(
@@ -360,6 +364,7 @@ class _StunningProductBrowserState extends State<StunningProductBrowser>
             ),
           ),
         ),
+      ),
       ),
     );
   }
