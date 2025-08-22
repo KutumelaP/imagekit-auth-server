@@ -2317,6 +2317,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     print('🔍 DEBUG: PAXI points: ${_allPickupPoints.where((point) => point.isPaxiPoint).length}');
     
     setState(() {
+      _isLoadingPickupPoints = true;
       _selectedServiceFilter = service;
       if (service == null) {
         // Show all points
@@ -2350,6 +2351,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         _selectedPaxiDeliverySpeed = null;
         print('🔍 DEBUG: Reset PAXI delivery speed - service changed to: $service');
       }
+    });
+    // Small async delay to show spinner then settle
+    Future.microtask(() {
+      if (mounted) setState(() => _isLoadingPickupPoints = false);
     });
   }
 
@@ -5109,7 +5114,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                       color: AppTheme.deepTeal,
                                       fontWeight: FontWeight.w500,
                                     ),
-                                    overflow: TextOverflow.ellipsis,
+                                    maxLines: 3,
+                                    softWrap: true,
                                   ),
                                   onTap: () async {
                                     _pickupAddressController.text = address;
@@ -5451,13 +5457,25 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
+                                    point.isPargoPoint
+                                        ? 'Pargo point'
+                                        : point.isPaxiPoint
+                                            ? 'PAXI point'
+                                            : 'Local store',
+                                    style: TextStyle(
+                                      color: AppTheme.deepTeal.withOpacity(0.7),
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                  Text(
                                     point.address,
                                     style: TextStyle(
                                       color: AppTheme.deepTeal.withOpacity(0.8),
                                       fontSize: 12,
                                     ),
-                                    overflow: TextOverflow.ellipsis,
-                                    maxLines: 1,
+                                    maxLines: 3,
+                                    softWrap: true,
                                   ),
                                   Row(
                                     children: [
