@@ -1831,18 +1831,39 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           final lon = double.tryParse(item['lon']?.toString() ?? '');
           
           if (lat != null && lon != null) {
+            // Extract business/complex names from Nominatim data for delivery
+            final businessName = address['shop'] ?? 
+                               address['amenity'] ?? 
+                               address['leisure'] ?? 
+                               address['tourism'] ?? 
+                               address['office'] ?? 
+                               address['commercial'] ?? 
+                               '';
+            
+            final mallComplex = address['building'] ?? 
+                               address['landuse'] ?? 
+                               address['place'] ?? 
+                               '';
+            
+            final street = address['road'] ?? address['house_number'] ?? '';
+            final suburb = address['suburb'] ?? address['neighbourhood'] ?? '';
+            final city = address['city'] ?? address['town'] ?? address['village'] ?? '';
+            final province = address['state'] ?? address['province'] ?? '';
+            
             suggestions.add(
               Placemark(
-                name: displayName,
-                street: address['road'] ?? address['house_number'] ?? '',
-                locality: address['city'] ?? address['town'] ?? address['village'] ?? address['suburb'] ?? '',
-                administrativeArea: address['state'] ?? address['province'] ?? '',
+                name: businessName.isNotEmpty ? businessName : displayName,
+                subLocality: mallComplex.isNotEmpty ? mallComplex : suburb,
+                street: street,
+                locality: city,
+                subAdministrativeArea: suburb,
+                administrativeArea: province,
                 postalCode: address['postcode'] ?? '',
                 country: 'South Africa',
               ),
             );
             
-            // Store coordinates for pickup points loading
+            // Store coordinates for delivery address
             if (suggestions.length == 1) {
               _selectedLat = lat;
               _selectedLng = lon;
@@ -1857,7 +1878,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         if (suggestions.isEmpty) {
           suggestions.add(
             Placemark(
-              name: query,
+              name: query, // Use the query as business name for better identification
+              subLocality: query, // Also set as subLocality to preserve business context
               locality: query,
               administrativeArea: '',
               country: 'South Africa',
@@ -1916,7 +1938,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       // Always allow user to use their entered address
       fallbackSuggestions.add(
         Placemark(
-          name: query,
+          name: query, // Use the query as business name for better identification
+          subLocality: query, // Also set as subLocality to preserve business context
           locality: query,
           administrativeArea: '',
           country: 'South Africa',
@@ -1952,7 +1975,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     }
   }
 
-  // Search for pickup addresses - Now using same comprehensive strategy as delivery
+  // Search for pickup addresses - Enhanced to show full business/complex names instead of just street names
+  // Now using same comprehensive strategy as delivery with improved business name extraction
   Future<void> _searchPickupAddress(String query) async {
     if (query.trim().isEmpty) {
       setState(() {
@@ -2008,8 +2032,15 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         print('🔍 Total pickup placemarks found: ${placemarks.length}');
         setState(() {
           _pickupAddressSuggestions = placemarks;
-          _isSearchingAddress = false;
         });
+
+        // Enrich with business/complex names from Nominatim as well (mobile)
+        await _enrichPickupSuggestionsWithNominatim(query);
+        if (mounted) {
+          setState(() {
+            _isSearchingAddress = false;
+          });
+        }
         
         // Auto-load pickup points for first location (same as delivery behavior)
         if (locations.isNotEmpty) {
@@ -2033,7 +2064,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       setState(() {
         _pickupAddressSuggestions = [
           Placemark(
-            name: query,
+            name: query, // Use the query as business name for better pickup identification
+            subLocality: query, // Also set as subLocality to preserve business context
             locality: query,
             administrativeArea: '',
             country: 'South Africa',
@@ -2072,12 +2104,33 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           final lon = double.tryParse(item['lon']?.toString() ?? '');
           
           if (lat != null && lon != null) {
+            // Extract business/complex names from Nominatim data for pickup
+            final businessName = address['shop'] ?? 
+                               address['amenity'] ?? 
+                               address['leisure'] ?? 
+                               address['tourism'] ?? 
+                               address['office'] ?? 
+                               address['commercial'] ?? 
+                               '';
+            
+            final mallComplex = address['building'] ?? 
+                               address['landuse'] ?? 
+                               address['place'] ?? 
+                               '';
+            
+            final street = address['road'] ?? address['house_number'] ?? '';
+            final suburb = address['suburb'] ?? address['neighbourhood'] ?? '';
+            final city = address['city'] ?? address['town'] ?? address['village'] ?? '';
+            final province = address['state'] ?? address['province'] ?? '';
+            
             suggestions.add(
               Placemark(
-                name: displayName,
-                street: address['road'] ?? address['house_number'] ?? '',
-                locality: address['city'] ?? address['town'] ?? address['village'] ?? address['suburb'] ?? '',
-                administrativeArea: address['state'] ?? address['province'] ?? '',
+                name: businessName.isNotEmpty ? businessName : displayName,
+                subLocality: mallComplex.isNotEmpty ? mallComplex : suburb,
+                street: street,
+                locality: city,
+                subAdministrativeArea: suburb,
+                administrativeArea: province,
                 postalCode: address['postcode'] ?? '',
                 country: 'South Africa',
               ),
@@ -2096,7 +2149,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         if (suggestions.isEmpty) {
           suggestions.add(
             Placemark(
-              name: query,
+              name: query, // Use the query as business name for better pickup identification
+              subLocality: query, // Also set as subLocality to preserve business context
               locality: query,
               administrativeArea: '',
               country: 'South Africa',
@@ -2121,7 +2175,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       setState(() {
         _pickupAddressSuggestions = [
           Placemark(
-            name: query,
+            name: query, // Use the query as business name for better pickup identification
+            subLocality: query, // Also set as subLocality to preserve business context
             locality: query,
             administrativeArea: '',
             country: 'South Africa',
@@ -2134,19 +2189,180 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     }
   }
 
-  // Format address from placemark
+  // Enrich pickup suggestions on mobile with Nominatim business/complex names and merge uniquely
+  Future<void> _enrichPickupSuggestionsWithNominatim(String query) async {
+    try {
+      final encodedQuery = Uri.encodeComponent('$query, South Africa');
+      final url = 'https://nominatim.openstreetmap.org/search?q=$encodedQuery&format=json&limit=5&countrycodes=za&addressdetails=1';
+
+      final response = await http.get(
+        Uri.parse(url),
+        headers: {
+          'User-Agent': 'MzansiMarketplace/1.0 (https://marketplace-8d6bd.web.app)',
+        },
+      );
+
+      if (response.statusCode != 200) return;
+
+      final List<dynamic> data = json.decode(response.body) as List<dynamic>;
+      final List<Placemark> newSuggestions = <Placemark>[];
+
+      for (final item in data) {
+        final address = item['address'] ?? {};
+        final displayName = item['display_name'] ?? '';
+        final double? lat = double.tryParse(item['lat']?.toString() ?? '');
+        final double? lon = double.tryParse(item['lon']?.toString() ?? '');
+        if (lat == null || lon == null) continue;
+
+        final String businessName = (address['shop'] ??
+                address['amenity'] ??
+                address['leisure'] ??
+                address['tourism'] ??
+                address['office'] ??
+                address['commercial'] ??
+                '')
+            .toString();
+        final String mallComplex = (address['building'] ??
+                address['landuse'] ??
+                address['place'] ??
+                '')
+            .toString();
+
+        final String street = (address['road'] ?? address['house_number'] ?? '').toString();
+        final String suburb = (address['suburb'] ?? address['neighbourhood'] ?? '').toString();
+        final String city = (address['city'] ?? address['town'] ?? address['village'] ?? '').toString();
+        final String province = (address['state'] ?? address['province'] ?? '').toString();
+
+        newSuggestions.add(
+          Placemark(
+            name: businessName.isNotEmpty ? businessName : displayName,
+            subLocality: mallComplex.isNotEmpty ? mallComplex : suburb,
+            street: street,
+            locality: city,
+            subAdministrativeArea: suburb,
+            administrativeArea: province,
+            postalCode: address['postcode']?.toString() ?? '',
+            country: 'South Africa',
+          ),
+        );
+
+        if (_selectedLat == null && _selectedLng == null && newSuggestions.length == 1) {
+          _selectedLat = lat;
+          _selectedLng = lon;
+        }
+      }
+
+      if (newSuggestions.isEmpty) return;
+
+      setState(() {
+        final Set<String> existingKeys = _pickupAddressSuggestions
+            .map((pm) => '${pm.name}|${pm.street}|${pm.locality}|${pm.administrativeArea}')
+            .toSet();
+        final List<Placemark> merged = List<Placemark>.from(_pickupAddressSuggestions);
+        for (final pm in newSuggestions) {
+          final key = '${pm.name}|${pm.street}|${pm.locality}|${pm.administrativeArea}';
+          if (!existingKeys.contains(key)) {
+            merged.add(pm);
+            existingKeys.add(key);
+          }
+        }
+        _pickupAddressSuggestions = merged;
+      });
+    } catch (e) {
+      print('❌ Nominatim enrich pickup error: $e');
+    }
+  }
+
+  // Format address from placemark - Enhanced for pickup addresses to show full business names
   String _formatAddress(Placemark placemark) {
-    final parts = [
+    // For pickup addresses, prioritize business names and complex information
+    final List<String> parts = <String?>[
       placemark.name,
+      placemark.subLocality,
       placemark.locality,
       placemark.subAdministrativeArea,
       placemark.administrativeArea,
-    ].where((part) => part != null && part.isNotEmpty).toList();
+    ].whereType<String>()
+     .where((part) => part.trim().isNotEmpty)
+     .toList();
+    
+    // Remove duplicates while preserving order
+    final List<String> uniqueParts = <String>[];
+    for (final String part in parts) {
+      if (!uniqueParts.contains(part)) {
+        uniqueParts.add(part);
+      }
+    }
+    
+    return uniqueParts.join(', ');
+  }
+
+  // Enhanced pickup address formatting - Shows full business details
+  String _formatPickupAddress(Placemark placemark) {
+    // Prioritize business names, mall names, and complex information for pickup
+    final businessName = placemark.name ?? '';
+    final mallComplex = placemark.subLocality ?? '';
+    final street = placemark.street ?? '';
+    final suburb = placemark.locality ?? '';
+    final city = placemark.subAdministrativeArea ?? '';
+    final province = placemark.administrativeArea ?? '';
+    
+    // Build a comprehensive pickup address that emphasizes business names
+    final parts = <String>[];
+    
+    // Start with business name if available
+    if (businessName.isNotEmpty && businessName != street) {
+      parts.add(businessName);
+    }
+    
+    // Add mall/complex name if different from business name
+    if (mallComplex.isNotEmpty && 
+        mallComplex != businessName && 
+        mallComplex != street) {
+      parts.add(mallComplex);
+    }
+    
+    // Add street address
+    if (street.isNotEmpty) {
+      parts.add(street);
+    }
+    
+    // Add location details
+    if (suburb.isNotEmpty) {
+      parts.add(suburb);
+    }
+    
+    if (city.isNotEmpty && city != suburb) {
+      parts.add(city);
+    }
+    
+    if (province.isNotEmpty) {
+      parts.add(province);
+    }
+    
     return parts.join(', ');
   }
 
   // Show pickup point details dialog
   void _showPickupPointDetails(PickupPoint point) {
+    // Compose a richer venue line from reverse geocoding if available
+    Future<String> _composeVenueLine() async {
+      try {
+        final cacheKey = '${point.latitude.toStringAsFixed(6)},${point.longitude.toStringAsFixed(6)}';
+        if (_pickupVenueCache.containsKey(cacheKey)) {
+          return _pickupVenueCache[cacheKey]!;
+        }
+        final placemarks = await placemarkFromCoordinates(point.latitude, point.longitude);
+        if (placemarks.isNotEmpty) {
+          final pm = placemarks.first;
+          final String enriched = _formatPickupAddress(pm);
+          _pickupVenueCache[cacheKey] = enriched;
+          return enriched;
+        }
+      } catch (_) {}
+      return point.venueTitle?.isNotEmpty == true ? point.venueTitle! : point.name;
+    }
+
     showDialog(
       context: context,
       builder: (BuildContext context) {
@@ -2163,14 +2379,23 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               ),
               SizedBox(width: 8),
               Expanded(
-                child: Text(
-                  point.name,
-                  style: TextStyle(
-                    color: AppTheme.deepTeal,
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
-                  overflow: TextOverflow.ellipsis,
+                child: FutureBuilder<String>(
+                  future: _composeVenueLine(),
+                  builder: (context, snapshot) {
+                    final titleText = snapshot.connectionState == ConnectionState.done && snapshot.hasData
+                        ? snapshot.data!
+                        : (point.venueTitle?.isNotEmpty == true ? point.venueTitle! : point.name);
+                    return Text(
+                      titleText,
+                      style: TextStyle(
+                        color: AppTheme.deepTeal,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 2,
+                    );
+                  },
                 ),
               ),
             ],
@@ -2180,6 +2405,36 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
+                // Venue line (business/mall/complex) under title for clarity
+                FutureBuilder<String>(
+                  future: _composeVenueLine(),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState != ConnectionState.done || !(snapshot.hasData)) {
+                      return SizedBox.shrink();
+                    }
+                    return Padding(
+                      padding: EdgeInsets.only(bottom: 12),
+                      child: Row(
+                        children: [
+                          Icon(Icons.apartment, color: AppTheme.breeze, size: 20),
+                          SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              snapshot.data!,
+                              style: TextStyle(
+                                color: AppTheme.angel,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                              ),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
                 // Address
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -5323,7 +5578,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                 }
                                 
                                 final placemark = _pickupAddressSuggestions[index];
-                                final address = _formatAddress(placemark);
+                                final address = _formatPickupAddress(placemark);
                                 return ListTile(
                                   dense: true,
                                   leading: Icon(Icons.location_on, color: AppTheme.deepTeal, size: 16),

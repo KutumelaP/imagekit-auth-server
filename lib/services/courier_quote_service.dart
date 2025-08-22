@@ -454,16 +454,17 @@ class CourierQuoteService {
         return [];
       }
       
-      // Search query: brand name + area context
+      // Search query: brand name + store
       final searchQuery = '$brand store';
-      
+
+      // Use spatial filter with circle to strictly bound by radius
       final queryParams = <String, String>{
         'q': searchQuery,
-        'limit': '10', // Limit results
+        'limit': '20', // Fetch more then filter by distance
         'apiKey': HereConfig.validatedApiKey,
-        'at': '$latitude,$longitude', // Center search around coordinates
-        'radius': '${(radiusKm * 1000).round()}', // Convert km to meters
-        'in': 'countryCode:ZAF', // Restrict to South Africa
+        'at': '$latitude,$longitude', // Provide context for ranking
+        'in': 'circle:$latitude,$longitude;r=${(radiusKm * 1000).round()}', // Strict radius filter
+        'lang': 'en-ZA',
       };
       
       final uri = Uri.parse(HereConfig.discoverUrl).replace(queryParameters: queryParams);
@@ -484,19 +485,30 @@ class CourierQuoteService {
         
         print('🔍 HERE Maps API returned ${items.length} results for $brand');
         
-        return items.map<Map<String, dynamic>>((item) {
+        // Map and distance-filter results to stay within radiusKm
+        final List<Map<String, dynamic>> mapped = [];
+        for (final item in items) {
           final position = item['position'] ?? {};
           final address = item['address'] ?? {};
-          
-          return {
-            'id': item['id'] ?? '',
-            'title': item['title'] ?? '',
-            'address': address['label'] ?? '',
-            'latitude': position['lat']?.toDouble() ?? 0.0,
-            'longitude': position['lng']?.toDouble() ?? 0.0,
-            'source': 'HERE Maps API',
-          };
-        }).toList();
+          final double lat = (position['lat'] as num?)?.toDouble() ?? 0.0;
+          final double lng = (position['lng'] as num?)?.toDouble() ?? 0.0;
+          if (lat == 0.0 && lng == 0.0) continue;
+
+          final double distanceKm = Geolocator.distanceBetween(latitude, longitude, lat, lng) / 1000.0;
+          if (distanceKm <= radiusKm + 0.1) {
+            mapped.add({
+              'id': item['id'] ?? '',
+              'title': item['title'] ?? '',
+              'address': address['label'] ?? '',
+              'latitude': lat,
+              'longitude': lng,
+              'source': 'HERE Maps API',
+            });
+          }
+        }
+
+        print('🔍 HERE Maps API kept ${mapped.length} results within ${radiusKm}km for $brand');
+        return mapped;
         
       } else {
         print('⚠️ HERE Maps API error for $brand: ${response.statusCode} - ${response.body}');
