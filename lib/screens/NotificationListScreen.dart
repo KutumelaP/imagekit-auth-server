@@ -32,6 +32,15 @@ class _NotificationListScreenState extends State<NotificationListScreen> with Wi
     WidgetsBinding.instance.addObserver(this);
     _scrollController.addListener(_onScroll);
     _loadInitial();
+    _maybeAutoClearOnOpen();
+  }
+
+  Future<void> _maybeAutoClearOnOpen() async {
+    if (NotificationService().autoClearBadgeOnNotificationsOpen) {
+      await NotificationService().markAllNotificationsAsReadForCurrentUser();
+      await NotificationService().recalcBadge();
+      await _refreshNotifications();
+    }
   }
 
   Future<void> _refreshNotifications() async {
@@ -107,7 +116,7 @@ class _NotificationListScreenState extends State<NotificationListScreen> with Wi
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      _refreshNotifications();
+      _maybeAutoClearOnOpen();
     }
   }
 
@@ -207,6 +216,11 @@ class _NotificationListScreenState extends State<NotificationListScreen> with Wi
   Future<void> _markAsRead(String notificationId) async {
     try {
       await _notificationService.markNotificationAsRead(notificationId);
+      // Recalculate badge after marking as read
+      await NotificationService().refreshNotifications();
+      // best-effort badge update through service helper
+      // ignore: unawaited_futures
+      NotificationService().showGeneralNotification(title: '', body: '');
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Notification marked as read'),
@@ -240,6 +254,8 @@ class _NotificationListScreenState extends State<NotificationListScreen> with Wi
 
     // Mark as read
     await _markAsRead(notificationData['id']);
+    // best-effort badge refresh through service recalc
+    try { await NotificationService().refreshNotifications(); } catch (_) {}
 
     // Navigate based on notification type
     print('🔍 DEBUG: Navigation logic - Type: $type, ChatId: $chatId, OrderId: $orderId');

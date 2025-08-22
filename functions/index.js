@@ -2,6 +2,7 @@ const functions = require('firebase-functions');
 const admin = require('firebase-admin');
 const crypto = require('crypto');
 const { create } = require('xmlbuilder2');
+const nodemailer = require('nodemailer');
 
 admin.initializeApp();
 const db = admin.firestore();
@@ -156,6 +157,128 @@ exports.sitemap = functions.https.onRequest(async (req, res) => {
     res.status(200).send(xml);
   } catch (e) {
     res.status(500).send('Error');
+  }
+});
+
+// === Email sender (safe: creds from env) ===
+const mailUser = process.env.MAIL_USER || '';
+const mailPass = process.env.MAIL_PASS || '';
+let mailTransporter = null;
+if (mailUser && mailPass) {
+  mailTransporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: { user: mailUser, pass: mailPass },
+  });
+}
+
+exports.sendOrderEmail = functions.https.onCall(async (data, context) => {
+  if (!mailTransporter) {
+    throw new functions.https.HttpsError('failed-precondition', 'Email not configured');
+  }
+  try {
+    const toEmail = (data && data.toEmail) || '';
+    const subject = (data && data.subject) || 'Notification';
+    const html = (data && data.html) || '';
+    const cc = (data && data.cc) || '';
+    if (!toEmail || !html) {
+      throw new functions.https.HttpsError('invalid-argument', 'toEmail and html are required');
+    }
+    const primary = await mailTransporter.sendMail({ from: mailUser, to: toEmail, subject, html });
+    let ccResult = null;
+    if (cc) {
+      ccResult = await mailTransporter.sendMail({ from: mailUser, to: cc, subject: `[Admin] ${subject}` , html });
+    }
+    return { ok: true, id: primary.messageId, ccId: ccResult?.messageId || null };
+  } catch (e) {
+    console.error('sendOrderEmail error', e);
+    throw new functions.https.HttpsError('internal', 'Failed to send email');
+  }
+});
+
+// === Email OTP (create and verify) ===
+exports.createEmailOtp = functions.https.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError('unauthenticated', 'Sign in required');
+  }
+  if (!mailTransporter) {
+    throw new functions.https.HttpsError('failed-precondition', 'Email not configured');
+  }
+  try {
+    const uid = context.auth.uid;
+    let email = (data && data.email) || '';
+    if (!email) {
+      const userDoc = await db.collection('users').doc(uid).get();
+      email = (userDoc.exists && (userDoc.data().email || '')) || '';
+    }
+    if (!email) {
+      throw new functions.https.HttpsError('invalid-argument', 'No email found for user');
+    }
+
+    // Generate 6-digit code
+    const code = String(crypto.randomInt(0, 1000000)).padStart(6, '0');
+    const hash = crypto.createHash('sha256').update(code).digest('hex');
+    const expiresAt = admin.firestore.Timestamp.fromDate(new Date(Date.now() + 10 * 60 * 1000));
+
+    await db.collection('email_otps').doc(uid).set({
+      hash,
+      expiresAt,
+      attempts: 0,
+      used: false,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+
+    await mailTransporter.sendMail({
+      from: mailUser,
+      to: email,
+      subject: 'Your verification code',
+      html: `<p>Your verification code is <b>${code}</b>. It expires in 10 minutes.</p>`
+    });
+
+    return { ok: true };
+  } catch (e) {
+    console.error('createEmailOtp error', e);
+    throw new functions.https.HttpsError('internal', 'Failed to create OTP');
+  }
+});
+
+exports.verifyEmailOtp = functions.https.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError('unauthenticated', 'Sign in required');
+  }
+  try {
+    const uid = context.auth.uid;
+    const code = (data && data.code) ? String(data.code).trim() : '';
+    if (!code || code.length !== 6) {
+      throw new functions.https.HttpsError('invalid-argument', 'Invalid code');
+    }
+    const hash = crypto.createHash('sha256').update(code).digest('hex');
+    const ref = db.collection('email_otps').doc(uid);
+    const snap = await ref.get();
+    if (!snap.exists) {
+      throw new functions.https.HttpsError('not-found', 'No OTP found');
+    }
+    const dataDoc = snap.data();
+    if (dataDoc.used) {
+      throw new functions.https.HttpsError('failed-precondition', 'Code already used');
+    }
+    const now = admin.firestore.Timestamp.now();
+    if (dataDoc.expiresAt && now.toMillis() > dataDoc.expiresAt.toMillis()) {
+      throw new functions.https.HttpsError('deadline-exceeded', 'Code expired');
+    }
+    const attempts = Number(dataDoc.attempts || 0);
+    if (attempts >= 5) {
+      throw new functions.https.HttpsError('resource-exhausted', 'Too many attempts');
+    }
+    if (dataDoc.hash !== hash) {
+      await ref.set({ attempts: attempts + 1, lastAttempt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
+      throw new functions.https.HttpsError('permission-denied', 'Incorrect code');
+    }
+
+    await ref.set({ used: true, verifiedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
+    return { ok: true };
+  } catch (e) {
+    console.error('verifyEmailOtp error', e);
+    throw e instanceof functions.https.HttpsError ? e : new functions.https.HttpsError('internal', 'Verification failed');
   }
 });
 

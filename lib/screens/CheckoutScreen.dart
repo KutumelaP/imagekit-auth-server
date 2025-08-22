@@ -11,6 +11,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../services/biometric_stepup.dart';
 import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
@@ -28,7 +29,7 @@ import '../widgets/home_navigation_button.dart';
 import '../services/courier_quote_service.dart';
 import '../widgets/paxi_delivery_speed_selector.dart';
 import '../config/paxi_config.dart';
-import '../services/advanced_security_service.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 
 import '../providers/cart_provider.dart';
 import 'login_screen.dart';
@@ -3250,7 +3251,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
     // Gatekeeper preflight
     try {
-      final gate = await AdvancedSecurityService().gate(path: 'checkout', deviceId: null);
+      final gate = await _callRiskGate('checkout');
       print('🔐 Gate result: $gate');
     } catch (_) {}
 
@@ -3315,27 +3316,34 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         // Medium risk → OTP step-up
         if (decision.enabled && decision.level == 'medium') {
           try {
-            String phone = _phoneController.text.trim();
-            if (phone.isEmpty) {
-              // Try fetch from profile
-              final userDoc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
-              phone = (userDoc.data()?['phone'] ?? '').toString();
-            }
-            if (phone.isEmpty) {
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Add a phone number to verify before checkout.')));
+            // 1) Biometric, 2) Password re-auth (free), 3) Email OTP last resort (free)
+            final bioOk = await _performBiometricStepUp();
+            if (!bioOk) {
+              final choice = await showModalBottomSheet<String>(
+                context: context,
+                builder: (context) {
+                  return SafeArea(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        ListTile(leading: const Icon(Icons.lock_outline), title: const Text('Verify with Password'), onTap: () => Navigator.pop(context, 'password')),
+                        ListTile(leading: const Icon(Icons.email_outlined), title: const Text('Verify via Email'), onTap: () => Navigator.pop(context, 'email')),
+                      ],
+                    ),
+                  );
+                },
+              );
+
+              if (choice == 'password') {
+                final okPwd = await _performPasswordReauthStepUp();
+                if (!okPwd) return;
+              } else if (choice == 'email') {
+                final okEmail = await _performEmailOtpStepUp();
+                if (!okEmail) return; // failed email verification
               }
-              return;
-            }
-            final ok = await _performOtpStepUp(phone);
-            if (!ok) {
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Verification failed. Please try again.')));
-              }
-              return;
             }
           } catch (e) {
-            print('⚠️ OTP step-up failed: $e');
+            print('⚠️ Step-up failed: $e');
             return;
           }
         }
@@ -3400,6 +3408,251 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
   Future<void> _processCashOnDelivery() async {
     await _completeOrder(paymentStatusOverride: 'pending');
+  }
+
+  Future<String> _getOrCreateDeviceId() async {
+    final prefs = await SharedPreferences.getInstance();
+    final existing = prefs.getString('device_id');
+    if (existing != null && existing.isNotEmpty) return existing;
+    final timestamp = DateTime.now().millisecondsSinceEpoch;
+    final micro = DateTime.now().microsecondsSinceEpoch % 1000000;
+    final newId = 'dev_${timestamp}_$micro';
+    await prefs.setString('device_id', newId);
+    return newId;
+  }
+
+  Future<Map<String, dynamic>> _callRiskGate(String action) async {
+    try {
+      final deviceId = await _getOrCreateDeviceId();
+      final callable = FirebaseFunctions.instance.httpsCallable('riskGate');
+      final result = await callable.call<Map<String, dynamic>>({
+        'action': action,
+        'deviceId': deviceId,
+      });
+      return result.data ?? <String, dynamic>{};
+    } on FirebaseFunctionsException catch (e) {
+      return {'error': e.message, 'code': e.code};
+    } catch (e) {
+      return {'error': e.toString(), 'code': 'unknown'};
+    }
+  }
+
+  Future<bool> _performOtpStepUp(String phoneNumber) async {
+    final completer = Completer<bool>();
+    try {
+      await FirebaseAuth.instance.verifyPhoneNumber(
+        phoneNumber: phoneNumber,
+        timeout: const Duration(seconds: 90),
+        verificationCompleted: (PhoneAuthCredential credential) async {
+          try {
+            final user = FirebaseAuth.instance.currentUser;
+            if (user != null) {
+              try {
+                await user.linkWithCredential(credential);
+                if (!completer.isCompleted) completer.complete(true);
+              } catch (_) {
+                try {
+                  await user.reauthenticateWithCredential(credential);
+                  if (!completer.isCompleted) completer.complete(true);
+                } catch (e) {
+                  if (!completer.isCompleted) completer.complete(false);
+                }
+              }
+            } else {
+              if (!completer.isCompleted) completer.complete(false);
+            }
+          } catch (e) {
+            if (!completer.isCompleted) completer.complete(false);
+          }
+        },
+        verificationFailed: (FirebaseAuthException e) {
+          if (!completer.isCompleted) completer.complete(false);
+        },
+        codeSent: (String verificationId, int? resendToken) async {
+          if (!mounted) {
+            if (!completer.isCompleted) completer.complete(false);
+            return;
+          }
+          final codeController = TextEditingController();
+          final ok = await showDialog<bool>(
+                context: context,
+                barrierDismissible: false,
+                builder: (context) {
+                  return AlertDialog(
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    title: const Text('Verify your phone'),
+                    content: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Text('Enter the 6‑digit code sent to your phone'),
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: codeController,
+                          keyboardType: TextInputType.number,
+                          maxLength: 6,
+                          decoration: const InputDecoration(
+                            counterText: '',
+                            border: OutlineInputBorder(),
+                            hintText: '123456',
+                          ),
+                        ),
+                      ],
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.of(context).pop(false),
+                        child: const Text('Cancel'),
+                      ),
+                      ElevatedButton(
+                        onPressed: () => Navigator.of(context).pop(true),
+                        child: const Text('Verify'),
+                      ),
+                    ],
+                  );
+                },
+              ) ??
+              false;
+
+          if (!ok) {
+            if (!completer.isCompleted) completer.complete(false);
+            return;
+          }
+
+          final smsCode = codeController.text.trim();
+          if (smsCode.length != 6) {
+            if (!completer.isCompleted) completer.complete(false);
+            return;
+          }
+
+          try {
+            final credential = PhoneAuthProvider.credential(
+              verificationId: verificationId,
+              smsCode: smsCode,
+            );
+            final user = FirebaseAuth.instance.currentUser;
+            if (user != null) {
+              try {
+                await user.linkWithCredential(credential);
+                if (!completer.isCompleted) completer.complete(true);
+              } catch (_) {
+                try {
+                  await user.reauthenticateWithCredential(credential);
+                  if (!completer.isCompleted) completer.complete(true);
+                } catch (e) {
+                  if (!completer.isCompleted) completer.complete(false);
+                }
+              }
+            } else {
+              if (!completer.isCompleted) completer.complete(false);
+            }
+          } catch (e) {
+            if (!completer.isCompleted) completer.complete(false);
+          }
+        },
+        codeAutoRetrievalTimeout: (String verificationId) {},
+      );
+    } catch (e) {
+      if (!completer.isCompleted) completer.complete(false);
+    }
+
+    try {
+      return await completer.future.timeout(const Duration(minutes: 2), onTimeout: () => false);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<bool> _performBiometricStepUp() async {
+    return await BiometricStepUp.authenticate(reason: 'Confirm it’s you with fingerprint/Face ID');
+  }
+
+  Future<bool> _performPasswordReauthStepUp() async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      final email = user?.email;
+      if (user == null || email == null || email.isEmpty) {
+        return false;
+      }
+      final pwdController = TextEditingController();
+      final ok = await showDialog<bool>(
+            context: context,
+            barrierDismissible: false,
+            builder: (context) {
+              return AlertDialog(
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                title: const Text('Confirm your password'),
+                content: TextField(
+                  controller: pwdController,
+                  obscureText: true,
+                  decoration: const InputDecoration(
+                    border: OutlineInputBorder(),
+                    hintText: 'Password',
+                  ),
+                ),
+                actions: [
+                  TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancel')),
+                  ElevatedButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('Verify')),
+                ],
+              );
+            },
+          ) ??
+          false;
+      if (!ok) return false;
+      final password = pwdController.text;
+      if (password.isEmpty) return false;
+      final cred = EmailAuthProvider.credential(email: email, password: password);
+      await user.reauthenticateWithCredential(cred);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<bool> _performEmailOtpStepUp() async {
+    try {
+      final callableCreate = FirebaseFunctions.instance.httpsCallable('createEmailOtp');
+      await callableCreate.call(<String, dynamic>{});
+
+      if (!mounted) return false;
+      final codeController = TextEditingController();
+      final ok = await showDialog<bool>(
+            context: context,
+            barrierDismissible: false,
+            builder: (context) {
+              return AlertDialog(
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                title: const Text('Enter email code'),
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text('We sent a 6‑digit code to your email.'),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: codeController,
+                      keyboardType: TextInputType.number,
+                      maxLength: 6,
+                      decoration: const InputDecoration(counterText: '', border: OutlineInputBorder(), hintText: '123456'),
+                    ),
+                  ],
+                ),
+                actions: [
+                  TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancel')),
+                  ElevatedButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('Verify')),
+                ],
+              );
+            },
+          ) ??
+          false;
+      if (!ok) return false;
+      final code = codeController.text.trim();
+      if (code.length != 6) return false;
+
+      final callableVerify = FirebaseFunctions.instance.httpsCallable('verifyEmailOtp');
+      final result = await callableVerify.call<Map<String, dynamic>>({'code': code});
+      return (result.data?['ok'] == true);
+    } catch (_) {
+      return false;
+    }
   }
 
   void _showBankDetailsDialog({String? orderNumber}) {

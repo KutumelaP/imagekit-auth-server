@@ -5,6 +5,10 @@ import 'package:provider/provider.dart';
 import 'simple_home_screen.dart';
 import '../services/error_handler.dart';
 import '../widgets/loading_widget.dart';
+import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:cloud_functions/cloud_functions.dart';
+import '../services/biometric_stepup.dart';
 
 import '../providers/user_provider.dart';
 import '../constants/app_constants.dart';
@@ -68,6 +72,66 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
     _scaleController.forward();
   }
 
+  Future<void> _showForgotPasswordDialog() async {
+    final emailController = TextEditingController(text: _emailController.text.trim());
+    final ok = await showDialog<bool>(
+          context: context,
+          barrierDismissible: true,
+          builder: (context) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              title: const Text('Reset password'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('Enter your account email. We will send a reset link.'),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: emailController,
+                    keyboardType: TextInputType.emailAddress,
+                    decoration: const InputDecoration(
+                      border: OutlineInputBorder(),
+                      hintText: 'you@example.com',
+                    ),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancel')),
+                ElevatedButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('Send')),
+              ],
+            );
+          },
+        ) ??
+        false;
+
+    if (!ok) return;
+
+    final email = emailController.text.trim();
+    if (email.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Enter your email')));
+      return;
+    }
+
+    try {
+      setState(() => _loading = true);
+      await _callRiskGate('password_reset');
+      await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Reset email sent. Check your inbox.')));
+    } on FirebaseAuthException catch (e) {
+      if (!mounted) return;
+      final message = ErrorHandler.handleAuthException(e);
+      ErrorHandler.showError(context, message);
+    } catch (e) {
+      if (!mounted) return;
+      final message = ErrorHandler.handleGeneralException(e);
+      ErrorHandler.showError(context, message);
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
   @override
   void dispose() {
     _fadeController.dispose();
@@ -84,6 +148,18 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
     setState(() => _loading = true);
 
     try {
+      Map<String, dynamic> gate = {};
+      try {
+        gate = await _callRiskGate(_isLogin ? 'login' : 'signup');
+        if (kDebugMode) {
+          print('🔐 Auth gate result: $gate');
+        }
+      } catch (e) {
+        if (kDebugMode) {
+          print('⚠️ Auth gate failed: $e');
+        }
+      }
+
       UserCredential userCredential;
 
       if (_isLogin) {
@@ -108,6 +184,37 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
               'createdAt': FieldValue.serverTimestamp(),
               'suspended': false,
             });
+          }
+        }
+      }
+
+      // Step-up if risky (vpn or gate not ok)
+      final isRisky = (gate['ok'] == false) || (gate['ipInfo'] != null && gate['ipInfo']['vpn'] == true);
+      if (isRisky) {
+        // 1) Biometric
+        final bioOk = await _performBiometricStepUpLogin();
+        if (!bioOk) {
+          final choice = await showModalBottomSheet<String>(
+            context: context,
+            builder: (context) {
+              return SafeArea(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    ListTile(leading: const Icon(Icons.email_outlined), title: const Text('Verify via Email'), onTap: () => Navigator.pop(context, 'email')),
+                  ],
+                ),
+              );
+            },
+          );
+
+          if (choice == 'email') {
+            final ok = await _performEmailOtpStepUpLogin(_emailController.text.trim());
+            if (!ok) {
+              await FirebaseAuth.instance.signOut();
+              if (mounted) ErrorHandler.showError(context, 'Verification failed.');
+              return;
+            }
           }
         }
       }
@@ -155,6 +262,84 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
       if (mounted) setState(() => _loading = false);
     }
   }
+
+  Future<String> _getOrCreateDeviceId() async {
+    final prefs = await SharedPreferences.getInstance();
+    final existing = prefs.getString('device_id');
+    if (existing != null && existing.isNotEmpty) return existing;
+    final timestamp = DateTime.now().millisecondsSinceEpoch;
+    final micro = DateTime.now().microsecondsSinceEpoch % 1000000;
+    final newId = 'dev_${timestamp}_$micro';
+    await prefs.setString('device_id', newId);
+    return newId;
+  }
+
+  Future<Map<String, dynamic>> _callRiskGate(String action) async {
+    try {
+      final deviceId = await _getOrCreateDeviceId();
+      final callable = FirebaseFunctions.instance.httpsCallable('riskGate');
+      final result = await callable.call<Map<String, dynamic>>({
+        'action': action,
+        'deviceId': deviceId,
+      });
+      return result.data ?? <String, dynamic>{};
+    } on FirebaseFunctionsException catch (e) {
+      return {'error': e.message, 'code': e.code};
+    } catch (e) {
+      return {'error': e.toString(), 'code': 'unknown'};
+    }
+  }
+
+  Future<bool> _performBiometricStepUpLogin() async {
+    return await BiometricStepUp.authenticate(reason: 'Confirm it’s you with fingerprint/Face ID');
+  }
+
+  Future<bool> _performEmailOtpStepUpLogin(String email) async {
+    try {
+      final callableCreate = FirebaseFunctions.instance.httpsCallable('createEmailOtp');
+      await callableCreate.call(<String, dynamic>{ 'email': email });
+      if (!mounted) return false;
+      final codeController = TextEditingController();
+      final ok = await showDialog<bool>(
+            context: context,
+            barrierDismissible: false,
+            builder: (context) {
+              return AlertDialog(
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                title: const Text('Enter email code'),
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text('We sent a 6‑digit code to your email.'),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: codeController,
+                      keyboardType: TextInputType.number,
+                      maxLength: 6,
+                      decoration: const InputDecoration(counterText: '', border: OutlineInputBorder(), hintText: '123456'),
+                    ),
+                  ],
+                ),
+                actions: [
+                  TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancel')),
+                  ElevatedButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('Verify')),
+                ],
+              );
+            },
+          ) ??
+          false;
+      if (!ok) return false;
+      final code = codeController.text.trim();
+      if (code.length != 6) return false;
+      final callableVerify = FirebaseFunctions.instance.httpsCallable('verifyEmailOtp');
+      final result = await callableVerify.call<Map<String, dynamic>>({ 'code': code });
+      return (result.data?['ok'] == true);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  // SMS step-up removed to keep free options only
 
   Widget _buildBeautifulLogo() {
     return ScaleTransition(
@@ -321,7 +506,25 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
               ),
             ),
             SizedBox(height: ResponsiveUtils.getVerticalPadding(context) * 1.5),
-            
+
+            // Forgot Password link
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton(
+                onPressed: _loading ? null : _showForgotPasswordDialog,
+                child: SafeUI.safeText(
+                  'Forgot password?',
+                  style: TextStyle(
+                    fontSize: ResponsiveUtils.getTitleSize(context) - 4,
+                    color: AppTheme.deepTeal,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  maxLines: 1,
+                ),
+              ),
+            ),
+            SizedBox(height: ResponsiveUtils.getVerticalPadding(context)),
+
             // Submit Button
             _buildBeautifulSubmitButton(),
           ],

@@ -7,7 +7,10 @@ import 'package:flutter/foundation.dart';
 import 'package:marketplace_app/utils/web_js_stub.dart'
     if (dart.library.html) 'package:marketplace_app/utils/web_js_real.dart' as js;
 import 'sound_service.dart';
+import 'package:flutter_tts/flutter_tts.dart';
 import 'package:marketplace_app/utils/web_env.dart';
+import 'package:flutter_app_badger/flutter_app_badger.dart'
+  if (dart.library.html) 'package:marketplace_app/utils/badger_stub.dart';
 
 
 
@@ -26,16 +29,41 @@ class NotificationService {
   bool _systemNotificationsEnabled = true;
   bool _audioNotificationsEnabled = true;
   bool _inAppNotificationsEnabled = true;
+  bool _voiceAnnouncementsEnabled = false;
+  bool _autoClearBadgeOnNotificationsOpen = false;
 
   bool get systemNotificationsEnabled => _systemNotificationsEnabled;
   bool get audioNotificationsEnabled => _audioNotificationsEnabled;
   bool get inAppNotificationsEnabled => _inAppNotificationsEnabled;
+  bool get voiceAnnouncementsEnabled => _voiceAnnouncementsEnabled;
+  bool get autoClearBadgeOnNotificationsOpen => _autoClearBadgeOnNotificationsOpen;
 
   // Firebase services
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   
   // Sound service for audio notifications
   final SoundService _soundService = SoundService();
+  final FlutterTts _tts = FlutterTts();
+  // TTS preferences
+  String? _ttsLanguage; // e.g., 'en-US'
+  String? _ttsVoiceName; // platform voice name
+  String? _ttsVoiceLocale; // e.g., 'en-US'
+  double _ttsRate = 0.45;
+  double _ttsPitch = 1.0;
+  double _ttsVolume = 1.0;
+
+  // Cached options
+  List<dynamic> _availableVoices = const [];
+  List<dynamic> _availableLanguages = const [];
+
+  String? get ttsLanguage => _ttsLanguage;
+  String? get ttsVoiceName => _ttsVoiceName;
+  String? get ttsVoiceLocale => _ttsVoiceLocale;
+  double get ttsRate => _ttsRate;
+  double get ttsPitch => _ttsPitch;
+  double get ttsVolume => _ttsVolume;
+  List<dynamic> get availableVoices => _availableVoices;
+  List<dynamic> get availableLanguages => _availableLanguages;
 
   // Initialize the notification service
   Future<void> initialize() async {
@@ -50,6 +78,17 @@ class NotificationService {
       
       // Load notification preferences
       await _loadNotificationPreferences();
+      await _applyTtsSettings();
+      await refreshTtsOptions();
+      await _ensureZAdefaults();
+      // Initialize badge count from unread
+      try {
+        final userId = FirebaseAuth.instance.currentUser?.uid;
+        if (userId != null) {
+          final unread = await _getTotalUnreadCount(userId);
+          await _setAppBadge(unread);
+        }
+      } catch (_) {}
       
       print('✅ Notification Service initialized');
     } catch (e) {
@@ -103,6 +142,14 @@ class NotificationService {
     _systemNotificationsEnabled = prefs.getBool('system_notifications') ?? true;
     _audioNotificationsEnabled = prefs.getBool('audio_notifications') ?? true;
     _inAppNotificationsEnabled = prefs.getBool('inapp_notifications') ?? true;
+    _voiceAnnouncementsEnabled = prefs.getBool('voice_announcements') ?? false;
+    _autoClearBadgeOnNotificationsOpen = prefs.getBool('auto_clear_badge_notifications') ?? false;
+    _ttsLanguage = prefs.getString('tts_language') ?? 'en-ZA';
+    _ttsVoiceName = prefs.getString('tts_voice_name');
+    _ttsVoiceLocale = prefs.getString('tts_voice_locale');
+    _ttsRate = prefs.getDouble('tts_rate') ?? 0.45;
+    _ttsPitch = prefs.getDouble('tts_pitch') ?? 1.0;
+    _ttsVolume = prefs.getDouble('tts_volume') ?? 1.0;
     
     print('🔔 Notification preferences loaded: System: $_systemNotificationsEnabled, Audio: $_audioNotificationsEnabled, In-app: $_inAppNotificationsEnabled');
   }
@@ -112,6 +159,8 @@ class NotificationService {
     bool? systemNotifications,
     bool? audioNotifications,
     bool? inAppNotifications,
+    bool? voiceAnnouncements,
+    bool? autoClearBadgeOnNotificationsOpen,
   }) async {
     final prefs = await SharedPreferences.getInstance();
     
@@ -129,8 +178,105 @@ class NotificationService {
       _inAppNotificationsEnabled = inAppNotifications;
       await prefs.setBool('inapp_notifications', inAppNotifications);
     }
+    if (voiceAnnouncements != null) {
+      _voiceAnnouncementsEnabled = voiceAnnouncements;
+      await prefs.setBool('voice_announcements', voiceAnnouncements);
+    }
+    if (autoClearBadgeOnNotificationsOpen != null) {
+      _autoClearBadgeOnNotificationsOpen = autoClearBadgeOnNotificationsOpen;
+      await prefs.setBool('auto_clear_badge_notifications', autoClearBadgeOnNotificationsOpen);
+    }
     
     print('🔔 Notification preferences updated');
+  }
+
+  Future<void> updateTtsPreferences({
+    String? language,
+    String? voiceName,
+    String? voiceLocale,
+    double? rate,
+    double? pitch,
+    double? volume,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (language != null) {
+      _ttsLanguage = language;
+      await prefs.setString('tts_language', language);
+    }
+    if (voiceName != null) {
+      _ttsVoiceName = voiceName;
+      await prefs.setString('tts_voice_name', voiceName);
+    }
+    if (voiceLocale != null) {
+      _ttsVoiceLocale = voiceLocale;
+      await prefs.setString('tts_voice_locale', voiceLocale);
+    }
+    if (rate != null) {
+      _ttsRate = rate.clamp(0.1, 1.0);
+      await prefs.setDouble('tts_rate', _ttsRate);
+    }
+    if (pitch != null) {
+      _ttsPitch = pitch.clamp(0.5, 2.0);
+      await prefs.setDouble('tts_pitch', _ttsPitch);
+    }
+    if (volume != null) {
+      _ttsVolume = volume.clamp(0.0, 1.0);
+      await prefs.setDouble('tts_volume', _ttsVolume);
+    }
+    await _applyTtsSettings();
+  }
+
+  Future<void> refreshTtsOptions() async {
+    try {
+      // These can throw on some platforms; guard with try/catch
+      final voices = await _tts.getVoices;
+      final langs = await _tts.getLanguages;
+      if (voices is List) _availableVoices = voices;
+      if (langs is List) _availableLanguages = langs;
+    } catch (_) {
+      // Fallbacks
+      _availableVoices = const [];
+      _availableLanguages = const ['en-US'];
+    }
+  }
+
+  Future<void> _ensureZAdefaults() async {
+    try {
+      if (_ttsLanguage == null || _ttsLanguage!.isEmpty) {
+        await updateTtsPreferences(language: 'en-ZA');
+      }
+      if ((_ttsVoiceName == null || _ttsVoiceName!.isEmpty) && _availableVoices.isNotEmpty) {
+        for (final v in _availableVoices) {
+          if (v is Map) {
+            final locale = (v['locale']?.toString() ?? '').toLowerCase();
+            if (locale.contains('en-za') || locale.contains('en_za')) {
+              final name = v['name']?.toString();
+              final loc = v['locale']?.toString();
+              if (name != null && name.isNotEmpty) {
+                await updateTtsPreferences(voiceName: name, voiceLocale: loc);
+                break;
+              }
+            }
+          }
+        }
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _applyTtsSettings() async {
+    try {
+      await _tts.setSpeechRate(_ttsRate);
+      await _tts.setPitch(_ttsPitch);
+      await _tts.setVolume(_ttsVolume);
+      if (_ttsLanguage != null) {
+        await _tts.setLanguage(_ttsLanguage!);
+      }
+      if (_ttsVoiceName != null && _ttsVoiceLocale != null) {
+        await _tts.setVoice({ 'name': _ttsVoiceName!, 'locale': _ttsVoiceLocale! });
+      }
+    } catch (e) {
+      print('❌ Applying TTS settings failed: $e');
+    }
   }
 
   // Request notification permissions
@@ -233,6 +379,8 @@ class NotificationService {
       if (_audioNotificationsEnabled) {
         await _soundService.playNotificationSound();
       }
+      // Update badge count
+      await _updateBadgeForCurrentUser();
 
       // DO NOT store chat messages in notifications database
       // Chat messages should only appear in the chat interface
@@ -287,6 +435,13 @@ class NotificationService {
       // Play sound if enabled
       if (_audioNotificationsEnabled) {
         await _soundService.playNotificationSound();
+      }
+      // Update badge count
+      await _updateBadgeForCurrentUser();
+
+      // Voice announcement if enabled
+      if (_voiceAnnouncementsEnabled) {
+        await _speakSafe('$title. $body');
       }
 
       // Store in Firestore for persistence
@@ -372,6 +527,32 @@ class NotificationService {
     }
   }
 
+  Future<void> _speakSafe(String text) async {
+    try {
+      if (!_voiceAnnouncementsEnabled) return;
+      if (kIsWeb) {
+        // Web: use SpeechSynthesis via JS
+        try {
+          js.context.callMethod('eval', [
+            "(function(){try{var u=new SpeechSynthesisUtterance('" + text.replaceAll("'", " ") + "');" +
+            ( _ttsLanguage != null ? "u.lang='" + (_ttsLanguage ?? '') + "';" : "" ) +
+            "window.speechSynthesis.speak(u);}catch(e){}})();"
+          ]);
+        } catch (_) {}
+        return;
+      }
+      await _tts.stop();
+      await _tts.speak(text);
+    } catch (e) {
+      print('❌ TTS speak failed: $e');
+    }
+  }
+
+  // Public preview speak
+  Future<void> speakPreview(String text) async {
+    await _speakSafe(text);
+  }
+
   // Show general notification
   Future<void> showGeneralNotification({
     required String title,
@@ -414,6 +595,13 @@ class NotificationService {
         type: 'general',
         data: payload?.map((key, value) => MapEntry(key, value)),
       );
+
+      // Voice announcement if enabled
+      if (_voiceAnnouncementsEnabled) {
+        await _speakSafe('$title. $body');
+      }
+      // Update badge count
+      await _updateBadgeForCurrentUser();
 
       print('🔔 General notification shown: $title');
     } catch (e) {
@@ -483,6 +671,63 @@ class NotificationService {
     } else {
       // Mobile: For now, just log
       print('📱 Mobile notification cancellation will be implemented later');
+    }
+  }
+
+  Future<void> _setAppBadge(int count) async {
+    try {
+      if (count <= 0) {
+        await FlutterAppBadger.removeBadge();
+      } else {
+        await FlutterAppBadger.updateBadgeCount(count);
+      }
+    } catch (e) {
+      print('❌ Badge update failed: $e');
+    }
+  }
+
+  Future<void> _updateBadgeForCurrentUser() async {
+    try {
+      final userId = FirebaseAuth.instance.currentUser?.uid;
+      if (userId == null) return;
+      final unread = await _getTotalUnreadCount(userId);
+      await _setAppBadge(unread);
+    } catch (e) {
+      print('❌ Badge recalc failed: $e');
+    }
+  }
+
+  // Public wrapper to recalc badge
+  Future<void> recalcBadge() async {
+    await _updateBadgeForCurrentUser();
+  }
+
+  // Mark all notifications as read for current user
+  Future<void> markAllNotificationsAsReadForCurrentUser() async {
+    try {
+      final userId = FirebaseAuth.instance.currentUser?.uid;
+      if (userId == null) return;
+      final qs = await _firestore
+          .collection('notifications')
+          .where('userId', isEqualTo: userId)
+          .where('read', isEqualTo: false)
+          .limit(500)
+          .get();
+      if (qs.docs.isEmpty) {
+        await _updateBadgeForCurrentUser();
+        return;
+      }
+      final batch = _firestore.batch();
+      for (final d in qs.docs) {
+        batch.update(d.reference, {
+          'read': true,
+          'readAt': FieldValue.serverTimestamp(),
+        });
+      }
+      await batch.commit();
+      await _updateBadgeForCurrentUser();
+    } catch (e) {
+      print('❌ markAllNotificationsAsReadForCurrentUser failed: $e');
     }
   }
 
@@ -727,6 +972,12 @@ class NotificationService {
         await _soundService.playNotificationSound();
         print('🔍 DEBUG: Notification sound played');
       }
+      // Voice announcement
+      if (_voiceAnnouncementsEnabled) {
+        try {
+          await _speakSafe('New order received. Buyer $buyerName. Total R${orderTotal.toStringAsFixed(2)}.');
+        } catch (_) {}
+      }
       
       print('✅ New order notification to seller completed successfully');
       
@@ -888,6 +1139,12 @@ class NotificationService {
           print('❌ Notification sound failed: $e');
         }
       }
+      // Voice announcement
+      if (_voiceAnnouncementsEnabled) {
+        try {
+          await _speakSafe('Your order status is now $status.');
+        } catch (_) {}
+      }
       
       print('✅ Order status notification sent successfully to buyer: $buyerId');
       
@@ -982,6 +1239,12 @@ class NotificationService {
         } catch (e) {
           print('❌ Notification sound failed: $e');
         }
+      }
+      // Voice announcement
+      if (_voiceAnnouncementsEnabled) {
+        try {
+          await _speakSafe('Order number $orderNumber. Status now $status.');
+        } catch (_) {}
       }
       
       print('✅ Order status notification sent successfully to user: $userId');
