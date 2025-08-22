@@ -2905,34 +2905,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 _buildSimpleBankRow('Bank', 'First National Bank'),
                 _buildSimpleBankRow('Account Number', '62612345678'),
                 _buildSimpleBankRow('Branch Code', '250655'),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _buildSimpleBankRow('Reference', orderNumber ?? 'Your Order Number'),
-                    ),
-                    SizedBox(width: 8),
-                    OutlinedButton.icon(
-                      onPressed: () {
-                        final ref = orderNumber ?? 'Your Order Number';
-                        Clipboard.setData(ClipboardData(text: ref));
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text('Reference copied'),
-                            backgroundColor: AppTheme.deepTeal,
-                            behavior: SnackBarBehavior.floating,
-                          ),
-                        );
-                      },
-                      icon: Icon(Icons.copy, size: 14),
-                      label: Text('Copy Ref'),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: AppTheme.deepTeal,
-                        side: BorderSide(color: AppTheme.deepTeal),
-                        padding: EdgeInsets.symmetric(vertical: 10, horizontal: 12),
-                      ),
-                    ),
-                  ],
-                ),
+                _buildSimpleBankRow('Reference', orderNumber ?? '—'),
                 
                 SizedBox(height: 20),
                 
