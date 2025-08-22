@@ -2695,13 +2695,47 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           print('  - UI should show: ${!_isDelivery && (_productCategory.toLowerCase() != 'food' || _hasNonFoodItems)}');
         }
 
-        // Auto-select service filter based on seller capabilities
+        // Determine availability by service
+        final bool hasPargoPoints = _allPickupPoints.any((p) => p.isPargoPoint);
+        final bool hasPaxiPoints = _allPickupPoints.any((p) => p.isPaxiPoint);
+
+        // Auto-select service filter based on seller capabilities and availability
         if (_sellerPargoEnabled && !_sellerPaxiEnabled) {
           _selectedServiceFilter = 'pargo';
-          _pickupPoints = _allPickupPoints.where((p) => p.isPargoPoint).toList();
         } else if (_sellerPaxiEnabled && !_sellerPargoEnabled) {
           _selectedServiceFilter = 'paxi';
+        } else if (_sellerPargoEnabled && _sellerPaxiEnabled) {
+          // If only one service has points, preselect it
+          if (hasPargoPoints && !hasPaxiPoints) {
+            _selectedServiceFilter = 'pargo';
+          } else if (!hasPargoPoints && hasPaxiPoints) {
+            _selectedServiceFilter = 'paxi';
+          } else if (!hasPargoPoints && !hasPaxiPoints) {
+            _selectedServiceFilter = null; // neither available
+          }
+        }
+
+        // If current selection yields zero items, auto-switch to the other if available
+        if (_selectedServiceFilter == 'pargo' && !hasPargoPoints && hasPaxiPoints) {
+          _selectedServiceFilter = 'paxi';
+        } else if (_selectedServiceFilter == 'paxi' && !hasPaxiPoints && hasPargoPoints) {
+          _selectedServiceFilter = 'pargo';
+        }
+
+        // Apply filter to pickup list
+        if (_selectedServiceFilter == 'pargo') {
+          _pickupPoints = _allPickupPoints.where((p) => p.isPargoPoint).toList();
+        } else if (_selectedServiceFilter == 'paxi') {
           _pickupPoints = _allPickupPoints.where((p) => p.isPaxiPoint).toList();
+        } else {
+          _pickupPoints = _allPickupPoints;
+        }
+
+        // Final guard: if header says PAXI, ensure list shows only PAXI; same for Pargo
+        if (_selectedServiceFilter == 'paxi') {
+          _pickupPoints = _pickupPoints.where((p) => p.isPaxiPoint).toList();
+        } else if (_selectedServiceFilter == 'pargo') {
+          _pickupPoints = _pickupPoints.where((p) => p.isPargoPoint).toList();
         }
       });
     } catch (e) {
@@ -5133,61 +5167,138 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               margin: EdgeInsets.symmetric(vertical: ResponsiveUtils.getVerticalPadding(context) * 0.5),
               padding: EdgeInsets.all(ResponsiveUtils.getHorizontalPadding(context)),
               decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    AppTheme.deepTeal.withOpacity(0.15),
-                    AppTheme.deepTeal.withOpacity(0.05),
-                  ],
-                ),
-                borderRadius: BorderRadius.circular(20),
+                gradient: AppTheme.cardBackgroundGradient,
+                borderRadius: BorderRadius.circular(16),
                 border: Border.all(
-                  color: AppTheme.deepTeal.withOpacity(0.4),
-                  width: 2,
+                  color: AppTheme.breeze.withOpacity(0.2),
+                  width: 1,
                 ),
-                boxShadow: [
-                  BoxShadow(
-                    color: AppTheme.deepTeal.withOpacity(0.1),
-                    blurRadius: 15,
-                    offset: Offset(0, 5),
-                  ),
-                ],
+                boxShadow: AppTheme.complementaryElevation,
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
                     children: [
-                      Icon(
-                        Icons.location_on,
-                        color: AppTheme.deepTeal,
-                        size: ResponsiveUtils.getTitleSize(context),
-                      ),
-                      SizedBox(width: 8),
-                      Expanded(
-                        child:                       SafeUI.safeText(
-                        '📦Pickup Points',
-                        style: TextStyle(
-                          fontSize: ResponsiveUtils.getTitleSize(context),
-                          fontWeight: FontWeight.w900,
-                          color: AppTheme.deepTeal,
-                          letterSpacing: 0.5,
+                      Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: BoxDecoration(
+                          color: AppTheme.deepTeal.withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(8),
                         ),
-                        maxLines: 1,
+                        child: const Icon(
+                          Icons.store_mall_directory,
+                          color: AppTheme.deepTeal,
+                          size: 18,
+                        ),
                       ),
+                      SizedBox(width: ResponsiveUtils.getHorizontalPadding(context) * 0.4),
+                      Expanded(
+                        child: SafeUI.safeText(
+                          _selectedServiceFilter == 'paxi'
+                              ? 'PAXI Pickup Points'
+                              : _selectedServiceFilter == 'pargo'
+                                  ? 'Pargo Pickup Points'
+                                  : 'Pickup Points',
+                          style: TextStyle(
+                            fontSize: ResponsiveUtils.getTitleSize(context),
+                            fontWeight: FontWeight.w700,
+                            color: AppTheme.deepTeal,
+                          ),
+                          maxLines: 1,
+                        ),
                       ),
                     ],
                   ),
-                  SizedBox(height: 8),
+                  SizedBox(height: ResponsiveUtils.getVerticalPadding(context) * 0.5),
                   SafeUI.safeText(
                     'Choose from our network of secure pickup locations',
                     style: TextStyle(
                       fontSize: ResponsiveUtils.getTitleSize(context) - 4,
-                      color: AppTheme.deepTeal.withOpacity(0.65),
+                      color: AppTheme.breeze,
                       fontStyle: FontStyle.italic,
                     ),
                     maxLines: 2,
                   ),
                   SizedBox(height: 12),
+                  if (_selectedPickupPoint == null) ...[
+                    // Pickup points list header (visible even before selection)
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            'Available Pickup Points',
+                            style: TextStyle(
+                              color: AppTheme.deepTeal,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        if (_selectedServiceFilter != null) ...[
+                          SizedBox(width: 8),
+                          Container(
+                            padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: AppTheme.deepTeal.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: AppTheme.deepTeal.withOpacity(0.3),
+                                width: 1,
+                              ),
+                            ),
+                            child: Text(
+                              _selectedServiceFilter == 'pargo' ? '🚚 Pargo Only' : '📦 PAXI Only',
+                              style: TextStyle(
+                                color: AppTheme.deepTeal,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                    SizedBox(height: 8),
+                    Container(
+                      height: 120,
+                      alignment: Alignment.center,
+                      child: _isLoadingPickupPoints
+                          ? Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    valueColor: AlwaysStoppedAnimation<Color>(AppTheme.deepTeal),
+                                  ),
+                                ),
+                                SizedBox(width: 8),
+                                Text(
+                                  'Loading pickup points...',
+                                  style: TextStyle(
+                                    color: AppTheme.deepTeal.withOpacity(0.8),
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            )
+                          : Text(
+                              'No pickup points available',
+                              style: TextStyle(
+                                color: AppTheme.deepTeal,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                    ),
+                    SizedBox(height: 12),
+                  ],
                   
                   // Service selection buttons (respect seller capabilities)
                   Row(
@@ -5195,11 +5306,15 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                       if (_sellerPargoEnabled) Expanded(
                         child: Container(
                           decoration: BoxDecoration(
-                            gradient: LinearGradient(colors: AppTheme.primaryGradient),
+                            gradient: _selectedServiceFilter == 'pargo' 
+                                ? LinearGradient(colors: AppTheme.primaryGradient)
+                                : LinearGradient(colors: [AppTheme.angel, AppTheme.angel]),
                             borderRadius: BorderRadius.circular(12),
                             border: Border.all(
-                              color: AppTheme.deepTeal,
-                              width: 1.5,
+                              color: _selectedServiceFilter == 'pargo' 
+                                  ? AppTheme.deepTeal.withOpacity(0.5)
+                                  : AppTheme.breeze.withOpacity(0.3),
+                              width: _selectedServiceFilter == 'pargo' ? 2 : 1,
                             ),
                           ),
                           child: Material(
@@ -5207,20 +5322,21 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                             child: InkWell(
                               borderRadius: BorderRadius.circular(12),
                               onTap: () => _filterPickupPointsByService('pargo'),
+                              onLongPress: () => _filterPickupPointsByService('pargo'),
                               child: Container(
                                 padding: EdgeInsets.symmetric(vertical: 16, horizontal: 12),
                                 child: Column(
                                   children: [
                                     Icon(
                                       Icons.local_shipping,
-                                      color: AppTheme.deepTeal,
+                                      color: _selectedServiceFilter == 'pargo' ? AppTheme.angel : AppTheme.deepTeal,
                                       size: 24,
                                     ),
                                     SizedBox(height: 8),
                                     Text(
                                       'Pargo',
                                       style: TextStyle(
-                                        color: AppTheme.deepTeal,
+                                        color: _selectedServiceFilter == 'pargo' ? AppTheme.angel : AppTheme.deepTeal,
                                         fontSize: 14,
                                         fontWeight: FontWeight.w700,
                                       ),
@@ -5228,7 +5344,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                     Text(
                                       'Verified Points',
                                       style: TextStyle(
-                                        color: AppTheme.deepTeal.withOpacity(0.7),
+                                        color: _selectedServiceFilter == 'pargo' ? AppTheme.angel.withOpacity(0.85) : AppTheme.deepTeal.withOpacity(0.7),
                                         fontSize: 12,
                                         fontWeight: FontWeight.w500,
                                       ),
@@ -5244,11 +5360,15 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                       if (_sellerPaxiEnabled) Expanded(
                         child: Container(
                           decoration: BoxDecoration(
-                            gradient: LinearGradient(colors: AppTheme.primaryGradient),
+                            gradient: _selectedServiceFilter == 'paxi' 
+                                ? LinearGradient(colors: AppTheme.primaryGradient)
+                                : LinearGradient(colors: [AppTheme.angel, AppTheme.angel]),
                             borderRadius: BorderRadius.circular(12),
                             border: Border.all(
-                              color: AppTheme.deepTeal,
-                              width: 1.5,
+                              color: _selectedServiceFilter == 'paxi' 
+                                  ? AppTheme.deepTeal.withOpacity(0.5)
+                                  : AppTheme.breeze.withOpacity(0.3),
+                              width: _selectedServiceFilter == 'paxi' ? 2 : 1,
                             ),
                           ),
                           child: Material(
@@ -5256,27 +5376,29 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                             child: InkWell(
                               borderRadius: BorderRadius.circular(12),
                               onTap: () => _filterPickupPointsByService('paxi'),
+                              onLongPress: () => _filterPickupPointsByService('paxi'),
                               child: Container(
                                 padding: EdgeInsets.symmetric(vertical: 16, horizontal: 12),
                                 child: Column(
                                   children: [
                                     Icon(
                                       Icons.inventory_2,
-                                      color: AppTheme.deepTeal,
+                                      color: _selectedServiceFilter == 'paxi' ? AppTheme.angel : AppTheme.deepTeal,
                                       size: 24,
                                     ),
                                     SizedBox(height: 8),
                                     Text(
                                       'PAXI',
                                       style: TextStyle(
-                                        color: AppTheme.deepTeal,
+                                        color: _selectedServiceFilter == 'paxi' ? AppTheme.angel : AppTheme.deepTeal,
                                         fontSize: 14,
-                                        fontWeight: FontWeight.w700),
+                                        fontWeight: FontWeight.w700,
                                       ),
+                                    ),
                                     Text(
                                       'Secure Points',
                                       style: TextStyle(
-                                        color: AppTheme.deepTeal.withOpacity(0.7),
+                                        color: _selectedServiceFilter == 'paxi' ? AppTheme.angel.withOpacity(0.85) : AppTheme.deepTeal.withOpacity(0.7),
                                         fontSize: 12,
                                         fontWeight: FontWeight.w500,
                                       ),
@@ -5291,49 +5413,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                     ],
                   ),
                   SizedBox(height: 8),
-                  // Show All button
-                  Center(
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: _selectedServiceFilter == null
-                            ? AppTheme.deepTeal.withOpacity(0.2)
-                            : Colors.transparent,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                          color: _selectedServiceFilter == null
-                              ? AppTheme.deepTeal
-                              : AppTheme.deepTeal.withOpacity(0.3),
-                          width: _selectedServiceFilter == null ? 2 : 1,
-                        ),
-                      ),
-                      child: TextButton.icon(
-                        onPressed: () => _filterPickupPointsByService(null),
-                        icon: Icon(
-                          Icons.filter_list_off,
-                          color: _selectedServiceFilter == null
-                              ? AppTheme.deepTeal
-                              : AppTheme.deepTeal.withOpacity(0.7),
-                          size: 16,
-                        ),
-                        label: Text(
-                          'Show All Services',
-                          style: TextStyle(
-                            color: _selectedServiceFilter == null
-                                ? AppTheme.deepTeal
-                                : AppTheme.deepTeal.withOpacity(0.7),
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                       
-                        style: TextButton.styleFrom(
-                          padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                          minimumSize: Size.zero,
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        ),
-                      ),
-                    ),
-                  ),
+                  // Removed "Show All Services" button per request
                   SizedBox(height: 8),
                   
                   // PAXI Delivery Speed (only when PAXI is selected)
@@ -5508,6 +5588,30 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                             contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
                           ),
                         ),
+                        if (_isLoadingPickupPoints) ...[
+                          SizedBox(height: 6),
+                          Row(
+                            children: [
+                              SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  valueColor: AlwaysStoppedAnimation<Color>(AppTheme.deepTeal),
+                                ),
+                              ),
+                              SizedBox(width: 8),
+                              Text(
+                                'Loading pickup points...',
+                                style: TextStyle(
+                                  color: AppTheme.deepTeal.withOpacity(0.8),
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
                         
                         // Pickup address suggestions - Now with same comprehensive display as delivery
                         if (_pickupAddressSuggestions.isNotEmpty) ...[
@@ -5688,26 +5792,21 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                               Container(
                                 padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                                 decoration: BoxDecoration(
-                                  color: _selectedPickupPoint!.isPargoPoint 
-                                      ? AppTheme.deepTeal.withOpacity(0.1)
-                                      : AppTheme.deepTeal.withOpacity(0.1),
+                                  color: AppTheme.deepTeal.withOpacity(0.1),
                                   borderRadius: BorderRadius.circular(12),
                                   border: Border.all(
                                     color: AppTheme.deepTeal.withOpacity(0.3),
                                     width: 1,
                                   ),
                                 ),
-                                child: Text(
-                                  _selectedPickupPoint!.isPargoPoint 
-                                      ? '🚚 Pargo'
-                                      : _selectedPickupPoint!.isPaxiPoint 
-                                          ? '📦 PAXI'
-                                          : '🏪 Local',
-                                  style: TextStyle(
-                                    color: AppTheme.deepTeal,
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w600,
-                                  ),
+                                child: Icon(
+                                  _selectedPickupPoint!.isPargoPoint
+                                      ? Icons.local_shipping
+                                      : _selectedPickupPoint!.isPaxiPoint
+                                          ? Icons.inventory_2
+                                          : Icons.storefront,
+                                  color: AppTheme.deepTeal,
+                                  size: 16,
                                 ),
                               ),
                             ],
@@ -5814,52 +5913,60 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                     SizedBox(height: 8),
                     Container(
                       constraints: BoxConstraints(maxHeight: 350),
+                      alignment: Alignment.center,
                       child: _pickupPoints.isEmpty
                           ? Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              crossAxisAlignment: CrossAxisAlignment.center,
                               children: [
-                                SizedBox(height: 20),
-                                Icon(
-                                  Icons.location_off,
-                                  color: AppTheme.deepTeal.withOpacity(0.7),
-                                  size: 48,
-                                ),
-                                SizedBox(height: 16),
-                                Text(
-                                  'No pickup points available',
-                                  style: TextStyle(
-                                    color: AppTheme.deepTeal,
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w600,
+                                if (_isLoadingPickupPoints) ...[
+                                  SizedBox(height: 8),
+                                  SizedBox(
+                                    width: 28,
+                                    height: 28,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2.5,
+                                      valueColor: AlwaysStoppedAnimation<Color>(AppTheme.deepTeal),
+                                    ),
                                   ),
-                                ),
-                                SizedBox(height: 8),
-                                Text(
-                                  _selectedServiceFilter == null
-                                      ? 'No pickup points found in your area'
-                                      : _selectedServiceFilter == 'pargo'
-                                          ? 'No Pargo pickup points found'
-                                          : 'No PAXI pickup points found',
-                                  style: TextStyle(
+                                  SizedBox(height: 8),
+                                  Text(
+                                    'Searching pickup points...',
+                                    style: TextStyle(
+                                      color: AppTheme.deepTeal,
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                ] else ...[
+                                  Icon(
+                                    Icons.location_off,
                                     color: AppTheme.deepTeal.withOpacity(0.7),
-                                    fontSize: 14,
+                                    size: 48,
                                   ),
-                                  textAlign: TextAlign.center,
-                                ),
-                                SizedBox(height: 16),
-                                if (_allPickupPoints.isNotEmpty) ...[
+                                  SizedBox(height: 12),
                                   Text(
-                                    'Debug: ${_allPickupPoints.length} total points available',
+                                    'No pickup points available',
                                     style: TextStyle(
-                                      color: AppTheme.deepTeal.withOpacity(0.5),
-                                      fontSize: 12,
+                                      color: AppTheme.deepTeal,
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w600,
                                     ),
+                                    textAlign: TextAlign.center,
                                   ),
+                                  SizedBox(height: 6),
                                   Text(
-                                    'Pargo: ${_allPickupPoints.where((p) => p.isPargoPoint).length}, PAXI: ${_allPickupPoints.where((p) => p.isPaxiPoint).length}',
+                                    _selectedServiceFilter == null
+                                        ? 'No pickup points found in your area'
+                                        : _selectedServiceFilter == 'pargo'
+                                            ? 'No Pargo pickup points found'
+                                            : 'No PAXI pickup points found',
                                     style: TextStyle(
-                                      color: AppTheme.deepTeal.withOpacity(0.5),
-                                      fontSize: 12,
+                                      color: AppTheme.deepTeal.withOpacity(0.7),
+                                      fontSize: 14,
                                     ),
+                                    textAlign: TextAlign.center,
                                   ),
                                 ],
                               ],

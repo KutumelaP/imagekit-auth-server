@@ -197,20 +197,8 @@ class CourierQuoteService {
         print('⚠️ Could not fetch PAXI stores from database: $e');
       }
       
-      // If we have points from either service, but missing Pargo points, add some fallback Pargo points
-      if (allPickupPoints.isNotEmpty && !hasPargoPoints) {
-        print('🔍 PAXI points found but no Pargo points - adding fallback Pargo points for balance');
-        try {
-          final fallbackPargoPoints = await _createFallbackPargoPointsOnly(latitude, longitude);
-          if (fallbackPargoPoints.isNotEmpty) {
-            print('🔍 Added ${fallbackPargoPoints.length} fallback Pargo points');
-            allPickupPoints.addAll(fallbackPargoPoints);
-            hasPargoPoints = true;
-          }
-        } catch (e) {
-          print('⚠️ Could not create fallback Pargo points: $e');
-        }
-      }
+      // Do not inject fallback Pargo points if another service already returned results.
+      // Fallbacks are used only when no real points are available at all.
       
       // If we have points from either service, return them
       if (allPickupPoints.isNotEmpty) {
@@ -462,7 +450,6 @@ class CourierQuoteService {
         'q': searchQuery,
         'limit': '20', // Fetch more then filter by distance
         'apiKey': HereConfig.validatedApiKey,
-        'at': '$latitude,$longitude', // Provide context for ranking
         'in': 'circle:$latitude,$longitude;r=${(radiusKm * 1000).round()}', // Strict radius filter
         'lang': 'en-ZA',
       };
