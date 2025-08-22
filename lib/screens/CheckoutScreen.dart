@@ -1952,7 +1952,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     }
   }
 
-  // Search for pickup addresses
+  // Search for pickup addresses - Now using same comprehensive strategy as delivery
   Future<void> _searchPickupAddress(String query) async {
     if (query.trim().isEmpty) {
       setState(() {
@@ -1961,32 +1961,175 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       return;
     }
 
+    setState(() {
+      _isSearchingAddress = true;
+    });
+
+    print('🔍 Searching for pickup address: $query');
+
     try {
-      List<Location> locations = await locationFromAddress(query);
-      if (locations.isNotEmpty) {
-        final location = locations.first;
+      // For web platform, use free OpenStreetMap Nominatim API (same as delivery)
+      if (kIsWeb) {
+        print('🌐 Web platform detected - using free Nominatim geocoding for pickup');
         
-        // Check for null coordinates before proceeding
-        if (location.latitude == null || location.longitude == null) {
-          print('⚠️ Warning: Location has null coordinates for query: $query');
-          setState(() {
-            _pickupAddressSuggestions = [];
-          });
-          return;
+        await _searchPickupWithNominatim(query);
+        return;
+      }
+      
+      // For mobile platforms, use comprehensive geocoding (same as delivery)
+      final locations = await locationFromAddress(query);
+      print('🔍 Found ${locations.length} locations for pickup query: $query');
+      
+      if (locations.isNotEmpty) {
+        // Get detailed address information for each location (same as delivery)
+        List<Placemark> placemarks = [];
+        for (final location in locations.take(5)) { // Limit to 5 results like delivery
+          try {
+            // Check for null coordinates
+            if (location.latitude == null || location.longitude == null) {
+              print('⚠️ Warning: Pickup location has null coordinates');
+              continue;
+            }
+            
+            print('🔍 Getting placemark for pickup coordinates: ${location.latitude}, ${location.longitude}');
+            final placemarkList = await placemarkFromCoordinates(
+              location.latitude!,
+              location.longitude!,
+            );
+            if (placemarkList.isNotEmpty) {
+              placemarks.addAll(placemarkList);
+              print('🔍 Added ${placemarkList.length} pickup placemarks');
+            }
+          } catch (e) {
+            print('❌ Error getting placemark for pickup location: $e');
+          }
         }
         
-        List<Placemark> placemarks = await placemarkFromCoordinates(
-          location.latitude!, 
-          location.longitude!
-        );
+        print('🔍 Total pickup placemarks found: ${placemarks.length}');
         setState(() {
-          _pickupAddressSuggestions = placemarks.take(5).toList();
+          _pickupAddressSuggestions = placemarks;
+          _isSearchingAddress = false;
+        });
+        
+        // Auto-load pickup points for first location (same as delivery behavior)
+        if (locations.isNotEmpty) {
+          final loc = locations.first;
+          if (loc.latitude != null && loc.longitude != null) {
+            _selectedLat = loc.latitude;
+            _selectedLng = loc.longitude;
+            _loadPickupPointsForCoordinates(loc.latitude!, loc.longitude!);
+          }
+        }
+      } else {
+        print('🔍 No pickup locations found for query: $query');
+        setState(() {
+          _pickupAddressSuggestions = [];
+          _isSearchingAddress = false;
         });
       }
     } catch (e) {
-      print('❌ Error searching pickup address: $e');
+      print('❌ Error searching pickup addresses: $e');
+      // Fallback for any platform: allow user to use entered address (same as delivery)
       setState(() {
-        _pickupAddressSuggestions = [];
+        _pickupAddressSuggestions = [
+          Placemark(
+            name: query,
+            locality: query,
+            administrativeArea: '',
+            country: 'South Africa',
+            street: query,
+            postalCode: '',
+          ),
+        ];
+        _isSearchingAddress = false;
+      });
+    }
+  }
+
+  // Free OpenStreetMap Nominatim geocoding for pickup addresses (same as delivery)
+  Future<void> _searchPickupWithNominatim(String query) async {
+    try {
+      final encodedQuery = Uri.encodeComponent('$query, South Africa');
+      final url = 'https://nominatim.openstreetmap.org/search?q=$encodedQuery&format=json&limit=5&countrycodes=za&addressdetails=1';
+      
+      print('🌐 Nominatim pickup request: $url');
+      
+      final response = await http.get(
+        Uri.parse(url),
+        headers: {
+          'User-Agent': 'MzansiMarketplace/1.0 (https://marketplace-8d6bd.web.app)',
+        },
+      );
+      
+      if (response.statusCode == 200) {
+        final List<dynamic> data = json.decode(response.body) as List<dynamic>;
+        List<Placemark> suggestions = [];
+        
+        for (final item in data) {
+          final address = item['address'] ?? {};
+          final displayName = item['display_name'] ?? '';
+          final lat = double.tryParse(item['lat']?.toString() ?? '');
+          final lon = double.tryParse(item['lon']?.toString() ?? '');
+          
+          if (lat != null && lon != null) {
+            suggestions.add(
+              Placemark(
+                name: displayName,
+                street: address['road'] ?? address['house_number'] ?? '',
+                locality: address['city'] ?? address['town'] ?? address['village'] ?? address['suburb'] ?? '',
+                administrativeArea: address['state'] ?? address['province'] ?? '',
+                postalCode: address['postcode'] ?? '',
+                country: 'South Africa',
+              ),
+            );
+            
+            // Store coordinates for pickup points loading (same as delivery)
+            if (suggestions.length == 1) {
+              _selectedLat = lat;
+              _selectedLng = lon;
+              _loadPickupPointsForCoordinates(lat, lon);
+            }
+          }
+        }
+        
+        // If no results, allow user to use their entered address (same as delivery)
+        if (suggestions.isEmpty) {
+          suggestions.add(
+            Placemark(
+              name: query,
+              locality: query,
+              administrativeArea: '',
+              country: 'South Africa',
+              street: query,
+              postalCode: '',
+            ),
+          );
+        }
+        
+        setState(() {
+          _pickupAddressSuggestions = suggestions;
+          _isSearchingAddress = false;
+        });
+        
+        print('🌐 Created ${suggestions.length} Nominatim pickup suggestions');
+      } else {
+        throw Exception('Nominatim API returned ${response.statusCode}');
+      }
+    } catch (e) {
+      print('❌ Nominatim pickup geocoding error: $e');
+      // Fallback: allow user to use entered address
+      setState(() {
+        _pickupAddressSuggestions = [
+          Placemark(
+            name: query,
+            locality: query,
+            administrativeArea: '',
+            country: 'South Africa',
+            street: query,
+            postalCode: '',
+          ),
+        ];
+        _isSearchingAddress = false;
       });
     }
   }
@@ -5059,11 +5202,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                             }
                             if (value.length >= 3) {
                               _addressSearchTimer = Timer(const Duration(milliseconds: 400), () async {
-                                if (kIsWeb) {
-                                  await _herePickupAutocomplete(value);
-                                } else {
-                                  _searchPickupAddress(value);
-                                }
+                                // Now using the same comprehensive search for both web and mobile
+                                _searchPickupAddress(value);
                               });
                             } else {
                               setState(() {
@@ -5087,24 +5227,101 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                               borderSide: BorderSide(color: AppTheme.deepTeal, width: 2),
                             ),
                             prefixIcon: Icon(Icons.location_city, color: AppTheme.deepTeal),
+                            suffixIcon: _isSearchingAddress
+                                ? Padding(
+                                    padding: const EdgeInsets.all(12),
+                                    child: SizedBox(
+                                      width: 16,
+                                      height: 16,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        valueColor: AlwaysStoppedAnimation<Color>(AppTheme.deepTeal),
+                                      ),
+                                    ),
+                                  )
+                                : _pickupAddressController.text.isNotEmpty
+                                    ? IconButton(
+                                        icon: Icon(Icons.clear, color: AppTheme.deepTeal),
+                                        onPressed: () {
+                                          _pickupAddressController.clear();
+                                          setState(() {
+                                            _pickupAddressSuggestions = [];
+                                          });
+                                        },
+                                      )
+                                    : Icon(Icons.search, color: AppTheme.deepTeal),
                             contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
                           ),
                         ),
                         
-                        // Pickup address suggestions
+                        // Pickup address suggestions - Now with same comprehensive display as delivery
                         if (_pickupAddressSuggestions.isNotEmpty) ...[
                           SizedBox(height: 8),
                           Container(
-                            constraints: BoxConstraints(maxHeight: 150),
+                            constraints: BoxConstraints(maxHeight: 300),
                             decoration: BoxDecoration(
                               color: AppTheme.deepTeal.withOpacity(0.05),
                               borderRadius: BorderRadius.circular(8),
                               border: Border.all(color: AppTheme.deepTeal.withOpacity(0.2)),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(0.1),
+                                  blurRadius: 8,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ],
                             ),
                             child: ListView.builder(
                               shrinkWrap: true,
-                              itemCount: _pickupAddressSuggestions.length,
+                              itemCount: _pickupAddressSuggestions.length + 1,
                               itemBuilder: (context, index) {
+                                if (index == _pickupAddressSuggestions.length) {
+                                  return ListTile(
+                                    dense: true,
+                                    leading: Icon(Icons.edit, color: AppTheme.deepTeal, size: 16),
+                                    title: Text(
+                                      'Use entered address',
+                                      style: TextStyle(
+                                        color: AppTheme.deepTeal,
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                    subtitle: Text(
+                                      _pickupAddressController.text,
+                                      style: TextStyle(color: AppTheme.deepTeal.withOpacity(0.7), fontSize: 12),
+                                    ),
+                                    onTap: () async {
+                                      setState(() {
+                                        _pickupAddressSuggestions = [];
+                                        _isDelivery = false;
+                                        _isLoadingPickupPoints = true;
+                                      });
+
+                                      try {
+                                        // Convert entered address to coordinates
+                                        final locations = await locationFromAddress(_pickupAddressController.text);
+                                        if (locations.isNotEmpty) {
+                                          final loc = locations.first;
+                                          if (loc.latitude != null && loc.longitude != null) {
+                                            _selectedLat = loc.latitude;
+                                            _selectedLng = loc.longitude;
+                                            _loadPickupPointsForCoordinates(loc.latitude!, loc.longitude!);
+                                          }
+                                        }
+                                      } catch (e) {
+                                        print('❌ Error converting entered pickup address to coordinates: $e');
+                                      } finally {
+                                        if (mounted) {
+                                          setState(() {
+                                            _isLoadingPickupPoints = false;
+                                          });
+                                        }
+                                      }
+                                    },
+                                  );
+                                }
+                                
                                 final placemark = _pickupAddressSuggestions[index];
                                 final address = _formatAddress(placemark);
                                 return ListTile(
@@ -5120,6 +5337,15 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                     maxLines: 3,
                                     softWrap: true,
                                   ),
+                                  subtitle: placemark.country != null
+                                      ? Text(
+                                          placemark.country!,
+                                          style: TextStyle(
+                                            color: AppTheme.deepTeal.withOpacity(0.7),
+                                            fontSize: 11,
+                                          ),
+                                        )
+                                      : null,
                                   onTap: () async {
                                     _pickupAddressController.text = address;
                                     setState(() {
@@ -5130,27 +5356,19 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                     });
 
                                     try {
-                                      if (kIsWeb) {
-                                        final uri = Uri.parse(
-                                          '${HereConfig.geocodeUrl}?q=${Uri.encodeComponent(address)}&apiKey=${HereConfig.validatedApiKey}',
-                                        );
-                                        final res = await http.get(uri);
-                                        if (res.statusCode == 200) {
-                                          final items = (json.decode(res.body)['items'] as List);
-                                          if (items.isNotEmpty) {
-                                            final pos = items.first['position'];
-                                            _selectedLat = (pos['lat'] as num).toDouble();
-                                            _selectedLng = (pos['lng'] as num).toDouble();
-                                            _loadPickupPointsForCoordinates(_selectedLat!, _selectedLng!);
-                                          }
-                                        }
+                                      // Use the coordinates already stored from search
+                                      if (_selectedLat != null && _selectedLng != null) {
+                                        _loadPickupPointsForCoordinates(_selectedLat!, _selectedLng!);
                                       } else {
+                                        // Fallback: convert address to coordinates
                                         final locations = await locationFromAddress(address);
                                         if (locations.isNotEmpty) {
                                           final loc = locations.first;
-                                          _selectedLat = loc.latitude;
-                                          _selectedLng = loc.longitude;
-                                          _loadPickupPointsForCoordinates(loc.latitude, loc.longitude);
+                                          if (loc.latitude != null && loc.longitude != null) {
+                                            _selectedLat = loc.latitude;
+                                            _selectedLng = loc.longitude;
+                                            _loadPickupPointsForCoordinates(loc.latitude!, loc.longitude!);
+                                          }
                                         }
                                       }
                                     } catch (e) {
