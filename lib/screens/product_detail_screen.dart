@@ -98,14 +98,6 @@ class ProductDetailScreen extends StatelessWidget {
       );
       
       if (success) {
-        // Show success message
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Product added to cart!'),
-            backgroundColor: AppTheme.primaryGreen,
-          ),
-        );
-        
         // Navigate to cart
         Navigator.pushNamed(context, '/cart');
       } else {

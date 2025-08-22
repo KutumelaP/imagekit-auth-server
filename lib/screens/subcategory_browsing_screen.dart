@@ -349,13 +349,7 @@ class _SubcategoryBrowsingScreenState extends State<SubcategoryBrowsingScreen>
                           // Add to Cart Button
                           IconButton(
                             onPressed: () {
-                              // Add to cart functionality
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text('${product['name']} added to cart'),
-                                  backgroundColor: const Color(0xFF2E7D32),
-                                ),
-                              );
+                              // Add to cart functionality - no toast needed
                             },
                             icon: Icon(
                               Icons.add_shopping_cart,

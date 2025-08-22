@@ -2004,26 +2004,7 @@ class BeautifulProductCard extends StatelessWidget {
       availableStock: stock,
     ).then((success) {
       if (success) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Row(
-              children: [
-                const Icon(Icons.check_circle, color: Colors.white),
-                const SizedBox(width: 8),
-                Text('${data['name'] ?? 'Product'} added to cart!'),
-              ],
-            ),
-            backgroundColor: AppTheme.primaryGreen,
-            action: SnackBarAction(
-              label: 'View Cart',
-              textColor: Colors.white,
-              onPressed: () {
-                Navigator.pushNamed(context, '/cart');
-              },
-            ),
-            duration: const Duration(seconds: 3),
-          ),
-        );
+        // Product added successfully, no toast needed
       } else {
         // Show specific error message from cart provider
         final errorMessage = cartProvider.lastAddError ?? 'Cannot add more ${data['name'] ?? 'items'} - insufficient stock!';

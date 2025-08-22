@@ -803,9 +803,6 @@ class _StunningProductDetailState extends State<StunningProductDetail>
     );
     
     if (success) {
-      // Show success message
-      _showSnackBar('Product added to cart!', AppTheme.primaryGreen);
-      
       // Navigate to cart
       Navigator.pushNamed(context, '/cart');
     } else {
