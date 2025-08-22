@@ -5,6 +5,7 @@ const { create } = require('xmlbuilder2');
 
 admin.initializeApp();
 const db = admin.firestore();
+const axios = require('axios');
 // --- PayFast IPN/Return handlers ---
 exports.payfastNotify = functions.https.onRequest(async (req, res) => {
   try {
@@ -159,7 +160,7 @@ exports.sitemap = functions.https.onRequest(async (req, res) => {
 });
 
 // ImageKit functions
-const axios = require('axios');
+// axios already required above
 
 const IK_API_BASE = 'https://api.imagekit.io/v1';
 
@@ -223,6 +224,61 @@ exports.batchDeleteImages = functions.https.onCall(async (data, context) => {
   } catch (e) {
     console.error('batchDeleteImages error', e?.response?.status, e?.response?.data || e.message);
     throw new functions.https.HttpsError('internal', 'Failed to delete images');
+  }
+});
+
+// === Risk gatekeeper: IP info + simple rate limits ===
+exports.riskGate = functions.https.onRequest(async (req, res) => {
+  try {
+    const ip = (req.headers['x-forwarded-for'] || req.ip || '').toString().split(',')[0].trim();
+    const path = (req.query.path || req.body.path || 'unknown').toString(); // e.g., signup/login/reset/checkout
+    const deviceId = (req.query.deviceId || req.body.deviceId || '').toString();
+    const now = Date.now();
+
+    // 1) Rate limit per IP+path per minute
+    const minuteKey = `${ip}_${path}_${new Date(now).toISOString().slice(0,16)}`; // YYYY-MM-DDTHH:MM
+    const ref = db.collection('rate_limits').doc(minuteKey);
+    await db.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      const current = snap.exists ? (snap.data().count || 0) : 0;
+      tx.set(ref, { count: current + 1, ip, path, updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
+    });
+    const after = await ref.get();
+    const count = after.exists ? (after.data().count || 0) : 0;
+    const limit = path === 'signup' ? 3 : path === 'password_reset' ? 5 : 30; // per minute
+    if (count > limit) {
+      res.status(429).json({ ok: false, reason: 'rate_limited', limit, count });
+      return;
+    }
+
+    // 2) IP intel (optional vendor)
+    let ipInfo = { country: null, asn: null, org: null, vpn: false, risk: 0 };
+    try {
+      const API = process.env.IPINFO_API || '';
+      if (API && ip) {
+        const r = await axios.get(`https://ipinfo.io/${ip}?token=${API}`, { timeout: 3000 });
+        const data = r.data || {};
+        ipInfo.country = data.country || null;
+        ipInfo.org = data.org || null;
+        ipInfo.asn = data.org ? String(data.org).split(' ')[0] : null;
+      }
+    } catch (e) {
+      console.warn('ipinfo error', e.message);
+    }
+
+    // 3) Simple VPN/proxy heuristic fallback: reserved/private ranges
+    const privateRanges = ['10.', '172.16.', '192.168.', '127.'];
+    if (privateRanges.some((p) => ip.startsWith(p))) ipInfo.vpn = true;
+
+    // 4) Log event
+    await db.collection('risk_events').add({
+      type: 'gate', ip, path, deviceId, ipInfo, ts: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    res.json({ ok: true, ipInfo });
+  } catch (e) {
+    console.error('riskGate error', e);
+    res.status(500).json({ ok: false, error: 'internal' });
   }
 });
 

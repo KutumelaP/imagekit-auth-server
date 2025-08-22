@@ -28,6 +28,7 @@ import '../widgets/home_navigation_button.dart';
 import '../services/courier_quote_service.dart';
 import '../widgets/paxi_delivery_speed_selector.dart';
 import '../config/paxi_config.dart';
+import '../services/advanced_security_service.dart';
 
 import '../providers/cart_provider.dart';
 import 'login_screen.dart';
@@ -3247,6 +3248,12 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     // Validate order before payment
     print('🔍 DEBUG: Validating order before payment...');
 
+    // Gatekeeper preflight
+    try {
+      final gate = await AdvancedSecurityService().gate(path: 'checkout', deviceId: null);
+      print('🔐 Gate result: $gate');
+    } catch (_) {}
+
     // Fraud/Scam: quick risk evaluation before proceeding
     try {
       final uid = currentUser?.uid;
@@ -3305,6 +3312,33 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
         // Dynamic decision from admin thresholds
         final decision = await RiskEngine.decide(result.riskScore);
+        // Medium risk → OTP step-up
+        if (decision.enabled && decision.level == 'medium') {
+          try {
+            String phone = _phoneController.text.trim();
+            if (phone.isEmpty) {
+              // Try fetch from profile
+              final userDoc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
+              phone = (userDoc.data()?['phone'] ?? '').toString();
+            }
+            if (phone.isEmpty) {
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Add a phone number to verify before checkout.')));
+              }
+              return;
+            }
+            final ok = await _performOtpStepUp(phone);
+            if (!ok) {
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Verification failed. Please try again.')));
+              }
+              return;
+            }
+          } catch (e) {
+            print('⚠️ OTP step-up failed: $e');
+            return;
+          }
+        }
         if (decision.enabled && decision.level == 'high') {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(

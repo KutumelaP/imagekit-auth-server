@@ -1,4 +1,36 @@
 import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'package:flutter/foundation.dart';
+
+class AdvancedSecurityService {
+  static final AdvancedSecurityService _instance = AdvancedSecurityService._internal();
+  factory AdvancedSecurityService() => _instance;
+  AdvancedSecurityService._internal();
+
+  static Uri _gateUrl(String path) {
+    // Assumes default Functions region/us-central1; adjust if needed
+    const host = 'https://us-central1-marketplace-8d6bd.cloudfunctions.net';
+    return Uri.parse('$host/riskGate').replace(queryParameters: { 'path': path });
+  }
+
+  Future<Map<String, dynamic>> gate({required String path, String? deviceId}) async {
+    try {
+      final uri = _gateUrl(path);
+      final res = await http.post(uri, body: jsonEncode({ 'deviceId': deviceId, 'path': path }), headers: { 'Content-Type': 'application/json' }).timeout(const Duration(seconds: 5));
+      if (res.statusCode == 200) {
+        return jsonDecode(res.body) as Map<String, dynamic>;
+      }
+      return { 'ok': false, 'status': res.statusCode };
+    } catch (e) {
+      if (kDebugMode) {
+        print('risk gate error: $e');
+      }
+      return { 'ok': false, 'error': e.toString() };
+    }
+  }
+}
+
+import 'dart:convert';
 import 'dart:math';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
