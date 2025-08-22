@@ -3303,8 +3303,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
         await RiskEngine.logRiskEvent(userId: uid, context: 'checkout_submit', result: result);
 
-        // High risk → halt and mark for manual review
-        if (result.isHigh) {
+        // Dynamic decision from admin thresholds
+        final decision = await RiskEngine.decide(result.riskScore);
+        if (decision.enabled && decision.level == 'high') {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(content: Text('We need to review this order. Please try another payment method or contact support.')),

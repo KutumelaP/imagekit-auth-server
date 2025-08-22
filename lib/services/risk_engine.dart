@@ -7,14 +7,38 @@ class RiskResult {
   final Map<String, dynamic> signals;
 
   const RiskResult({required this.riskScore, required this.reasons, required this.signals});
-  bool get isHigh => riskScore >= 80;
-  bool get isMedium => riskScore >= 50 && riskScore < 80;
 }
 
 class RiskEngine {
-  // Simple thresholds; can be tuned or moved to remote config later
-  static const int highThreshold = 80;
-  static const int mediumThreshold = 50;
+  // Defaults; can be overridden by Firestore admin_settings/risk_config
+  static const int defaultHighThreshold = 80;
+  static const int defaultMediumThreshold = 50;
+
+  static Future<_RiskConfig> _fetchConfig() async {
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('admin_settings')
+          .doc('risk_config')
+          .get();
+      if (doc.exists) {
+        final data = doc.data() ?? {};
+        final enabled = (data['enabled'] as bool?) ?? true;
+        final high = (data['highThreshold'] as int?) ?? defaultHighThreshold;
+        final medium = (data['mediumThreshold'] as int?) ?? defaultMediumThreshold;
+        return _RiskConfig(enabled: enabled, high: high, medium: medium);
+      }
+    } catch (_) {}
+    return _RiskConfig(enabled: true, high: defaultHighThreshold, medium: defaultMediumThreshold);
+  }
+
+  // Public helper to check decision against dynamic thresholds
+  static Future<_RiskDecision> decide(int score) async {
+    final cfg = await _fetchConfig();
+    if (!cfg.enabled) return _RiskDecision(enabled: false, level: 'off');
+    if (score >= cfg.high) return _RiskDecision(enabled: true, level: 'high');
+    if (score >= cfg.medium) return _RiskDecision(enabled: true, level: 'medium');
+    return _RiskDecision(enabled: true, level: 'low');
+  }
 
   static Future<RiskResult> evaluate({
     required String userId,
@@ -76,6 +100,19 @@ class RiskEngine {
       // ignore logging failures
     }
   }
+}
+
+class _RiskConfig {
+  final bool enabled;
+  final int high;
+  final int medium;
+  const _RiskConfig({required this.enabled, required this.high, required this.medium});
+}
+
+class _RiskDecision {
+  final bool enabled;
+  final String level; // 'off' | 'low' | 'medium' | 'high'
+  const _RiskDecision({required this.enabled, required this.level});
 }
 
 
