@@ -16,23 +16,27 @@ class ImageCleanupService {
 			// Always force refresh token to ensure latest custom claims are present
 			await FirebaseAuth.instance.currentUser?.getIdToken(true);
 
-			// 1) Callable first
-			final functions = FirebaseFunctions.instanceFor(region: 'us-central1');
-			final callable = functions.httpsCallable('listImages');
-			final data = <String, dynamic>{
-				'limit': limit,
-				'skip': skip,
-			};
-			if (path != null) data['path'] = path;
-			if (searchQuery != null) data['searchQuery'] = searchQuery;
-			final result = await callable.call(data);
-			final response = result.data as Map<String, dynamic>;
-			final files = response['files'] as List<dynamic>?;
-			if (files != null) {
-				return files.cast<Map<String, dynamic>>();
+			// 1) Callable first (isolated try to allow fallback on failure)
+			try {
+				final functions = FirebaseFunctions.instanceFor(region: 'us-central1');
+				final callable = functions.httpsCallable('listImages');
+				final data = <String, dynamic>{
+					'limit': limit,
+					'skip': skip,
+				};
+				if (path != null) data['path'] = path;
+				if (searchQuery != null) data['searchQuery'] = searchQuery;
+				final result = await callable.call(data);
+				final response = result.data as Map<String, dynamic>;
+				final files = response['files'] as List<dynamic>?;
+				if (files != null) {
+					return files.cast<Map<String, dynamic>>();
+				}
+			} catch (eCall) {
+				print('❌ Callable listImages failed (will try HTTP): $eCall');
 			}
 
-			// 2) HTTP fallback
+			// 2) HTTP fallback (always attempt if callable did not return files)
 			try {
 				final user = FirebaseAuth.instance.currentUser;
 				final idToken = await user?.getIdToken(true);
@@ -53,7 +57,23 @@ class ImageCleanupService {
 
 			return [];
 		} catch (e) {
-			print('❌ Error listing images (callable first): $e');
+			print('❌ Error listing images (unexpected): $e');
+			// Last-chance HTTP attempt
+			try {
+				final user = FirebaseAuth.instance.currentUser;
+				final idToken = await user?.getIdToken(true);
+				final url = ImageApiConfig.listUrl(limit: limit, skip: skip, path: path, searchQuery: searchQuery);
+				final res = await http.get(Uri.parse(url), headers: {
+					'Authorization': 'Bearer ${idToken ?? ''}',
+				});
+				if (res.statusCode == 200) {
+					final body = json.decode(res.body) as Map<String, dynamic>;
+					final files2 = body['files'];
+					if (files2 is List) {
+						return files2.cast<Map<String, dynamic>>();
+					}
+				}
+			} catch (_) {}
 			return [];
 		}
 	}

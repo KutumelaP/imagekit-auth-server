@@ -591,15 +591,15 @@ class _AdminDashboardContentState extends State<AdminDashboardContent> {
   }
 
   Widget _buildStatsGrid() {
-    return FutureBuilder<DashboardStats>(
-      future: _cacheService.getDashboardStats(widget.firestore),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting && _cacheService.cachedStats == null) {
+    return FutureBuilder<Map<String, int>>(
+      future: _cacheService.getQuickCounts(widget.firestore),
+      builder: (context, quickSnap) {
+        final quick = quickSnap.data ?? _cacheService.cachedQuickCounts;
+        if (quick == null && quickSnap.connectionState == ConnectionState.waiting) {
           return LayoutBuilder(
             builder: (context, constraints) {
               int crossAxisCount;
               double childAspectRatio;
-              
               if (constraints.maxWidth > 1200) {
                 crossAxisCount = 5;
                 childAspectRatio = 1.6;
@@ -613,7 +613,6 @@ class _AdminDashboardContentState extends State<AdminDashboardContent> {
                 crossAxisCount = 1;
                 childAspectRatio = 1.4;
               }
-
               return GridView.count(
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
@@ -621,90 +620,83 @@ class _AdminDashboardContentState extends State<AdminDashboardContent> {
                 childAspectRatio: childAspectRatio,
                 crossAxisSpacing: 16,
                 mainAxisSpacing: 16,
-                children: List.generate(5, (index) => 
-                  SkeletonLoading(
-                    isLoading: true,
-                    child: SkeletonStatCard(),
-                  ),
-                ),
+                children: List.generate(5, (index) => SkeletonLoading(isLoading: true, child: SkeletonStatCard())),
               );
             },
           );
         }
-
-        final stats = snapshot.data ?? _cacheService.cachedStats;
-        if (stats == null) {
-          return _buildErrorCard('Failed to load stats');
-        }
-
-        return LayoutBuilder(
-          builder: (context, constraints) {
-            int crossAxisCount;
-            double childAspectRatio;
-            
-            if (constraints.maxWidth > 1200) {
-              crossAxisCount = 5;
-              childAspectRatio = 1.6;
-            } else if (constraints.maxWidth > 800) {
-              crossAxisCount = 3;
-              childAspectRatio = 1.8;
-            } else if (constraints.maxWidth > 600) {
-              crossAxisCount = 2;
-              childAspectRatio = 1.6;
-            } else {
-              crossAxisCount = 1;
-              childAspectRatio = 1.4;
-            }
-
-            return GridView.count(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              crossAxisCount: crossAxisCount,
-              childAspectRatio: childAspectRatio,
-              crossAxisSpacing: 16,
-              mainAxisSpacing: 16,
-          children: [
-            _buildStatCard(
-              'Total Users',
-              stats.totalUsers.toString(),
-              Icons.people,
-              AdminTheme.info,
-              isLoading: _cacheService.isLoadingStats,
-              growth: stats.userGrowth,
-            ),
-            _buildStatCard(
-              'Today\'s Orders',
-              stats.todayOrders.toString(),
-              Icons.shopping_cart,
-              AdminTheme.success,
-              isLoading: _cacheService.isLoadingStats,
-              growth: stats.orderGrowth,
-            ),
-            _buildStatCard(
-              'Platform Revenue',
-              'R${stats.totalRevenue.toStringAsFixed(2)}',
-              Icons.receipt,
-              AdminTheme.indigo,
-              isLoading: _cacheService.isLoadingStats,
-              growth: stats.revenueGrowth,
-            ),
-            _buildStatCard(
-              'Pending Approvals',
-              stats.pendingApprovals.toString(),
-              Icons.pending_actions,
-              stats.hasHighPendingApprovals ? AdminTheme.error : AdminTheme.warning,
-              isLoading: _cacheService.isLoadingStats,
-              growth: null, // No growth for pending items
-            ),
-            _buildStatCard(
-              'Pending KYC',
-              stats.pendingKycSubmissions.toString(),
-              Icons.verified_user_outlined,
-              stats.hasPendingKyc ? AdminTheme.warning : AdminTheme.success,
-              isLoading: _cacheService.isLoadingStats,
-              growth: null,
-            ),
-          ],
+        return FutureBuilder<DashboardStats>(
+          future: _cacheService.getDashboardStats(widget.firestore),
+          builder: (context, snapshot) {
+            final stats = snapshot.data ?? _cacheService.cachedStats;
+            return LayoutBuilder(
+              builder: (context, constraints) {
+                int crossAxisCount;
+                double childAspectRatio;
+                if (constraints.maxWidth > 1200) {
+                  crossAxisCount = 5;
+                  childAspectRatio = 1.6;
+                } else if (constraints.maxWidth > 800) {
+                  crossAxisCount = 3;
+                  childAspectRatio = 1.8;
+                } else if (constraints.maxWidth > 600) {
+                  crossAxisCount = 2;
+                  childAspectRatio = 1.6;
+                } else {
+                  crossAxisCount = 1;
+                  childAspectRatio = 1.4;
+                }
+                return GridView.count(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  crossAxisCount: crossAxisCount,
+                  childAspectRatio: childAspectRatio,
+                  crossAxisSpacing: 16,
+                  mainAxisSpacing: 16,
+                  children: [
+                    _buildStatCard(
+                      'Total Users',
+                      (stats?.totalUsers ?? quick?['totalUsers'] ?? 0).toString(),
+                      Icons.people,
+                      AdminTheme.info,
+                      isLoading: stats == null && _cacheService.isLoadingStats,
+                      growth: stats?.userGrowth,
+                    ),
+                    _buildStatCard(
+                      'Today\'s Orders',
+                      (stats?.todayOrders ?? quick?['todayOrders'] ?? 0).toString(),
+                      Icons.shopping_cart,
+                      AdminTheme.success,
+                      isLoading: stats == null && _cacheService.isLoadingStats,
+                      growth: stats?.orderGrowth,
+                    ),
+                    _buildStatCard(
+                      'Platform Revenue',
+                      stats != null ? 'R${stats.totalRevenue.toStringAsFixed(2)}' : '—',
+                      Icons.receipt,
+                      AdminTheme.indigo,
+                      isLoading: stats == null && _cacheService.isLoadingStats,
+                      growth: stats?.revenueGrowth,
+                    ),
+                    _buildStatCard(
+                      'Pending Approvals',
+                      (stats?.pendingApprovals ?? quick?['pendingApprovals'] ?? 0).toString(),
+                      Icons.pending_actions,
+                      (stats?.hasHighPendingApprovals ?? ((quick?['pendingApprovals'] ?? 0) > 10)) ? AdminTheme.error : AdminTheme.warning,
+                      isLoading: stats == null && _cacheService.isLoadingStats,
+                      growth: null,
+                    ),
+                    _buildStatCard(
+                      'Pending KYC',
+                      (stats?.pendingKycSubmissions ?? quick?['pendingKyc'] ?? 0).toString(),
+                      Icons.verified_user_outlined,
+                      (stats?.hasPendingKyc ?? ((quick?['pendingKyc'] ?? 0) > 0)) ? AdminTheme.warning : AdminTheme.success,
+                      isLoading: stats == null && _cacheService.isLoadingStats,
+                      growth: null,
+                    ),
+                  ],
+                );
+              },
             );
           },
         );

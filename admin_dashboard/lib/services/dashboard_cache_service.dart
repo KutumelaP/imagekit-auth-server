@@ -11,22 +11,28 @@ class DashboardCacheService extends ChangeNotifier {
   // Cache data
   DashboardStats? _cachedStats;
   DateTime? _lastCacheUpdate;
+  Map<String, int>? _cachedQuickCounts;
+  DateTime? _lastQuickCountsUpdate;
   List<Map<String, dynamic>>? _cachedRecentActivity;
   DateTime? _lastActivityUpdate;
 
   // Loading states
   bool _isLoadingStats = false;
   bool _isLoadingActivity = false;
+  bool _isLoadingQuickCounts = false;
 
   // Cache duration (5 minutes for stats, 1 minute for activity)
   static const Duration _statsCacheDuration = Duration(minutes: 5);
   static const Duration _activityCacheDuration = Duration(minutes: 1);
+  static const Duration _quickCountsCacheDuration = Duration(seconds: 20);
 
   // Getters
   DashboardStats? get cachedStats => _cachedStats;
   List<Map<String, dynamic>>? get cachedRecentActivity => _cachedRecentActivity;
   bool get isLoadingStats => _isLoadingStats;
   bool get isLoadingActivity => _isLoadingActivity;
+  Map<String, int>? get cachedQuickCounts => _cachedQuickCounts;
+  bool get isLoadingQuickCounts => _isLoadingQuickCounts;
 
   bool get _shouldRefreshStats {
     if (_cachedStats == null || _lastCacheUpdate == null) return true;
@@ -36,6 +42,11 @@ class DashboardCacheService extends ChangeNotifier {
   bool get _shouldRefreshActivity {
     if (_cachedRecentActivity == null || _lastActivityUpdate == null) return true;
     return DateTime.now().difference(_lastActivityUpdate!) > _activityCacheDuration;
+  }
+
+  bool get _shouldRefreshQuickCounts {
+    if (_cachedQuickCounts == null || _lastQuickCountsUpdate == null) return true;
+    return DateTime.now().difference(_lastQuickCountsUpdate!) > _quickCountsCacheDuration;
   }
 
   /// Get dashboard stats with smart caching
@@ -100,6 +111,53 @@ class DashboardCacheService extends ChangeNotifier {
       rethrow;
     } finally {
       _isLoadingActivity = false;
+      notifyListeners();
+    }
+  }
+
+  /// Quick counts to show while full stats load
+  Future<Map<String, int>> getQuickCounts(FirebaseFirestore firestore, {bool forceRefresh = false}) async {
+    if (!forceRefresh && !_shouldRefreshQuickCounts && _cachedQuickCounts != null) {
+      return _cachedQuickCounts!;
+    }
+
+    if (_isLoadingQuickCounts && _cachedQuickCounts != null) {
+      return _cachedQuickCounts!;
+    }
+
+    _isLoadingQuickCounts = true;
+    notifyListeners();
+
+    try {
+      final users = await firestore.collection('users').count().get();
+      final sellers = await firestore.collection('users').where('role', isEqualTo: 'seller').count().get();
+      final pendingSellers = await firestore.collection('users').where('role', isEqualTo: 'seller').where('status', isEqualTo: 'pending').count().get();
+
+      final now = DateTime.now();
+      final startOfDay = DateTime(now.year, now.month, now.day);
+      final todayOrders = await firestore
+          .collection('orders')
+          .where('timestamp', isGreaterThanOrEqualTo: Timestamp.fromDate(startOfDay))
+          .count()
+          .get();
+
+      final pendingKyc = await firestore.collection('users').where('kycStatus', isEqualTo: 'pending').count().get();
+
+      _cachedQuickCounts = {
+        'totalUsers': users.count ?? 0,
+        'totalSellers': sellers.count ?? 0,
+        'pendingApprovals': pendingSellers.count ?? 0,
+        'todayOrders': todayOrders.count ?? 0,
+        'pendingKyc': pendingKyc.count ?? 0,
+      };
+      _lastQuickCountsUpdate = DateTime.now();
+      return _cachedQuickCounts!;
+    } catch (e) {
+      debugPrint('❌ Error fetching quick counts: $e');
+      if (_cachedQuickCounts != null) return _cachedQuickCounts!;
+      rethrow;
+    } finally {
+      _isLoadingQuickCounts = false;
       notifyListeners();
     }
   }
@@ -250,6 +308,11 @@ class DashboardCacheService extends ChangeNotifier {
           : null,
       'is_loading_stats': _isLoadingStats,
       'is_loading_activity': _isLoadingActivity,
+      'quick_counts_cached': _cachedQuickCounts != null,
+      'quick_counts_age_secs': _lastQuickCountsUpdate != null 
+          ? DateTime.now().difference(_lastQuickCountsUpdate!).inSeconds
+          : null,
+      'is_loading_quick_counts': _isLoadingQuickCounts,
     };
   }
 }

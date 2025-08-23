@@ -196,47 +196,66 @@ class _PlatformSettingsSectionState extends State<PlatformSettingsSection> {
                     width: double.infinity,
                     child: Theme(
                       data: Theme.of(context),
-                      child: Row(
+                      child: Wrap(
+                        spacing: 16,
+                        runSpacing: 8,
                         children: [
-                          Expanded(
+                          SizedBox(
+                            width: 260,
                             child: SwitchListTile(
-                              title: const Text('Enable Registration'),
+                              dense: true,
+                              contentPadding: EdgeInsets.zero,
+                              title: const Text('Enable Registration', softWrap: false, overflow: TextOverflow.ellipsis),
                               value: _registrationEnabled,
                               onChanged: (v) => setState(() => _registrationEnabled = v),
                             ),
                           ),
-                          Expanded(
+                          SizedBox(
+                            width: 260,
                             child: SwitchListTile(
-                              title: const Text('Enable Moderation'),
+                              dense: true,
+                              contentPadding: EdgeInsets.zero,
+                              title: const Text('Enable Moderation', softWrap: false, overflow: TextOverflow.ellipsis),
                               value: _moderationEnabled,
                               onChanged: (v) => setState(() => _moderationEnabled = v),
                             ),
                           ),
-                          Expanded(
+                          SizedBox(
+                            width: 260,
                             child: SwitchListTile(
-                              title: const Text('Enable Maintenance Mode'),
+                              dense: true,
+                              contentPadding: EdgeInsets.zero,
+                              title: const Text('Enable Maintenance Mode', softWrap: false, overflow: TextOverflow.ellipsis),
                               value: _maintenanceMode,
                               onChanged: (v) => setState(() => _maintenanceMode = v),
                             ),
                           ),
-                          Expanded(
+                          SizedBox(
+                            width: 200,
                             child: SwitchListTile(
-                              title: const Text('Show PARGO'),
+                              dense: true,
+                              contentPadding: EdgeInsets.zero,
+                              title: const Text('Show PARGO', softWrap: false, overflow: TextOverflow.ellipsis),
                               value: _pargoVisible,
                               onChanged: (v) => setState(() => _pargoVisible = v),
                             ),
                           ),
-                          Expanded(
+                          SizedBox(
+                            width: 200,
                             child: SwitchListTile(
-                              title: const Text('Show PAXI'),
+                              dense: true,
+                              contentPadding: EdgeInsets.zero,
+                              title: const Text('Show PAXI', softWrap: false, overflow: TextOverflow.ellipsis),
                               value: _paxiVisible,
                               onChanged: (v) => setState(() => _paxiVisible = v),
                             ),
                           ),
-                          const SizedBox(width: 16),
-                          ElevatedButton(
-                            onPressed: _saving ? null : _saveSettings,
-                            child: _saving ? const Text('Saving...') : const Text('Save Settings'),
+                          SizedBox(
+                            width: 200,
+                            child: ElevatedButton(
+                              onPressed: _saving ? null : _saveSettings,
+                              child: _saving ? const Text('Saving...') : const Text('Save Settings'),
+                            ),
                           ),
                         ],
                       ),

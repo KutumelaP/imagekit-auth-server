@@ -6,6 +6,7 @@ import 'widgets/admin_dashboard_content.dart';
 import 'widgets/notification_panel.dart';
 import 'services/real_time_notification_service.dart';
 import 'utils/advanced_memory_optimizer.dart';
+import 'theme/admin_theme.dart';
 import 'dart:async';
 
 void main() async {
@@ -82,340 +83,403 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     _notificationService.dispose();
     super.dispose();
   }
-  
-  // Navigation categories for better organization
-  final List<NavigationCategory> _categories = [
-    NavigationCategory(
-      title: 'Overview',
-      icon: Icons.dashboard,
-      items: ['Overview', 'Quick Actions', 'Recent Activity'],
-    ),
-    NavigationCategory(
-      title: 'Management',
-      icon: Icons.manage_accounts,
-      items: ['Users', 'Sellers', 'Orders', 'Categories'],
-    ),
-    NavigationCategory(
-      title: 'Analytics',
-      icon: Icons.analytics,
-      items: ['Statistics', 'Reports', 'Advanced Analytics'],
-    ),
-    NavigationCategory(
-      title: 'Operations',
-      icon: Icons.shield,
-      items: ['Moderation', 'Reviews', 'Returns/Refunds'],
-    ),
-    NavigationCategory(
-      title: 'Image Management',
-      icon: Icons.image,
-      items: ['Storage Stats', 'Orphaned Images', 'Cleanup Tools'],
-    ),
-    NavigationCategory(
-      title: 'Settings',
-      icon: Icons.settings,
-      items: ['Platform Settings', 'Roles/Permissions', 'Audit Logs'],
-    ),
-    NavigationCategory(
-      title: 'Financial',
-      icon: Icons.account_balance,
-      items: ['Payment Settings', 'Escrow Management', 'Returns Management'],
-    ),
-    NavigationCategory(
-      title: 'Developer',
-      icon: Icons.code,
-      items: ['Developer Tools', 'Data Export', 'Order Migration'],
-    ),
-    NavigationCategory(
-      title: 'Delivery',
-      icon: Icons.delivery_dining,
-      items: ['Rural Driver Management', 'Urban Delivery Management'],
-    ),
-    NavigationCategory(
-      title: 'Driver Management',
-      icon: Icons.person,
-      items: ['Driver Management'],
-    ),
-    NavigationCategory(
-      title: 'Compliance',
-      icon: Icons.verified_user,
-      items: ['Risk Review', 'KYC Review'],
-    ),
-  ];
 
   @override
   Widget build(BuildContext context) {
-    final user = FirebaseAuth.instance.currentUser;
-    
-    if (user == null) {
-      return const Scaffold(
-        body: Center(
-          child: Text('Please log in to access the admin dashboard'),
-        ),
-      );
-    }
-
-    return FutureBuilder<DocumentSnapshot>(
-      future: FirebaseFirestore.instance.collection('users').doc(user.uid).get(),
+    return FutureBuilder<Map<String, dynamic>>(
+      future: _getUserData(),
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Scaffold(
-            body: Center(child: CircularProgressIndicator()),
-          );
+        // Always show the layout structure, never mask with full-screen spinner
+        if (snapshot.hasError) {
+          return _buildErrorScreen(snapshot.error.toString());
         }
 
-        if (!snapshot.hasData || snapshot.data?.data() == null) {
-    return const Scaffold(
-            body: Center(
-              child: Text('User data not found. Please contact support.'),
-            ),
-          );
-        }
+        final userData = snapshot.data ?? {};
+        
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            final isMobile = constraints.maxWidth < 768;
+            final isTablet = constraints.maxWidth >= 768 && constraints.maxWidth < 1024;
+            final isDesktop = constraints.maxWidth >= 1024;
 
-        final userData = snapshot.data!.data() as Map<String, dynamic>;
-        final role = userData['role'];
-
-        if (role != 'admin') {
-          return Scaffold(
-            body: Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    Icons.admin_panel_settings_outlined,
-                    size: 64,
-                    color: Colors.grey[400],
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'Admin Access Required',
-                    style: Theme.of(context).textTheme.headlineSmall,
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'You do not have permission to access this dashboard.',
-                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                      color: Colors.grey[600],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          );
-        }
-
-        return Scaffold(
-          key: _scaffoldKey,
-          appBar: _buildAppBar(userData),
-          drawer: MediaQuery.of(context).size.width < 1200 ? _buildMobileDrawer() : null,
-          body: Stack(
-            children: [
-              Row(
-                children: [
-                  // Desktop Sidebar for larger screens
-                  if (MediaQuery.of(context).size.width >= 1200)
-                    Container(
-                      width: 220,
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: [
-                            Theme.of(context).colorScheme.primary,
-                            Theme.of(context).colorScheme.primary.withOpacity(0.9),
-                            Theme.of(context).colorScheme.primary.withOpacity(0.8),
-                          ],
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.1),
-                            blurRadius: 8,
-                            offset: const Offset(2, 0),
-                          ),
-                        ],
-                      ),
-                      child: Column(
-                        children: [
-                          // Sidebar Header
-                          Container(
-                            padding: const EdgeInsets.all(16),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withOpacity(0.1),
-                              border: Border(
-                                bottom: BorderSide(
-                                  color: Colors.white.withOpacity(0.2),
-                                  width: 1,
-                                ),
-                              ),
-                            ),
-                            child: Row(
-                              children: [
-                                Container(
-                                  width: 40,
-                                  height: 40,
-                                  decoration: BoxDecoration(
-                                    color: Colors.white,
-                                    borderRadius: BorderRadius.circular(10),
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: Colors.black.withOpacity(0.1),
-                                        blurRadius: 4,
-                                        offset: const Offset(0, 2),
-                                      ),
-                                    ],
-                                  ),
-                                  child: Padding(
-                                    padding: const EdgeInsets.all(6),
-                                    child: Image.asset(
-                                      'assets/logo.png',
-                                      fit: BoxFit.contain,
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        'Admin Dashboard',
-                                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                          fontWeight: FontWeight.bold,
-                                          color: Colors.white,
-                                        ),
-                                      ),
-                                      Text(
-                                        'Management Panel',
-                                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                          color: Colors.white.withOpacity(0.8),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          
-                          // Navigation Categories
-                          Expanded(
-                            child: _buildNavigationList(),
-                          ),
-                          
-                          // Sidebar Footer
-                          Container(
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withOpacity(0.05),
-                              border: Border(
-                                top: BorderSide(
-                                  color: Colors.white.withOpacity(0.2),
-                                  width: 1,
-                                ),
-                              ),
-                            ),
-                            child: Row(
-                              children: [
-                                CircleAvatar(
-                                  radius: 16,
-                                  backgroundColor: Colors.white.withOpacity(0.2),
-                                  child: Text(
-                                    (userData['email'] ?? 'A')[0].toUpperCase(),
-                                    style: TextStyle(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 14,
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Text(
-                                        userData['name'] ?? userData['email']?.split('@')[0] ?? 'Admin',
-                                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                          fontWeight: FontWeight.w600,
-                                          color: Colors.white,
-                                        ),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                      Text(
-                                        'Administrator',
-                                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                          color: Colors.white.withOpacity(0.7),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                PopupMenuButton<String>(
-                                  icon: Icon(
-                                    Icons.more_vert,
-                                    color: Colors.white.withOpacity(0.8),
-                                  ),
-                                  itemBuilder: (context) => [
-                                    const PopupMenuItem(
-                                      value: 'profile',
-                                      child: ListTile(
-                                        leading: Icon(Icons.person_outline),
-                                        title: Text('Profile Settings'),
-                                        dense: true,
-                                        contentPadding: EdgeInsets.zero,
-                                      ),
-                                    ),
-                                    const PopupMenuItem(
-                                      value: 'logout',
-                                      child: ListTile(
-                                        leading: Icon(Icons.logout),
-                                        title: Text('Logout'),
-                                        dense: true,
-                                        contentPadding: EdgeInsets.zero,
-                                      ),
-                                    ),
-                                  ],
-                                  onSelected: (value) async {
-                                    if (value == 'logout') {
-                                      await FirebaseAuth.instance.signOut();
-                                    }
-                                  },
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  
-                  // Main Content
-                  Expanded(
-                    child: AdminDashboardContent(
-                      adminEmail: user.email ?? '',
-                      adminUid: user.uid,
-                      auth: FirebaseAuth.instance,
-                      firestore: FirebaseFirestore.instance,
-                      selectedSection: _mapNavigationIndexToSectionIndex(_selectedIndex),
-                      onSectionChanged: (index) => setState(() => _selectedIndex = _mapSectionIndexToNavigationIndex(index)),
-                    ),
-                  ),
-                ],
-              ),
-              
-              // Notification Panel Overlay
-              if (_showNotificationPanel)
-                Positioned(
-                  top: 0,
-                  right: 16,
-                  child: NotificationPanel(
-                    onClose: () => setState(() => _showNotificationPanel = false),
-                  ),
-                ),
-            ],
-          ),
+            if (isMobile) {
+              return _buildMobileLayout(userData, snapshot.connectionState);
+            } else if (isTablet) {
+              return _buildTabletLayout(userData, snapshot.connectionState);
+            } else {
+              return _buildDesktopLayout(userData, snapshot.connectionState);
+            }
+          },
         );
       },
+    );
+  }
+
+  Widget _buildMobileLayout(Map<String, dynamic> userData, ConnectionState connectionState) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(_getCurrentSectionTitle()),
+        backgroundColor: Theme.of(context).colorScheme.primary,
+        foregroundColor: AdminTheme.angel,
+      ),
+      drawer: _buildMobileDrawer(),
+      body: _buildMainContent(userData, connectionState),
+    );
+  }
+
+  Widget _buildTabletLayout(Map<String, dynamic> userData, ConnectionState connectionState) {
+    return Scaffold(
+      body: Row(
+        children: [
+          // Compact Sidebar
+          Container(
+            width: 60,
+            color: Theme.of(context).colorScheme.primary,
+            child: _buildCompactSidebar(),
+          ),
+          // Main Content
+          Expanded(
+            child: _buildMainContent(userData, connectionState),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDesktopLayout(Map<String, dynamic> userData, ConnectionState connectionState) {
+    return Scaffold(
+      body: Row(
+        children: [
+          // Enhanced Sidebar
+          Container(
+            width: 220,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Theme.of(context).colorScheme.primary,
+                  Theme.of(context).colorScheme.primary.withOpacity(0.8),
+                ],
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: AdminTheme.deepTeal.withOpacity(0.1),
+                  blurRadius: 10,
+                  offset: const Offset(2, 0),
+                ),
+              ],
+            ),
+            child: _buildEnhancedSidebar(userData),
+          ),
+          // Main Content
+          Expanded(
+            child: Container(
+              color: AdminTheme.angel,
+              child: _buildMainContent(userData, connectionState),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCompactSidebar() {
+    return Column(
+      children: [
+        // Logo/Icon
+        Container(
+          padding: const EdgeInsets.all(16),
+          child: Icon(
+            Icons.admin_panel_settings,
+            color: AdminTheme.angel,
+            size: 28,
+          ),
+        ),
+        Divider(color: AdminTheme.angel.withOpacity(0.2)),
+        // Navigation Icons
+        Expanded(
+          child: ListView.builder(
+            itemCount: _categories.length,
+            itemBuilder: (context, index) {
+              final category = _categories[index];
+              return Column(
+                children: [
+                  // Category Icon
+                  Container(
+                    margin: const EdgeInsets.symmetric(vertical: 8),
+                    child: IconButton(
+                      icon: Icon(
+                        category.icon,
+                        color: AdminTheme.angel.withOpacity(0.8),
+                        size: 20,
+                      ),
+                      onPressed: () {
+                        // Show tooltip or navigate
+                      },
+                      tooltip: category.title,
+                    ),
+                  ),
+                  // Category Items (if expanded)
+                  if (index == _selectedIndex)
+                    ...category.items.asMap().entries.map((entry) {
+                      final itemIndex = entry.key;
+                      final item = entry.value;
+                      return Container(
+                        margin: const EdgeInsets.only(left: 8, right: 8, bottom: 4),
+                        child: Icon(
+                          Icons.circle,
+                          size: 6,
+                          color: AdminTheme.angel.withOpacity(0.6),
+                        ),
+                      );
+                    }).toList(),
+                ],
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildEnhancedSidebar(Map<String, dynamic> userData) {
+    return Column(
+      children: [
+        // Admin Profile Header
+        Container(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            children: [
+              CircleAvatar(
+                radius: 35,
+                backgroundColor: AdminTheme.angel.withOpacity(0.2),
+                child: Icon(Icons.admin_panel_settings, size: 35, color: AdminTheme.angel),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Admin Dashboard',
+                style: TextStyle(
+                  color: AdminTheme.angel,
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 2),
+              Text(
+                'Management Panel',
+                style: TextStyle(
+                  color: AdminTheme.angel.withOpacity(0.8),
+                  fontSize: 11,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 6),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: AdminTheme.success,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  'Active',
+                  style: TextStyle(
+                    color: AdminTheme.angel,
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        Divider(color: AdminTheme.angel.withOpacity(0.24)),
+        // Navigation Items
+        Expanded(
+          child: _buildNavigationList(),
+        ),
+        // Admin Profile Footer
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: AdminTheme.angel.withOpacity(0.05),
+            border: Border(
+              top: BorderSide(
+                color: AdminTheme.angel.withOpacity(0.2),
+                width: 1,
+              ),
+            ),
+          ),
+          child: Row(
+            children: [
+              CircleAvatar(
+                radius: 16,
+                backgroundColor: AdminTheme.angel.withOpacity(0.2),
+                child: Text(
+                  (userData['email'] ?? 'A')[0].toUpperCase(),
+                  style: TextStyle(
+                    color: AdminTheme.angel,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      userData['name'] ?? userData['email']?.split('@')[0] ?? 'Admin',
+                      style: TextStyle(
+                        color: AdminTheme.angel,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 12,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    Text(
+                      'Administrator',
+                      style: TextStyle(
+                        color: AdminTheme.angel.withOpacity(0.7),
+                        fontSize: 10,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              PopupMenuButton<String>(
+                icon: Icon(
+                  Icons.more_vert,
+                  color: AdminTheme.angel.withOpacity(0.8),
+                ),
+                itemBuilder: (context) => [
+                  const PopupMenuItem(
+                    value: 'profile',
+                    child: ListTile(
+                      leading: Icon(Icons.person_outline),
+                      title: Text('Profile Settings'),
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ),
+                  const PopupMenuItem(
+                    value: 'logout',
+                    child: ListTile(
+                      leading: Icon(Icons.logout),
+                      title: Text('Logout'),
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ),
+                ],
+                onSelected: (value) async {
+                  if (value == 'logout') {
+                    await FirebaseAuth.instance.signOut();
+                  }
+                },
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  String _getCurrentSectionTitle() {
+    if (_selectedIndex < _categories.length) {
+      final category = _categories[_selectedIndex];
+      if (_selectedIndex < category.items.length) {
+        return category.items[_selectedIndex];
+      }
+      return category.title;
+    }
+    return 'Admin Dashboard';
+  }
+
+  Widget _buildMainContent(Map<String, dynamic> userData, ConnectionState connectionState) {
+    // Show loading state only within the content area, not masking the whole screen
+    if (connectionState == ConnectionState.waiting) {
+      return _buildContentLoadingState();
+    }
+
+    // Content is loaded, show the actual dashboard
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return _buildErrorScreen('User not authenticated');
+    
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(24),
+      child: AdminDashboardContent(
+        adminEmail: user.email ?? '',
+        adminUid: user.uid,
+        auth: FirebaseAuth.instance,
+        firestore: FirebaseFirestore.instance,
+        selectedSection: _mapNavigationIndexToSectionIndex(_selectedIndex),
+        onSectionChanged: (index) => setState(() => _selectedIndex = _mapSectionIndexToNavigationIndex(index)),
+      ),
+    );
+  }
+
+  Widget _buildContentLoadingState() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header with skeleton
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Container(
+                width: 300,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(24),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 32),
+          
+          // Stats grid skeleton
+          GridView.count(
+            shrinkWrap: true,
+            physics: NeverScrollableScrollPhysics(),
+            crossAxisCount: 5,
+            crossAxisSpacing: 16,
+            childAspectRatio: 2.5,
+            children: List.generate(5, (index) => Container(
+              decoration: BoxDecoration(
+                color: Colors.grey[300],
+                borderRadius: BorderRadius.circular(12),
+              ),
+            )),
+          ),
+          const SizedBox(height: 32),
+          
+          // Content skeleton
+          Container(
+            width: double.infinity,
+            height: 400,
+            decoration: BoxDecoration(
+              color: Colors.grey[300],
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -560,28 +624,108 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
   Widget _buildMobileDrawer() {
     return Drawer(
+      child: Container(
+        color: Theme.of(context).colorScheme.primary,
+        child: SafeArea(
+          child: Column(
+            children: [
+              // Admin Profile Header
+              Container(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  children: [
+                    CircleAvatar(
+                      radius: 40,
+                      backgroundColor: AdminTheme.angel.withOpacity(0.2),
+                      child: Icon(Icons.admin_panel_settings, size: 40, color: AdminTheme.angel),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      'Admin Dashboard',
+                      style: TextStyle(
+                        color: AdminTheme.angel,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Management Panel',
+                      style: TextStyle(
+                        color: AdminTheme.angel.withOpacity(0.8),
+                        fontSize: 14,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
+              ),
+              Divider(color: AdminTheme.angel.withOpacity(0.24)),
+              // Navigation Items
+              Expanded(
+                child: _buildNavigationList(),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDesktopSidebar(Map<String, dynamic> userData) {
+    return Container(
+      width: 220,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Theme.of(context).colorScheme.primary,
+            Theme.of(context).colorScheme.primary.withOpacity(0.9),
+            Theme.of(context).colorScheme.primary.withOpacity(0.8),
+          ],
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 8,
+            offset: const Offset(2, 0),
+          ),
+        ],
+      ),
       child: Column(
         children: [
-          DrawerHeader(
+          // Sidebar Header
+          Container(
+            padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  Theme.of(context).primaryColor,
-                  Theme.of(context).primaryColor.withOpacity(0.8),
-                ],
+              color: Colors.white.withOpacity(0.1),
+              border: Border(
+                bottom: BorderSide(
+                  color: Colors.white.withOpacity(0.2),
+                  width: 1,
+                ),
               ),
             ),
             child: Row(
               children: [
                 Container(
-                  width: 48,
-                  height: 48,
+                  width: 40,
+                  height: 40,
                   decoration: BoxDecoration(
                     color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(10),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.1),
+                        blurRadius: 4,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
                   ),
                   child: Padding(
-                    padding: const EdgeInsets.all(8),
+                    padding: const EdgeInsets.all(6),
                     child: Image.asset(
                       'assets/logo.png',
                       fit: BoxFit.contain,
@@ -589,30 +733,130 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                   ),
                 ),
                 const SizedBox(width: 12),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(
-                      'Admin Dashboard',
-                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Admin Dashboard',
+                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
                       ),
-                    ),
-                    Text(
-                      'Management Panel',
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: Colors.white.withOpacity(0.8),
+                      Text(
+                        'Management Panel',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Colors.white.withOpacity(0.8),
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ],
             ),
           ),
-          Expanded(child: _buildNavigationList()),
+          
+          // Navigation Categories
+          Expanded(
+            child: _buildNavigationList(),
+          ),
+          
+          // Sidebar Footer
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.05),
+              border: Border(
+                top: BorderSide(
+                  color: Colors.white.withOpacity(0.2),
+                  width: 1,
+                ),
+              ),
+            ),
+            child: Row(
+              children: [
+                CircleAvatar(
+                  radius: 16,
+                  backgroundColor: Colors.white.withOpacity(0.2),
+                  child: Text(
+                    (userData?['email'] ?? 'A')[0].toUpperCase(),
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        userData?['name'] ?? userData?['email']?.split('@')[0] ?? 'Admin',
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      Text(
+                        'Administrator',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Colors.white.withOpacity(0.7),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                PopupMenuButton<String>(
+                  icon: Icon(
+                    Icons.more_vert,
+                    color: Colors.white.withOpacity(0.8),
+                  ),
+                  itemBuilder: (context) => [
+                    const PopupMenuItem(
+                      value: 'profile',
+                      child: ListTile(
+                        leading: Icon(Icons.person_outline),
+                        title: Text('Profile Settings'),
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                    ),
+                    const PopupMenuItem(
+                      value: 'logout',
+                      child: ListTile(
+                        leading: Icon(Icons.logout),
+                        title: Text('Logout'),
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                    ),
+                  ],
+                  onSelected: (value) async {
+                    if (value == 'logout') {
+                      await FirebaseAuth.instance.signOut();
+                    }
+                  },
+                ),
+              ],
+            ),
+          ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildNotificationPanel() {
+    return Positioned(
+      top: 0,
+      right: 16,
+      child: NotificationPanel(
+        onClose: () => setState(() => _showNotificationPanel = false),
       ),
     );
   }
@@ -670,81 +914,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     );
   }
 
-  int _mapNavigationIndexToSectionIndex(int navigationIndex) {
-    // Map navigation indices to section indices
-    // This maps the sequential navigation indices to the correct section indices
-    switch (navigationIndex) {
-      case 0: return 0;   // Overview
-      case 1: return 1;   // Quick Actions
-      case 2: return 2;   // Recent Activity
-      case 3: return 3;   // Users
-      case 4: return 4;   // Sellers
-      case 5: return 5;   // Orders
-      case 6: return 6;   // Categories
-      case 7: return 7;   // Statistics
-      case 8: return 8;   // Reports
-      case 9: return 9;   // Advanced Analytics
-      case 10: return 10; // Moderation
-      case 11: return 11; // Reviews
-      case 12: return 12; // Returns/Refunds
-      case 13: return 13; // Storage Stats
-      case 14: return 14; // Orphaned Images
-      case 15: return 15; // Cleanup Tools
-      case 16: return 16; // Platform Settings
-      case 17: return 17; // Roles/Permissions
-      case 18: return 18; // Audit Logs
-      case 19: return 19; // Payment Settings
-      case 20: return 20; // Escrow Management
-      case 21: return 21; // Returns Management
-      case 22: return 22; // Developer Tools
-      case 23: return 23; // Data Export
-      case 24: return 24; // Order Migration
-      case 25: return 25; // Rural Driver Management
-      case 26: return 26; // Urban Delivery Management
-      case 27: return 27; // Driver Management
-      case 28: return 30; // Risk Review
-      case 29: return 31; // KYC Review
-      default: return 0;
-    }
-  }
-
-  int _mapSectionIndexToNavigationIndex(int sectionIndex) {
-    // Map section indices back to navigation indices
-    switch (sectionIndex) {
-      case 0: return 0;   // Overview
-      case 1: return 1;   // Quick Actions
-      case 2: return 2;   // Recent Activity
-      case 3: return 3;   // Users
-      case 4: return 4;   // Sellers
-      case 5: return 5;   // Orders
-      case 6: return 6;   // Categories
-      case 7: return 7;   // Statistics
-      case 8: return 8;   // Reports
-      case 9: return 9;   // Advanced Analytics
-      case 10: return 10; // Moderation
-      case 11: return 11; // Reviews
-      case 12: return 12; // Returns/Refunds
-      case 13: return 13; // Storage Stats
-      case 14: return 14; // Orphaned Images
-      case 15: return 15; // Cleanup Tools
-      case 16: return 16; // Platform Settings
-      case 17: return 17; // Roles/Permissions
-      case 18: return 18; // Audit Logs
-      case 19: return 19; // Payment Settings
-      case 20: return 20; // Escrow Management
-      case 21: return 21; // Returns Management
-      case 22: return 22; // Developer Tools
-      case 23: return 23; // Data Export
-      case 24: return 24; // Order Migration
-      case 25: return 25; // Rural Driver Management
-      case 26: return 26; // Urban Delivery Management
-      case 27: return 27; // Driver Management
-      case 30: return 28; // Risk Review
-      case 31: return 29; // KYC Review
-      default: return 0;
-    }
-  }
-
   Widget _buildNavigationItem({
     required String title,
     required int index,
@@ -775,6 +944,150 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       ),
     );
   }
+
+  Widget _buildErrorScreen(String error) {
+    return Scaffold(
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.error_outline, size: 64, color: AdminTheme.error),
+            const SizedBox(height: 16),
+            Text(
+              'Failed to load dashboard',
+              style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              error,
+              style: TextStyle(color: AdminTheme.mediumGrey),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 24),
+            ElevatedButton(
+              onPressed: () => setState(() {}),
+              child: Text('Retry'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Add the missing _getUserData method
+  Future<Map<String, dynamic>> _getUserData() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      throw Exception('User not authenticated');
+    }
+
+    final userDoc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+    if (!userDoc.exists || userDoc.data() == null) {
+      throw Exception('User data not found');
+    }
+
+    final userData = userDoc.data() as Map<String, dynamic>;
+    final role = userData['role'];
+
+    if (role != 'admin') {
+      throw Exception('Admin access required');
+    }
+
+    return userData;
+  }
+
+  // Add the missing _mapNavigationIndexToSectionIndex method
+  int _mapNavigationIndexToSectionIndex(int navigationIndex) {
+    // Map navigation index to section index
+    switch (navigationIndex) {
+      case 0: return 0; // Overview
+      case 1: return 1; // Quick Actions
+      case 2: return 2; // Recent Activity
+      case 3: return 3; // Users
+      case 4: return 4; // Sellers
+      case 5: return 5; // Orders
+      case 6: return 6; // Categories
+      case 7: return 7; // Statistics
+      case 8: return 8; // Reports
+      default: return 0;
+    }
+  }
+
+  // Add the missing _mapSectionIndexToNavigationIndex method
+  int _mapSectionIndexToNavigationIndex(int sectionIndex) {
+    // Map section index to navigation index
+    switch (sectionIndex) {
+      case 0: return 0; // Overview
+      case 1: return 1; // Quick Actions
+      case 2: return 2; // Recent Activity
+      case 3: return 3; // Users
+      case 4: return 4; // Sellers
+      case 5: return 5; // Orders
+      case 6: return 6; // Categories
+      case 7: return 7; // Statistics
+      case 8: return 8; // Reports
+      default: return 0;
+    }
+  }
+  
+  // Navigation categories for better organization
+  final List<NavigationCategory> _categories = [
+    NavigationCategory(
+      title: 'Overview',
+      icon: Icons.dashboard,
+      items: ['Overview', 'Quick Actions', 'Recent Activity'],
+    ),
+    NavigationCategory(
+      title: 'Management',
+      icon: Icons.manage_accounts,
+      items: ['Users', 'Sellers', 'Orders', 'Categories'],
+    ),
+    NavigationCategory(
+      title: 'Analytics',
+      icon: Icons.analytics,
+      items: ['Statistics', 'Reports', 'Advanced Analytics'],
+    ),
+    NavigationCategory(
+      title: 'Operations',
+      icon: Icons.shield,
+      items: ['Moderation', 'Reviews', 'Returns/Refunds'],
+    ),
+    NavigationCategory(
+      title: 'Image Management',
+      icon: Icons.image,
+      items: ['Storage Stats', 'Orphaned Images', 'Cleanup Tools'],
+    ),
+    NavigationCategory(
+      title: 'Settings',
+      icon: Icons.settings,
+      items: ['Platform Settings', 'Roles/Permissions', 'Audit Logs'],
+    ),
+    NavigationCategory(
+      title: 'Financial',
+      icon: Icons.account_balance,
+      items: ['Payment Settings', 'Escrow Management', 'Returns Management'],
+    ),
+    NavigationCategory(
+      title: 'Developer',
+      icon: Icons.code,
+      items: ['Developer Tools', 'Data Export', 'Order Migration'],
+    ),
+    NavigationCategory(
+      title: 'Delivery',
+      icon: Icons.delivery_dining,
+      items: ['Rural Driver Management', 'Urban Delivery Management'],
+    ),
+    NavigationCategory(
+      title: 'Driver Management',
+      icon: Icons.person,
+      items: ['Driver Management'],
+    ),
+    NavigationCategory(
+      title: 'Compliance',
+      icon: Icons.verified_user,
+      items: ['Risk Review', 'KYC Review'],
+    ),
+  ];
 }
 
 class NavigationCategory {
