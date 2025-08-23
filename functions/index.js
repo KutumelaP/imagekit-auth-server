@@ -696,7 +696,7 @@ async function sendWithRetry(message, maxAttempts = 3) {
   }
 }
 
-exports.sendNotification = functions.runWith({ minInstances: 1, timeoutSeconds: 60, memory: '256MB' }).firestore
+exports.sendNotification = functions.runWith({ timeoutSeconds: 60, memory: '256MB' }).firestore
   .document('push_notifications/{notificationId}')
   .onCreate(async (snap, context) => {
     const notification = snap.data();
@@ -767,7 +767,7 @@ exports.sendNotification = functions.runWith({ minInstances: 1, timeoutSeconds: 
     }
   });
 
-exports.onNewMessage = functions.runWith({ minInstances: 1, timeoutSeconds: 60, memory: '256MB' }).firestore
+exports.onNewMessage = functions.runWith({ timeoutSeconds: 60, memory: '256MB' }).firestore
   .document('chats/{chatId}/messages/{messageId}')
   .onCreate(async (snap, context) => {
     const message = snap.data();
@@ -960,3 +960,75 @@ exports.autoCancelStaleEftOrders = functions.pubsub.schedule('every 24 hours').o
     return null;
   }
 });
+
+// Notify seller via branded email when admin approves their store
+exports.onSellerApproved = functions.runWith({ timeoutSeconds: 60, memory: '256MB' }).firestore
+  .document('users/{userId}')
+  .onUpdate(async (change, context) => {
+    try {
+      const before = change.before.data() || {};
+      const after = change.after.data() || {};
+
+      // Only proceed for sellers whose status changed to approved
+      const role = String(after.role || '').toLowerCase();
+      const prevStatus = String(before.status || '').toLowerCase();
+      const currStatus = String(after.status || '').toLowerCase();
+      if (role !== 'seller') return null;
+      if (prevStatus === 'approved' || currStatus !== 'approved') return null;
+
+      // Idempotency: if we've already marked as notified, skip
+      if (after.approvalEmailSentAt) return null;
+
+      const email = (after.email || '').toString().trim();
+      if (!email || !email.includes('@')) {
+        console.log('[seller_approved_email] No valid email for user', context.params.userId);
+        return null;
+      }
+
+      const transporter = await ensureTransporter();
+      if (!transporter) {
+        console.warn('[seller_approved_email] Mail transporter not configured');
+        return null;
+      }
+
+      const base = process.env.PUBLIC_BASE_URL || 'https://marketplace-8d6bd.web.app';
+      const storeUrl = `${base}/store/${context.params.userId}`;
+      const subject = 'Your store has been approved';
+      const html = renderBrandedEmail({
+        title: subject,
+        heading: 'Store approved',
+        intro: 'Congratulations! Your seller account and store have been approved. You can now start listing products and receiving orders.',
+        bodyHtml: `
+          <div style="margin: 16px 0; color:#111; font-size:14px; line-height:1.6">
+            <p style="margin:0 0 8px 0">Here are a few suggestions to get started:</p>
+            <ul style="margin:0 0 8px 20px; padding:0">
+              <li>Add clear product photos and accurate pricing</li>
+              <li>Set delivery or pickup options that work for you</li>
+              <li>Respond quickly to customer chats and orders</li>
+            </ul>
+          </div>
+        `,
+        ctaText: 'Open your store',
+        ctaUrl: storeUrl,
+        footer: 'If you have any questions, simply reply to this email and we’ll help you get set up.'
+      });
+
+      const from = process.env.MAIL_FROM || mailUser;
+      const info = await transporter.sendMail({
+        from,
+        to: email,
+        subject,
+        html,
+        headers: { 'List-Unsubscribe': `<mailto:${from}>` },
+      });
+      const preview = nodemailer.getTestMessageUrl(info) || null;
+      if (preview) console.log('[mail][preview][seller_approved]', preview);
+
+      // Mark as notified
+      await change.after.ref.set({ approvalEmailSentAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
+      return null;
+    } catch (e) {
+      console.error('onSellerApproved error', e);
+      return null;
+    }
+  });

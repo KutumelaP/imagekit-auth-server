@@ -1,6 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import '../services/image_cleanup_service.dart';
 import '../theme/admin_theme.dart';
 
@@ -122,9 +120,9 @@ class _ImageManagementSectionState extends State<ImageManagementSection> {
   
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AdminTheme.whisper,
-      body: SingleChildScrollView(
+    return Container(
+      color: AdminTheme.whisper,
+      child: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,

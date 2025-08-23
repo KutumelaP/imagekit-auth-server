@@ -17,7 +17,6 @@ import 'reviews_section.dart';
 import 'categories_section.dart';
 import 'audit_logs_section.dart';
 import 'developer_tools_section.dart';
-import 'summary_card.dart';
 import '../services/dashboard_cache_service.dart';
 import 'skeleton_loading.dart';
 import 'advanced_analytics_dashboard.dart';
@@ -61,6 +60,18 @@ class AdminDashboardContent extends StatefulWidget {
 
 class _AdminDashboardContentState extends State<AdminDashboardContent> {
   final DashboardCacheService _cacheService = DashboardCacheService();
+  final PageStorageBucket _pageStorageBucket = PageStorageBucket();
+  final Map<int, Widget> _cachedSectionWidgets = {};
+
+  Widget _getCachedSection(int index) {
+    if (_cachedSectionWidgets[index] == null) {
+      _cachedSectionWidgets[index] = KeyedSubtree(
+        key: PageStorageKey('section_' + index.toString()),
+        child: _sectionWidget(index),
+      );
+    }
+    return _cachedSectionWidgets[index]!;
+  }
   
   final List<String> _sections = [
     'Overview',
@@ -119,22 +130,7 @@ class _AdminDashboardContentState extends State<AdminDashboardContent> {
     widget.onSectionChanged(index);
   }
 
-  Future<int> _getUserCount() async {
-    final users = await widget.firestore.collection('users').get();
-    return users.docs.length;
-  }
-  Future<int> _getSellerCount() async {
-    final sellers = await widget.firestore.collection('users').where('role', isEqualTo: 'seller').get();
-    return sellers.docs.length;
-  }
-  Future<double> _getTotalPlatformFees() async {
-    final orders = await widget.firestore.collection('orders').get();
-    double total = 0;
-    for (var doc in orders.docs) {
-      total += (doc.data()['platformFee'] ?? 0.0) as double;
-    }
-    return total;
-  }
+  // Summary count helpers no longer used in IndexedStack approach
 
   @override
   Widget build(BuildContext context) {
@@ -214,19 +210,17 @@ class _AdminDashboardContentState extends State<AdminDashboardContent> {
             ),
             body: Padding(
               padding: EdgeInsets.all(contentPadding),
-              child: AnimatedSwitcher(
-                duration: Duration(milliseconds: 350),
-                transitionBuilder: (child, animation) {
-                  final fade = FadeTransition(opacity: animation, child: child);
-                  final slide = SlideTransition(
-                    position: Tween<Offset>(begin: Offset(0.05, 0), end: Offset.zero).animate(animation),
-                    child: fade,
-                  );
-                  return slide;
-                },
-                child: Container(
-                  key: ValueKey(widget.selectedSection),
-                                  child: _sectionWidget(widget.selectedSection),
+              child: PageStorage(
+                bucket: _pageStorageBucket,
+                child: IndexedStack(
+                  index: widget.selectedSection,
+                  children: List.generate(_sections.length, (i) {
+                    final isActive = i == widget.selectedSection;
+                    if (isActive || _cachedSectionWidgets.containsKey(i)) {
+                      return _getCachedSection(i);
+                    }
+                    return const SizedBox.shrink();
+                  }),
                 ),
               ),
             ),
@@ -334,63 +328,15 @@ class _AdminDashboardContentState extends State<AdminDashboardContent> {
                 Expanded(
                   child: Padding(
                     padding: EdgeInsets.all(contentPadding),
-                    child: AnimatedSwitcher(
-                      duration: Duration(milliseconds: 350),
-                      transitionBuilder: (child, animation) {
-                        final fade = FadeTransition(opacity: animation, child: child);
-                        final slide = SlideTransition(
-                          position: Tween<Offset>(begin: Offset(0.05, 0), end: Offset.zero).animate(animation),
-                          child: fade,
-                        );
-                        return slide;
-                      },
-                      child: Container(
-                        key: ValueKey(widget.selectedSection),
-                        child: allowedSections.contains(widget.selectedSection)
-                          ? SingleChildScrollView(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  SingleChildScrollView(
-                                    scrollDirection: Axis.horizontal,
-                                    child: Row(
-                                      mainAxisAlignment: MainAxisAlignment.start,
-                                      children: [
-                                        FutureBuilder<int>(
-                                          future: _getUserCount(),
-                                          builder: (context, snapshot) => SummaryCard(
-                                            label: 'Total Users',
-                                            value: snapshot.hasData ? snapshot.data.toString() : '...',
-                                            icon: Icons.people,
-                                          ),
-                                        ),
-                                        SizedBox(width: 24),
-                                        FutureBuilder<int>(
-                                          future: _getSellerCount(),
-                                          builder: (context, snapshot) => SummaryCard(
-                                            label: 'Total Sellers',
-                                            value: snapshot.hasData ? snapshot.data.toString() : '...',
-                                            icon: Icons.verified_user,
-                                          ),
-                                        ),
-                                        SizedBox(width: 24),
-                                        FutureBuilder<double>(
-                                          future: _getTotalPlatformFees(),
-                                          builder: (context, snapshot) => SummaryCard(
-                                            label: 'Platform Fee Revenue',
-                                            value: snapshot.hasData ? 'R${snapshot.data!.toStringAsFixed(2)}' : '...',
-                                            icon: Icons.receipt,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  SizedBox(height: 24),
-                                                                  _sectionWidget(widget.selectedSection),
-                                ],
-                              ),
-                            )
-                          : const Center(child: Text('Access Denied')),
+                    child: PageStorage(
+                      bucket: _pageStorageBucket,
+                      child: IndexedStack(
+                        index: widget.selectedSection,
+                        children: List.generate(_sections.length, (i) {
+                          return allowedSections.contains(i)
+                            ? _getCachedSection(i)
+                            : const SizedBox.shrink();
+                        }),
                       ),
                     ),
                   ),

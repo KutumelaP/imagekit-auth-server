@@ -4,7 +4,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
 import 'simple_home_screen.dart';
 import '../services/error_handler.dart';
-import '../widgets/loading_widget.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:cloud_functions/cloud_functions.dart';
@@ -16,6 +15,7 @@ import '../theme/app_theme.dart';
 import '../providers/cart_provider.dart';
 import 'post_login_screen.dart';
 import '../services/notification_service.dart';
+import '../services/secure_credential_store.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({Key? key}) : super(key: key);
@@ -185,6 +185,15 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
           email: _emailController.text.trim(),
           password: _passwordController.text.trim(),
         );
+        // Save credentials for quick login if enabled
+        try {
+          if (_quickLoginEnabled) {
+            await SecureCredentialStore.saveCredentials(
+              email: _emailController.text.trim(),
+              password: _passwordController.text.trim(),
+            );
+          }
+        } catch (_) {}
       } else {
         userCredential = await FirebaseAuth.instance.createUserWithEmailAndPassword(
           email: _emailController.text.trim(),
@@ -304,7 +313,7 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
         'action': action,
         'deviceId': deviceId,
       });
-      return result.data ?? <String, dynamic>{};
+      return result.data;
     } on FirebaseFunctionsException catch (e) {
       return {'error': e.message, 'code': e.code};
     } catch (e) {
@@ -326,9 +335,16 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Biometric check failed')));
         return;
       }
-      // If email is filled, attempt sign-in; else prompt user
-      final email = _emailController.text.trim();
-      final pass = _passwordController.text.trim();
+      // If email is filled, attempt sign-in; else try secure store
+      String email = _emailController.text.trim();
+      String pass = _passwordController.text.trim();
+      if (email.isEmpty || pass.isEmpty) {
+        final creds = await SecureCredentialStore.readCredentials();
+        if (creds != null) {
+          email = creds['email'] ?? '';
+          pass = creds['password'] ?? '';
+        }
+      }
       if (email.isEmpty || pass.isEmpty) {
         setState(() => _loading = false);
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Enter email and password once, then use Quick login.')));
@@ -391,7 +407,7 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
       if (code.length != 6) return false;
       final callableVerify = FirebaseFunctions.instance.httpsCallable('verifyEmailOtp');
       final result = await callableVerify.call<Map<String, dynamic>>({ 'code': code });
-      return (result.data?['ok'] == true);
+      return (result.data['ok'] == true);
     } catch (_) {
       return false;
     }
@@ -591,24 +607,29 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Row(
-                  children: [
-                    Switch(
-                      value: _quickLoginEnabled,
-                      onChanged: _loading ? null : (v) async {
-                        setState(() { _quickLoginEnabled = v; });
-                        try { final p = await SharedPreferences.getInstance(); await p.setBool('quick_login_biometrics', v); } catch (_) {}
-                      },
-                    ),
-                    SafeUI.safeText(
-                      'Use fingerprint/Face ID',
-                      style: TextStyle(
-                        fontSize: ResponsiveUtils.getTitleSize(context) - 4,
-                        color: AppTheme.darkGrey,
+                Expanded(
+                  child: Row(
+                    children: [
+                      Switch(
+                        value: _quickLoginEnabled,
+                        onChanged: _loading ? null : (v) async {
+                          setState(() { _quickLoginEnabled = v; });
+                          try { final p = await SharedPreferences.getInstance(); await p.setBool('quick_login_biometrics', v); } catch (_) {}
+                        },
                       ),
-                      maxLines: 1,
-                    ),
-                  ],
+                      const SizedBox(width: 8),
+                      Flexible(
+                        child: SafeUI.safeText(
+                          'Use fingerprint/Face ID',
+                          style: TextStyle(
+                            fontSize: ResponsiveUtils.getTitleSize(context) - 4,
+                            color: AppTheme.darkGrey,
+                          ),
+                          maxLines: 1,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
                 TextButton.icon(
                   onPressed: (_loading || !_quickLoginEnabled) ? null : _tryBiometricQuickLogin,

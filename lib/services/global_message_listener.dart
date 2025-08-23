@@ -261,7 +261,7 @@ class GlobalMessageListener {
 
       // Immediate TTS announce if enabled
       try {
-        await NotificationService().speakPreview('New message from $senderName. $messageText');
+        await NotificationService().speakPreview('You have a new message.');
       } catch (_) {}
 
       print('🔔 Local system notification sent to ${currentUser.uid} for chat $chatId from $senderName');

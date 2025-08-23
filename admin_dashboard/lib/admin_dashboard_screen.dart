@@ -135,6 +135,11 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       icon: Icons.person,
       items: ['Driver Management'],
     ),
+    NavigationCategory(
+      title: 'Compliance',
+      icon: Icons.verified_user,
+      items: ['Risk Review', 'KYC Review'],
+    ),
   ];
 
   @override
@@ -620,7 +625,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       itemCount: _categories.length,
       itemBuilder: (context, categoryIndex) {
         final category = _categories[categoryIndex];
-        final categoryStartIndex = itemIndex;
         
         final categoryWidget = Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -698,6 +702,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       case 25: return 25; // Rural Driver Management
       case 26: return 26; // Urban Delivery Management
       case 27: return 27; // Driver Management
+      case 28: return 30; // Risk Review
+      case 29: return 31; // KYC Review
       default: return 0;
     }
   }
@@ -733,6 +739,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       case 25: return 25; // Rural Driver Management
       case 26: return 26; // Urban Delivery Management
       case 27: return 27; // Driver Management
+      case 30: return 28; // Risk Review
+      case 31: return 29; // KYC Review
       default: return 0;
     }
   }

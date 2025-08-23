@@ -1,6 +1,17 @@
 <!DOCTYPE html>
 <html>
 <head>
+    <script>
+      // Register dev service worker stub for FCM to avoid MIME errors in debug
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', function() {
+          const swUrl = '/firebase-messaging-sw.js';
+          fetch(swUrl, { method: 'HEAD' })
+            .then(() => navigator.serviceWorker.register(swUrl))
+            .catch(() => {});
+        });
+      }
+    </script>
   <!--
     If you are serving your web app in a path other than the root, change the
     href value below to reflect the base path you are serving from.
