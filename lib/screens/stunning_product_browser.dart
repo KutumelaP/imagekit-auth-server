@@ -7,6 +7,7 @@ import '../widgets/safe_network_image.dart';
 import '../constants/app_constants.dart';
 import '../providers/cart_provider.dart';
 import 'stunning_product_detail.dart';
+import 'package:flutter/services.dart';
 
 class StunningProductBrowser extends StatefulWidget {
   final String storeId;
@@ -254,100 +255,104 @@ class _StunningProductBrowserState extends State<StunningProductBrowser>
   }
 
   Widget _buildSliverAppBar(bool isMobile) {
-    return SliverAppBar(
-      expandedHeight: isMobile ? 120 : 160,
-      floating: false,
-      pinned: true,
-      backgroundColor: AppTheme.deepTeal,
-      foregroundColor: Colors.white,
-      actions: [
-        // Cart with count
-        Consumer<CartProvider>(
-          builder: (context, cartProvider, child) {
-            final itemCount = cartProvider.itemCount;
-            return Container(
-              margin: const EdgeInsets.only(right: 8),
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Stack(
-                children: [
-                  IconButton(
-                    icon: const Icon(
-                      Icons.shopping_cart,
-                      color: Colors.white,
+    return SliverSafeArea(
+      top: true,
+      child: SliverAppBar(
+        expandedHeight: isMobile ? 120 : 160,
+        floating: false,
+        pinned: true,
+        backgroundColor: AppTheme.deepTeal,
+        foregroundColor: Colors.white,
+        systemOverlayStyle: SystemUiOverlayStyle.light,
+        actions: [
+          // Cart with count
+          Consumer<CartProvider>(
+            builder: (context, cartProvider, child) {
+              final itemCount = cartProvider.itemCount;
+              return Container(
+                margin: const EdgeInsets.only(right: 8),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Stack(
+                  children: [
+                    IconButton(
+                      icon: const Icon(
+                        Icons.shopping_cart,
+                        color: Colors.white,
+                      ),
+                      onPressed: () {
+                        Navigator.pushNamed(context, '/cart');
+                      },
                     ),
-                    onPressed: () {
-                      Navigator.pushNamed(context, '/cart');
-                    },
-                  ),
-                  if (itemCount > 0)
-                    Positioned(
-                      right: 8,
-                      top: 8,
-                      child: Container(
-                        padding: const EdgeInsets.all(2),
-                        decoration: BoxDecoration(
-                          color: AppTheme.primaryRed,
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        constraints: const BoxConstraints(
-                          minWidth: 16,
-                          minHeight: 16,
-                        ),
-                        child: Text(
-                          itemCount.toString(),
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
+                    if (itemCount > 0)
+                      Positioned(
+                        right: 8,
+                        top: 8,
+                        child: Container(
+                          padding: const EdgeInsets.all(2),
+                          decoration: BoxDecoration(
+                            color: AppTheme.primaryRed,
+                            borderRadius: BorderRadius.circular(10),
                           ),
-                          textAlign: TextAlign.center,
+                          constraints: const BoxConstraints(
+                            minWidth: 16,
+                            minHeight: 16,
+                          ),
+                          child: Text(
+                            itemCount.toString(),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
                         ),
                       ),
-                    ),
-                ],
-              ),
-            );
-          },
-        ),
-      ],
-      flexibleSpace: FlexibleSpaceBar(
-        background: Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: AppTheme.primaryGradient,
-            ),
+                  ],
+                ),
+              );
+            },
           ),
-          child: FadeTransition(
-            opacity: _fadeAnimation,
-            child: SlideTransition(
-              position: _slideAnimation,
-              child: SafeArea(
-                child: Padding(
-                  padding: EdgeInsets.all(isMobile ? 16 : 24),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      Text(
-                        widget.storeName,
-                        style: AppTheme.headlineLarge.copyWith(
-                          color: Colors.white,
-                          fontSize: isMobile ? 20 : 24,
+        ],
+        flexibleSpace: FlexibleSpaceBar(
+          background: Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: AppTheme.primaryGradient,
+              ),
+            ),
+            child: FadeTransition(
+              opacity: _fadeAnimation,
+              child: SlideTransition(
+                position: _slideAnimation,
+                child: SafeArea(
+                  child: Padding(
+                    padding: EdgeInsets.all(isMobile ? 16 : 24),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        Text(
+                          widget.storeName,
+                          style: AppTheme.headlineLarge.copyWith(
+                            color: Colors.white,
+                            fontSize: isMobile ? 20 : 24,
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        '${filteredProducts.length} products available',
-                        style: AppTheme.bodyMedium.copyWith(
-                          color: Colors.white.withOpacity(0.8),
+                        const SizedBox(height: 8),
+                        Text(
+                          '${filteredProducts.length} products available',
+                          style: AppTheme.bodyMedium.copyWith(
+                            color: Colors.white.withOpacity(0.8),
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ),

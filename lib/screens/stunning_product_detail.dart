@@ -2,12 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
+import '../providers/cart_provider.dart';
 import '../theme/app_theme.dart';
 import '../widgets/safe_network_image.dart';
-import '../widgets/home_navigation_button.dart';
-import '../constants/app_constants.dart';
-import '../providers/cart_provider.dart';
-import 'ChatScreen.dart';
+import '../widgets/bottom_action_bar.dart';
+import '../screens/CheckoutScreen.dart';
+import '../utils/responsive_utils.dart';
+import '../utils/loading_widget.dart';
+import 'package:flutter/services.dart';
 
 class StunningProductDetail extends StatefulWidget {
   final Map<String, dynamic> product;
@@ -218,17 +220,20 @@ class _StunningProductDetailState extends State<StunningProductDetail>
   }
 
   Widget _buildSliverAppBar(bool isMobile, double screenHeight) {
-    return SliverAppBar(
-      expandedHeight: isMobile ? screenHeight * 0.4 : screenHeight * 0.5,
-      floating: false,
-      pinned: true,
-      backgroundColor: AppTheme.deepTeal,
-      foregroundColor: Colors.white,
-      leading: IconButton(
-        icon: const Icon(Icons.arrow_back, color: Colors.white),
-        onPressed: () => Navigator.of(context).pop(),
-      ),
-              actions: [
+    return SliverSafeArea(
+      top: true,
+      child: SliverAppBar(
+        expandedHeight: isMobile ? screenHeight * 0.4 : screenHeight * 0.5,
+        floating: false,
+        pinned: true,
+        backgroundColor: AppTheme.deepTeal,
+        foregroundColor: Colors.white,
+        systemOverlayStyle: SystemUiOverlayStyle.light,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+        actions: [
           // Cart with count
           Consumer<CartProvider>(
             builder: (context, cartProvider, child) {
@@ -749,90 +754,10 @@ class _StunningProductDetailState extends State<StunningProductDetail>
   }
 
   Widget _buildBottomBar(bool isMobile, bool isOutOfStock) {
-    return Container(
-      padding: EdgeInsets.all(isMobile ? 16 : 20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 10,
-            offset: const Offset(0, -4),
-          ),
-        ],
-      ),
-      child: SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Purchase Buttons Row
-            Row(
-              children: [
-                if (!isOutOfStock) ...[
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: () async => await _contactSeller(),
-                      icon: const Icon(Icons.message),
-                      label: const Text('Contact Seller'),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: AppTheme.deepTeal,
-                        side: BorderSide(color: AppTheme.deepTeal, width: 2),
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                    ),
-                  ),
-                  
-                  const SizedBox(width: 12),
-                  
-                  Expanded(
-                    child: ElevatedButton.icon(
-                      onPressed: () => _buyNow(),
-                      icon: const Icon(Icons.flash_on),
-                      label: const Text('Buy Now'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppTheme.deepTeal,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                    ),
-                  ),
-                ] else ...[
-                  Expanded(
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      decoration: BoxDecoration(
-                        color: AppTheme.error.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: AppTheme.error),
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.error_outline, color: AppTheme.error),
-                          const SizedBox(width: 8),
-                          Text(
-                            'Out of Stock',
-                            style: TextStyle(
-                              color: AppTheme.error,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ],
-        ),
-      ),
+    return ProductActionBar(
+      isOutOfStock: isOutOfStock,
+      onContactSeller: () async => await _contactSeller(),
+      onBuyNow: () => _buyNow(),
     );
   }
 

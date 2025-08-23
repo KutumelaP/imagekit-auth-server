@@ -93,7 +93,7 @@ class CommunityImpactScreen extends StatelessWidget {
           SizedBox(
             height: 80,
             child: StreamBuilder<QuerySnapshot>(
-              stream: FirebaseFirestore.instance.collection('users').where('role', isEqualTo: 'seller').where('buyOneGiveOne', isEqualTo: true).snapshots(),
+              stream: FirebaseFirestore.instance.collection('users').where('role', isEqualTo: 'seller').where('status', isEqualTo: 'approved').where('buyOneGiveOne', isEqualTo: true).snapshots(),
               builder: (context, snapshot) {
                 if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
                 final sellers = snapshot.data!.docs;

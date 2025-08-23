@@ -10,6 +10,7 @@ import 'dart:ui' show ImageByteFormat;
 import 'dart:async';
 import '../theme/app_theme.dart';
 import '../widgets/safe_network_image.dart';
+import '../widgets/bottom_action_bar.dart';
 import 'store_reviews_page.dart';
 // Removed zoom view import
 import 'package:url_launcher/url_launcher.dart';
@@ -1348,59 +1349,28 @@ class _SimpleStoreProfileScreenState extends State<SimpleStoreProfileScreen>
 
   // Bottom action bar (original simple buttons)
   Widget _buildStickyBottomBar() {
-    return SafeArea(
-      top: false,
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
-        decoration: BoxDecoration(
-          color: Colors.white,
-                  boxShadow: [
-                    BoxShadow(
-              color: Colors.black.withOpacity(0.06),
-              blurRadius: 10,
-              offset: const Offset(0, -4),
-            ),
-          ],
-          border: Border(
-            top: BorderSide(color: AppTheme.deepTeal.withOpacity(0.08), width: 1),
-          ),
-        ),
-        child: Row(
-          children: [
-            Expanded(
-              child: SizedBox(
-                height: 44,
-                child: OutlinedButton.icon(
-                  onPressed: _handleChat,
-                  icon: const Icon(Icons.chat_bubble_outline, size: 18),
-                  label: const Text('Chat'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: AppTheme.deepTeal,
-                    side: BorderSide(color: AppTheme.deepTeal.withOpacity(0.3)),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: SizedBox(
-                height: 44,
-                child: ElevatedButton.icon(
-                  onPressed: _handleShop,
-                  icon: const Icon(Icons.storefront, size: 18),
-                  label: const Text('Shop'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppTheme.deepTeal,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
+    return BottomActionBar(
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 24),
+      border: Border(
+        top: BorderSide(color: AppTheme.deepTeal.withOpacity(0.08), width: 1),
       ),
+      children: [
+        ActionButton(
+          onPressed: _handleChat,
+          icon: const Icon(Icons.chat_bubble_outline, size: 18),
+          label: 'Chat',
+          isPrimary: false,
+          height: 44,
+        ),
+        const SizedBox(width: 12),
+        ActionButton(
+          onPressed: _handleShop,
+          icon: const Icon(Icons.storefront, size: 18),
+          label: 'Shop',
+          isPrimary: true,
+          height: 44,
+        ),
+      ],
     );
   }
 

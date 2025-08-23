@@ -23,6 +23,7 @@ import '../services/global_message_listener.dart';
 import '../widgets/notification_badge.dart';
 import '../widgets/chat_badge.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:flutter/services.dart'; // Added import for SystemUiOverlayStyle
 
 class SimpleHomeScreen extends StatefulWidget {
   const SimpleHomeScreen({super.key});
@@ -572,11 +573,15 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
   }
 
   Widget _buildStunningAppBar() {
-    return SliverAppBar(
-      pinned: true,
-      backgroundColor: AppTheme.deepTeal,
-      automaticallyImplyLeading: false,
-      title: _buildSimpleHeader(),
+    return SliverSafeArea(
+      top: true,
+      child: SliverAppBar(
+        pinned: true,
+        backgroundColor: AppTheme.deepTeal,
+        automaticallyImplyLeading: false,
+        systemOverlayStyle: SystemUiOverlayStyle.light,
+        title: _buildSimpleHeader(),
+      ),
     );
   }
 

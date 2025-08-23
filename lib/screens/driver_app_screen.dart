@@ -5,6 +5,7 @@ import 'package:geolocator/geolocator.dart';
 import 'dart:async';
 import '../services/delivery_fulfillment_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/bottom_action_bar.dart';
 
 class DriverAppScreen extends StatefulWidget {
   const DriverAppScreen({Key? key}) : super(key: key);
@@ -540,30 +541,25 @@ class _DriverAppScreenState extends State<DriverAppScreen> {
   }
 
   Widget _buildBottomNavigation() {
-    return BottomAppBar(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceAround,
-          children: [
-            IconButton(
-              onPressed: _showEarningsDialog,
-              icon: const Icon(Icons.account_balance_wallet),
-              tooltip: 'Earnings',
-            ),
-            IconButton(
-              onPressed: _showProfileDialog,
-              icon: const Icon(Icons.person),
-              tooltip: 'Profile',
-            ),
-            IconButton(
-              onPressed: () => _loadPendingOrders(),
-              icon: const Icon(Icons.refresh),
-              tooltip: 'Refresh',
-            ),
-          ],
+    return BottomActionBar(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      children: [
+        IconButton(
+          onPressed: _showEarningsDialog,
+          icon: const Icon(Icons.account_balance_wallet),
+          tooltip: 'Earnings',
         ),
-      ),
+        IconButton(
+          onPressed: _showProfileDialog,
+          icon: const Icon(Icons.person),
+          tooltip: 'Profile',
+        ),
+        IconButton(
+          onPressed: () => _loadPendingOrders(),
+          icon: const Icon(Icons.refresh),
+          tooltip: 'Refresh',
+        ),
+      ],
     );
   }
 

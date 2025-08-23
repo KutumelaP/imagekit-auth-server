@@ -7,6 +7,8 @@ import '../providers/cart_provider.dart';
 import '../theme/app_theme.dart';
 import '../widgets/safe_network_image.dart';
 import '../widgets/home_navigation_button.dart';
+import '../widgets/bottom_action_bar.dart';
+import 'package:flutter/services.dart';
 
 class CartScreen extends StatefulWidget {
   const CartScreen({super.key});
@@ -27,6 +29,7 @@ class _CartScreenState extends State<CartScreen> {
         backgroundColor: AppTheme.deepTeal,
         foregroundColor: AppTheme.angel,
         elevation: 0,
+        systemOverlayStyle: SystemUiOverlayStyle.light,
         actions: [
           HomeNavigationButton(
             backgroundColor: AppTheme.deepTeal,
@@ -177,44 +180,40 @@ class _CartScreenState extends State<CartScreen> {
                   },
                 ),
               ),
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  border: Border(top: BorderSide(color: AppTheme.cloud.withOpacity(0.3))),
-                  color: AppTheme.angel,
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      'Total: R${cartProvider.totalPrice.toStringAsFixed(2)}',
-                        style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    ElevatedButton(
-                      onPressed: cartItems.isNotEmpty ? () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => CheckoutScreen(totalPrice: cartProvider.totalPrice),
+              BottomActionBar(
+                children: [
+                  Expanded(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Total: R${cartProvider.totalPrice.toStringAsFixed(2)}',
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: AppTheme.deepTeal,
                           ),
-                        );
-                      } : null,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppTheme.deepTeal,
-                        foregroundColor: AppTheme.angel,
-                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
                         ),
-                      ),
-                      child: const Text('Checkout'),
+                      ],
                     ),
-                  ],
-                ),
-              )
+                  ),
+                  ActionButton(
+                    onPressed: cartItems.isNotEmpty ? () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => CheckoutScreen(totalPrice: cartProvider.totalPrice),
+                        ),
+                      );
+                    } : null,
+                    icon: const Icon(Icons.shopping_cart_checkout),
+                    label: 'Checkout',
+                    isPrimary: true,
+                    height: 50,
+                  ),
+                ],
+              ),
             ],
           );
         },
