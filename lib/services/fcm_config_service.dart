@@ -6,7 +6,10 @@ import 'dart:convert';
 import '../firebase_options.dart';
 import 'awesome_notification_service.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:marketplace_app/utils/web_env.dart';
 import 'package:http/http.dart' as http;
+import 'package:marketplace_app/utils/web_js_stub.dart'
+    if (dart.library.html) 'package:marketplace_app/utils/web_js_real.dart' as js;
 
 class FCMConfigService {
   static final FCMConfigService _instance = FCMConfigService._internal();
@@ -22,6 +25,7 @@ class FCMConfigService {
   String? _appId;
   // String? _apiKey; // reserved for future use
   String? _serverKey;
+  String? _vapidKey; // Web Push VAPID public key
   
   // FCM token
   String? _fcmToken;
@@ -41,11 +45,15 @@ class FCMConfigService {
       // Validate configuration
       await _validateConfiguration();
       
-      // Request permissions
-      await _requestPermissions();
-      
-      // Get FCM token
-      await _getFCMToken();
+      // On web, gate FCM permission/token to supported environments only
+      if (WebEnv.isWebPushSupported) {
+        // Request permissions
+        await _requestPermissions();
+        // Get FCM token
+        await _getFCMToken();
+      } else {
+        print('⚠️ Web push not supported in this environment (skipping permission/token).');
+      }
       
       // Set up message handlers
       await _setupMessageHandlers();
@@ -57,6 +65,8 @@ class FCMConfigService {
       _isConfigured = false;
     }
   }
+
+  // Old method removed; using WebEnv.isWebPushSupported
 
   /// Load configuration from firebase_options.dart and SharedPreferences
   Future<void> _loadConfiguration() async {
@@ -75,11 +85,17 @@ class FCMConfigService {
       // Load server key from SharedPreferences (if set)
       final prefs = await SharedPreferences.getInstance();
       _serverKey = prefs.getString('fcm_server_key');
+      _vapidKey = prefs.getString('fcm_vapid_key');
       
       if (_serverKey != null) {
         print('🔔 Server key loaded from SharedPreferences');
       } else {
         print('⚠️ No server key found - push notifications will use Firestore triggers');
+      }
+      if (_vapidKey != null) {
+        print('🔔 VAPID key loaded for Web Push');
+      } else {
+        print('⚠️ No VAPID key set - Web Push token retrieval may fail on some browsers');
       }
       
     } catch (e) {
@@ -133,7 +149,11 @@ class FCMConfigService {
     try {
       print('🔔 Getting FCM token...');
       
-      _fcmToken = await _firebaseMessaging.getToken();
+      if (kIsWeb && _vapidKey != null && _vapidKey!.isNotEmpty) {
+        _fcmToken = await _firebaseMessaging.getToken(vapidKey: _vapidKey);
+      } else {
+        _fcmToken = await _firebaseMessaging.getToken();
+      }
       
       if (_fcmToken != null) {
         print('✅ FCM token obtained: ${_fcmToken!.substring(0, 20)}...');
@@ -425,6 +445,20 @@ class FCMConfigService {
       print('✅ FCM server key saved');
     } catch (e) {
       print('❌ Error saving FCM server key: $e');
+    }
+  }
+
+  /// Set Web Push VAPID key (public key)
+  Future<void> setVapidKey(String vapidKey) async {
+    try {
+      _vapidKey = vapidKey;
+
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('fcm_vapid_key', vapidKey);
+
+      print('✅ VAPID key saved');
+    } catch (e) {
+      print('❌ Error saving VAPID key: $e');
     }
   }
 

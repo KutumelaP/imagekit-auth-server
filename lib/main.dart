@@ -14,7 +14,10 @@ import 'services/error_tracking_service.dart';
 import 'services/fcm_config_service.dart';
 import 'services/awesome_notification_service.dart';
 import 'services/navigation_service.dart';
-import 'screens/NotificationSettingsScreen.dart';
+import 'services/route_persistence_observer.dart';
+import 'screens/notification_settings_screen.dart';
+import 'screens/security_settings_screen.dart';
+import 'screens/KycUploadScreen.dart';
 import 'screens/ChatRoute.dart';
 import 'services/global_message_listener.dart';
 import 'widgets/in_app_notification_widget.dart';
@@ -38,7 +41,9 @@ import 'screens/MyStoresScreen.dart';
 
 import 'dart:async';
 import 'utils/safari_optimizer.dart';
+import 'utils/web_memory_guard.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'utils/web_env.dart';
 
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
@@ -52,14 +57,14 @@ void main() async {
   // Initialize Safari optimizations
   SafariOptimizer.initialize();
   
-  // Safari-specific optimizations
+  // Basic web optimizations
   if (kIsWeb) {
-    // Reduce memory pressure for Safari
-    PaintingBinding.instance.imageCache.maximumSize = 200; // Reduced from default
-    PaintingBinding.instance.imageCache.maximumSizeBytes = 25 << 20; // 25MB
-    
-    // Disable some features that cause issues in Safari
-    debugPrintRebuildDirtyWidgets = false;
+    // Basic memory management for web
+    // Lower limits to reduce iOS Safari evictions
+    PaintingBinding.instance.imageCache.maximumSize = 120;
+    PaintingBinding.instance.imageCache.maximumSizeBytes = 12 << 20; // ~12MB
+    // Initialize guard to clear caches when hidden/backgrounded
+    WebMemoryGuard().initialize();
   }
   
   // Initialize Firebase with options
@@ -81,15 +86,20 @@ void main() async {
   // Initialize Awesome Notifications for local banners (mobile)
   await AwesomeNotificationService().initialize();
   
-  // Initialize location permissions
+  // Initialize location permissions (skip on iOS Safari web to avoid reloads)
   try {
-    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    if (serviceEnabled) {
-      LocationPermission permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        print('🔍 DEBUG: Requesting location permission on app start...');
-        await Geolocator.requestPermission();
+    final skipLocationOnIOSWeb = WebEnv.isIOSWeb && !WebEnv.isStandalonePWA;
+    if (!skipLocationOnIOSWeb) {
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (serviceEnabled) {
+        LocationPermission permission = await Geolocator.checkPermission();
+        if (permission == LocationPermission.denied) {
+          print('🔍 DEBUG: Requesting location permission on app start...');
+          await Geolocator.requestPermission();
+        }
       }
+    } else {
+      print('🔍 DEBUG: Skipping location permission on iOS Safari tab');
     }
   } catch (e) {
     print('🔍 DEBUG: Error initializing location permissions: $e');
@@ -98,8 +108,8 @@ void main() async {
   // Initialize error tracking
   ErrorTrackingService.initialize();
   
-  // Initialize global message listener for notifications with reduced frequency
-  if (!kIsWeb) { // Only start on mobile to reduce Safari memory pressure
+  // Initialize global message listener for notifications
+  if (!kIsWeb) {
     await GlobalMessageListener().startListening();
   }
   
@@ -120,18 +130,28 @@ class MyApp extends StatelessWidget {
         debugShowCheckedModeBanner: false,
         theme: AppTheme.lightTheme,
           navigatorKey: NavigationService.navigatorKey,
+        navigatorObservers: [
+          _DebugNavigatorObserver(),
+          RoutePersistenceObserver(),
+        ],
         home: InAppNotificationWidget(
           child: NotificationBadge(
             child: SplashWrapper(),
           ),
         ),
         builder: (context, child) {
-          // Handle keyboard properly to prevent blank page issues
+          // Global bottom SafeArea to avoid iPhone home indicator overlap
+          final wrapped = SafeArea(
+            top: false,
+            bottom: true,
+            minimum: const EdgeInsets.only(bottom: 34),
+            child: child!,
+          );
           return MediaQuery(
             data: MediaQuery.of(context).copyWith(
               viewInsets: MediaQuery.of(context).viewInsets,
             ),
-            child: child!,
+            child: wrapped,
           );
         },
         routes: {
@@ -144,6 +164,8 @@ class MyApp extends StatelessWidget {
           '/cache-management': (context) => CacheManagementScreen(),
           '/my-products': (context) => SellerProductManagement(),
           '/notification-settings': (context) => const NotificationSettingsScreen(),
+          '/security-settings': (context) => const SecuritySettingsScreen(),
+          '/kyc': (context) => const KycUploadScreen(),
           '/my-stores': (context) => const MyStoresScreen(),
         },
         onGenerateRoute: (settings) {
@@ -161,26 +183,17 @@ class MyApp extends StatelessWidget {
           if (settings.name == '/chat') {
             final args = settings.arguments as Map<String, dynamic>?;
             final chatId = args?['chatId'] as String?;
-            if (chatId == null || chatId.isEmpty) {
-              return MaterialPageRoute(builder: (_) => const SimpleHomeScreen());
-            }
-            return MaterialPageRoute(builder: (_) => ChatRoute(chatId: chatId));
+            // Remove automatic redirect - let the ChatRoute handle missing chatId
+            return MaterialPageRoute(builder: (_) => ChatRoute(chatId: chatId ?? ''));
           }
           if (settings.name == '/seller-order-detail') {
             final args = settings.arguments as Map<String, dynamic>?;
             final orderId = args?['orderId'] as String?;
             print('🔔 Route /seller-order-detail called with orderId: "$orderId" (type: ${orderId.runtimeType})');
             
-            if (orderId == null || orderId.isEmpty) {
-              print('⚠️ Invalid orderId, redirecting to home');
-              // Redirect to home if no valid orderId
-              return MaterialPageRoute(
-                builder: (context) => SimpleHomeScreen(),
-              );
-            }
-            print('✅ Valid orderId, navigating to SellerOrderDetailScreen');
+            // Remove automatic redirect - let the screen handle missing orderId
             return MaterialPageRoute(
-              builder: (context) => SellerOrderDetailScreen(orderId: orderId),
+              builder: (context) => SellerOrderDetailScreen(orderId: orderId ?? ''),
             );
           }
           if (settings.name == '/seller-orders') {
@@ -220,16 +233,41 @@ class _SplashWrapperState extends State<SplashWrapper> {
   @override
   void initState() {
     super.initState();
-    // Navigate to home screen after 3 seconds
-    Future.delayed(const Duration(seconds: 3), () {
-      if (mounted) {
-        Navigator.of(context).pushReplacementNamed('/home');
-      }
+    // Navigate to last route if available, else home
+    Future.delayed(const Duration(seconds: 1), () async {
+      if (!mounted) return;
+      final last = await RoutePersistenceObserver.getLastRoute();
+      final target = (last != null && last.isNotEmpty) ? last : '/home';
+      if (!mounted) return;
+      Navigator.of(context).pushReplacementNamed(target);
     });
   }
 
   @override
   Widget build(BuildContext context) {
     return SimpleSplashScreen();
+  }
+}
+
+// Debug navigator observer to track all navigation events
+class _DebugNavigatorObserver extends NavigatorObserver {
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    print("➡️ NAVIGATION: PUSH ${route.settings.name}");
+  }
+
+  @override
+  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    print("⬅️ NAVIGATION: POP ${route.settings.name}");
+  }
+
+  @override
+  void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) {
+    print("🔄 NAVIGATION: REPLACE ${newRoute?.settings.name}");
+  }
+
+  @override
+  void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    print("🗑️ NAVIGATION: REMOVE ${route.settings.name}");
   }
 }

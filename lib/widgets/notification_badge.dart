@@ -183,9 +183,6 @@ class _NotificationBadgeState extends State<NotificationBadge> {
   }
 
   void _updateBadgeCount(String userId) {
-    // Safari optimization: check memory pressure
-    SafariOptimizer.checkMemoryPressure();
-    
     // Only update if count actually changed
     if (_unreadCount != _lastCount) {
       setState(() {

@@ -526,6 +526,9 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final media = MediaQuery.of(context);
+    final bool _keyboardOpen = media.viewInsets.bottom > 0;
+    final double _messagesBottomPadding = _keyboardOpen ? 8.0 : (90 + media.padding.bottom);
     // Check if user is authenticated
     final currentUser = FirebaseAuth.instance.currentUser;
     if (currentUser == null) {
@@ -678,6 +681,10 @@ class _ChatScreenState extends State<ChatScreen> {
                 final messages = snapshot.data?.docs ?? [];
 
                 return ListView.builder(
+                  padding: EdgeInsets.only(
+                    bottom: _messagesBottomPadding,
+                    top: 4,
+                  ),
                   controller: _scrollController,
                   itemCount: messages.length,
                   itemBuilder: (context, index) {
@@ -780,35 +787,43 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
           ),
           
-          // Message input
-          Container(
-            padding: const EdgeInsets.all(8),
-            child: Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _messageController,
-                    decoration: const InputDecoration(
-                      hintText: 'Type a message...',
-                      border: OutlineInputBorder(),
+          // Message input with SafeArea and extra bottom padding
+          SafeArea(
+            top: false,
+            minimum: const EdgeInsets.only(bottom: 16),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(8, 8, 8, 12),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _messageController,
+                      decoration: const InputDecoration(
+                        hintText: 'Type a message...',
+                        border: OutlineInputBorder(),
+                        contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                      ),
+                      maxLines: null,
+                      textCapitalization: TextCapitalization.sentences,
+                      onSubmitted: (_) => _sendMessage(),
                     ),
-                    maxLines: null,
-                    textCapitalization: TextCapitalization.sentences,
-                    onSubmitted: (_) => _sendMessage(),
                   ),
-                ),
-                const SizedBox(width: 8),
-                IconButton(
-                  onPressed: _isLoading ? null : _sendMessage,
-                  icon: _isLoading
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.send),
-                ),
-              ],
+                  const SizedBox(width: 8),
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 2),
+                    child: IconButton(
+                      onPressed: _isLoading ? null : _sendMessage,
+                      icon: _isLoading
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.send),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ],

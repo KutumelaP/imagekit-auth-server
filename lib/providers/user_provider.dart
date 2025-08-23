@@ -48,8 +48,8 @@ class UserProvider with ChangeNotifier {
         // Save FCM token for the user
         await _saveFCMToken(currentUser.uid);
         
-        // Refresh notifications when user logs in
-        await NotificationService().refreshNotifications();
+        // Temporarily disable notification refresh to prevent refresh loops
+        // await NotificationService().refreshNotifications();
       } else {
         _user = currentUser;
         _role = 'user';
@@ -69,8 +69,8 @@ class UserProvider with ChangeNotifier {
         // Save FCM token for the new user
         await _saveFCMToken(currentUser.uid);
         
-        // Refresh notifications when user logs in
-        await NotificationService().refreshNotifications();
+        // Temporarily disable notification refresh to prevent refresh loops
+        // await NotificationService().refreshNotifications();
       }
     } catch (e) {
       _setError('Failed to load user data: $e');

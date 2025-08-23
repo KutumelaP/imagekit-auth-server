@@ -1,13 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:intl/intl.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:ui';
-import 'package:fl_chart/fl_chart.dart';
-import 'dart:convert';
 // import 'package:universal_html/html.dart' as html; // Not needed for current functionality
-import '../SellerOrderDetailScreen.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter/foundation.dart';
 import 'user_management_table.dart';
 import 'seller_management_table.dart';
@@ -15,19 +10,13 @@ import 'order_management_table.dart';
 import 'moderation_center.dart';
 import 'platform_settings_section.dart';
 import '../../main.dart';
-import 'package:admin_dashboard/widgets/quick_actions_bar.dart';
 import 'package:admin_dashboard/widgets/section_header.dart';
-import 'package:admin_dashboard/widgets/dashboard_stats_grid.dart';
 
-import 'package:admin_dashboard/widgets/analytics_trends_card.dart';
-import 'package:admin_dashboard/widgets/recent_activity_feed.dart';
 import 'statistics_section.dart';
 import 'reviews_section.dart';
-import 'products_section.dart';
 import 'categories_section.dart';
 import 'audit_logs_section.dart';
 import 'developer_tools_section.dart';
-import 'advanced_analytics_section.dart';
 import 'summary_card.dart';
 import '../services/dashboard_cache_service.dart';
 import 'skeleton_loading.dart';
@@ -45,6 +34,9 @@ import 'data_export_section.dart';
 import 'roles_permissions_section.dart';
 import 'seller_delivery_management.dart';
 import 'image_management_section.dart';
+import 'paxi_pricing_management.dart';
+import 'risk_review_screen.dart';
+import 'kyc_review_list.dart';
 
 class AdminDashboardContent extends StatefulWidget {
   final String adminEmail;
@@ -100,6 +92,9 @@ class _AdminDashboardContentState extends State<AdminDashboardContent> {
     'Urban Delivery Management',
     'Driver Management',
     'Seller Delivery Management',
+    'PAXI Pricing Management',
+    'Risk Review',
+    'KYC Review',
   ];
 
   @override
@@ -471,7 +466,10 @@ class _AdminDashboardContentState extends State<AdminDashboardContent> {
       case 25: return RuralDriverManagement(); // Rural Driver Management
       case 26: return UrbanDeliveryManagement(); // Urban Delivery Management
       case 27: return DriverManagementScreen(); // Driver Management
-      case 28: return SellerDeliveryManagement(); // Seller Delivery Management
+              case 28: return SellerDeliveryManagement(); // Seller Delivery Management
+        case 29: return PaxiPricingManagement(); // PAXI Pricing Management
+        case 30: return const RiskReviewScreen(); // Risk Review
+        case 31: return const KycReviewList(); // KYC Review
       default: return const SizedBox();
     }
   }
@@ -1273,35 +1271,7 @@ class _AdminDashboardContentState extends State<AdminDashboardContent> {
   }
 }
 
-class _SidebarNavItem extends StatelessWidget {
-  final Icon icon;
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-  const _SidebarNavItem({required this.icon, required this.label, this.selected = false, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
-        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-        decoration: BoxDecoration(
-          color: selected ? Theme.of(context).colorScheme.onPrimary.withOpacity(0.13) : Colors.transparent,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Row(
-          children: [
-            icon,
-            const SizedBox(width: 14),
-            Text(label, style: Theme.of(context).textTheme.bodyLarge?.copyWith(color: Theme.of(context).colorScheme.onPrimary, fontSize: 15)),
-          ],
-        ),
-      ),
-    );
-  }
-}
+// removed unused _SidebarNavItem
 
 class _NotificationBell extends StatefulWidget {
   const _NotificationBell();
@@ -1310,7 +1280,7 @@ class _NotificationBell extends StatefulWidget {
 }
 
 class _NotificationBellState extends State<_NotificationBell> {
-  bool _dialogOpen = false;
+  // bool _dialogOpen = false; // removed unused flag
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<QuerySnapshot>(
@@ -1327,7 +1297,6 @@ class _NotificationBellState extends State<_NotificationBell> {
               icon: Icon(Icons.notifications, color: Theme.of(context).colorScheme.onPrimary, size: 28),
               tooltip: 'Notifications',
               onPressed: () {
-                setState(() => _dialogOpen = true);
                 showDialog(
                   context: context,
                   builder: (ctx) => AlertDialog(
@@ -1361,7 +1330,7 @@ class _NotificationBellState extends State<_NotificationBell> {
                     ),
                     actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: Text('Close'))],
                   ),
-                ).then((_) => setState(() => _dialogOpen = false));
+                );
               },
             ),
             if (unread > 0)

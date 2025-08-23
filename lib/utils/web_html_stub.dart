@@ -12,6 +12,8 @@ class _StubDoc {
   _StubElement? body = _StubElement();
   void addEventListener(String type, Function handler, [bool? opt]) {}
   dynamic querySelector(String selector) => null;
+  // Add missing visibilityState property
+  String get visibilityState => 'visible';
 }
 
 class _StubWindow {

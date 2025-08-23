@@ -1,16 +1,14 @@
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
-import 'product_browsing_screen.dart';
+// import 'product_browsing_screen.dart';
 import 'stunning_product_browser.dart';
 import 'ChatScreen.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:cached_network_image/cached_network_image.dart';
-import 'package:video_player/video_player.dart';
+// Unused heavy imports removed to reduce bundle size
 import 'stunning_store_cards.dart';
 import '../theme/app_theme.dart';
-import '../widgets/robust_image.dart';
+// import '../widgets/robust_image.dart';
 import '../widgets/home_navigation_button.dart';
 import 'simple_store_profile_screen.dart';
 import '../widgets/safe_network_image.dart';
@@ -25,16 +23,14 @@ class StoreSelectionScreen extends StatefulWidget {
 }
 
 class _StoreSelectionScreenState extends State<StoreSelectionScreen> {
-  bool _isAdmin = false;
+  // Minimal state to avoid unused warnings and reduce memory
+  bool _isAdmin = false; // reserved for future admin tools
   Set<String> _favoriteStoreIds = {};
   Map<String, int> _favoriteStoreCounts = {};
-  
+
   // Search and filter variables
   String _searchQuery = '';
-  List<Map<String, dynamic>> _filteredStores = [];
-  bool _isSearching = false;
   String _activeFilter = 'all'; // all, nearby, delivery, verified
-  String _sortBy = 'name'; // name, rating, distance, favorites
 
   @override
   void initState() {
@@ -69,6 +65,8 @@ class _StoreSelectionScreenState extends State<StoreSelectionScreen> {
     }
   }
 
+  // Admin-only utilities (kept for future; currently unused)
+  // ignore: unused_element
   Future<void> _deleteStore(String storeId, String storeName) async {
     final confirm = await showDialog<bool>(
       context: context,
@@ -161,10 +159,7 @@ class _StoreSelectionScreenState extends State<StoreSelectionScreen> {
     }
   }
 
-  Future<int> _fetchStoreFavoriteCount(String storeId) async {
-    final storeDoc = await FirebaseFirestore.instance.collection('users').doc(storeId).get();
-    return (storeDoc.data()?['favoriteCount'] ?? 0) as int;
-  }
+  // int _fetchStoreFavoriteCount is unused, remove heavy calls for now
 
   Future<List<Map<String, dynamic>>> _getApprovedStores() async {
     try {
@@ -187,6 +182,7 @@ class _StoreSelectionScreenState extends State<StoreSelectionScreen> {
     final userQuery = await FirebaseFirestore.instance
         .collection('users')
         .where('role', isEqualTo: 'seller')
+        .where('status', isEqualTo: 'approved')
         .get();
 
     print('🔍 DEBUG: Found ${userQuery.docs.length} sellers in database');
@@ -256,6 +252,8 @@ class _StoreSelectionScreenState extends State<StoreSelectionScreen> {
         print('🔍 DEBUG: Skipping paused store: ${userData['storeName'] ?? 'Unnamed'}');
         continue; // Hide paused stores
       }
+      
+
       
       // Get products for this store in the current category
       final productsQuery = await FirebaseFirestore.instance
@@ -373,8 +371,8 @@ class _StoreSelectionScreenState extends State<StoreSelectionScreen> {
       // This ensures all approved sellers are visible
           
       final review = await _getStoreReviewSummary(storeId);
-      final storeLat = userData['latitude'];
-      final storeLng = userData['longitude'];
+      final storeLat = _parseCoordinate(userData['latitude']);
+      final storeLng = _parseCoordinate(userData['longitude']);
       final deliveryRange = (userData['deliveryRange'] ?? 1000.0).toDouble(); // Use new deliveryRange field
       double? distance;
       bool inRange = true;
@@ -483,10 +481,23 @@ class _StoreSelectionScreenState extends State<StoreSelectionScreen> {
     }
   }
 
+  // Helper method to parse coordinates from various types
+  double? _parseCoordinate(dynamic value) {
+    if (value == null) return null;
+    if (value is double) return value;
+    if (value is int) return value.toDouble();
+    if (value is String) {
+      final parsed = double.tryParse(value);
+      return parsed;
+    }
+    return null;
+  }
+
   bool userLatLngValid(Position? userPos, dynamic storeLat, dynamic storeLng, double deliveryRange) {
     return userPos != null && storeLat != null && storeLng != null && deliveryRange > 0;
   }
 
+  // ignore: unused_element
   Future<void> _toggleFavoriteStore(String storeId, String storeName) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
@@ -601,6 +612,10 @@ class _StoreSelectionScreenState extends State<StoreSelectionScreen> {
         child: ListView.separated(
           scrollDirection: Axis.horizontal,
           itemCount: snippetImages.length,
+          addAutomaticKeepAlives: false,
+          addRepaintBoundaries: true,
+          addSemanticIndexes: false,
+          cacheExtent: 300,
           separatorBuilder: (_, __) => const SizedBox(width: 8),
           itemBuilder: (context, index) {
             final imgUrl = snippetImages[index];
@@ -1900,95 +1915,7 @@ void _navigateToStoreProfile(Map<String, dynamic> store) {
     );
   }
 
-  Widget _buildActionButtons(Map<String, dynamic> store) {
-    return Row(
-    children: [
-        // View Products Button
-        Expanded(
-          child: ElevatedButton.icon(
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => StunningProductBrowser(
-                    storeId: store['storeId'],
-                    storeName: store['storeName'] ?? 'Store',
-                  ),
-                ),
-              );
-            },
-            icon: Icon(Icons.shopping_bag_outlined, size: 18),
-            label: const Text('Products'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Theme.of(context).colorScheme.primary,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-              elevation: 2,
-            ),
-          ),
-        ),
-        
-        const SizedBox(width: 12),
-        
-        // Chat Button
-            Expanded(
-          child: OutlinedButton.icon(
-              onPressed: () {
-              if (FirebaseAuth.instance.currentUser == null) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Please login to chat with stores')),
-                );
-                return;
-              }
-              final currentUser = FirebaseAuth.instance.currentUser;
-              final chatId = '${currentUser!.uid}_${store['storeId']}';
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                  builder: (_) => ChatScreen(
-                    chatId: chatId,
-                    otherUserId: store['storeId'],
-                    otherUserName: store['storeName'] ?? 'Store',
-                  ),
-                  ),
-                );
-              },
-            icon: Icon(Icons.chat_outlined, size: 18),
-            label: const Text('Chat'),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: Theme.of(context).colorScheme.primary,
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              side: BorderSide(color: Theme.of(context).colorScheme.primary),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
-          ),
-        ),
-        
-        const SizedBox(width: 12),
-        
-        // Profile Button
-        Container(
-          decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.primary.withOpacity(0.1),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: IconButton(
-            onPressed: () => _navigateToStoreProfile(store),
-            icon: Icon(
-              Icons.info_outline,
-              color: Theme.of(context).colorScheme.primary,
-            ),
-            tooltip: 'View Store Profile',
-          ),
-        ),
-      ],
-    );
-  }
+  // _buildActionButtons() is currently unused in this screen
 
   List<Map<String, dynamic>> _filterStores(List<Map<String, dynamic>> stores) {
     List<Map<String, dynamic>> filtered = stores;
@@ -2071,7 +1998,6 @@ void _navigateToStoreProfile(Map<String, dynamic> store) {
             onChanged: (value) {
               setState(() {
                 _searchQuery = value;
-                _isSearching = value.isNotEmpty;
               });
             },
           ),
@@ -2172,6 +2098,10 @@ void _navigateToStoreProfile(Map<String, dynamic> store) {
         
         return ListView.builder(
           itemCount: filteredStores.length,
+          addAutomaticKeepAlives: false,
+          addRepaintBoundaries: true,
+          addSemanticIndexes: false,
+          cacheExtent: 800,
           itemBuilder: (context, index) {
             final store = filteredStores[index];
             return StunningStoreCard(

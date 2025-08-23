@@ -35,15 +35,15 @@ class SoundService {
   /// Initialize mobile web audio context
   void _initializeMobileWebAudio() {
     try {
-      js.context.callMethod('eval', ['''
-        (function() {
-          // Create and resume audio context for mobile web
-          if (typeof window.audioContext === 'undefined') {
-            window.audioContext = new (window.AudioContext || window.webkitAudioContext)();
-            console.log('🔊 Mobile web audio context initialized');
-          }
-          
-          // Add click listener to resume audio context (required for mobile)
+      // Create audio context using proper JavaScript interop
+      if (!js.context.hasProperty('audioContext')) {
+        js.context.callMethod('eval', ['window.audioContext = new (window.AudioContext || window.webkitAudioContext)()']);
+        print('🔊 Mobile web audio context initialized');
+      }
+      
+      // Add click listener to resume audio context (required for mobile)
+      if (!js.context.hasProperty('audioInitialized')) {
+        js.context.callMethod('eval', ['''
           if (!window.audioInitialized) {
             document.addEventListener('click', function() {
               if (window.audioContext && window.audioContext.state === 'suspended') {
@@ -53,8 +53,8 @@ class SoundService {
             }, { once: true });
             window.audioInitialized = true;
           }
-        })();
-      ''']);
+        ''']);
+      }
     } catch (e) {
       print('❌ Error initializing mobile web audio: $e');
     }
@@ -202,55 +202,13 @@ class SoundService {
       print('🔔 Web beep sound triggered');
       
       // Check if we're on mobile web
-      final userAgent = js.context.callMethod('eval', ['navigator.userAgent']);
+      final userAgent = js.context.callMethod('navigator.userAgent', []);
       final isMobile = userAgent.toString().toLowerCase().contains('mobile');
       
       print('📱 Mobile web detected: $isMobile');
       
       // Create a simple beep sound using Web Audio API with mobile support
-      js.context.callMethod('eval', ['''
-        (function() {
-          try {
-            // Resume audio context if suspended (required for mobile)
-            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-            if (audioContext.state === 'suspended') {
-              audioContext.resume();
-            }
-            
-            const oscillator = audioContext.createOscillator();
-            const gainNode = audioContext.createGain();
-            
-            oscillator.connect(gainNode);
-            gainNode.connect(audioContext.destination);
-            
-            // Use different frequency for mobile (more noticeable)
-            const frequency = navigator.userAgent.toLowerCase().includes('mobile') ? 1000 : 800;
-            oscillator.frequency.setValueAtTime(frequency, audioContext.currentTime);
-            oscillator.type = 'sine';
-            
-            // Adjust volume for mobile
-            const volume = navigator.userAgent.toLowerCase().includes('mobile') ? 0.5 : 0.3;
-            gainNode.gain.setValueAtTime(volume, audioContext.currentTime);
-            gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.3);
-            
-            oscillator.start(audioContext.currentTime);
-            oscillator.stop(audioContext.currentTime + 0.3);
-            
-            console.log('🔊 Web notification sound played (mobile: ' + navigator.userAgent.toLowerCase().includes('mobile') + ')');
-          } catch (e) {
-            console.log('❌ Error playing web notification sound:', e);
-            // Fallback: try to play a simple audio element
-            try {
-              const audio = new Audio();
-              audio.src = 'data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmwhBSuBzvLZiTYIG2m98OScTgwOUarm7blmGgU7k9n1unEiBC13yO/eizEIHWq+8+OWT';
-              audio.volume = 0.3;
-              audio.play();
-            } catch (fallbackError) {
-              console.log('❌ Fallback audio also failed:', fallbackError);
-            }
-          }
-        })();
-      ''']);
+      _createWebBeepSound();
       
       print('🔊 Web audio notification played');
     } catch (e) {
@@ -295,6 +253,86 @@ class SoundService {
       _isInitialized = false;
     } catch (e) {
       print('❌ Error disposing sound service: $e');
+    }
+  }
+
+  /// Create web beep sound using proper JavaScript interop
+  void _createWebBeepSound() {
+    try {
+      // Create audio context and oscillator using proper JavaScript interop
+      final audioContext = js.context.callMethod('eval', [
+        'new (window.AudioContext || window.webkitAudioContext)()'
+      ]);
+      
+      // Resume if suspended
+      if (js.context.callMethod('eval', ['${audioContext.toString()}.state']) == 'suspended') {
+        js.context.callMethod('eval', ['${audioContext.toString()}.resume()']);
+      }
+      
+      // Create oscillator and gain nodes
+      final oscillator = js.context.callMethod('eval', [
+        '${audioContext.toString()}.createOscillator()'
+      ]);
+      final gainNode = js.context.callMethod('eval', [
+        '${audioContext.toString()}.createGain()'
+      ]);
+      
+      // Connect nodes
+      js.context.callMethod('eval', [
+        '${oscillator.toString()}.connect(${gainNode.toString()})'
+      ]);
+      js.context.callMethod('eval', [
+        '${gainNode.toString()}.connect(${audioContext.toString()}.destination)'
+      ]);
+      
+      // Set frequency and type
+      final userAgent = js.context.callMethod('navigator.userAgent', []);
+      final isMobile = userAgent.toString().toLowerCase().contains('mobile');
+      final frequency = isMobile ? 1000 : 800;
+      js.context.callMethod('eval', [
+        '${oscillator.toString()}.frequency.setValueAtTime($frequency, ${audioContext.toString()}.currentTime)'
+      ]);
+      js.context.callMethod('eval', [
+        '${oscillator.toString()}.type = "sine"'
+      ]);
+      
+      // Set volume
+      final volume = isMobile ? 0.5 : 0.3;
+      js.context.callMethod('eval', [
+        '${gainNode.toString()}.gain.setValueAtTime($volume, ${audioContext.toString()}.currentTime)'
+      ]);
+      js.context.callMethod('eval', [
+        '${gainNode.toString()}.gain.exponentialRampToValueAtTime(0.01, ${audioContext.toString()}.currentTime + 0.3)'
+      ]);
+      
+      // Start and stop
+      js.context.callMethod('eval', [
+        '${oscillator.toString()}.start(${audioContext.toString()}.currentTime)'
+      ]);
+      js.context.callMethod('eval', [
+        '${oscillator.toString()}.stop(${audioContext.toString()}.currentTime + 0.3)'
+      ]);
+      
+      print('🔊 Web beep sound created successfully');
+    } catch (e) {
+      print('❌ Error creating web beep sound: $e');
+      // Fallback to simple audio element
+      _playFallbackAudio();
+    }
+  }
+  
+  /// Play fallback audio using simple Audio element
+  void _playFallbackAudio() {
+    try {
+      js.context.callMethod('eval', ['''
+        const audio = new Audio();
+        audio.src = 'data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmwhBSuBzvLZiTYIG2m98OScTgwOUarm7blmGgU7k9n1unEiBC13yO/eizEIHWq+8+OWT';
+        audio.volume = 0.3;
+        audio.play();
+      ''']);
+      print('🔊 Fallback audio played');
+    } catch (e) {
+      print('❌ Fallback audio also failed: $e');
     }
   }
 } 

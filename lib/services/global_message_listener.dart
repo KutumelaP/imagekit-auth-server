@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'awesome_notification_service.dart' as an;
+import 'notification_service.dart';
 
 class GlobalMessageListener {
   static final GlobalMessageListener _instance = GlobalMessageListener._internal();
@@ -251,12 +252,17 @@ class GlobalMessageListener {
 
       print('🔔 Sending notification to ${currentUser.uid} from $senderName');
 
-      // Respect quiet hours and channel toggles
+      // Local system notification
       await an.AwesomeNotificationService().showChatNotification(
         chatId: chatId,
         senderId: senderId,
         message: messageText,
       );
+
+      // Immediate TTS announce if enabled
+      try {
+        await NotificationService().speakPreview('New message from $senderName. $messageText');
+      } catch (_) {}
 
       print('🔔 Local system notification sent to ${currentUser.uid} for chat $chatId from $senderName');
     } catch (e) {

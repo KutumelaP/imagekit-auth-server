@@ -7,17 +7,17 @@ class PayFastService {
   static const String _sandboxUrl = 'https://sandbox.payfast.co.za/eng/process';
   static const String _liveUrl = 'https://www.payfast.co.za/eng/process';
   
-  // PayFast merchant credentials - Updated with real sandbox credentials
-  static const String _merchantId = '10004002';
-  static const String _merchantKey = 'q1cd2rdny4a53';
-  static const String _passphrase = 'test_passphrase';
+  // PayFast merchant credentials - Your real Solo account credentials
+  static const String _merchantId = '23918934';
+  static const String _merchantKey = 'fxuj8ymlgqwra';
+  static const String _passphrase = 'PeterKutumela2025';
   
-  static bool _isProduction = false;
+  static bool _isProduction = true;
 
-  // Callback URLs (update to your deployed Cloud Functions URLs)
-  static String returnUrl = 'https://us-central1-your-project.cloudfunctions.net/payfastReturn';
-  static String cancelUrl = 'https://us-central1-your-project.cloudfunctions.net/payfastCancel';
-  static String notifyUrl = 'https://us-central1-your-project.cloudfunctions.net/payfastNotify';
+  // Callback URLs (updated to your deployed Cloud Functions URLs)
+  static String returnUrl = 'https://us-central1-marketplace-8d6bd.cloudfunctions.net/payfastReturn';
+  static String cancelUrl = 'https://us-central1-marketplace-8d6bd.cloudfunctions.net/payfastCancel';
+  static String notifyUrl = 'https://us-central1-marketplace-8d6bd.cloudfunctions.net/payfastNotify';
 
   static void setProductionMode(bool isProduction) {
     _isProduction = isProduction;

@@ -16,10 +16,11 @@ import 'store_reviews_page.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:share_plus/share_plus.dart'; // Added import for share package
 import 'package:firebase_analytics/firebase_analytics.dart';
-import 'package:flutter/services.dart'; // Added import for Clipboard
+import 'package:flutter/services.dart'; // Added import for Clipboard and SystemUiOverlayStyle
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'stunning_product_browser.dart';
+import '../widgets/bottom_action_bar.dart';
 
 class SimpleStoreProfileScreen extends StatefulWidget {
   final Map<String, dynamic> store;
@@ -333,13 +334,16 @@ class _SimpleStoreProfileScreenState extends State<SimpleStoreProfileScreen>
 
   // Modern glass morphism app bar with enhanced design
   Widget _buildStunningAppBar() {
-    return SliverAppBar(
-      expandedHeight: 140,
-      floating: false,
-      pinned: true,
-      elevation: 0,
-      backgroundColor: Colors.transparent,
-      foregroundColor: Colors.white,
+    return SliverSafeArea(
+      top: true,
+      sliver: SliverAppBar(
+        expandedHeight: 140,
+        floating: false,
+        pinned: true,
+        elevation: 0,
+        backgroundColor: Colors.transparent,
+        foregroundColor: Colors.white,
+        systemOverlayStyle: SystemUiOverlayStyle.light,
       title: Row(
         children: [
           const Icon(Icons.storefront_rounded, size: 20, color: Colors.white),
@@ -426,6 +430,7 @@ class _SimpleStoreProfileScreenState extends State<SimpleStoreProfileScreen>
         //   ),
         // ),
       ],
+      ),
     );
   }
 
@@ -433,7 +438,7 @@ class _SimpleStoreProfileScreenState extends State<SimpleStoreProfileScreen>
   Future<void> _showQrDialog() async {
     final shareUrl = (() {
       final storeId = widget.store['storeId'] as String?;
-      final webBase = const String.fromEnvironment('PUBLIC_BASE_URL', defaultValue: 'https://yourdomain.com');
+      final webBase = const String.fromEnvironment('PUBLIC_BASE_URL', defaultValue: 'https://marketplace-8d6bd.web.app');
       final deepLink = (storeId != null) ? '$webBase/store/$storeId' : webBase;
       final utmSource = const String.fromEnvironment('UTM_SOURCE', defaultValue: '');
       final utmMedium = const String.fromEnvironment('UTM_MEDIUM', defaultValue: '');

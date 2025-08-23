@@ -1,0 +1,46 @@
+[33m45dd54e[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m)[m refs/heads/main@{0}: commit: Fix domain placeholders: Replace yourdomain.com with actual marketplace-8d6bd.web.app domain
+[33m45dd54e[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m)[m HEAD@{0}: commit: Fix domain placeholders: Replace yourdomain.com with actual marketplace-8d6bd.web.app domain
+[33mf19b8d3[m refs/heads/main@{1}: commit: Fix notification handling for order_status notifications - add better error handling and debugging for missing orderId
+[33mf19b8d3[m HEAD@{1}: commit: Fix notification handling for order_status notifications - add better error handling and debugging for missing orderId
+[33m0e190b7[m refs/heads/main@{2}: commit: Fix async/await compilation errors in product detail screens - add async keyword to _buyNow methods
+[33m0e190b7[m HEAD@{2}: commit: Fix async/await compilation errors in product detail screens - add async keyword to _buyNow methods
+[33m71156ac[m refs/heads/main@{3}: commit: Fix orderId null/empty crash: add validation in web service worker, notification badge, and notification service to prevent empty orderId from causing crashes
+[33m71156ac[m HEAD@{3}: commit: Fix orderId null/empty crash: add validation in web service worker, notification badge, and notification service to prevent empty orderId from causing crashes
+[33m7f8b2d4[m refs/heads/main@{4}: commit: Fix SellerOrderDetailScreen crash caused by empty orderId - add validation and proper error handling
+[33m7f8b2d4[m HEAD@{4}: commit: Fix SellerOrderDetailScreen crash caused by empty orderId - add validation and proper error handling
+[33me4582bb[m refs/heads/main@{5}: commit: Fix self-purchase blocking error message to show 'You can't purchase from your store' instead of confusing 'insufficient stock' message
+[33me4582bb[m HEAD@{5}: commit: Fix self-purchase blocking error message to show 'You can't purchase from your store' instead of confusing 'insufficient stock' message
+[33m354ee98[m refs/heads/main@{6}: commit: Fix address search web compatibility - add platform detection and web-specific search methods
+[33m354ee98[m HEAD@{6}: commit: Fix address search web compatibility - add platform detection and web-specific search methods
+[33mf1ef6d8[m refs/heads/main@{7}: commit: Transform EFT modal into professional design with proper text wrapping and premium button styling
+[33mf1ef6d8[m HEAD@{7}: commit: Transform EFT modal into professional design with proper text wrapping and premium button styling
+[33mc859c34[m refs/heads/main@{8}: commit: Fix firebase.json syntax error - remove duplicate headers section
+[33mc859c34[m HEAD@{8}: commit: Fix firebase.json syntax error - remove duplicate headers section
+[33m4b601e0[m refs/heads/main@{9}: commit: Improve EFT modal readability and implement dynamic order number reference
+[33m4b601e0[m HEAD@{9}: commit: Improve EFT modal readability and implement dynamic order number reference
+[33mb8efaa7[m refs/heads/main@{10}: commit: feat: improve EFT modal readability - remove cards, add clean text layout with better visibility
+[33mb8efaa7[m HEAD@{10}: commit: feat: improve EFT modal readability - remove cards, add clean text layout with better visibility
+[33mbff2003[m refs/heads/main@{11}: commit: refactor: simplify EFT payment modal - single page design with better mobile responsiveness
+[33mbff2003[m HEAD@{11}: commit: refactor: simplify EFT payment modal - single page design with better mobile responsiveness
+[33m3e7d4f4[m refs/heads/main@{12}: commit: Refine EFT card UI: increase modal width, improve text wrapping, enhance readability and responsiveness
+[33m3e7d4f4[m HEAD@{12}: commit: Refine EFT card UI: increase modal width, improve text wrapping, enhance readability and responsiveness
+[33m1deab24[m refs/heads/main@{13}: commit: Major project update: Add comprehensive features and improvements
+[33m1deab24[m HEAD@{13}: commit: Major project update: Add comprehensive features and improvements
+[33mf3ed6be[m refs/heads/main@{14}: commit: Clean up EFT card UI - remove excessive inner cards, create stunning single-card design with gradient background and simplified layout
+[33mf3ed6be[m HEAD@{14}: commit: Clean up EFT card UI - remove excessive inner cards, create stunning single-card design with gradient background and simplified layout
+[33mb4373ef[m refs/heads/main@{15}: commit: feat: Admin dashboard improvements - 75% zoom, reduced sidebar sizes, theme consistency
+[33mb4373ef[m HEAD@{15}: commit: feat: Admin dashboard improvements - 75% zoom, reduced sidebar sizes, theme consistency
+[33mbb3f9c9[m refs/heads/main@{16}: pull origin main --allow-unrelated-histories: Merge made by the 'ort' strategy.
+[33mbb3f9c9[m HEAD@{16}: pull origin main --allow-unrelated-histories: Merge made by the 'ort' strategy.
+[33m595911e[m refs/heads/main@{17}: commit: Major Update: Address Search Fix + Seller Delivery System + Admin Dashboard Enhancements
+[33m595911e[m HEAD@{17}: commit: Major Update: Address Search Fix + Seller Delivery System + Admin Dashboard Enhancements
+[33mf1e0ec0[m refs/heads/main@{18}: Branch: renamed refs/heads/main to refs/heads/main
+[33mf1e0ec0[m HEAD@{18}: Branch: renamed refs/heads/main to refs/heads/main
+[33mf1e0ec0[m refs/heads/main@{19}: Branch: renamed refs/heads/main to refs/heads/main
+[33mf1e0ec0[m HEAD@{20}: Branch: renamed refs/heads/main to refs/heads/main
+[33mf1e0ec0[m refs/heads/main@{20}: Branch: renamed refs/heads/main to refs/heads/main
+[33mf1e0ec0[m HEAD@{22}: Branch: renamed refs/heads/main to refs/heads/main
+[33mf1e0ec0[m refs/heads/main@{21}: Branch: renamed refs/heads/master to refs/heads/main
+[33mf1e0ec0[m HEAD@{24}: Branch: renamed refs/heads/master to refs/heads/main
+[33mf1e0ec0[m refs/heads/main@{22}: commit (initial): Initial commit: ImageKit auth server
+[33mf1e0ec0[m HEAD@{26}: commit (initial): Initial commit: ImageKit auth server

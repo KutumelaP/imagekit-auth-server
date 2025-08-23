@@ -19,14 +19,21 @@ const validateImageKitConfig = () => {
   const urlEndpoint = process.env.IMAGEKIT_URL_ENDPOINT;
 
   if (!publicKey || !privateKey || !urlEndpoint) {
-    console.warn('ImageKit not configured: set IMAGEKIT_PUBLIC_KEY/IMAGEKIT_PRIVATE_KEY/IMAGEKIT_URL_ENDPOINT to enable /auth');
+    console.warn('⚠️  ImageKit not configured: set IMAGEKIT_PUBLIC_KEY/IMAGEKIT_PRIVATE_KEY/IMAGEKIT_URL_ENDPOINT to enable /auth');
+    console.warn('📝 Create a .env file with your ImageKit credentials from https://imagekit.io/dashboard/developer/api-keys');
     return null;
   }
 
-  console.log('ImageKit Configuration:');
-  console.log('Public Key:', publicKey.substring(0, 20) + '...');
-  console.log('Private Key:', privateKey.substring(0, 20) + '...');
-  console.log('URL Endpoint:', urlEndpoint);
+  // Check if private key is still placeholder
+  if (privateKey === 'your_private_key_here' || privateKey === 'private_') {
+    console.warn('⚠️  ImageKit private key is still placeholder. Please update with your actual private key.');
+    return null;
+  }
+
+  console.log('✅ ImageKit Configuration Loaded:');
+  console.log('   Public Key:', publicKey.substring(0, 20) + '...');
+  console.log('   Private Key:', privateKey.substring(0, 20) + '...');
+  console.log('   URL Endpoint:', urlEndpoint);
 
   return { publicKey, privateKey, urlEndpoint };
 };

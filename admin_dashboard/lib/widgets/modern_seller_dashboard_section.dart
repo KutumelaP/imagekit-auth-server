@@ -48,6 +48,15 @@ class _ModernSellerDashboardSectionState extends State<ModernSellerDashboardSect
   final TextEditingController _storeCategoryController = TextEditingController();
   final TextEditingController _storeLocationController = TextEditingController();
   
+  // Payout (bank) controllers
+  final TextEditingController _payoutAccountHolderController = TextEditingController();
+  final TextEditingController _payoutBankNameController = TextEditingController();
+  final TextEditingController _payoutAccountNumberController = TextEditingController();
+  final TextEditingController _payoutBranchCodeController = TextEditingController();
+  String _payoutAccountType = 'Cheque/Current';
+  bool _loadingPayout = false;
+  bool _savingPayout = false;
+  
   // Subscription for auth changes
   late Stream<User?> _authStateChanges;
   
@@ -58,6 +67,7 @@ class _ModernSellerDashboardSectionState extends State<ModernSellerDashboardSect
   void initState() {
     super.initState();
     _authStateChanges = FirebaseAuth.instance.authStateChanges();
+    _authStateChanges.listen((_) { /* keep-alive */ });
     _initializeDashboard();
   }
 
@@ -67,6 +77,10 @@ class _ModernSellerDashboardSectionState extends State<ModernSellerDashboardSect
     _storeDescriptionController.dispose();
     _storeCategoryController.dispose();
     _storeLocationController.dispose();
+    _payoutAccountHolderController.dispose();
+    _payoutBankNameController.dispose();
+    _payoutAccountNumberController.dispose();
+    _payoutBranchCodeController.dispose();
     super.dispose();
   }
 
@@ -98,6 +112,7 @@ class _ModernSellerDashboardSectionState extends State<ModernSellerDashboardSect
         _loadLowStockProducts(),
         _loadCustomerReviews(),
         _loadStoreSettings(),
+        _loadPayoutDetails(),
       ]);
     } catch (e) {
       print('Error loading dashboard data: $e');
@@ -488,6 +503,33 @@ class _ModernSellerDashboardSectionState extends State<ModernSellerDashboardSect
     }
   }
 
+  Future<void> _loadPayoutDetails() async {
+    if (_sellerId == null) return;
+    try {
+      _loadingPayout = true;
+      final doc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(_sellerId)
+          .collection('payout')
+          .doc('bank')
+          .get();
+      if (doc.exists) {
+        final d = doc.data();
+        if (d != null) {
+          _payoutAccountHolderController.text = (d['accountHolder'] ?? '').toString();
+          _payoutBankNameController.text = (d['bankName'] ?? '').toString();
+          _payoutAccountNumberController.text = (d['accountNumber'] ?? '').toString();
+          _payoutBranchCodeController.text = (d['branchCode'] ?? '').toString();
+          _payoutAccountType = (d['accountType'] ?? _payoutAccountType).toString();
+        }
+      }
+    } catch (e) {
+      print('Error loading payout details: $e');
+    } finally {
+      if (mounted) setState(() { _loadingPayout = false; });
+    }
+  }
+
   Future<void> _saveStoreSettings() async {
     try {
       final updatedData = {
@@ -673,7 +715,7 @@ class _ModernSellerDashboardSectionState extends State<ModernSellerDashboardSect
       builder: (context, constraints) {
         final isMobile = constraints.maxWidth < 768;
         final isTablet = constraints.maxWidth >= 768 && constraints.maxWidth < 1024;
-        final isDesktop = constraints.maxWidth >= 1024;
+        // final isDesktop = constraints.maxWidth >= 1024; // Not used
 
         if (isMobile) {
           return _buildMobileLayout();
@@ -1074,6 +1116,97 @@ class _ModernSellerDashboardSectionState extends State<ModernSellerDashboardSect
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // COD receivables summary (dues)
+          FutureBuilder<QuerySnapshot<Map<String, dynamic>>>(
+            future: _sellerId == null
+                ? null
+                : FirebaseFirestore.instance
+                    .collection('users')
+                    .doc(_sellerId)
+                    .collection('platform_receivables')
+                    .where('status', isEqualTo: 'outstanding')
+                    .get(),
+            builder: (context, snapshot) {
+              if (!snapshot.hasData) return const SizedBox.shrink();
+              double totalDue = 0;
+              for (final d in snapshot.data!.docs) {
+                totalDue += (d.data()['amount'] ?? 0.0).toDouble();
+              }
+              if (totalDue <= 0) return const SizedBox.shrink();
+              return Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                margin: const EdgeInsets.only(bottom: 12),
+                decoration: BoxDecoration(
+                  color: Colors.red.withOpacity(0.06),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.red.withOpacity(0.18)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.account_balance_wallet, color: Colors.red),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text('COD fees outstanding: R${totalDue.toStringAsFixed(2)}. Settle to re-enable features.'),
+                    ),
+                    TextButton.icon(
+                      onPressed: () {
+                        // For now, push to settings where wallet top-up is typically surfaced in the buyer app; here we just inform
+                        setState(() { _selectedIndex = 8; });
+                      },
+                      icon: const Icon(Icons.arrow_forward),
+                      label: const Text('View'),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+          if ((_sellerData?['kycStatus'] ?? 'none') != 'approved') ...[
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              margin: const EdgeInsets.only(bottom: 12),
+              decoration: BoxDecoration(
+                color: Colors.orange.withOpacity(0.08),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.orange.withOpacity(0.2)),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(Icons.verified_user, color: Colors.orange),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Identity verification required',
+                          style: TextStyle(fontWeight: FontWeight.w700, color: Colors.orange[800]),
+                        ),
+                        const SizedBox(height: 4),
+                        const Text('To accept Cash on Delivery and payouts, please complete KYC.'),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 8,
+                          children: [
+                            ElevatedButton.icon(
+                              onPressed: () {
+                                Navigator.of(context).pushNamed('/kyc');
+                              },
+                              icon: const Icon(Icons.upload),
+                              label: const Text('Complete KYC'),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
           // Header
           Row(
             children: [
@@ -2323,29 +2456,7 @@ class _ModernSellerDashboardSectionState extends State<ModernSellerDashboardSect
                 _recentOrders.length > 5 ? 5 : _recentOrders.length,
                 (index) {
                   final order = _recentOrders[index];
-                  return ListTile(
-                    leading: CircleAvatar(
-                      backgroundColor: Colors.blue.withOpacity(0.1),
-                      child: Icon(Icons.shopping_cart, color: Colors.blue),
-                    ),
-                    title: Text('Order ${OrderUtils.formatShortOrderNumber(order['id'] ?? '')}'),
-                    subtitle: Text('${order['customerName'] ?? 'Customer'} • R ${(order['total'] ?? 0.0).toStringAsFixed(2)}'),
-                    trailing: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: _getStatusColor(order['status']).withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Text(
-                        order['status'] ?? 'pending',
-                        style: TextStyle(
-                          color: _getStatusColor(order['status']),
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                  );
+                  return _buildOrderListItem(order);
                 },
               ),
             ),
@@ -3194,25 +3305,216 @@ class _ModernSellerDashboardSectionState extends State<ModernSellerDashboardSect
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header
-          Text(
-            'Store Settings',
-            style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-              fontWeight: FontWeight.bold,
+          if ((_sellerData?['kycStatus'] ?? 'none') != 'approved') ...[
+            Container(
+              decoration: BoxDecoration(
+                color: Colors.orange.withOpacity(0.08),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.orange.withOpacity(0.2)),
+              ),
+              padding: const EdgeInsets.all(16),
+              margin: const EdgeInsets.only(bottom: 16),
+              child: Row(
+                children: [
+                  const Icon(Icons.verified_user, color: Colors.orange),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('KYC pending', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.orange[800])),
+                        const SizedBox(height: 4),
+                        const Text('Complete identity verification to enable COD and payouts.'),
+                        const SizedBox(height: 8),
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: ElevatedButton.icon(
+                            onPressed: () => Navigator.of(context).pushNamed('/kyc'),
+                            icon: const Icon(Icons.upload),
+                            label: const Text('Go to KYC'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+
+          // Payout (Bank) Details Editor
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: [
+                BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: Offset(0, 2)),
+              ],
+            ),
+            margin: const EdgeInsets.only(bottom: 24),
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Payout (Bank) Details', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                  if (_loadingPayout) ...[
+                    const SizedBox(height: 8),
+                    Row(children: const [
+                      SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+                      SizedBox(width: 8),
+                      Text('Loading payout details...'),
+                    ]),
+                  ],
+                  const SizedBox(height: 8),
+                  Text('Your details are stored securely. Required to receive payouts.', style: TextStyle(color: Colors.grey[600])),
+                  const SizedBox(height: 16),
+                  Row(children: [
+                    Expanded(child: TextField(
+                      controller: _payoutAccountHolderController,
+                      decoration: InputDecoration(
+                        labelText: 'Account Holder',
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                        prefixIcon: const Icon(Icons.person),
+                      ),
+                    )),
+                  ]),
+                  const SizedBox(height: 12),
+                  Row(children: [
+                    Expanded(child: TextField(
+                      controller: _payoutBankNameController,
+                      decoration: InputDecoration(
+                        labelText: 'Bank Name',
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                        prefixIcon: const Icon(Icons.account_balance),
+                      ),
+                    )),
+                  ]),
+                  const SizedBox(height: 12),
+                  Row(children: [
+                    Expanded(child: TextField(
+                      controller: _payoutAccountNumberController,
+                      keyboardType: TextInputType.number,
+                      decoration: InputDecoration(
+                        labelText: 'Account Number',
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                        prefixIcon: const Icon(Icons.numbers),
+                      ),
+                    )),
+                    const SizedBox(width: 12),
+                    Expanded(child: TextField(
+                      controller: _payoutBranchCodeController,
+                      keyboardType: TextInputType.number,
+                      decoration: InputDecoration(
+                        labelText: 'Branch Code',
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                        prefixIcon: const Icon(Icons.pin),
+                      ),
+                    )),
+                  ]),
+                  const SizedBox(height: 12),
+                  Row(children: [
+                    Expanded(child: DropdownButtonFormField<String>(
+                      value: _payoutAccountType,
+                      items: const [
+                        DropdownMenuItem(value: 'Cheque/Current', child: Text('Cheque/Current')),
+                        DropdownMenuItem(value: 'Savings', child: Text('Savings')),
+                        DropdownMenuItem(value: 'Business Cheque', child: Text('Business Cheque')),
+                      ],
+                      onChanged: (v) => setState(() => _payoutAccountType = v ?? _payoutAccountType),
+                      decoration: InputDecoration(
+                        labelText: 'Account Type',
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                        prefixIcon: const Icon(Icons.account_balance_wallet),
+                      ),
+                    )),
+                  ]),
+                  const SizedBox(height: 16),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: ElevatedButton.icon(
+                      onPressed: _savingPayout ? null : () async {
+                        if (_sellerId == null) return;
+                        setState(() { _savingPayout = true; });
+                        try {
+                          await FirebaseFirestore.instance
+                              .collection('users')
+                              .doc(_sellerId)
+                              .collection('payout')
+                              .doc('bank')
+                              .set({
+                                'accountHolder': _payoutAccountHolderController.text.trim(),
+                                'bankName': _payoutBankNameController.text.trim(),
+                                'accountNumber': _payoutAccountNumberController.text.trim(),
+                                'branchCode': _payoutBranchCodeController.text.trim(),
+                                'accountType': _payoutAccountType,
+                                'updatedAt': FieldValue.serverTimestamp(),
+                              }, SetOptions(merge: true));
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Payout details saved')));
+                          }
+                        } catch (e) {
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to save: $e')));
+                          }
+                        } finally {
+                          if (mounted) setState(() { _savingPayout = false; });
+                        }
+                      },
+                      icon: _savingPayout
+                          ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                          : const Icon(Icons.save),
+                      label: Text(_savingPayout ? 'Saving...' : 'Save Payout Details'),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
-          const SizedBox(height: 4),
-          Text(
-            'Configure your store preferences and settings',
-            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-              color: Colors.grey[600],
+
+          // Pickup services toggles
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: [
+                BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: Offset(0, 2)),
+              ],
+            ),
+            margin: const EdgeInsets.only(bottom: 24),
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Pickup Services', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 12),
+                  SwitchListTile(
+                    value: _sellerData?['pargoEnabled'] == true,
+                    onChanged: (val) async {
+                      await FirebaseFirestore.instance.collection('users').doc(_sellerId).update({'pargoEnabled': val});
+                      setState(() { _sellerData = {...?_sellerData, 'pargoEnabled': val}; });
+                    },
+                    title: const Text('Enable PARGO pickup points'),
+                    subtitle: const Text('Customers can pick up at PARGO points'),
+                  ),
+                  SwitchListTile(
+                    value: _sellerData?['paxiEnabled'] == true,
+                    onChanged: (val) async {
+                      await FirebaseFirestore.instance.collection('users').doc(_sellerId).update({'paxiEnabled': val});
+                      setState(() { _sellerData = {...?_sellerData, 'paxiEnabled': val}; });
+                    },
+                    title: const Text('Enable PAXI pickup points'),
+                    subtitle: const Text('Customers can pick up at PAXI points'),
+                  ),
+                ],
+              ),
             ),
           ),
-          const SizedBox(height: 24),
-          
+
           // Store Information Section
           Container(
-          decoration: BoxDecoration(
+            decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(12),
               boxShadow: [
@@ -3299,8 +3601,9 @@ class _ModernSellerDashboardSectionState extends State<ModernSellerDashboardSect
               ),
             ),
           ),
+
           const SizedBox(height: 24),
-          
+
           // Store Status Section
           Container(
             decoration: BoxDecoration(
@@ -3713,7 +4016,7 @@ class _ModernSellerDashboardSectionState extends State<ModernSellerDashboardSect
       final signature = authParams['signature'];
       final expire = authParams['expire'];
       
-      if (publicKey == null || token == null || signature == null || expire == null) {
+      if (token == null || signature == null || expire == null) {
         throw Exception('Missing authentication parameters');
       }
       
@@ -3944,12 +4247,24 @@ class _ModernSellerDashboardSectionState extends State<ModernSellerDashboardSect
                     tooltip: 'View Details',
                   ),
                   
-                  // Update Status Button
-                  if (status == 'pending' || status == 'processing')
+                  // Quick actions
+                  if (status == 'pending')
                     IconButton(
-                      onPressed: () => _showUpdateOrderStatusDialog(order),
-                      icon: Icon(Icons.update, color: AdminTheme.warning, size: 20),
-                      tooltip: 'Update Status',
+                      onPressed: () => _updateOrderStatusQuick(order, 'processing'),
+                      icon: Icon(Icons.inventory_2_outlined, color: AdminTheme.warning, size: 20),
+                      tooltip: 'Mark as Processing (Pack)',
+                    ),
+                  if (status == 'processing')
+                    IconButton(
+                      onPressed: () => _updateOrderStatusQuick(order, 'ready'),
+                      icon: Icon(Icons.inventory_rounded, color: AdminTheme.success, size: 20),
+                      tooltip: 'Mark as Ready for pickup',
+                    ),
+                  if (status == 'ready')
+                    IconButton(
+                      onPressed: () => _updateOrderStatusQuick(order, 'shipped'),
+                      icon: Icon(Icons.local_shipping_outlined, color: AdminTheme.info, size: 20),
+                      tooltip: 'Mark as Shipped',
                     ),
                   
                   // Contact Customer Button
@@ -3967,6 +4282,24 @@ class _ModernSellerDashboardSectionState extends State<ModernSellerDashboardSect
         ],
       ),
     );
+  }
+
+  Future<void> _updateOrderStatusQuick(Map<String, dynamic> order, String newStatus) async {
+    try {
+      await FirebaseFirestore.instance
+          .collection('orders')
+          .doc(order['id'])
+          .update({'status': newStatus, 'updatedAt': FieldValue.serverTimestamp()});
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Order updated to $newStatus')),
+      );
+      await _loadRecentOrders();
+      setState(() {});
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to update: $e')),
+      );
+    }
   }
 
   void _showOrderDetailsDialog(Map<String, dynamic> order) {
@@ -4025,71 +4358,6 @@ class _ModernSellerDashboardSectionState extends State<ModernSellerDashboardSect
             child: Text('Close'),
           ),
         ],
-      ),
-    );
-  }
-
-  void _showUpdateOrderStatusDialog(Map<String, dynamic> order) {
-    String newStatus = order['status'] ?? 'pending';
-    
-    showDialog(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setState) => AlertDialog(
-          title: Text('Update Order Status'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-                              Text('Order ${OrderUtils.formatShortOrderNumber(order['id'] ?? '')}'),
-              const SizedBox(height: 16),
-              DropdownButtonFormField<String>(
-                value: newStatus,
-                decoration: InputDecoration(labelText: 'New Status'),
-                items: [
-                  DropdownMenuItem(value: 'pending', child: Text('Pending')),
-                  DropdownMenuItem(value: 'processing', child: Text('Processing')),
-                  DropdownMenuItem(value: 'shipped', child: Text('Shipped')),
-                  DropdownMenuItem(value: 'delivered', child: Text('Delivered')),
-                  DropdownMenuItem(value: 'cancelled', child: Text('Cancelled')),
-                ],
-                onChanged: (value) => setState(() => newStatus = value ?? 'pending'),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () async {
-                try {
-                  await FirebaseFirestore.instance
-                      .collection('orders')
-                      .doc(order['id'])
-                      .update({
-                    'status': newStatus,
-                    'updatedAt': FieldValue.serverTimestamp(),
-                  });
-                  
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Order status updated successfully!')),
-                  );
-                  
-                  // Refresh orders
-                  await _loadRecentOrders();
-                } catch (e) {
-                  print('Error updating order status: $e');
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Error updating order status: $e')),
-                  );
-                }
-              },
-              child: Text('Update'),
-            ),
-          ],
-        ),
       ),
     );
   }
@@ -4255,6 +4523,7 @@ class _ModernSellerDashboardSectionState extends State<ModernSellerDashboardSect
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Could not open WhatsApp: $error')),
       );
+      return false;
     });
   }
 
@@ -4270,6 +4539,7 @@ class _ModernSellerDashboardSectionState extends State<ModernSellerDashboardSect
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Could not make phone call: $error')),
       );
+      return false;
     });
   }
 }

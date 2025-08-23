@@ -2,6 +2,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import '../services/notification_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 // import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
@@ -34,6 +35,12 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
   String? _selectedStoreCategory;
   final _deliveryFeeController = TextEditingController();
   final _minOrderController = TextEditingController();
+  // Payout details controllers
+  final TextEditingController _accountHolderController = TextEditingController();
+  final TextEditingController _bankNameController = TextEditingController();
+  final TextEditingController _accountNumberController = TextEditingController();
+  final TextEditingController _branchCodeController = TextEditingController();
+  String _accountType = 'cheque';
   final TextEditingController _storyController = TextEditingController();
   final TextEditingController _specialtiesController = TextEditingController();
   final TextEditingController _passionController = TextEditingController();
@@ -52,6 +59,8 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
   bool _isLoading = false;
   bool _isStoreOpen = true;
   bool _isDeliveryAvailable = false;
+  bool _allowCOD = false;
+  bool _termsAccepted = false;
   bool _deliverEverywhere = false;
   double _visibilityRadius = 5.0;
   
@@ -74,6 +83,15 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
   // Operating hours variables
   TimeOfDay _storeOpenTime = const TimeOfDay(hour: 8, minute: 0);
   TimeOfDay _storeCloseTime = const TimeOfDay(hour: 18, minute: 0);
+
+  // PAXI Service variables
+  bool _paxiEnabled = false;
+  
+  // Pargo Service variables
+  bool _pargoEnabled = false;
+  // Global visibility for pickup services
+  bool _pargoVisible = true;
+  bool _paxiVisible = true;
 
   dynamic _storeImage; // Can be File or XFile
   // String? _storeImageUrl;
@@ -122,6 +140,22 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
     // Start animations
     _fadeController.forward();
     _slideController.forward();
+
+    // Load global pickup visibility
+    _loadPickupVisibility();
+  }
+
+  Future<void> _loadPickupVisibility() async {
+    try {
+      final doc = await FirebaseFirestore.instance.collection('config').doc('platform').get();
+      final cfg = doc.data();
+      if (cfg != null) {
+        setState(() {
+          _pargoVisible = (cfg['pargoVisible'] != false);
+          _paxiVisible = (cfg['paxiVisible'] != false);
+        });
+      }
+    } catch (_) {}
   }
 
   // Show approval notice dialog
@@ -294,6 +328,10 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
     _specialtiesController.dispose();
     _passionController.dispose();
     _customRangeController.dispose();
+    _accountHolderController.dispose();
+    _bankNameController.dispose();
+    _accountNumberController.dispose();
+    _branchCodeController.dispose();
 
     super.dispose();
   }
@@ -738,6 +776,28 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
       return;
     }
 
+    // Additional validation for PAXI service
+    if (_paxiEnabled && (_latitude == null || _longitude == null)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('PAXI service requires store location coordinates. Please enable location services and try again.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    // Additional validation for Pargo service
+    if (_pargoEnabled && (_latitude == null || _longitude == null)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Pargo service requires store location coordinates. Please enable location services and try again.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
     setState(() => _isLoading = true);
     final user = FirebaseAuth.instance.currentUser;
 
@@ -824,6 +884,7 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
         'deliveryRange': _deliveryRange,
         'useCustomRange': false, // No longer needed since we use slider
         'paymentMethods': _selectedPaymentMethods,
+        'allowCOD': _allowCOD,
         'profileImageUrl': storeImageUrl ?? '',
         'extraPhotoUrls': extraPhotoUrls,
         'introVideoUrl': introVideoUrl ?? '',
@@ -832,15 +893,51 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
         'passion': _passionController.text.trim(),
         'latitude': _latitude,
         'longitude': _longitude,
+        'paxiEnabled': _paxiEnabled,
+        'pargoEnabled': _pargoEnabled,
         'status': 'pending',
         'verified': false,
         'paused': false,
         'platformFeeExempt': false,
       });
 
+      // Save payout details to secure sub-document
+      try {
+        await FirebaseFirestore.instance
+            .collection('users')
+            .doc(user.uid)
+            .collection('payout')
+            .doc('bank')
+            .set({
+          'accountHolder': _accountHolderController.text.trim(),
+          'bankName': _bankNameController.text.trim(),
+          'accountNumber': _accountNumberController.text.trim(),
+          'branchCode': _branchCodeController.text.trim(),
+          'accountType': _accountType,
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+      } catch (e) {
+        print('⚠️ Failed to save payout details: $e');
+      }
+
+      // Terms consent timestamp
+      if (_termsAccepted) {
+        try {
+          await FirebaseFirestore.instance
+              .collection('users')
+              .doc(user.uid)
+              .set({ 'termsAcceptedAt': FieldValue.serverTimestamp() }, SetOptions(merge: true));
+        } catch (_) {}
+      }
+
       await FirebaseFirestore.instance.collection('users').doc(user.uid).update({
         'role': 'seller',
       });
+
+      // TTS welcome (seller)
+      try {
+        await NotificationService().speakPreview('Congrats—your seller account is live. Let’s get those orders rolling.');
+      } catch (_) {}
 
       // Refresh user data in provider to reflect the role change
       if (mounted) {
@@ -862,7 +959,7 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
 
         // Show store link and QR so seller can advertise immediately
         final storeId = user.uid;
-        final base = const String.fromEnvironment('PUBLIC_BASE_URL', defaultValue: 'https://yourdomain.com');
+        final base = const String.fromEnvironment('PUBLIC_BASE_URL', defaultValue: 'https://marketplace-8d6bd.web.app');
         final storeUrl = '$base/store/$storeId';
         if (!mounted) return;
         await showDialog(
@@ -1817,6 +1914,12 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
                         value: _isDeliveryAvailable,
                         onChanged: (value) => setState(() => _isDeliveryAvailable = value),
                       ),
+                      _buildSwitchTile(
+                        title: 'Allow Cash on Delivery (COD)',
+                        subtitle: 'Customers can pay cash on delivery/pickup (fees apply)',
+                        value: _allowCOD,
+                        onChanged: (value) => setState(() => _allowCOD = value),
+                      ),
                       if (_isDeliveryAvailable) ...[
                         // Delivery Fee Information Note
                         Container(
@@ -2558,6 +2661,230 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
                             ),
                           ),
                         
+                        // PAXI Pickup Service Section (hidden if disabled globally)
+                        if (_paxiVisible) Container(
+                          margin: const EdgeInsets.only(bottom: 16),
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: AppTheme.angel,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: AppTheme.breeze.withOpacity(0.3),
+                            ),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Icon(
+                                    Icons.local_shipping,
+                                    color: AppTheme.deepTeal,
+                                    size: 20,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    'PAXI Pickup Service',
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w600,
+                                      color: AppTheme.deepTeal,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 12),
+                              Text(
+                                'Allow customers to collect orders from this store via PAXI pickup points.',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: AppTheme.mediumGrey,
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                              
+                              // PAXI Service Toggle
+                              SwitchListTile(
+                                title: Text(
+                                  'Enable PAXI Pickup Service',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppTheme.deepTeal,
+                                  ),
+                                ),
+                                subtitle: Text(
+                                  'Customers can select this store for PAXI pickup',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: AppTheme.mediumGrey,
+                                  ),
+                                ),
+                                value: _paxiEnabled,
+                                onChanged: (value) {
+                                  setState(() {
+                                    _paxiEnabled = value;
+                                  });
+                                },
+                                activeColor: AppTheme.primaryGreen,
+                              ),
+                              
+                              // Show PAXI details only if enabled
+                              if (_paxiEnabled) ...[
+                                const SizedBox(height: 16),
+                                
+                                // PAXI Information Card
+                                Container(
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    color: AppTheme.primaryGreen.withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(
+                                      color: AppTheme.primaryGreen.withOpacity(0.3),
+                                    ),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        Icons.info_outline,
+                                        size: 16,
+                                        color: AppTheme.primaryGreen,
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          '✅ Customers can select your store for pickup\n'
+                                          '✅ Automatic distance calculations\n'
+                                          '✅ Admin-configured pricing\n'
+                                          '✅ Uses your existing operating hours\n'
+                                          '✅ No additional setup required',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            color: AppTheme.primaryGreen,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                        
+                        // Pargo Pickup Service Section (hidden if disabled globally)
+                        if (_pargoVisible) Container(
+                          margin: const EdgeInsets.only(bottom: 16),
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: AppTheme.angel,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: AppTheme.breeze.withOpacity(0.3),
+                            ),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Icon(
+                                    Icons.local_shipping,
+                                    color: AppTheme.deepTeal,
+                                    size: 20,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    'Pargo Pickup Service',
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w600,
+                                      color: AppTheme.deepTeal,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 12),
+                              Text(
+                                'Allow customers to collect orders from this store via Pargo pickup points.',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: AppTheme.mediumGrey,
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                              
+                              // Pargo Service Toggle
+                              SwitchListTile(
+                                title: Text(
+                                  'Enable Pargo Pickup Service',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppTheme.deepTeal,
+                                  ),
+                                ),
+                                subtitle: Text(
+                                  'Customers can select this store for Pargo pickup',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: AppTheme.mediumGrey,
+                                  ),
+                                ),
+                                value: _pargoEnabled,
+                                onChanged: (value) {
+                                  setState(() {
+                                    _pargoEnabled = value;
+                                  });
+                                },
+                                activeColor: AppTheme.primaryGreen,
+                              ),
+                              
+                              // Show Pargo details only if enabled
+                              if (_pargoEnabled) ...[
+                                const SizedBox(height: 16),
+                                
+                                // Pargo Information Card
+                                Container(
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    color: AppTheme.primaryGreen.withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(
+                                      color: AppTheme.primaryGreen.withOpacity(0.3),
+                                    ),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        Icons.info_outline,
+                                        size: 16,
+                                        color: AppTheme.primaryGreen,
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          '✅ Customers can select your store for pickup\n'
+                                          '✅ Automatic distance calculations\n'
+                                          '✅ Admin-configured pricing\n'
+                                          '✅ Uses your existing operating hours\n'
+                                          '✅ No additional setup required',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            color: AppTheme.primaryGreen,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                        
                         // Delivery Hours Section
                         Container(
                           margin: const EdgeInsets.only(bottom: 16),
@@ -2860,6 +3187,72 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
                           ),
                         ),
                       ],
+                    ],
+                  ),
+
+                  // Payout Details Section
+                  _buildSectionCard(
+                    title: 'Payout Details',
+                    icon: Icons.account_balance,
+                    children: [
+                      _buildEnhancedTextField(
+                        controller: _accountHolderController,
+                        label: 'Account Holder Name',
+                        hint: 'e.g., Jane Dlamini',
+                        prefixIcon: Icons.person,
+                        validator: (v) => (v == null || v.isEmpty) ? 'Enter account holder name' : null,
+                      ),
+                      _buildEnhancedTextField(
+                        controller: _bankNameController,
+                        label: 'Bank Name',
+                        hint: 'e.g., FNB, Standard Bank',
+                        prefixIcon: Icons.account_balance,
+                        validator: (v) => (v == null || v.isEmpty) ? 'Enter bank name' : null,
+                      ),
+                      _buildEnhancedTextField(
+                        controller: _accountNumberController,
+                        label: 'Account Number',
+                        hint: 'Bank account number',
+                        prefixIcon: Icons.numbers,
+                        keyboardType: TextInputType.number,
+                        validator: (v) => (v == null || v.isEmpty) ? 'Enter account number' : null,
+                      ),
+                      _buildEnhancedTextField(
+                        controller: _branchCodeController,
+                        label: 'Branch Code',
+                        hint: 'e.g., 250 655',
+                        prefixIcon: Icons.confirmation_number,
+                        keyboardType: TextInputType.number,
+                        validator: (v) => (v == null || v.isEmpty) ? 'Enter branch code' : null,
+                      ),
+                      DropdownButtonFormField<String>(
+                        value: _accountType,
+                        decoration: const InputDecoration(
+                          labelText: 'Account Type',
+                          border: OutlineInputBorder(),
+                          prefixIcon: Icon(Icons.account_box),
+                        ),
+                        items: const [
+                          DropdownMenuItem(value: 'cheque', child: Text('Cheque/Current')),
+                          DropdownMenuItem(value: 'savings', child: Text('Savings')),
+                          DropdownMenuItem(value: 'business', child: Text('Business')),
+                        ],
+                        onChanged: (v) => setState(() => _accountType = v ?? 'cheque'),
+                      ),
+                    ],
+                  ),
+
+                  // Terms & Consent
+                  _buildSectionCard(
+                    title: 'Terms & Consent',
+                    icon: Icons.verified_user,
+                    children: [
+                      CheckboxListTile(
+                        value: _termsAccepted,
+                        onChanged: (v) => setState(() => _termsAccepted = v ?? false),
+                        title: const Text('I agree to the marketplace terms and payout policy'),
+                        controlAffinity: ListTileControlAffinity.leading,
+                      ),
                     ],
                   ),
                   

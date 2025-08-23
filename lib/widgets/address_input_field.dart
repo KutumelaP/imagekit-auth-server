@@ -4,6 +4,7 @@ import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
 import '../services/address_search_service.dart';
 import '../theme/app_theme.dart';
+import 'dart:async'; // Added for Timer
 
 class AddressInputField extends StatefulWidget {
   final String? initialValue;
@@ -38,23 +39,20 @@ class _AddressInputFieldState extends State<AddressInputField> {
   bool _showSuggestions = false;
   bool _isLoading = false;
   bool _isReverseGeocoding = false;
+  List<Map<String, dynamic>> _suggestions = [];
+  Timer? _searchTimer;
 
   @override
   void initState() {
     super.initState();
     _textController.text = widget.initialValue ?? '';
     _focusNode.addListener(_onFocusChanged);
-    
-    // Listen to search service changes
-    _searchService.addListener(_onSearchResultsChanged);
-    
-    // Removed auto-test query to avoid unexpected API calls in production
   }
 
   @override
   void dispose() {
     _focusNode.removeListener(_onFocusChanged);
-    _searchService.removeListener(_onSearchResultsChanged);
+    _searchTimer?.cancel();
     _textController.dispose();
     _focusNode.dispose();
     super.dispose();
@@ -71,7 +69,7 @@ class _AddressInputFieldState extends State<AddressInputField> {
       });
       // Trigger search if we have text
       if (controller.text.isNotEmpty) {
-        _searchService.searchAddresses(controller.text);
+        _searchAddresses(controller.text);
       }
     } else if (!_focusNode.hasFocus) {
       // Add a small delay before hiding suggestions to allow for taps
@@ -85,13 +83,44 @@ class _AddressInputFieldState extends State<AddressInputField> {
     }
   }
 
-  void _onSearchResultsChanged() {
-    print('🔍 Search update - Loading: ${_searchService.isSearching}, Suggestions: ${_searchService.suggestions.length}, Show: $_showSuggestions');
+  Future<void> _searchAddresses(String query) async {
+    if (query.trim().isEmpty) {
+      setState(() {
+        _suggestions = [];
+        _isLoading = false;
+      });
+      return;
+    }
+
+    // Cancel previous search
+    _searchTimer?.cancel();
+    
+    // Set loading state
     setState(() {
-      _isLoading = _searchService.isSearching;
-      // Keep suggestions visible if we have results or are still searching
-      if (_focusNode.hasFocus && (_searchService.suggestions.isNotEmpty || _searchService.isSearching)) {
-        _showSuggestions = true;
+      _isLoading = true;
+    });
+
+    // Debounce search for 300ms
+    _searchTimer = Timer(const Duration(milliseconds: 300), () async {
+      try {
+        print('🔍 Searching for: "$query"');
+        final results = await _searchService.searchAddresses(query);
+        
+        if (mounted) {
+          setState(() {
+            _suggestions = results;
+            _isLoading = false;
+          });
+          print('✅ Found ${results.length} suggestions');
+        }
+      } catch (e) {
+        print('❌ Search failed: $e');
+        if (mounted) {
+          setState(() {
+            _suggestions = [];
+            _isLoading = false;
+          });
+        }
       }
     });
   }
@@ -102,7 +131,7 @@ class _AddressInputFieldState extends State<AddressInputField> {
     print('🔍 Has focus: ${_focusNode.hasFocus}');
     
     // Trigger search
-    _searchService.searchAddresses(value);
+    _searchAddresses(value);
     
     // Update UI state - show suggestions if we have focus and enough text
     if (_focusNode.hasFocus && value.length >= 2) {
@@ -157,10 +186,10 @@ class _AddressInputFieldState extends State<AddressInputField> {
   }
 
   int _getItemCount() {
-    if (_searchService.suggestions.isEmpty && !_searchService.isSearching) {
+    if (_suggestions.isEmpty && !_isLoading) {
       return 1; // Only show "No results" option
     }
-    return _searchService.suggestions.length + 1; // +1 for "Use entered address"
+    return _suggestions.length + 1; // +1 for "Use entered address"
   }
 
   Widget _buildNoResultsOption() {
@@ -221,22 +250,27 @@ class _AddressInputFieldState extends State<AddressInputField> {
     
     print('🔍 Calling onAddressSelected callback');
     widget.onAddressSelected?.call(address);
-    // Try to pass coordinates if we can match the suggestion label
+    
+    // Try to pass coordinates if we can match the suggestion
     try {
-      final suggestion = _searchService.suggestions.firstWhere(
-        (s) => s.label == address,
-        orElse: () => AddressSuggestion(
-          label: address,
-          street: address,
-          locality: '',
-          administrativeArea: '',
-          postalCode: '',
-          latitude: null,
-          longitude: null,
-        ),
+      final suggestion = _suggestions.firstWhere(
+        (s) => s['title'] == address || s['address'] == address,
+        orElse: () => {'title': address, 'address': address, 'latitude': null, 'longitude': null},
       );
-      widget.onAddressWithCoords?.call(address, suggestion.latitude, suggestion.longitude);
-    } catch (_) {}
+      
+      final latitude = suggestion['latitude'];
+      final longitude = suggestion['longitude'];
+      
+      if (latitude != null && longitude != null) {
+        print('🔍 Found coordinates: $latitude, $longitude');
+        widget.onAddressWithCoords?.call(address, latitude.toDouble(), longitude.toDouble());
+      } else {
+        print('🔍 No coordinates found for address: $address');
+      }
+    } catch (e) {
+      print('🔍 Error finding coordinates: $e');
+    }
+    
     print('🔍 Address selection completed');
   }
 
@@ -311,7 +345,7 @@ class _AddressInputFieldState extends State<AddressInputField> {
             ),
             onChanged: _onTextChanged,
             onTap: () {
-              if (_searchService.suggestions.isNotEmpty) {
+              if (_suggestions.isNotEmpty) {
                 setState(() {
                   _showSuggestions = true;
                 });
@@ -349,8 +383,8 @@ class _AddressInputFieldState extends State<AddressInputField> {
         icon: const Icon(Icons.clear, color: Colors.grey),
         onPressed: () {
           controller.clear();
-          _searchService.clearSearch();
           setState(() {
+            _suggestions = [];
             _showSuggestions = false;
           });
         },
@@ -412,16 +446,16 @@ class _AddressInputFieldState extends State<AddressInputField> {
               padding: EdgeInsets.zero,
               itemCount: _getItemCount(),
               itemBuilder: (context, index) {
-                if (_searchService.suggestions.isEmpty && !_searchService.isSearching) {
+                if (_suggestions.isEmpty && !_isLoading) {
                   // No results found
                   return _buildNoResultsOption();
-                } else if (index == _searchService.suggestions.length) {
+                } else if (index == _suggestions.length) {
                   // "Use entered address" option
                   return _buildUseEnteredAddressOption();
                 }
                 
-                 final suggestion = _searchService.suggestions[index];
-                 final address = suggestion.label;
+                 final suggestion = _suggestions[index];
+                 final address = suggestion['label'];
                 return _buildSuggestionItem(address);
               },
             ),
@@ -441,6 +475,15 @@ class _AddressInputFieldState extends State<AddressInputField> {
   }
 
   Widget _buildSuggestionItem(String address) {
+    // Find the full suggestion data
+    final suggestion = _suggestions.firstWhere(
+      (s) => s['title'] == address || s['address'] == address,
+      orElse: () => {'title': address, 'address': address, 'city': '', 'suburb': ''},
+    );
+    
+    final city = suggestion['city'] ?? '';
+    final suburb = suggestion['suburb'] ?? '';
+    final source = suggestion['source'] ?? '';
     
     return Material(
       color: Colors.transparent,
@@ -485,6 +528,38 @@ class _AddressInputFieldState extends State<AddressInputField> {
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
+                    if (city.isNotEmpty || suburb.isNotEmpty) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        [suburb, city].where((s) => s.isNotEmpty).join(', '),
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey.shade600,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                    if (source.isNotEmpty) ...[
+                      const SizedBox(height: 2),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: source == 'HERE API' 
+                            ? Colors.blue.withOpacity(0.1) 
+                            : Colors.green.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          source,
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: source == 'HERE API' ? Colors.blue.shade700 : Colors.green.shade700,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),

@@ -53,5 +53,7 @@
 	<string>This app needs access to your camera to take photos for your store.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>This app needs access to your microphone to record videos for your store.</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>Face ID is used to securely verify your identity for checkout and login.</string>
 </dict>
 </plist>

@@ -114,7 +114,7 @@ class SmartSearchEngine {
       // Build query
       Query storesQuery = _firestore.collection('users')
           .where('role', isEqualTo: 'seller')
-          .where('status', isEqualTo: 'active');
+          .where('status', isEqualTo: 'approved');
 
       // Apply filters
       if (category != null) {

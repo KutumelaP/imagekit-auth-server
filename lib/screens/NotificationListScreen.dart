@@ -17,25 +17,38 @@ class NotificationListScreen extends StatefulWidget {
   State<NotificationListScreen> createState() => _NotificationListScreenState();
 }
 
-class _NotificationListScreenState extends State<NotificationListScreen> {
+class _NotificationListScreenState extends State<NotificationListScreen> with WidgetsBindingObserver {
   final NotificationService _notificationService = NotificationService();
   bool _isLoading = false;
+  final List<Map<String, dynamic>> _notifications = <Map<String, dynamic>>[];
+  DocumentSnapshot? _lastDocument;
+  bool _isLoadingMore = false;
+  bool _hasMore = true;
+  final ScrollController _scrollController = ScrollController();
 
   @override
   void initState() {
     super.initState();
-    _refreshNotifications();
+    WidgetsBinding.instance.addObserver(this);
+    _scrollController.addListener(_onScroll);
+    _loadInitial();
+    _maybeAutoClearOnOpen();
+    // Speak unread summary on open
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      NotificationService().speakUnreadSummaryIfEnabled();
+    });
+  }
+
+  Future<void> _maybeAutoClearOnOpen() async {
+    if (NotificationService().autoClearBadgeOnNotificationsOpen) {
+      await NotificationService().markAllNotificationsAsReadForCurrentUser();
+      await NotificationService().recalcBadge();
+      await _refreshNotifications();
+    }
   }
 
   Future<void> _refreshNotifications() async {
-    setState(() => _isLoading = true);
-    try {
-      await _notificationService.refreshNotifications();
-    } catch (e) {
-      print('Error refreshing notifications: $e');
-    } finally {
-      setState(() => _isLoading = false);
-    }
+    await _loadInitial();
   }
 
   Future<void> _deleteNotification(String notificationId) async {
@@ -97,9 +110,137 @@ class _NotificationListScreenState extends State<NotificationListScreen> {
     }
   }
 
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _maybeAutoClearOnOpen();
+    }
+  }
+
+  Future<void> _loadInitial() async {
+    setState(() {
+      _isLoading = true;
+      _hasMore = true;
+      _lastDocument = null;
+      _notifications.clear();
+    });
+
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) {
+        setState(() => _isLoading = false);
+        return;
+      }
+
+      final query = FirebaseFirestore.instance
+          .collection('notifications')
+          .where('userId', isEqualTo: user.uid)
+          .orderBy('timestamp', descending: true)
+          .limit(20);
+
+      final snapshot = await query.get();
+      final items = snapshot.docs
+          .map((d) => {
+                'id': d.id,
+                ...d.data() as Map<String, dynamic>,
+              })
+          .where((n) {
+            final t = (n['type'] ?? '').toString();
+            final title = (n['title'] ?? '').toString().trim();
+            final body = (n['body'] ?? '').toString().trim();
+            const allowed = {'new_order_seller','new_order_buyer','order_status','order'};
+            // Exclude chat messages and any generic/unknown entries (missing title/body or disallowed type)
+            if (t == 'chat_message') return false;
+            if (!allowed.contains(t)) return false;
+            if (title.isEmpty && body.isEmpty) return false;
+            return true;
+          })
+          .toList();
+
+      setState(() {
+        _notifications.addAll(items);
+        _lastDocument = snapshot.docs.isNotEmpty ? snapshot.docs.last : null;
+        _hasMore = snapshot.docs.length == 20;
+        _isLoading = false;
+      });
+    } catch (e) {
+      print('❌ Error loading notifications: $e');
+      setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _loadMore() async {
+    if (_isLoadingMore || !_hasMore) return;
+    setState(() => _isLoadingMore = true);
+
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) {
+        setState(() => _isLoadingMore = false);
+        return;
+      }
+
+      Query query = FirebaseFirestore.instance
+          .collection('notifications')
+          .where('userId', isEqualTo: user.uid)
+          .orderBy('timestamp', descending: true)
+          .limit(20);
+
+      if (_lastDocument != null) {
+        query = (query as Query<Map<String, dynamic>>)
+            .startAfterDocument(_lastDocument!);
+      }
+
+      final snapshot = await query.get();
+      final items = snapshot.docs
+          .map((d) => {
+                'id': d.id,
+                ...d.data() as Map<String, dynamic>,
+              })
+          .where((n) {
+            final t = (n['type'] ?? '').toString();
+            final title = (n['title'] ?? '').toString().trim();
+            final body = (n['body'] ?? '').toString().trim();
+            const allowed = {'new_order_seller','new_order_buyer','order_status','order'};
+            if (t == 'chat_message') return false;
+            if (!allowed.contains(t)) return false;
+            if (title.isEmpty && body.isEmpty) return false;
+            return true;
+          })
+          .toList();
+
+      setState(() {
+        _notifications.addAll(items);
+        _lastDocument = snapshot.docs.isNotEmpty ? snapshot.docs.last : _lastDocument;
+        _hasMore = snapshot.docs.length == 20;
+        _isLoadingMore = false;
+      });
+    } catch (e) {
+      print('❌ Error loading more notifications: $e');
+      setState(() => _isLoadingMore = false);
+    }
+  }
+
+  void _onScroll() {
+    if (!_hasMore || _isLoadingMore) return;
+    if (_scrollController.position.pixels >=
+        _scrollController.position.maxScrollExtent - 300) {
+      _loadMore();
+    }
+  }
+
   Future<void> _markAsRead(String notificationId) async {
     try {
       await _notificationService.markNotificationAsRead(notificationId);
+      // Recalculate badge after marking as read
+      await NotificationService().recalcBadge();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Notification marked as read'),
@@ -122,8 +263,7 @@ class _NotificationListScreenState extends State<NotificationListScreen> {
     final data = notificationData['data'] ?? {};
     final orderId = data['orderId'] ?? notificationData['orderId'];
     final chatId = data['chatId'] ?? notificationData['chatId'];
-    final buyerId = data['buyerId'] ?? notificationData['buyerId'];
-    final sellerId = data['sellerId'] ?? notificationData['sellerId'];
+    // buyerId / sellerId currently unused here; navigation uses senderId/orderId
     final senderId = data['senderId'] ?? notificationData['senderId'];
     
     print('🔍 DEBUG: Notification tap - Type: $type');
@@ -134,6 +274,8 @@ class _NotificationListScreenState extends State<NotificationListScreen> {
 
     // Mark as read
     await _markAsRead(notificationData['id']);
+    // best-effort badge refresh through service recalc
+    try { await NotificationService().refreshNotifications(); } catch (_) {}
 
     // Navigate based on notification type
     print('🔍 DEBUG: Navigation logic - Type: $type, ChatId: $chatId, OrderId: $orderId');
@@ -225,8 +367,36 @@ class _NotificationListScreenState extends State<NotificationListScreen> {
     final timestamp = notification['timestamp'] as Timestamp?;
     final isRead = notification['read'] ?? false;
     final type = notification['type'] ?? '';
-    final title = notification['title'] ?? 'Notification';
-    final body = notification['body'] ?? '';
+    final rawTitle = (notification['title'] ?? '').toString().trim();
+    final rawBody = (notification['body'] ?? '').toString().trim();
+
+    String fallbackTitle;
+    switch (type) {
+      case 'new_order_seller':
+        fallbackTitle = 'New order received';
+        break;
+      case 'new_order_buyer':
+        fallbackTitle = 'Order placed';
+        break;
+      case 'order_status':
+      case 'order':
+        fallbackTitle = 'Order update';
+        break;
+      case 'chat_message':
+        fallbackTitle = 'New message';
+        break;
+      default:
+        fallbackTitle = '';
+    }
+
+    final title = rawTitle.isNotEmpty ? rawTitle : fallbackTitle;
+    final body = rawBody.isNotEmpty
+        ? rawBody
+        : (type == 'order_status' || type == 'order' || type == 'new_order_buyer' || type == 'new_order_seller')
+            ? 'Tap to view order details'
+            : (type == 'chat_message')
+                ? 'Tap to open chat'
+                : 'Tap to view details';
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -421,39 +591,33 @@ class _NotificationListScreenState extends State<NotificationListScreen> {
   }
 
   Widget _buildNotificationList() {
-    return StreamBuilder<QuerySnapshot>(
-      stream: _notificationService.getNotificationsWithValidation(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
-        }
+    if (_isLoading && _notifications.isEmpty) {
+      return const Center(child: CircularProgressIndicator());
+    }
 
-        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-          return _buildEmptyState();
-        }
+    if (_notifications.isEmpty) {
+      return _buildEmptyState();
+    }
 
-        // Filter out chat messages - they should only appear in the chat tab
-        final notifications = snapshot.data!.docs
-            .map((doc) => {'id': doc.id, ...doc.data() as Map<String, dynamic>})
-            .where((notification) => notification['type'] != 'chat_message')
-            .toList();
-
-        if (notifications.isEmpty) {
-          return _buildEmptyState();
-        }
-
-        return RefreshIndicator(
-          onRefresh: _refreshNotifications,
-          color: AppTheme.deepTeal,
-          child: ListView.builder(
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            itemCount: notifications.length,
-            itemBuilder: (context, index) {
-              return _buildNotificationCard(notifications[index]);
-            },
-          ),
-        );
-      },
+    return RefreshIndicator(
+      onRefresh: _refreshNotifications,
+      color: AppTheme.deepTeal,
+      child: ListView.builder(
+        controller: _scrollController,
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        itemCount: _notifications.length + (_isLoadingMore ? 1 : 0),
+        itemBuilder: (context, index) {
+          if (index >= _notifications.length) {
+            return const Padding(
+              padding: EdgeInsets.symmetric(vertical: 16),
+              child: Center(
+                child: CircularProgressIndicator(),
+              ),
+            );
+          }
+          return _buildNotificationCard(_notifications[index]);
+        },
+      ),
     );
   }
 

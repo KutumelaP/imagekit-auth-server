@@ -5,12 +5,17 @@ import 'package:provider/provider.dart';
 import 'simple_home_screen.dart';
 import '../services/error_handler.dart';
 import '../widgets/loading_widget.dart';
+import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:cloud_functions/cloud_functions.dart';
+import '../services/biometric_stepup.dart';
 
 import '../providers/user_provider.dart';
 import '../constants/app_constants.dart';
 import '../theme/app_theme.dart';
 import '../providers/cart_provider.dart';
 import 'post_login_screen.dart';
+import '../services/notification_service.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({Key? key}) : super(key: key);
@@ -26,6 +31,7 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
   bool _isLogin = true;
   bool _loading = false;
   bool _obscurePassword = true;
+  bool _quickLoginEnabled = true; // opt-in; default on
 
   late AnimationController _fadeController;
   late AnimationController _slideController;
@@ -66,6 +72,82 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
     _fadeController.forward();
     _slideController.forward();
     _scaleController.forward();
+
+    _loadQuickLoginPref();
+  }
+
+  Future<void> _loadQuickLoginPref() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      setState(() {
+        _quickLoginEnabled = prefs.getBool('quick_login_biometrics') ?? true;
+      });
+    } catch (_) {}
+  }
+
+  Future<void> _showForgotPasswordDialog() async {
+    final emailController = TextEditingController(text: _emailController.text.trim());
+    final ok = await showDialog<bool>(
+          context: context,
+          barrierDismissible: true,
+          builder: (context) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              title: const Text('Reset password'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('Enter your account email. We will send a reset link.'),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: emailController,
+                    keyboardType: TextInputType.emailAddress,
+                    decoration: const InputDecoration(
+                      border: OutlineInputBorder(),
+                      hintText: 'you@example.com',
+                    ),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancel')),
+                ElevatedButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('Send')),
+              ],
+            );
+          },
+        ) ??
+        false;
+
+    if (!ok) return;
+
+    final email = emailController.text.trim();
+    if (email.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Enter your email')));
+      return;
+    }
+
+    try {
+      setState(() => _loading = true);
+      await _callRiskGate('password_reset');
+      try {
+        final callable = FirebaseFunctions.instance.httpsCallable('sendPasswordResetEmail');
+        await callable.call(<String, dynamic>{ 'email': email });
+      } catch (_) {
+        await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
+      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Reset email sent. Check your inbox.')));
+    } on FirebaseAuthException catch (e) {
+      if (!mounted) return;
+      final message = ErrorHandler.handleAuthException(e);
+      ErrorHandler.showError(context, message);
+    } catch (e) {
+      if (!mounted) return;
+      final message = ErrorHandler.handleGeneralException(e);
+      ErrorHandler.showError(context, message);
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
   }
 
   @override
@@ -84,6 +166,18 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
     setState(() => _loading = true);
 
     try {
+      Map<String, dynamic> gate = {};
+      try {
+        gate = await _callRiskGate(_isLogin ? 'login' : 'signup');
+        if (kDebugMode) {
+          print('🔐 Auth gate result: $gate');
+        }
+      } catch (e) {
+        if (kDebugMode) {
+          print('⚠️ Auth gate failed: $e');
+        }
+      }
+
       UserCredential userCredential;
 
       if (_isLogin) {
@@ -109,10 +203,45 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
               'suspended': false,
             });
           }
+          // TTS welcome (buyer/user)
+          try {
+            await NotificationService().speakPreview('Welcome aboard! Let’s find something lekker today.');
+          } catch (_) {}
         }
       }
 
-      // Reload user data in provider
+      // Step-up if risky (vpn or gate not ok)
+      final isRisky = (gate['ok'] == false) || (gate['ipInfo'] != null && gate['ipInfo']['vpn'] == true);
+      if (isRisky) {
+        // 1) Biometric
+        final bioOk = await _performBiometricStepUpLogin();
+        if (!bioOk) {
+          final choice = await showModalBottomSheet<String>(
+            context: context,
+            builder: (context) {
+              return SafeArea(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    ListTile(leading: const Icon(Icons.email_outlined), title: const Text('Verify via Email'), onTap: () => Navigator.pop(context, 'email')),
+                  ],
+                ),
+              );
+            },
+          );
+
+          if (choice == 'email') {
+            final ok = await _performEmailOtpStepUpLogin(_emailController.text.trim());
+            if (!ok) {
+              await FirebaseAuth.instance.signOut();
+              if (mounted) ErrorHandler.showError(context, 'Verification failed.');
+              return;
+            }
+          }
+        }
+      }
+
+      // Load user data in provider (only once)
       if (mounted) {
         final userProvider = Provider.of<UserProvider>(context, listen: false);
         await userProvider.loadUserData();
@@ -125,9 +254,8 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
       // Navigate to SimpleHomeScreen on successful login/signup
       if (!mounted) return;
       
-      // Check if user is already a seller
+      // Check if user is already a seller (user data already loaded above)
       final userProvider = Provider.of<UserProvider>(context, listen: false);
-      await userProvider.loadUserData();
       
       if (userProvider.isSeller) {
         // User is already a seller, go directly to home
@@ -156,6 +284,120 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
       if (mounted) setState(() => _loading = false);
     }
   }
+
+  Future<String> _getOrCreateDeviceId() async {
+    final prefs = await SharedPreferences.getInstance();
+    final existing = prefs.getString('device_id');
+    if (existing != null && existing.isNotEmpty) return existing;
+    final timestamp = DateTime.now().millisecondsSinceEpoch;
+    final micro = DateTime.now().microsecondsSinceEpoch % 1000000;
+    final newId = 'dev_${timestamp}_$micro';
+    await prefs.setString('device_id', newId);
+    return newId;
+  }
+
+  Future<Map<String, dynamic>> _callRiskGate(String action) async {
+    try {
+      final deviceId = await _getOrCreateDeviceId();
+      final callable = FirebaseFunctions.instance.httpsCallable('riskGate');
+      final result = await callable.call<Map<String, dynamic>>({
+        'action': action,
+        'deviceId': deviceId,
+      });
+      return result.data ?? <String, dynamic>{};
+    } on FirebaseFunctionsException catch (e) {
+      return {'error': e.message, 'code': e.code};
+    } catch (e) {
+      return {'error': e.toString(), 'code': 'unknown'};
+    }
+  }
+
+  Future<bool> _performBiometricStepUpLogin() async {
+    return await BiometricStepUp.authenticate(reason: 'Confirm it’s you with fingerprint/Face ID');
+  }
+
+  Future<void> _tryBiometricQuickLogin() async {
+    try {
+      if (!_quickLoginEnabled) return;
+      setState(() => _loading = true);
+      final ok = await BiometricStepUp.authenticate(reason: 'Quick login with biometrics');
+      if (!ok) {
+        setState(() => _loading = false);
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Biometric check failed')));
+        return;
+      }
+      // If email is filled, attempt sign-in; else prompt user
+      final email = _emailController.text.trim();
+      final pass = _passwordController.text.trim();
+      if (email.isEmpty || pass.isEmpty) {
+        setState(() => _loading = false);
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Enter email and password once, then use Quick login.')));
+        return;
+      }
+      await FirebaseAuth.instance.signInWithEmailAndPassword(email: email, password: pass);
+      if (!mounted) return;
+      final userProvider = Provider.of<UserProvider>(context, listen: false);
+      await userProvider.loadUserData();
+      final cartProvider = Provider.of<CartProvider>(context, listen: false);
+      await cartProvider.syncCartToFirestore();
+      if (userProvider.isSeller) {
+        Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const SimpleHomeScreen()));
+      } else {
+        Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const PostLoginScreen()));
+      }
+    } catch (e) {
+      if (mounted) ErrorHandler.showError(context, ErrorHandler.handleGeneralException(e));
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<bool> _performEmailOtpStepUpLogin(String email) async {
+    try {
+      final callableCreate = FirebaseFunctions.instance.httpsCallable('createEmailOtp');
+      await callableCreate.call(<String, dynamic>{ 'email': email });
+      if (!mounted) return false;
+      final codeController = TextEditingController();
+      final ok = await showDialog<bool>(
+            context: context,
+            barrierDismissible: false,
+            builder: (context) {
+              return AlertDialog(
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                title: const Text('Enter email code'),
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text('We sent a 6‑digit code to your email.'),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: codeController,
+                      keyboardType: TextInputType.number,
+                      maxLength: 6,
+                      decoration: const InputDecoration(counterText: '', border: OutlineInputBorder(), hintText: '123456'),
+                    ),
+                  ],
+                ),
+                actions: [
+                  TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancel')),
+                  ElevatedButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('Verify')),
+                ],
+              );
+            },
+          ) ??
+          false;
+      if (!ok) return false;
+      final code = codeController.text.trim();
+      if (code.length != 6) return false;
+      final callableVerify = FirebaseFunctions.instance.httpsCallable('verifyEmailOtp');
+      final result = await callableVerify.call<Map<String, dynamic>>({ 'code': code });
+      return (result.data?['ok'] == true);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  // SMS step-up removed to keep free options only
 
   Widget _buildBeautifulLogo() {
     return ScaleTransition(
@@ -322,9 +564,62 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
               ),
             ),
             SizedBox(height: ResponsiveUtils.getVerticalPadding(context) * 1.5),
-            
+
+            // Forgot Password link
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton(
+                onPressed: _loading ? null : _showForgotPasswordDialog,
+                child: SafeUI.safeText(
+                  'Forgot password?',
+                  style: TextStyle(
+                    fontSize: ResponsiveUtils.getTitleSize(context) - 4,
+                    color: AppTheme.deepTeal,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  maxLines: 1,
+                ),
+              ),
+            ),
+            SizedBox(height: ResponsiveUtils.getVerticalPadding(context)),
+
             // Submit Button
             _buildBeautifulSubmitButton(),
+
+            // Quick login row
+            SizedBox(height: ResponsiveUtils.getVerticalPadding(context) * 0.5),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: [
+                    Switch(
+                      value: _quickLoginEnabled,
+                      onChanged: _loading ? null : (v) async {
+                        setState(() { _quickLoginEnabled = v; });
+                        try { final p = await SharedPreferences.getInstance(); await p.setBool('quick_login_biometrics', v); } catch (_) {}
+                      },
+                    ),
+                    SafeUI.safeText(
+                      'Use fingerprint/Face ID',
+                      style: TextStyle(
+                        fontSize: ResponsiveUtils.getTitleSize(context) - 4,
+                        color: AppTheme.darkGrey,
+                      ),
+                      maxLines: 1,
+                    ),
+                  ],
+                ),
+                TextButton.icon(
+                  onPressed: (_loading || !_quickLoginEnabled) ? null : _tryBiometricQuickLogin,
+                  icon: const Icon(Icons.fingerprint),
+                  label: const Text('Quick login'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: AppTheme.deepTeal,
+                  ),
+                ),
+              ],
+            ),
           ],
         ),
       ),
