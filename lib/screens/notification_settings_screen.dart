@@ -98,31 +98,59 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
         title: const Text('Notification Settings'),
         backgroundColor: AppTheme.deepTeal,
         foregroundColor: Colors.white,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () {
+            if (Navigator.canPop(context)) {
+              Navigator.pop(context);
+            } else {
+              Navigator.pushReplacementNamed(context, '/home');
+            }
+          },
+          tooltip: 'Back',
+        ),
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+      body: SafeArea(
+        top: false,
+        bottom: true,
+        child: ListView(
+          padding: const EdgeInsets.all(16.0),
           children: [
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Notification Preferences',
-                      style: AppTheme.headlineMedium.copyWith(
-                        color: AppTheme.deepTeal,
-                      ),
+            Container(
+              decoration: AppTheme.primaryGradientDecoration(
+                borderRadius: 16,
+                boxShadow: AppTheme.complementaryGlow,
+              ),
+              padding: const EdgeInsets.all(20),
+              child: Row(
+                children: [
+                  Container(
+                    width: 44,
+                    height: 44,
+                    decoration: const BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Colors.white24,
                     ),
-                    const SizedBox(height: 16),
-                    Text(
-                      'Choose how you want to receive notifications:',
-                      style: TextStyle(fontSize: 16),
+                    child: const Icon(Icons.notifications_active, color: Colors.white),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Notifications',
+                          style: AppTheme.displaySmall.copyWith(color: AppTheme.white),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Control alerts, sounds and voice announcements',
+                          style: AppTheme.bodyMedium.copyWith(color: Colors.white70),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
             const SizedBox(height: 16),
@@ -135,9 +163,18 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
                 value: _systemNotificationsEnabled,
                 onChanged: (value) => _updateSetting('system', value),
                 activeColor: AppTheme.deepTeal,
-                secondary: Icon(
-                  Icons.notifications,
-                  color: _systemNotificationsEnabled ? AppTheme.deepTeal : Colors.grey,
+                secondary: Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: LinearGradient(
+                      colors: _systemNotificationsEnabled
+                          ? AppTheme.buttonGradient
+                          : [AppTheme.veryLightGrey, AppTheme.veryLightGrey],
+                    ),
+                  ),
+                  child: const Icon(Icons.notifications, color: Colors.white, size: 20),
                 ),
               ),
             ),
@@ -152,9 +189,18 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
                 value: _audioNotificationsEnabled,
                 onChanged: (value) => _updateSetting('audio', value),
                 activeColor: AppTheme.deepTeal,
-                secondary: Icon(
-                  Icons.volume_up,
-                  color: _audioNotificationsEnabled ? AppTheme.deepTeal : Colors.grey,
+                secondary: Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: LinearGradient(
+                      colors: _audioNotificationsEnabled
+                          ? AppTheme.buttonGradient
+                          : [AppTheme.veryLightGrey, AppTheme.veryLightGrey],
+                    ),
+                  ),
+                  child: const Icon(Icons.volume_up, color: Colors.white, size: 20),
                 ),
               ),
             ),
@@ -169,9 +215,18 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
                 value: _inAppNotificationsEnabled,
                 onChanged: (value) => _updateSetting('inApp', value),
                 activeColor: AppTheme.deepTeal,
-                secondary: Icon(
-                  Icons.message,
-                  color: _inAppNotificationsEnabled ? AppTheme.deepTeal : Colors.grey,
+                secondary: Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: LinearGradient(
+                      colors: _inAppNotificationsEnabled
+                          ? AppTheme.buttonGradient
+                          : [AppTheme.veryLightGrey, AppTheme.veryLightGrey],
+                    ),
+                  ),
+                  child: const Icon(Icons.message, color: Colors.white, size: 20),
                 ),
               ),
             ),
@@ -186,9 +241,18 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
                 value: _autoClearBadgeEnabled,
                 onChanged: (value) => _updateSetting('autoClearBadge', value),
                 activeColor: AppTheme.deepTeal,
-                secondary: Icon(
-                  Icons.do_not_disturb_on_total_silence,
-                  color: _autoClearBadgeEnabled ? AppTheme.deepTeal : Colors.grey,
+                secondary: Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: LinearGradient(
+                      colors: _autoClearBadgeEnabled
+                          ? AppTheme.buttonGradient
+                          : [AppTheme.veryLightGrey, AppTheme.veryLightGrey],
+                    ),
+                  ),
+                  child: const Icon(Icons.do_not_disturb_on_total_silence, color: Colors.white, size: 20),
                 ),
               ),
             ),
@@ -203,9 +267,18 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
                 value: _voiceAnnouncementsEnabled,
                 onChanged: (value) => _updateSetting('voice', value),
                 activeColor: AppTheme.deepTeal,
-                secondary: Icon(
-                  Icons.record_voice_over,
-                  color: _voiceAnnouncementsEnabled ? AppTheme.deepTeal : Colors.grey,
+                secondary: Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: LinearGradient(
+                      colors: _voiceAnnouncementsEnabled
+                          ? AppTheme.buttonGradient
+                          : [AppTheme.veryLightGrey, AppTheme.veryLightGrey],
+                    ),
+                  ),
+                  child: const Icon(Icons.record_voice_over, color: Colors.white, size: 20),
                 ),
               ),
             ),
@@ -220,53 +293,110 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
                     children: [
                       Text('Voice & Language', style: AppTheme.headlineSmall.copyWith(color: AppTheme.deepTeal)),
                       const SizedBox(height: 12),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: DropdownButtonFormField<String>(
-                              value: _selectedLanguage,
-                              decoration: const InputDecoration(labelText: 'Language', border: OutlineInputBorder()),
-                              items: (_notificationService.availableLanguages.isEmpty
-                                      ? const ['en-US']
-                                      : _notificationService.availableLanguages.cast<String>())
-                                  .map((lang) => DropdownMenuItem<String>(value: lang, child: Text(lang)))
-                                  .toList(),
-                              onChanged: (v) async {
-                                setState(() => _selectedLanguage = v);
-                                await _notificationService.updateTtsPreferences(language: v);
-                              },
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: DropdownButtonFormField<String>(
-                              value: _selectedVoiceName,
-                              decoration: const InputDecoration(labelText: 'Voice', border: OutlineInputBorder()),
-                              items: (_notificationService.availableVoices)
-                                  .map((v) {
-                                    final name = (v is Map) ? (v['name']?.toString() ?? '') : v.toString();
-                                    final locale = (v is Map) ? (v['locale']?.toString() ?? '') : '';
-                                    return DropdownMenuItem<String>(
-                                      value: name.isEmpty ? null : name,
-                                      child: Text(name.isEmpty ? 'Default' : '$name ${locale.isNotEmpty ? '($locale)' : ''}'),
-                                    );
-                                  })
-                                  .where((i) => i.value != null)
-                                  .cast<DropdownMenuItem<String>>()
-                                  .toList(),
-                              onChanged: (v) async {
-                                setState(() => _selectedVoiceName = v);
-                                // Find selected locale from voices list if present
-                                String? locale;
-                                for (final vv in _notificationService.availableVoices) {
-                                  if (vv is Map && vv['name'] == v) { locale = vv['locale']?.toString(); break; }
+                      LayoutBuilder(
+                        builder: (context, constraints) {
+                          final bool stack = constraints.maxWidth < 360;
+
+                          Widget langDropdown = Builder(
+                            builder: (context) {
+                              final rawLangs = _notificationService.availableLanguages.isEmpty
+                                  ? const ['en-US']
+                                  : _notificationService.availableLanguages.map((e) => e?.toString() ?? '').where((e) => e.isNotEmpty).toList();
+                              final langs = rawLangs.toSet().toList()..sort();
+                              final String? langValue = langs.contains(_selectedLanguage)
+                                  ? _selectedLanguage
+                                  : (langs.isNotEmpty ? langs.first : null);
+                              return DropdownButtonFormField<String>(
+                                value: langValue,
+                                isDense: true,
+                                decoration: const InputDecoration(labelText: 'Language', border: OutlineInputBorder()),
+                                items: langs
+                                    .map((lang) => DropdownMenuItem<String>(
+                                          value: lang,
+                                          child: Text(lang, overflow: TextOverflow.ellipsis),
+                                        ))
+                                    .toList(),
+                                onChanged: (v) async {
+                                  setState(() => _selectedLanguage = v);
+                                  await _notificationService.updateTtsPreferences(language: v);
+                                },
+                              );
+                            },
+                          );
+
+                          Widget voiceDropdown = Builder(
+                            builder: (context) {
+                              final List<Map<String, String>> rawVoices = _notificationService.availableVoices.map((v) {
+                                if (v is Map) {
+                                  return {
+                                    'name': (v['name']?.toString() ?? '').trim(),
+                                    'locale': (v['locale']?.toString() ?? '').trim(),
+                                  };
                                 }
-                                _selectedVoiceLocale = locale;
-                                await _notificationService.updateTtsPreferences(voiceName: v, voiceLocale: locale);
-                              },
-                            ),
-                          ),
-                        ],
+                                return {
+                                  'name': v.toString().trim(),
+                                  'locale': '',
+                                };
+                              }).toList();
+                              final List<Map<String, String>> voices = [];
+                              final seen = <String>{};
+                              for (final m in rawVoices) {
+                                final n = m['name'] ?? '';
+                                if (n.isEmpty) continue;
+                                if (seen.add(n)) voices.add(m);
+                              }
+                              final names = voices.map((e) => e['name']!).toList();
+                              final String? voiceValue = names.contains(_selectedVoiceName)
+                                  ? _selectedVoiceName
+                                  : (names.isNotEmpty ? names.first : null);
+                              return DropdownButtonFormField<String>(
+                                value: voiceValue,
+                                isDense: true,
+                                decoration: const InputDecoration(labelText: 'Voice', border: OutlineInputBorder()),
+                                items: voices
+                                    .map((m) {
+                                      final n = m['name'] ?? '';
+                                      final loc = m['locale'] ?? '';
+                                      return DropdownMenuItem<String>(
+                                        value: n,
+                                        child: Text(loc.isNotEmpty ? '$n ($loc)' : n, overflow: TextOverflow.ellipsis),
+                                      );
+                                    })
+                                    .toList(),
+                                onChanged: (v) async {
+                                  setState(() => _selectedVoiceName = v);
+                                  String? locale;
+                                  for (final m in voices) {
+                                    if (m['name'] == v) {
+                                      locale = m['locale'];
+                                      break;
+                                    }
+                                  }
+                                  _selectedVoiceLocale = locale;
+                                  await _notificationService.updateTtsPreferences(voiceName: v, voiceLocale: locale);
+                                },
+                              );
+                            },
+                          );
+
+                          if (stack) {
+                            return Column(
+                              children: [
+                                langDropdown,
+                                const SizedBox(height: 12),
+                                voiceDropdown,
+                              ],
+                            );
+                          }
+
+                          return Row(
+                            children: [
+                              Expanded(child: langDropdown),
+                              const SizedBox(width: 12),
+                              Expanded(child: voiceDropdown),
+                            ],
+                          );
+                        },
                       ),
                       const SizedBox(height: 16),
                       Text('Speed'),
@@ -324,45 +454,7 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
                 ),
               ),
             ],
-            
-            const SizedBox(height: 24),
-            
-            // Test Section
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Test Your Settings',
-                      style: AppTheme.headlineSmall.copyWith(
-                        color: AppTheme.deepTeal,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    ElevatedButton(
-                      onPressed: () async {
-                        await _notificationService.sendLocalNotification(
-                          title: 'Test Notification',
-                          body: 'This is a test notification with your current settings!',
-                          data: {'type': 'test'},
-                        );
-                      },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppTheme.deepTeal,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                      ),
-                      child: const Text('Send Test Notification'),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            
             const SizedBox(height: 16),
-            
             // Current Settings Display
             Card(
               child: Padding(
@@ -386,8 +478,7 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
               ),
             ),
             
-            const Spacer(),
-            
+            const SizedBox(height: 16),
             // Info Card
             Card(
               color: AppTheme.whisper,

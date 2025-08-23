@@ -15,6 +15,7 @@ import '../constants/app_constants.dart';
 import '../theme/app_theme.dart';
 import '../providers/cart_provider.dart';
 import 'post_login_screen.dart';
+import '../services/notification_service.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({Key? key}) : super(key: key);
@@ -30,6 +31,7 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
   bool _isLogin = true;
   bool _loading = false;
   bool _obscurePassword = true;
+  bool _quickLoginEnabled = true; // opt-in; default on
 
   late AnimationController _fadeController;
   late AnimationController _slideController;
@@ -70,6 +72,17 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
     _fadeController.forward();
     _slideController.forward();
     _scaleController.forward();
+
+    _loadQuickLoginPref();
+  }
+
+  Future<void> _loadQuickLoginPref() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      setState(() {
+        _quickLoginEnabled = prefs.getBool('quick_login_biometrics') ?? true;
+      });
+    } catch (_) {}
   }
 
   Future<void> _showForgotPasswordDialog() async {
@@ -116,7 +129,12 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
     try {
       setState(() => _loading = true);
       await _callRiskGate('password_reset');
-      await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
+      try {
+        final callable = FirebaseFunctions.instance.httpsCallable('sendPasswordResetEmail');
+        await callable.call(<String, dynamic>{ 'email': email });
+      } catch (_) {
+        await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
+      }
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Reset email sent. Check your inbox.')));
     } on FirebaseAuthException catch (e) {
@@ -185,6 +203,10 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
               'suspended': false,
             });
           }
+          // TTS welcome (buyer/user)
+          try {
+            await NotificationService().speakPreview('Welcome aboard! Let’s find something lekker today.');
+          } catch (_) {}
         }
       }
 
@@ -292,6 +314,42 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
 
   Future<bool> _performBiometricStepUpLogin() async {
     return await BiometricStepUp.authenticate(reason: 'Confirm it’s you with fingerprint/Face ID');
+  }
+
+  Future<void> _tryBiometricQuickLogin() async {
+    try {
+      if (!_quickLoginEnabled) return;
+      setState(() => _loading = true);
+      final ok = await BiometricStepUp.authenticate(reason: 'Quick login with biometrics');
+      if (!ok) {
+        setState(() => _loading = false);
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Biometric check failed')));
+        return;
+      }
+      // If email is filled, attempt sign-in; else prompt user
+      final email = _emailController.text.trim();
+      final pass = _passwordController.text.trim();
+      if (email.isEmpty || pass.isEmpty) {
+        setState(() => _loading = false);
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Enter email and password once, then use Quick login.')));
+        return;
+      }
+      await FirebaseAuth.instance.signInWithEmailAndPassword(email: email, password: pass);
+      if (!mounted) return;
+      final userProvider = Provider.of<UserProvider>(context, listen: false);
+      await userProvider.loadUserData();
+      final cartProvider = Provider.of<CartProvider>(context, listen: false);
+      await cartProvider.syncCartToFirestore();
+      if (userProvider.isSeller) {
+        Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const SimpleHomeScreen()));
+      } else {
+        Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const PostLoginScreen()));
+      }
+    } catch (e) {
+      if (mounted) ErrorHandler.showError(context, ErrorHandler.handleGeneralException(e));
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
   }
 
   Future<bool> _performEmailOtpStepUpLogin(String email) async {
@@ -527,6 +585,41 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
 
             // Submit Button
             _buildBeautifulSubmitButton(),
+
+            // Quick login row
+            SizedBox(height: ResponsiveUtils.getVerticalPadding(context) * 0.5),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: [
+                    Switch(
+                      value: _quickLoginEnabled,
+                      onChanged: _loading ? null : (v) async {
+                        setState(() { _quickLoginEnabled = v; });
+                        try { final p = await SharedPreferences.getInstance(); await p.setBool('quick_login_biometrics', v); } catch (_) {}
+                      },
+                    ),
+                    SafeUI.safeText(
+                      'Use fingerprint/Face ID',
+                      style: TextStyle(
+                        fontSize: ResponsiveUtils.getTitleSize(context) - 4,
+                        color: AppTheme.darkGrey,
+                      ),
+                      maxLines: 1,
+                    ),
+                  ],
+                ),
+                TextButton.icon(
+                  onPressed: (_loading || !_quickLoginEnabled) ? null : _tryBiometricQuickLogin,
+                  icon: const Icon(Icons.fingerprint),
+                  label: const Text('Quick login'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: AppTheme.deepTeal,
+                  ),
+                ),
+              ],
+            ),
           ],
         ),
       ),

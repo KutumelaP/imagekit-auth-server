@@ -2,6 +2,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import '../services/notification_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 // import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
@@ -34,6 +35,12 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
   String? _selectedStoreCategory;
   final _deliveryFeeController = TextEditingController();
   final _minOrderController = TextEditingController();
+  // Payout details controllers
+  final TextEditingController _accountHolderController = TextEditingController();
+  final TextEditingController _bankNameController = TextEditingController();
+  final TextEditingController _accountNumberController = TextEditingController();
+  final TextEditingController _branchCodeController = TextEditingController();
+  String _accountType = 'cheque';
   final TextEditingController _storyController = TextEditingController();
   final TextEditingController _specialtiesController = TextEditingController();
   final TextEditingController _passionController = TextEditingController();
@@ -52,6 +59,8 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
   bool _isLoading = false;
   bool _isStoreOpen = true;
   bool _isDeliveryAvailable = false;
+  bool _allowCOD = false;
+  bool _termsAccepted = false;
   bool _deliverEverywhere = false;
   double _visibilityRadius = 5.0;
   
@@ -80,6 +89,9 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
   
   // Pargo Service variables
   bool _pargoEnabled = false;
+  // Global visibility for pickup services
+  bool _pargoVisible = true;
+  bool _paxiVisible = true;
 
   dynamic _storeImage; // Can be File or XFile
   // String? _storeImageUrl;
@@ -128,6 +140,22 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
     // Start animations
     _fadeController.forward();
     _slideController.forward();
+
+    // Load global pickup visibility
+    _loadPickupVisibility();
+  }
+
+  Future<void> _loadPickupVisibility() async {
+    try {
+      final doc = await FirebaseFirestore.instance.collection('config').doc('platform').get();
+      final cfg = doc.data();
+      if (cfg != null) {
+        setState(() {
+          _pargoVisible = (cfg['pargoVisible'] != false);
+          _paxiVisible = (cfg['paxiVisible'] != false);
+        });
+      }
+    } catch (_) {}
   }
 
   // Show approval notice dialog
@@ -300,6 +328,10 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
     _specialtiesController.dispose();
     _passionController.dispose();
     _customRangeController.dispose();
+    _accountHolderController.dispose();
+    _bankNameController.dispose();
+    _accountNumberController.dispose();
+    _branchCodeController.dispose();
 
     super.dispose();
   }
@@ -852,6 +884,7 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
         'deliveryRange': _deliveryRange,
         'useCustomRange': false, // No longer needed since we use slider
         'paymentMethods': _selectedPaymentMethods,
+        'allowCOD': _allowCOD,
         'profileImageUrl': storeImageUrl ?? '',
         'extraPhotoUrls': extraPhotoUrls,
         'introVideoUrl': introVideoUrl ?? '',
@@ -868,9 +901,43 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
         'platformFeeExempt': false,
       });
 
+      // Save payout details to secure sub-document
+      try {
+        await FirebaseFirestore.instance
+            .collection('users')
+            .doc(user.uid)
+            .collection('payout')
+            .doc('bank')
+            .set({
+          'accountHolder': _accountHolderController.text.trim(),
+          'bankName': _bankNameController.text.trim(),
+          'accountNumber': _accountNumberController.text.trim(),
+          'branchCode': _branchCodeController.text.trim(),
+          'accountType': _accountType,
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+      } catch (e) {
+        print('⚠️ Failed to save payout details: $e');
+      }
+
+      // Terms consent timestamp
+      if (_termsAccepted) {
+        try {
+          await FirebaseFirestore.instance
+              .collection('users')
+              .doc(user.uid)
+              .set({ 'termsAcceptedAt': FieldValue.serverTimestamp() }, SetOptions(merge: true));
+        } catch (_) {}
+      }
+
       await FirebaseFirestore.instance.collection('users').doc(user.uid).update({
         'role': 'seller',
       });
+
+      // TTS welcome (seller)
+      try {
+        await NotificationService().speakPreview('Congrats—your seller account is live. Let’s get those orders rolling.');
+      } catch (_) {}
 
       // Refresh user data in provider to reflect the role change
       if (mounted) {
@@ -1847,6 +1914,12 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
                         value: _isDeliveryAvailable,
                         onChanged: (value) => setState(() => _isDeliveryAvailable = value),
                       ),
+                      _buildSwitchTile(
+                        title: 'Allow Cash on Delivery (COD)',
+                        subtitle: 'Customers can pay cash on delivery/pickup (fees apply)',
+                        value: _allowCOD,
+                        onChanged: (value) => setState(() => _allowCOD = value),
+                      ),
                       if (_isDeliveryAvailable) ...[
                         // Delivery Fee Information Note
                         Container(
@@ -2588,8 +2661,8 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
                             ),
                           ),
                         
-                        // PAXI Pickup Service Section
-                        Container(
+                        // PAXI Pickup Service Section (hidden if disabled globally)
+                        if (_paxiVisible) Container(
                           margin: const EdgeInsets.only(bottom: 16),
                           padding: const EdgeInsets.all(16),
                           decoration: BoxDecoration(
@@ -2700,8 +2773,8 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
                           ),
                         ),
                         
-                        // Pargo Pickup Service Section
-                        Container(
+                        // Pargo Pickup Service Section (hidden if disabled globally)
+                        if (_pargoVisible) Container(
                           margin: const EdgeInsets.only(bottom: 16),
                           padding: const EdgeInsets.all(16),
                           decoration: BoxDecoration(
@@ -3114,6 +3187,72 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
                           ),
                         ),
                       ],
+                    ],
+                  ),
+
+                  // Payout Details Section
+                  _buildSectionCard(
+                    title: 'Payout Details',
+                    icon: Icons.account_balance,
+                    children: [
+                      _buildEnhancedTextField(
+                        controller: _accountHolderController,
+                        label: 'Account Holder Name',
+                        hint: 'e.g., Jane Dlamini',
+                        prefixIcon: Icons.person,
+                        validator: (v) => (v == null || v.isEmpty) ? 'Enter account holder name' : null,
+                      ),
+                      _buildEnhancedTextField(
+                        controller: _bankNameController,
+                        label: 'Bank Name',
+                        hint: 'e.g., FNB, Standard Bank',
+                        prefixIcon: Icons.account_balance,
+                        validator: (v) => (v == null || v.isEmpty) ? 'Enter bank name' : null,
+                      ),
+                      _buildEnhancedTextField(
+                        controller: _accountNumberController,
+                        label: 'Account Number',
+                        hint: 'Bank account number',
+                        prefixIcon: Icons.numbers,
+                        keyboardType: TextInputType.number,
+                        validator: (v) => (v == null || v.isEmpty) ? 'Enter account number' : null,
+                      ),
+                      _buildEnhancedTextField(
+                        controller: _branchCodeController,
+                        label: 'Branch Code',
+                        hint: 'e.g., 250 655',
+                        prefixIcon: Icons.confirmation_number,
+                        keyboardType: TextInputType.number,
+                        validator: (v) => (v == null || v.isEmpty) ? 'Enter branch code' : null,
+                      ),
+                      DropdownButtonFormField<String>(
+                        value: _accountType,
+                        decoration: const InputDecoration(
+                          labelText: 'Account Type',
+                          border: OutlineInputBorder(),
+                          prefixIcon: Icon(Icons.account_box),
+                        ),
+                        items: const [
+                          DropdownMenuItem(value: 'cheque', child: Text('Cheque/Current')),
+                          DropdownMenuItem(value: 'savings', child: Text('Savings')),
+                          DropdownMenuItem(value: 'business', child: Text('Business')),
+                        ],
+                        onChanged: (v) => setState(() => _accountType = v ?? 'cheque'),
+                      ),
+                    ],
+                  ),
+
+                  // Terms & Consent
+                  _buildSectionCard(
+                    title: 'Terms & Consent',
+                    icon: Icons.verified_user,
+                    children: [
+                      CheckboxListTile(
+                        value: _termsAccepted,
+                        onChanged: (v) => setState(() => _termsAccepted = v ?? false),
+                        title: const Text('I agree to the marketplace terms and payout policy'),
+                        controlAffinity: ListTileControlAffinity.leading,
+                      ),
                     ],
                   ),
                   

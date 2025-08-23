@@ -525,6 +525,9 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final media = MediaQuery.of(context);
+    final bool _keyboardOpen = media.viewInsets.bottom > 0;
+    final double _messagesBottomPadding = _keyboardOpen ? 8.0 : (90 + media.padding.bottom);
     // Check if user is authenticated
     final currentUser = FirebaseAuth.instance.currentUser;
     if (currentUser == null) {
@@ -677,7 +680,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
                 return ListView.builder(
                   padding: EdgeInsets.only(
-                    bottom: 90 + MediaQuery.of(context).padding.bottom,
+                    bottom: _messagesBottomPadding,
                     top: 4,
                   ),
                   controller: _scrollController,
@@ -787,7 +790,7 @@ class _ChatScreenState extends State<ChatScreen> {
             top: false,
             minimum: const EdgeInsets.only(bottom: 16),
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(8, 8, 8, 20),
+              padding: const EdgeInsets.fromLTRB(8, 8, 8, 12),
               child: Row(
                 children: [
                   Expanded(

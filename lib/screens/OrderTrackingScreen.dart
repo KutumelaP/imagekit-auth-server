@@ -11,6 +11,10 @@ import '../models/order_status.dart';
 import '../services/pargo_tracking_service.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'package:flutter/foundation.dart';
+import 'dart:io' show File;
 
 class OrderTrackingScreen extends StatefulWidget {
   final String orderId;
@@ -25,6 +29,7 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
   late AnimationController _fadeController;
   late Animation<double> _fadeAnimation;
   bool _cartClearedOnPayment = false;
+  bool _uploadingPaymentProof = false;
 
   // Add new fields for Pargo tracking
   Map<String, dynamic>? _orderData;
@@ -90,6 +95,13 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
   void dispose() {
     _fadeController.dispose();
     super.dispose();
+  }
+  
+  bool _isAwaitingEft(Map<String, dynamic> data) {
+    final pm = (data['paymentMethod'] as String?)?.toLowerCase() ?? '';
+    final ps = (data['paymentStatus'] as String?)?.toLowerCase() ?? '';
+    final isEft = pm.contains('eft') || pm.contains('bank transfer');
+    return isEft && ps == 'awaiting_payment';
   }
 
   DateTime? _parseTimestamp(dynamic timestamp) {
@@ -201,10 +213,14 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
             _maybeClearCartOnPayment(data);
             _maybeNotifyWhatsApp(data);
 
+            final displayOrder = (data['orderNumber'] is String && (data['orderNumber'] as String).isNotEmpty)
+                ? OrderUtils.formatShortOrderNumber(data['orderNumber'])
+                : '#${widget.orderId.substring(0, (widget.orderId.length >= 8 ? 8 : widget.orderId.length)).toUpperCase()}';
+
             return CustomScrollView(
               slivers: [
                 // Beautiful App Bar
-                _buildSliverAppBar(currentStatus),
+                _buildSliverAppBar(currentStatus, displayOrder),
                 
                 // Order Summary Card
                 SliverToBoxAdapter(
@@ -218,6 +234,12 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
                     },
                   ),
                 ),
+
+                // EFT Proof of Payment (Buyer)
+                if (_isAwaitingEft(data))
+                  SliverToBoxAdapter(
+                    child: _buildEftPaymentCard(widget.orderId, data),
+                  ),
                 
                 // Driver Status Card (if driver is assigned)
                 if (data['driverAssigned'] == true && data['assignedDriverId'] != null)
@@ -268,6 +290,183 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
         ),
       ),
     );
+  }
+
+  Widget _buildEftPaymentCard(String orderId, Map<String, dynamic> data) {
+    final proofUrl = data['paymentProofUrl'] as String?;
+    final proofStatus = (data['paymentProofStatus'] as String?) ?? 'none';
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Colors.orange.shade50,
+            Colors.white,
+          ],
+        ),
+        border: Border.all(color: Colors.orange.withOpacity(0.2)),
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.06),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.account_balance, color: Colors.orange.shade700, size: 24),
+              const SizedBox(width: 8),
+              Text(
+                'EFT Payment Proof',
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: Theme.of(context).colorScheme.onSurface,
+                ),
+              ),
+              const Spacer(),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  'AWAITING PAYMENT',
+                  style: TextStyle(color: Colors.orange.shade700, fontWeight: FontWeight.bold, fontSize: 12),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(
+            'Please upload a clear screenshot or photo of your bank Proof of Payment. Your order will be confirmed once the seller verifies it.',
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.grey[700]),
+          ),
+          const SizedBox(height: 12),
+          if (proofUrl != null && proofUrl.isNotEmpty) ...[
+            ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: Image.network(
+                proofUrl,
+                height: 160,
+                width: double.infinity,
+                fit: BoxFit.cover,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: proofStatus == 'approved' ? Colors.green.withOpacity(0.1)
+                        : proofStatus == 'rejected' ? Colors.red.withOpacity(0.1)
+                        : Colors.blue.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    proofStatus.toUpperCase(),
+                    style: TextStyle(
+                      color: proofStatus == 'approved' ? Colors.green
+                          : proofStatus == 'rejected' ? Colors.red
+                          : Colors.blue,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+                const Spacer(),
+                TextButton.icon(
+                  onPressed: _uploadingPaymentProof ? null : () => _uploadProofOfPayment(orderId),
+                  icon: _uploadingPaymentProof
+                      ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Icon(Icons.upload),
+                  label: Text(_uploadingPaymentProof ? 'Uploading...' : 'Replace Proof'),
+                ),
+              ],
+            ),
+          ] else ...[
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: _uploadingPaymentProof ? null : () => _uploadProofOfPayment(orderId),
+                icon: _uploadingPaymentProof
+                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                    : const Icon(Icons.upload_file),
+                label: Text(_uploadingPaymentProof ? 'Uploading...' : 'Upload Proof of Payment'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.orange.shade700,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Future<void> _uploadProofOfPayment(String orderId) async {
+    try {
+      setState(() { _uploadingPaymentProof = true; });
+      final picker = ImagePicker();
+      final XFile? picked = await picker.pickImage(source: ImageSource.gallery, maxWidth: 1800, imageQuality: 85);
+      if (picked == null) {
+        setState(() { _uploadingPaymentProof = false; });
+        return;
+      }
+
+      final String ext = (picked.name.split('.').last.toLowerCase());
+      final String fileName = 'payment_proof_${DateTime.now().millisecondsSinceEpoch}.$ext';
+      final ref = FirebaseStorage.instance.ref().child('orders').child(orderId).child(fileName);
+
+      if (kIsWeb) {
+        final bytes = await picked.readAsBytes();
+        final meta = SettableMetadata(contentType: 'image/$ext');
+        await ref.putData(bytes, meta);
+      } else {
+        final file = File(picked.path);
+        final meta = SettableMetadata(contentType: 'image/$ext');
+        await ref.putFile(file, meta);
+      }
+
+      final url = await ref.getDownloadURL();
+      await FirebaseFirestore.instance.collection('orders').doc(orderId).set({
+        'paymentProofUrl': url,
+        'paymentProofUploadedAt': FieldValue.serverTimestamp(),
+        'paymentProofStatus': 'submitted',
+        'trackingUpdates': FieldValue.arrayUnion([{
+          'description': 'Payment proof uploaded by buyer',
+          'timestamp': Timestamp.now(),
+          'by': 'buyer',
+        }])
+      }, SetOptions(merge: true));
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Proof of payment uploaded successfully')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to upload proof: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() { _uploadingPaymentProof = false; });
+    }
   }
 
   Future<void> _maybeClearCartOnPayment(Map<String, dynamic> data) async {
@@ -324,7 +523,7 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
     }
   }
 
-  Widget _buildSliverAppBar(String status) {
+  Widget _buildSliverAppBar(String status, String displayOrder) {
     final color = _statusColor(status);
     
     return SliverSafeArea(
@@ -406,7 +605,7 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
                   ),
                   const SizedBox(height: 8),
                   Text(
-                      'Order ${OrderUtils.formatShortOrderNumber(widget.orderId)}',
+                      'Order $displayOrder',
                       style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                         color: Colors.white,
                         fontWeight: FontWeight.bold,

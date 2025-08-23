@@ -4,7 +4,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
-import 'dart:developer';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:path/path.dart' as path;
@@ -35,6 +34,23 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
   List<String> _storyPhotoUrls = [];
   File? _storyVideo;
   String? _storyVideoUrl;
+  // Compliance & payments
+  String _kycStatus = 'none';
+  bool _pargoEnabled = false;
+  bool _paxiEnabled = false;
+  bool _pargoVisible = true;
+  bool _paxiVisible = true;
+  bool _allowCOD = true;
+  double _minOrderForDelivery = 0.0;
+  final TextEditingController _deliveryTimeEstimateController = TextEditingController();
+  // Payout controllers
+  final TextEditingController _payoutAccountHolderController = TextEditingController();
+  final TextEditingController _payoutBankNameController = TextEditingController();
+  final TextEditingController _payoutAccountNumberController = TextEditingController();
+  final TextEditingController _payoutBranchCodeController = TextEditingController();
+  String _payoutAccountType = 'Cheque/Current';
+  bool _loadingPayout = false;
+  bool _savingPayout = false;
   
   // Store settings for sellers
   bool _isStoreOpen = true;
@@ -75,6 +91,14 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
       _profileImageUrl = data['profileImageUrl'];
       _storyPhotoUrls = (data['storyPhotoUrls'] as List?)?.cast<String>() ?? [];
       _storyVideoUrl = data['storyVideoUrl'];
+      _kycStatus = (data['kycStatus'] as String?) ?? 'none';
+      _pargoEnabled = data['pargoEnabled'] == true;
+      _paxiEnabled = data['paxiEnabled'] == true;
+      // Global visibility
+      // Note: loaded below via config
+      _allowCOD = data['allowCOD'] != false;
+      _minOrderForDelivery = (data['minOrderForDelivery'] ?? 0.0).toDouble();
+      _deliveryTimeEstimateController.text = data['deliveryTimeEstimate'] ?? '';
       
       // Load store settings for sellers
       if (_isSeller) {
@@ -101,6 +125,46 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
       
       _loading = false;
     });
+    await _loadPayoutDetails();
+    // Load global pickup visibility
+    try {
+      final cfgDoc = await FirebaseFirestore.instance.collection('config').doc('platform').get();
+      final cfg = cfgDoc.data();
+      if (cfg != null) {
+        setState(() {
+          _pargoVisible = (cfg['pargoVisible'] != false);
+          _paxiVisible = (cfg['paxiVisible'] != false);
+        });
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _loadPayoutDetails() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    try {
+      setState(() { _loadingPayout = true; });
+      final doc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .collection('payout')
+          .doc('bank')
+          .get();
+      if (doc.exists) {
+        final d = doc.data();
+        if (d != null) {
+          _payoutAccountHolderController.text = (d['accountHolder'] ?? '').toString();
+          _payoutBankNameController.text = (d['bankName'] ?? '').toString();
+          _payoutAccountNumberController.text = (d['accountNumber'] ?? '').toString();
+          _payoutBranchCodeController.text = (d['branchCode'] ?? '').toString();
+          _payoutAccountType = (d['accountType'] ?? _payoutAccountType).toString();
+        }
+      }
+    } catch (e) {
+      debugPrint('Error loading payout details: $e');
+    } finally {
+      if (mounted) setState(() { _loadingPayout = false; });
+    }
   }
 
   Future<String?> _uploadImageToImageKit(File file) async {
@@ -287,7 +351,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
         // For web, we need to handle this differently
         print('DEBUG: Running on web platform');
         // Convert XFile to bytes and create a temporary file
-        final bytes = await pickedFile.readAsBytes();
+        await pickedFile.readAsBytes();
         // For web, we'll use the bytes directly
         setState(() {
           _profileImage = null; // Don't set File for web
@@ -308,7 +372,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
     // Upload to ImageKit
     try {
       print('DEBUG: Attempting to upload profile image to ImageKit...');
-          final url = await _uploadImageToImageKit(imageFile!);
+          final url = await _uploadImageToImageKit(imageFile);
       print('DEBUG: ImageKit upload result: ${url ?? 'null'}');
       if (url != null) {
         setState(() => _profileImageUrl = url);
@@ -1676,45 +1740,287 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                       controller: _locationController,
                       labelText: 'Location',
                     ),
+                    if (_isSeller && _kycStatus != 'approved') ...[
+                      const SizedBox(height: 12),
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.orange.withOpacity(0.08),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.orange.withOpacity(0.2)),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.verified_user, color: Colors.orange),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: const [
+                                  Text('Identity verification pending', style: TextStyle(fontWeight: FontWeight.w700)),
+                                  SizedBox(height: 4),
+                                  Text('Complete KYC to enable COD and payouts'),
+                                ],
+                              ),
+                            ),
+                            TextButton.icon(
+                              onPressed: () => Navigator.of(context).pushNamed('/kyc'),
+                              icon: const Icon(Icons.upload),
+                              label: const Text('Complete KYC'),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                     if (_isSeller) ...[
                       const SizedBox(height: 16),
-                      _buildThemedTextField(
-                        controller: _storyController,
-                        labelText: 'Our Story',
-                        maxLines: 3,
-                        suffixIcon: IconButton(
-                          icon: Icon(
-                            Icons.clear,
-                            color: AppTheme.cloud,
-                          ),
-                          tooltip: 'Clear Story',
-                          onPressed: _clearStoryText,
+                      _buildSectionHeader('Pickup Services'),
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: AppTheme.cloud.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: AppTheme.deepTeal.withOpacity(0.2), width: 1),
+                        ),
+                        child: Column(
+                          children: [
+                            if (_pargoVisible) SwitchListTile(
+                              value: _pargoEnabled,
+                              onChanged: (v) async {
+                                setState(() { _pargoEnabled = v; });
+                                final user = FirebaseAuth.instance.currentUser;
+                                if (user != null) await FirebaseFirestore.instance.collection('users').doc(user.uid).update({'pargoEnabled': v});
+                              },
+                              title: const Text('Enable PARGO pickup points'),
+                              subtitle: const Text('Let buyers pick up at PARGO locations'),
+                            ),
+                            if (_paxiVisible) SwitchListTile(
+                              value: _paxiEnabled,
+                              onChanged: (v) async {
+                                setState(() { _paxiEnabled = v; });
+                                final user = FirebaseAuth.instance.currentUser;
+                                if (user != null) await FirebaseFirestore.instance.collection('users').doc(user.uid).update({'paxiEnabled': v});
+                              },
+                              title: const Text('Enable PAXI pickup points'),
+                              subtitle: const Text('Let buyers pick up at PAXI locations'),
+                            ),
+                          ],
                         ),
                       ),
                       const SizedBox(height: 16),
-                      _buildSectionHeader('Story Photos (up to 2)'),
+                      _buildSectionHeader('Cash on Delivery & Delivery Info'),
                       const SizedBox(height: 8),
-                      _buildStoryPhotosSection(),
-                      const SizedBox(height: 16),
-                      _buildSectionHeader('Story Video (max 1, 1 min)'),
-                      const SizedBox(height: 8),
-                      _buildStoryVideoSection(),
-                      const SizedBox(height: 16),
-                      _buildThemedTextField(
-                        controller: _specialtiesController,
-                        labelText: 'Specialties (comma separated)',
-                        maxLines: 2,
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: AppTheme.cloud.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: AppTheme.deepTeal.withOpacity(0.2), width: 1),
+                        ),
+                        child: Column(
+                          children: [
+                            SwitchListTile(
+                              value: _allowCOD,
+                              onChanged: (v) async {
+                                setState(() { _allowCOD = v; });
+                                final user = FirebaseAuth.instance.currentUser;
+                                if (user != null) await FirebaseFirestore.instance.collection('users').doc(user.uid).update({'allowCOD': v});
+                              },
+                              title: const Text('Allow Cash on Delivery'),
+                              subtitle: const Text('May be disabled if verification/dues pending'),
+                            ),
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: TextFormField(
+                                    initialValue: _minOrderForDelivery.toStringAsFixed(0),
+                                    keyboardType: TextInputType.number,
+                                    decoration: InputDecoration(
+                                      labelText: 'Minimum order amount for delivery (R)',
+                                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                                      prefixIcon: const Icon(Icons.payments),
+                                    ),
+                                    onChanged: (v) {
+                                      final x = double.tryParse(v);
+                                      if (x != null) _minOrderForDelivery = x;
+                                    },
+                                    onEditingComplete: () async {
+                                      final user = FirebaseAuth.instance.currentUser;
+                                      if (user != null) await FirebaseFirestore.instance.collection('users').doc(user.uid).update({'minOrderForDelivery': _minOrderForDelivery});
+                                    },
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: TextField(
+                                    controller: _deliveryTimeEstimateController,
+                                    decoration: InputDecoration(
+                                      labelText: 'Delivery time estimate (e.g., 30–45 min)',
+                                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                                      prefixIcon: const Icon(Icons.timer),
+                                    ),
+                                    onSubmitted: (v) async {
+                                      final user = FirebaseAuth.instance.currentUser;
+                                      if (user != null) await FirebaseFirestore.instance.collection('users').doc(user.uid).update({'deliveryTimeEstimate': v});
+                                    },
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
                       ),
                       const SizedBox(height: 16),
-                      _buildThemedTextField(
-                        controller: _passionController,
-                        labelText: 'Your Passion',
-                        maxLines: 2,
+                      _buildSectionHeader('Payout (Bank) Details'),
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: AppTheme.cloud.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: AppTheme.deepTeal.withOpacity(0.2), width: 1),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (_loadingPayout) ...[
+                              Row(children: const [
+                                SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+                                SizedBox(width: 8),
+                                Text('Loading payout details...'),
+                              ]),
+                              const SizedBox(height: 8),
+                            ],
+                            TextField(
+                              controller: _payoutAccountHolderController,
+                              decoration: InputDecoration(
+                                labelText: 'Account Holder',
+                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                                prefixIcon: const Icon(Icons.person),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            TextField(
+                              controller: _payoutBankNameController,
+                              decoration: InputDecoration(
+                                labelText: 'Bank Name',
+                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                                prefixIcon: const Icon(Icons.account_balance),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: TextField(
+                                    controller: _payoutAccountNumberController,
+                                    keyboardType: TextInputType.number,
+                                    decoration: InputDecoration(
+                                      labelText: 'Account Number',
+                                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                                      prefixIcon: const Icon(Icons.numbers),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: TextField(
+                                    controller: _payoutBranchCodeController,
+                                    keyboardType: TextInputType.number,
+                                    decoration: InputDecoration(
+                                      labelText: 'Branch Code',
+                                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                                      prefixIcon: const Icon(Icons.pin),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            DropdownButtonFormField<String>(
+                              value: _payoutAccountType,
+                              items: const [
+                                DropdownMenuItem(value: 'Cheque/Current', child: Text('Cheque/Current')),
+                                DropdownMenuItem(value: 'Savings', child: Text('Savings')),
+                                DropdownMenuItem(value: 'Business Cheque', child: Text('Business Cheque')),
+                              ],
+                              onChanged: (v) => setState(() => _payoutAccountType = v ?? _payoutAccountType),
+                              decoration: InputDecoration(
+                                labelText: 'Account Type',
+                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                                prefixIcon: const Icon(Icons.account_balance_wallet),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Align(
+                              alignment: Alignment.centerLeft,
+                              child: ElevatedButton.icon(
+                                onPressed: _savingPayout ? null : () async {
+                                  final user = FirebaseAuth.instance.currentUser;
+                                  if (user == null) return;
+                                  setState(() { _savingPayout = true; });
+                                  try {
+                                    await FirebaseFirestore.instance
+                                        .collection('users')
+                                        .doc(user.uid)
+                                        .collection('payout')
+                                        .doc('bank')
+                                        .set({
+                                          'accountHolder': _payoutAccountHolderController.text.trim(),
+                                          'bankName': _payoutBankNameController.text.trim(),
+                                          'accountNumber': _payoutAccountNumberController.text.trim(),
+                                          'branchCode': _payoutBranchCodeController.text.trim(),
+                                          'accountType': _payoutAccountType,
+                                          'updatedAt': FieldValue.serverTimestamp(),
+                                        }, SetOptions(merge: true));
+                                    if (mounted) {
+                                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Payout details saved')));
+                                    }
+                                  } catch (e) {
+                                    if (mounted) {
+                                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed: $e')));
+                                    }
+                                  } finally {
+                                    if (mounted) setState(() { _savingPayout = false; });
+                                  }
+                                },
+                                icon: _savingPayout
+                                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                                    : const Icon(Icons.save),
+                                label: Text(_savingPayout ? 'Saving...' : 'Save Payout Details'),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                       const SizedBox(height: 16),
-                      _buildSectionHeader('Store Settings'),
+                      _buildSectionHeader('Shortcuts'),
                       const SizedBox(height: 8),
-                      _buildStoreSettingsSection(),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: () => Navigator.pushNamed(context, '/notification-settings'),
+                              icon: const Icon(Icons.record_voice_over),
+                              label: const Text('Notification & Voice'),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: () => Navigator.pushNamed(context, '/security-settings'),
+                              icon: const Icon(Icons.fingerprint),
+                              label: const Text('Security & Quick Login'),
+                            ),
+                          ),
+                        ],
+                      ),
                     ],
                     const SizedBox(height: 24),
                     ElevatedButton(

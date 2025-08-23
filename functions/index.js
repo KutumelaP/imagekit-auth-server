@@ -55,6 +55,106 @@ exports.payfastNotify = functions.https.onRequest(async (req, res) => {
       }),
     };
     await db.collection('orders').doc(orderId).set(updates, { merge: true });
+    if (paymentStatus === 'COMPLETE') {
+      try {
+        // Wallet top-up handling
+        const customType = String(data.custom_str4 || '');
+        if (orderId.startsWith('WALLET_') || customType === 'wallet_topup') {
+          const buyerUid = String(data.custom_str3 || '').trim();
+          const sellerIdForDues = String(data.custom_str2 || '').trim();
+          const amountGross = Number(data.amount_gross || 0);
+          if (buyerUid) {
+            const wref = db.collection('seller_wallet').doc(buyerUid);
+            await db.runTransaction(async (tx) => {
+              const snap = await tx.get(wref);
+              const bal = snap.exists ? Number(snap.data().balance || 0) : 0;
+              tx.set(wref, { balance: bal + amountGross, updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
+            });
+            // Auto-settle dues for referenced sellerId (if provided)
+            if (sellerIdForDues) {
+              const dueSnap = await db.collection('platform_receivables').doc(sellerIdForDues)
+                .collection('entries').where('status','==','due').get();
+              let remaining = amountGross;
+              const batch = db.batch();
+              dueSnap.docs.forEach(doc => {
+                const d = doc.data() || {};
+                const amt = Number(d.amount || 0);
+                if (remaining > 0 && amt > 0) {
+                  const pay = Math.min(remaining, amt);
+                  remaining -= pay;
+                  batch.update(doc.ref, { status: 'collected', collectedAt: admin.firestore.FieldValue.serverTimestamp(), collectedVia: 'wallet_topup' });
+                }
+              });
+              if (dueSnap.size > 0) await batch.commit();
+            }
+          }
+          res.status(200).send('ok');
+          return;
+        }
+
+        const orderSnap = await db.collection('orders').doc(orderId).get();
+        const order = orderSnap.data() || {};
+        const sellerId = order.sellerId;
+        const buyerId = order.buyerId;
+        const totalPrice = order.totalPrice || 0;
+        // Net-off any COD receivables for this seller
+        try {
+          if (sellerId) {
+            const dueSnap = await db.collection('platform_receivables').doc(sellerId)
+              .collection('entries').where('status','==','due').get();
+            let totalDue = 0;
+            const batch = db.batch();
+            dueSnap.docs.forEach(doc => {
+              const d = doc.data() || {};
+              const amt = Number(d.amount || 0);
+              if (amt > 0) {
+                totalDue += amt;
+                batch.update(doc.ref, { status: 'collected', collectedAt: admin.firestore.FieldValue.serverTimestamp(), collectedVia: 'net_off_payfast' });
+              }
+            });
+            if (dueSnap.size > 0) {
+              await batch.commit();
+              await db.collection('platform_receivables').doc(sellerId).collection('settlements').add({
+                method: 'net_off_payfast',
+                amountCollected: totalDue,
+                onOrderId: orderId,
+                createdAt: admin.firestore.FieldValue.serverTimestamp(),
+              });
+              console.log(`[cod] Net-off collected R${totalDue.toFixed(2)} from seller ${sellerId} on PayFast COMPLETE order ${orderId}`);
+            }
+          }
+        } catch (e) {
+          console.warn('[cod] Net-off failed', e);
+        }
+        const sellerDoc = sellerId ? await db.collection('users').doc(sellerId).get() : null;
+        const sellerName = sellerDoc && sellerDoc.exists ? (sellerDoc.data().storeName || sellerDoc.data().name || 'Store') : 'Store';
+        // Lightweight notifications collection write for seller and buyer
+        if (sellerId) {
+          await db.collection('notifications').add({
+            userId: sellerId,
+            title: 'New Order Received',
+            body: `A paid order has been placed for R${Number(totalPrice).toFixed(2)}`,
+            type: 'new_order_seller',
+            orderId,
+            read: false,
+            timestamp: admin.firestore.FieldValue.serverTimestamp(),
+          });
+        }
+        if (buyerId) {
+          await db.collection('notifications').add({
+            userId: buyerId,
+            title: 'Order Confirmed',
+            body: `Your order has been confirmed. Seller: ${sellerName}`,
+            type: 'order_status',
+            orderId,
+            read: false,
+            timestamp: admin.firestore.FieldValue.serverTimestamp(),
+          });
+        }
+      } catch (e) {
+        console.warn('notify on paid error', e);
+      }
+    }
     res.status(200).send('ok');
   } catch (e) {
     console.error('payfastNotify error', e);
@@ -161,21 +261,131 @@ exports.sitemap = functions.https.onRequest(async (req, res) => {
 });
 
 // === Email sender (safe: creds from env) ===
-const mailUser = process.env.MAIL_USER || '';
-const mailPass = process.env.MAIL_PASS || '';
+const cfg = (functions && functions.config && functions.config()) ? functions.config() : {};
+const mailCfg = (cfg && cfg.mail) ? cfg.mail : {};
+const mailUser = process.env.MAIL_USER || mailCfg.user || '';
+const mailPass = process.env.MAIL_PASS || mailCfg.pass || '';
+const mailHostCfg = process.env.MAIL_HOST || mailCfg.host || '';
+const mailPortCfg = process.env.MAIL_PORT || mailCfg.port || '';
+const mailSecureCfg = (process.env.MAIL_SECURE || mailCfg.secure || 'true').toString();
+const mailFromCfg = process.env.MAIL_FROM || mailCfg.from || '';
 let mailTransporter = null;
-if (mailUser && mailPass) {
-  mailTransporter = nodemailer.createTransport({
+function createMailTransporter() {
+  if (!mailUser || !mailPass) return null;
+  const host = mailHostCfg || '';
+  if (host) {
+    return nodemailer.createTransport({
+      host,
+      port: Number(mailPortCfg || 465),
+      secure: String(mailSecureCfg || 'true') !== 'false',
+      auth: { user: mailUser, pass: mailPass },
+    });
+  }
+  return nodemailer.createTransport({
     service: 'gmail',
     auth: { user: mailUser, pass: mailPass },
   });
 }
+mailTransporter = createMailTransporter();
 
-exports.sendOrderEmail = functions.https.onCall(async (data, context) => {
-  if (!mailTransporter) {
-    throw new functions.https.HttpsError('failed-precondition', 'Email not configured');
+// Ensure transporter exists; if not configured, fall back to Ethereal test account
+async function ensureTransporter() {
+  if (mailTransporter) return mailTransporter;
+  if (mailUser && mailPass) {
+    mailTransporter = createMailTransporter();
+    return mailTransporter;
   }
   try {
+    const test = await nodemailer.createTestAccount();
+    mailTransporter = nodemailer.createTransport({
+      host: test.smtp.host,
+      port: test.smtp.port,
+      secure: test.smtp.secure,
+      auth: { user: test.user, pass: test.pass },
+    });
+    if (!process.env.MAIL_FROM && !mailFromCfg) {
+      process.env.MAIL_FROM = `Mzansi Marketplace (Test) <${test.user}>`;
+    }
+    console.log('[mail] Using Ethereal test account');
+    return mailTransporter;
+  } catch (e) {
+    console.error('[mail] Failed to create Ethereal account', e);
+    return null;
+  }
+}
+
+function renderBrandedEmail({
+  title = 'Mzansi Marketplace',
+  heading = 'Mzansi Marketplace',
+  intro = '',
+  bodyHtml = '',
+  ctaText = '',
+  ctaUrl = '',
+  footer = 'If you did not request this, you can safely ignore this email.',
+}) {
+  const brandColor = '#1F4654';
+  const bgLight = '#F2F7F9';
+  const cardBg = '#FFFFFF';
+  const textColor = '#222222';
+  const muted = '#6B7280';
+  const buttonBg = brandColor;
+  const buttonText = '#FFFFFF';
+  const base = process.env.PUBLIC_BASE_URL || 'https://marketplace-8d6bd.web.app';
+  const year = new Date().getFullYear();
+  return `
+  <!doctype html>
+  <html>
+    <head>
+      <meta charset="utf-8" />
+      <meta name="viewport" content="width=device-width" />
+      <title>${title}</title>
+    </head>
+    <body style="margin:0;padding:0;background:${bgLight};font-family:Arial,Helvetica,sans-serif;color:${textColor}">
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:${bgLight};padding:24px 0;">
+        <tr>
+          <td align="center">
+            <table role="presentation" width="600" cellspacing="0" cellpadding="0" style="background:${cardBg};border-radius:12px;box-shadow:0 8px 16px rgba(0,0,0,0.06);overflow:hidden">
+              <tr>
+                <td style="background:${brandColor};padding:20px 24px;color:#fff;font-size:20px;font-weight:700;text-align:left;">
+                  ${heading}
+                </td>
+              </tr>
+              <tr>
+                <td style="padding:24px">
+                  <p style="margin:0 0 12px 0;color:${textColor};font-size:16px;line-height:1.5">${intro}</p>
+                  ${bodyHtml}
+                  ${ctaText && ctaUrl ? `
+                    <div style="margin:24px 0">
+                      <a href="${ctaUrl}"
+                        style="display:inline-block;background:${buttonBg};color:${buttonText};text-decoration:none;padding:12px 20px;border-radius:8px;font-weight:600">
+                        ${ctaText}
+                      </a>
+                    </div>
+                    <p style="margin:8px 0 0 0;font-size:12px;color:${muted}">
+                      If the button doesn’t work, copy and paste this link into your browser:<br/>
+                      <a href="${ctaUrl}" style="color:${brandColor};word-break:break-all">${ctaUrl}</a>
+                    </p>
+                  ` : ''}
+                  <p style="margin:24px 0 0 0;color:${muted};font-size:12px;line-height:1.6">${footer}</p>
+                </td>
+              </tr>
+              <tr>
+                <td style="background:${bgLight};padding:16px 24px;color:${muted};font-size:12px;text-align:center">
+                  © ${year} Mzansi Marketplace • <a href="${base}" style="color:${brandColor};text-decoration:none">${base.replace('https://','')}</a>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+      </table>
+    </body>
+  </html>`;
+}
+
+exports.sendOrderEmail = functions.https.onCall(async (data, context) => {
+  try {
+    const transporter = await ensureTransporter();
+    if (!transporter) throw new functions.https.HttpsError('failed-precondition', 'Email not configured');
     const toEmail = (data && data.toEmail) || '';
     const subject = (data && data.subject) || 'Notification';
     const html = (data && data.html) || '';
@@ -183,12 +393,16 @@ exports.sendOrderEmail = functions.https.onCall(async (data, context) => {
     if (!toEmail || !html) {
       throw new functions.https.HttpsError('invalid-argument', 'toEmail and html are required');
     }
-    const primary = await mailTransporter.sendMail({ from: mailUser, to: toEmail, subject, html });
+    const from = process.env.MAIL_FROM || mailUser;
+    const wrapped = renderBrandedEmail({ title: subject, heading: 'Mzansi Marketplace', intro: '', bodyHtml: html });
+    const primary = await transporter.sendMail({ from, to: toEmail, subject, html: wrapped, headers: { 'List-Unsubscribe': `<mailto:${from}>` } });
     let ccResult = null;
     if (cc) {
-      ccResult = await mailTransporter.sendMail({ from: mailUser, to: cc, subject: `[Admin] ${subject}` , html });
+      ccResult = await transporter.sendMail({ from, to: cc, subject: `[Admin] ${subject}` , html: wrapped });
     }
-    return { ok: true, id: primary.messageId, ccId: ccResult?.messageId || null };
+    const preview = nodemailer.getTestMessageUrl(primary) || null;
+    if (preview) console.log('[mail][preview]', preview);
+    return { ok: true, id: primary.messageId, ccId: ccResult?.messageId || null, preview };
   } catch (e) {
     console.error('sendOrderEmail error', e);
     throw new functions.https.HttpsError('internal', 'Failed to send email');
@@ -200,10 +414,9 @@ exports.createEmailOtp = functions.https.onCall(async (data, context) => {
   if (!context.auth) {
     throw new functions.https.HttpsError('unauthenticated', 'Sign in required');
   }
-  if (!mailTransporter) {
-    throw new functions.https.HttpsError('failed-precondition', 'Email not configured');
-  }
   try {
+    const transporter = await ensureTransporter();
+    if (!transporter) throw new functions.https.HttpsError('failed-precondition', 'Email not configured');
     const uid = context.auth.uid;
     let email = (data && data.email) || '';
     if (!email) {
@@ -227,17 +440,76 @@ exports.createEmailOtp = functions.https.onCall(async (data, context) => {
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
     }, { merge: true });
 
-    await mailTransporter.sendMail({
-      from: mailUser,
-      to: email,
-      subject: 'Your verification code',
-      html: `<p>Your verification code is <b>${code}</b>. It expires in 10 minutes.</p>`
+    const from = process.env.MAIL_FROM || mailUser;
+    const html = renderBrandedEmail({
+      title: 'Your verification code',
+      heading: 'Verify your sign-in',
+      intro: 'Use the code below to verify your action. For your security, it expires in 10 minutes.',
+      bodyHtml: `<div style="font-size:28px;font-weight:700;letter-spacing:4px;margin:12px 0;color:#1F4654">${code}</div>`,
+      footer: 'Do not share this code with anyone. If you did not initiate this, please secure your account.'
     });
+    const info = await transporter.sendMail({ from, to: email, subject: 'Your verification code', html });
+    const preview = nodemailer.getTestMessageUrl(info) || null;
+    if (preview) console.log('[mail][preview]', preview);
 
-    return { ok: true };
+    return { ok: true, preview };
   } catch (e) {
     console.error('createEmailOtp error', e);
     throw new functions.https.HttpsError('internal', 'Failed to create OTP');
+  }
+});
+
+// === Branded password reset email ===
+exports.sendPasswordResetEmail = functions.https.onCall(async (data, context) => {
+  try {
+    const transporter = await ensureTransporter();
+    if (!transporter) throw new functions.https.HttpsError('failed-precondition', 'Email not configured');
+    const email = (data && data.email) || '';
+    if (!email) {
+      throw new functions.https.HttpsError('invalid-argument', 'Email is required');
+    }
+    const base = process.env.PUBLIC_BASE_URL || 'https://marketplace-8d6bd.web.app';
+    const dynamicLinkDomain = process.env.DYNAMIC_LINK_DOMAIN || undefined; // optional
+    const action = await admin.auth().generatePasswordResetLink(email, {
+      url: `${base}/login?email=${encodeURIComponent(email)}`,
+      handleCodeInApp: true,
+      dynamicLinkDomain,
+    });
+    // Build branded page URL using the generated oobCode
+    let brandedUrl = action;
+    try {
+      const u = new URL(action);
+      const oob = u.searchParams.get('oobCode');
+      if (oob) {
+        brandedUrl = `${base}/reset-password.html?mode=resetPassword&oobCode=${encodeURIComponent(oob)}`;
+      }
+    } catch (_) {}
+
+    const subject = 'Reset your Mzansi Marketplace password';
+    const html = renderBrandedEmail({
+      title: subject,
+      heading: 'Password reset',
+      intro: 'We received a request to reset your password. Click the button below to choose a new password.',
+      bodyHtml: '',
+      ctaText: 'Reset password',
+      ctaUrl: brandedUrl,
+      footer: 'If you did not request a password reset, you can safely ignore this email.',
+    });
+    const from = process.env.MAIL_FROM || mailUser;
+    const info = await transporter.sendMail({
+      from,
+      to: email,
+      subject,
+      html,
+      headers: { 'List-Unsubscribe': `<mailto:${from}>` },
+      text: `Reset your password:\n${action}\n\nIf you did not request this, ignore this email.`,
+    });
+    const preview = nodemailer.getTestMessageUrl(info) || null;
+    if (preview) console.log('[mail][preview]', preview);
+    return { ok: true, preview };
+  } catch (e) {
+    console.error('sendPasswordResetEmail error', e);
+    throw new functions.https.HttpsError('internal', 'Failed to send password reset email');
   }
 });
 
@@ -651,4 +923,40 @@ exports.cleanupOldNotifications = functions.pubsub.schedule('every 24 hours').on
   await batch.commit();
   console.log(`Deleted ${snap.size} old notifications`);
   return null;
+});
+
+// Auto-cancel stale EFT awaiting_payment orders after 48 hours
+exports.autoCancelStaleEftOrders = functions.pubsub.schedule('every 24 hours').onRun(async () => {
+  try {
+    const cutoff = new Date(Date.now() - 48 * 60 * 60 * 1000);
+    const q = await db.collection('orders')
+      .where('paymentStatus', '==', 'awaiting_payment')
+      .where('timestamp', '<', admin.firestore.Timestamp.fromDate(cutoff))
+      .get();
+    let processed = 0;
+    const batch = db.batch();
+    q.docs.forEach(doc => {
+      const d = doc.data() || {};
+      const pm = String(d.paymentMethod || '').toLowerCase();
+      if (!pm.includes('eft') && !pm.includes('bank transfer')) return;
+      batch.update(doc.ref, {
+        status: 'cancelled',
+        paymentStatus: 'cancelled',
+        cancelReason: 'eft_timeout',
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        trackingUpdates: admin.firestore.FieldValue.arrayUnion({
+          by: 'system',
+          description: 'Order auto-cancelled: EFT payment not received within 48 hours',
+          timestamp: new Date().toISOString(),
+        }),
+      });
+      processed += 1;
+    });
+    if (processed > 0) await batch.commit();
+    console.log(`[eft] Auto-cancelled ${processed} stale EFT orders`);
+    return null;
+  } catch (e) {
+    console.error('autoCancelStaleEftOrders error', e);
+    return null;
+  }
 });

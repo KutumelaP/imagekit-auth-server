@@ -11,6 +11,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../services/payfast_service.dart';
 import '../services/biometric_stepup.dart';
 import 'dart:io';
 import 'package:http/http.dart' as http;
@@ -61,6 +62,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   double _deliveryDistance = 0.0;
   bool? _storeOpen;
   String? _storeName;
+  String? _codDisabledReason;
   double? _minOrderForDelivery;
   String? _deliveryTimeEstimate;
   int? _deliveryStartHour;
@@ -110,6 +112,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   bool _isLoadingPickupPoints = false;
   PickupPoint? _selectedPickupPoint;
   String? _selectedServiceFilter; // 'pargo', 'paxi', or null for all
+  bool _storePickupAvailable = false;
+  bool _storePickupSelected = false;
   double? _selectedLat;
   double? _selectedLng;
   
@@ -493,7 +497,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       print('❌ Error detecting product category: $e');
     }
   }
-
   // Show Pargo pickup point modal
   void _showPargoPickupModal(PickupPoint point) {
     showDialog(
@@ -1130,49 +1133,39 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       decoration: BoxDecoration(
         color: AppTheme.whisper,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(
-          color: iconColor.withOpacity(0.2),
-          width: 1,
-        ),
+        border: Border.all(color: iconColor.withOpacity(0.2), width: 1),
       ),
       child: Row(
-      children: [
-        Container(
+        children: [
+          Container(
             padding: EdgeInsets.all(8),
-          decoration: BoxDecoration(
+            decoration: BoxDecoration(
               color: iconColor.withOpacity(0.1),
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(
-                color: iconColor.withOpacity(0.3),
-                width: 1,
-              ),
+              border: Border.all(color: iconColor.withOpacity(0.3), width: 1),
+            ),
+            child: Icon(icon, color: iconColor, size: 18),
           ),
-          child: Icon(
-            icon,
-              color: iconColor,
-              size: 18,
-          ),
-        ),
           SizedBox(width: 16),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              SafeUI.safeText(
-                label,
-                style: TextStyle(
-                  fontSize: ResponsiveUtils.getTitleSize(context) - 4,
-                  color: AppTheme.breeze,
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SafeUI.safeText(
+                  label,
+                  style: TextStyle(
+                    fontSize: ResponsiveUtils.getTitleSize(context) - 4,
+                    color: AppTheme.breeze,
                     fontWeight: FontWeight.w600,
                     letterSpacing: 0.3,
+                  ),
                 ),
-              ),
                 SizedBox(height: 4),
-              SafeUI.safeText(
-                value,
-                style: TextStyle(
+                SafeUI.safeText(
+                  value,
+                  style: TextStyle(
                     fontSize: ResponsiveUtils.getTitleSize(context) - 2,
-                  color: AppTheme.deepTeal,
+                    color: AppTheme.deepTeal,
                     fontWeight: FontWeight.w700,
                     height: 1.3,
                   ),
@@ -1194,10 +1187,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           Container(
             width: 6,
             height: 6,
-            decoration: BoxDecoration(
-              color: AppTheme.deepTeal,
-              shape: BoxShape.circle,
-            ),
+            decoration: BoxDecoration(color: AppTheme.deepTeal, shape: BoxShape.circle),
           ),
           SizedBox(width: 12),
           Expanded(
@@ -1208,7 +1198,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                   title,
                   style: TextStyle(
                     fontSize: ResponsiveUtils.getTitleSize(context) - 4,
-                  fontWeight: FontWeight.w600,
+                    fontWeight: FontWeight.w600,
                     color: AppTheme.deepTeal,
                   ),
                 ),
@@ -1218,16 +1208,15 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                     fontSize: ResponsiveUtils.getTitleSize(context) - 5,
                     color: AppTheme.breeze,
                     height: 1.3,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
-      ],
+        ],
       ),
     );
   }
-
   // Show all pickup points in a comprehensive modal
   void _showAllPickupPointsModal() {
     showDialog(
@@ -1977,7 +1966,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       setState(() => _isLoadingPickupPoints = false);
     }
   }
-
   // Search for pickup addresses - Enhanced to show full business/complex names instead of just street names
   // Now using same comprehensive strategy as delivery with improved business name extraction
   Future<void> _searchPickupAddress(String query) async {
@@ -2747,7 +2735,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       setState(() => _isLoadingPickupPoints = false);
     }
   }
-
   void _filterPickupPointsByService(String? service) {
     print('🔍 DEBUG: Filtering pickup points by service: $service');
     print('🔍 DEBUG: Total pickup points available: ${_allPickupPoints.length}');
@@ -2897,8 +2884,22 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       _excludedZones = List<String>.from(seller['excludedZones'] ?? []);
       
       // Get seller service availability
-      _sellerPargoEnabled = seller['pargoEnabled'] ?? false;
-      _sellerPaxiEnabled = seller['paxiEnabled'] ?? false;
+      // Global platform visibility overrides
+      bool pargoVisible = true;
+      bool paxiVisible = true;
+      try {
+        final platformCfg = await FirebaseFirestore.instance.collection('config').doc('platform').get();
+        final cfg = platformCfg.data();
+        if (cfg != null) {
+          pargoVisible = (cfg['pargoVisible'] != false);
+          paxiVisible = (cfg['paxiVisible'] != false);
+        }
+      } catch (_) {}
+
+      _sellerPargoEnabled = (seller['pargoEnabled'] ?? false) && pargoVisible;
+      _sellerPaxiEnabled = (seller['paxiEnabled'] ?? false) && paxiVisible;
+      // Store pickup available if seller has coordinates
+      _storePickupAvailable = (storeLat != null && storeLng != null);
       
       // Handle PAXI delivery speed pricing if PAXI is enabled
       if (_sellerPaxiEnabled && _selectedPaxiDeliverySpeed != null) {
@@ -2918,6 +2919,19 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         }
       }
       
+      // Gate COD if seller has overdue COD receivables OR KYC not approved
+      try {
+        await _checkAndGateCOD(ownerId);
+        // KYC gate: if seller kycStatus != 'approved', remove COD
+        final sellerKyc = (seller['kycStatus'] as String?) ?? 'none';
+        if (sellerKyc.toLowerCase() != 'approved') {
+          _paymentMethods.removeWhere((m) => m.toLowerCase().contains('cash'));
+          _codDisabledReason = 'Cash on Delivery disabled: seller identity verification pending';
+        }
+      } catch (e) {
+        debugPrint('⚠️ COD gating check failed: $e');
+      }
+
       // Debug payment methods loading
       print('🔍 DEBUG: Payment methods loaded: $_paymentMethods');
       print('🔍 DEBUG: Seller data: ${seller['paymentMethods']}');
@@ -3079,6 +3093,111 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         setState(() {
         _paymentMethodsLoaded = true;
       });
+    }
+  }
+
+  Future<void> _checkAndGateCOD(String sellerId) async {
+    try {
+      final receivablesSnap = await FirebaseFirestore.instance
+          .collection('platform_receivables')
+          .doc(sellerId)
+          .collection('entries')
+          .where('status', isEqualTo: 'due')
+          .get();
+      double totalDue = 0.0;
+      for (final d in receivablesSnap.docs) {
+        final data = d.data();
+        final amt = (data['amount'] is num) ? (data['amount'] as num).toDouble() : double.tryParse('${data['amount']}') ?? 0.0;
+        totalDue += amt;
+      }
+      // Threshold: R300 (configurable later)
+      const double codThreshold = 300.0;
+      if (totalDue > codThreshold) {
+        _paymentMethods.removeWhere((m) => m.toLowerCase().contains('cash'));
+        _codDisabledReason = 'Cash on Delivery disabled: outstanding fees R${totalDue.toStringAsFixed(2)}';
+      } else {
+        _codDisabledReason = null;
+      }
+    } catch (e) {
+      debugPrint('⚠️ _checkAndGateCOD error: $e');
+    }
+  }
+
+  Future<void> _startWalletTopUp() async {
+    try {
+      setState(() { _isLoading = true; });
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) {
+        setState(() { _isLoading = false; });
+        return;
+      }
+      // Determine sellerId from cart for top-up attribution
+      final cartSnapshot = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .collection('cart')
+          .limit(1)
+          .get();
+      if (cartSnapshot.docs.isEmpty) {
+        setState(() { _isLoading = false; });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Add an item first to identify seller for COD gating')),
+        );
+        return;
+      }
+      final first = cartSnapshot.docs.first.data();
+      final String sellerId = first['sellerId'] ?? first['ownerId'] ?? '';
+      if (sellerId.isEmpty) {
+        setState(() { _isLoading = false; });
+        return;
+      }
+      // Suggest top-up equal to due or minimum R300
+      final receivablesSnap = await FirebaseFirestore.instance
+          .collection('platform_receivables')
+          .doc(sellerId)
+          .collection('entries')
+          .where('status', isEqualTo: 'due')
+          .get();
+      double totalDue = 0.0;
+      for (final d in receivablesSnap.docs) {
+        final data = d.data();
+        final amt = (data['amount'] is num) ? (data['amount'] as num).toDouble() : double.tryParse('${data['amount']}') ?? 0.0;
+        totalDue += amt;
+      }
+      final double suggestedTopUp = totalDue > 0 ? totalDue : 300.0;
+
+      // Redirect to PayFast with a wallet_topup tag in custom_str4
+      final result = await PayFastService.createPayment(
+        amount: suggestedTopUp.toStringAsFixed(2),
+        itemName: 'Wallet Top-up',
+        itemDescription: 'Top-up to enable COD',
+        customerEmail: user.email ?? 'user@example.com',
+        customerFirstName: (user.displayName ?? 'User').split(' ').first,
+        customerLastName: (user.displayName ?? '').split(' ').skip(1).join(' '),
+        customerPhone: '',
+        customString1: 'WALLET_${user.uid}',
+        customString2: sellerId,
+        customString3: user.uid,
+        customString4: 'wallet_topup',
+      );
+      setState(() { _isLoading = false; });
+      if (result['success'] == true) {
+        final String url = PayFastService.buildRedirectUrl(result['paymentUrl'], Map<String,String>.from(result['paymentData']));
+        if (await canLaunchUrl(Uri.parse(url))) {
+          await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Unable to open PayFast')));
+        }
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Top-up failed: ${result['error'] ?? 'unknown error'}')),
+        );
+      }
+    } catch (e) {
+      setState(() { _isLoading = false; });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Top-up failed: $e')),
+      );
     }
   }
 
@@ -3401,9 +3520,29 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
   Future<void> _processBankTransferEFT() async {
     // Create order with awaiting_payment status, then show bank details dialog
-    final orderNumber = await _completeOrder(paymentStatusOverride: 'awaiting_payment');
+    String? orderNumber = await _completeOrder(paymentStatusOverride: 'awaiting_payment');
+    if (orderNumber == null) {
+      try {
+        orderNumber = await _fetchLatestOrderNumberForCurrentUser();
+      } catch (_) {}
+    }
     if (!mounted) return;
     _showBankDetailsDialog(orderNumber: orderNumber);
+  }
+
+  Future<String?> _fetchLatestOrderNumberForCurrentUser() async {
+    try {
+      final user = currentUser; if (user == null) return null;
+      final snap = await FirebaseFirestore.instance
+          .collection('orders')
+          .where('buyerId', isEqualTo: user.uid)
+          .orderBy('timestamp', descending: true)
+          .limit(1)
+          .get();
+      if (snap.docs.isEmpty) return null;
+      final data = snap.docs.first.data();
+      return (data['orderNumber'] as String?) ?? snap.docs.first.id;
+    } catch (_) { return null; }
   }
 
   Future<void> _processCashOnDelivery() async {
@@ -3436,7 +3575,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       return {'error': e.toString(), 'code': 'unknown'};
     }
   }
-
   Future<bool> _performOtpStepUp(String phoneNumber) async {
     final completer = Completer<bool>();
     try {
@@ -3563,7 +3701,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   }
 
   Future<bool> _performBiometricStepUp() async {
-    return await BiometricStepUp.authenticate(reason: 'Confirm it’s you with fingerprint/Face ID');
+    return await BiometricStepUp.authenticate(reason: "Confirm it\'s you with fingerprint/Face ID");
   }
 
   Future<bool> _performPasswordReauthStepUp() async {
@@ -3712,11 +3850,26 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 
                 SizedBox(height: 20),
                 
-                // Bank Details
-                _buildSimpleBankRow('Account Name', 'Food Marketplace Pty Ltd'),
-                _buildSimpleBankRow('Bank', 'First National Bank'),
-                _buildSimpleBankRow('Account Number', '62612345678'),
-                _buildSimpleBankRow('Branch Code', '250655'),
+                // Bank Details (from platform config)
+                FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                  future: FirebaseFirestore.instance.collection('config').doc('platform').get(),
+                  builder: (context, snap) {
+                    final cfg = snap.data?.data() ?? const {};
+                    final accName = (cfg['eftAccountName'] as String?)?.trim().isNotEmpty == true ? cfg['eftAccountName'] as String : 'Food Marketplace Pty Ltd';
+                    final bank = (cfg['eftBankName'] as String?)?.trim().isNotEmpty == true ? cfg['eftBankName'] as String : 'First National Bank';
+                    final accNum = (cfg['eftAccountNumber'] as String?)?.trim().isNotEmpty == true ? cfg['eftAccountNumber'] as String : '62612345678';
+                    final branch = (cfg['eftBranchCode'] as String?)?.trim().isNotEmpty == true ? cfg['eftBranchCode'] as String : '250655';
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _buildSimpleBankRow('Account Name', accName),
+                        _buildSimpleBankRow('Bank', bank),
+                        _buildSimpleBankRow('Account Number', accNum),
+                        _buildSimpleBankRow('Branch Code', branch),
+                      ],
+                    );
+                  },
+                ),
                 Row(
                   children: [
                     Expanded(
@@ -3773,7 +3926,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                     Expanded(
                       child: OutlinedButton.icon(
                         onPressed: () {
-                          final details = 'Food Marketplace Pty Ltd\nFNB: 62612345678\nBranch: 250655\nRef: ${orderNumber ?? 'Order Number'}';
+                          final details = 'Ref: ${orderNumber ?? 'Order Number'}';
                           Clipboard.setData(ClipboardData(text: details));
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
@@ -4221,7 +4374,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       ),
     );
   }
-
   // Instruction row for EFT modal
   Widget _buildInstructionRow(String instruction) {
     return Padding(
@@ -4687,6 +4839,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         print('  - Distance: ${_selectedPickupPoint!.distance.toStringAsFixed(2)} km');
       }
       
+      final bool isCOD = (_selectedPaymentMethod?.toLowerCase().contains('cash') ?? false);
+      final String resolvedPaymentStatus = paymentStatusOverride ?? (isCOD ? 'pending' : 'awaiting_payment');
+      final String resolvedOrderStatus = isCOD ? 'pending' : 'awaiting_payment';
+
       final orderRef = await FirebaseFirestore.instance.collection('orders').add({
         'orderNumber': orderNumber,
         'buyerId': currentUser!.uid,
@@ -4711,9 +4867,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         'address': _addressController.text.trim(),
         'phone': _phoneController.text.trim(),
         'deliveryInstructions': _deliveryInstructionsController.text.trim(),
-        'status': 'pending',
+        'status': resolvedOrderStatus,
         'paymentMethod': _selectedPaymentMethod,
-        'paymentStatus': paymentStatusOverride ?? (_selectedPaymentMethod?.toLowerCase().contains('cash') == true ? 'pending' : 'paid'),
+        'paymentStatus': resolvedPaymentStatus,
         'platformFee': (!_isStoreFeeExempt) ? (widget.totalPrice * pf / 100) : 0.0,
         'platformFeePercent': pf,
         'platformFeeExempt': _isStoreFeeExempt,
@@ -4770,12 +4926,37 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         
         'trackingUpdates': [
           {
-            'description': 'Order placed successfully',
+            'description': isCOD ? 'Order placed successfully' : 'Awaiting payment',
             'timestamp': Timestamp.now(),
-            'status': 'pending'
+            'status': resolvedOrderStatus
           }
         ],
       });
+
+      // If Cash on Delivery, create a receivable record for platform fee collection later
+      try {
+        if (isCOD) {
+          final double platformFeeDue = (!_isStoreFeeExempt) ? (widget.totalPrice * pf / 100) : 0.0;
+          await FirebaseFirestore.instance
+              .collection('platform_receivables')
+              .doc(sellerId)
+              .collection('entries')
+              .doc(orderRef.id)
+              .set({
+            'orderId': orderRef.id,
+            'orderNumber': orderNumber,
+            'sellerId': sellerId,
+            'buyerId': currentUser!.uid,
+            'method': 'COD',
+            'feePercent': pf,
+            'amount': platformFeeDue,
+            'status': 'due',
+            'createdAt': FieldValue.serverTimestamp(),
+          });
+        }
+      } catch (e) {
+        debugPrint('⚠️ Failed to create COD receivable: $e');
+      }
 
       print('🔍 DEBUG: Order created successfully with ID: ${orderRef.id}');
 
@@ -4931,35 +5112,32 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         debugPrint('Error getting seller name: $e');
       }
 
-      // Send notification to seller (new order received)
-      print('🔔 Attempting to send seller notification...');
-      await NotificationService().sendNewOrderNotificationToSeller(
-        sellerId: sellerId,
-        orderId: orderId,
-        buyerName: buyerName,
-        orderTotal: widget.totalPrice,
-        sellerName: sellerName,
-      );
-      
-      // Send notification to buyer (order placed)
-      print('🔔 Attempting to send buyer notification...');
-      await NotificationService().sendOrderStatusNotificationToBuyer(
-        buyerId: currentUser!.uid,
-        orderId: orderId,
-        status: 'pending',
-        sellerName: sellerName,
-      );
-      
-      // Test notification to verify system is working
-      print('🔔 Sending test notification...');
-      await NotificationService().testNotification();
+      // Notify logic: only immediate notifications for COD. For online payments, wait for IPN to confirm.
+      final isCOD = (_selectedPaymentMethod?.toLowerCase().contains('cash') ?? false);
+      if (isCOD) {
+        print('🔔 Sending immediate COD notifications...');
+        await NotificationService().sendNewOrderNotificationToSeller(
+          sellerId: sellerId,
+          orderId: orderId,
+          buyerName: buyerName,
+          orderTotal: widget.totalPrice,
+          sellerName: sellerName,
+        );
+        await NotificationService().sendOrderStatusNotificationToBuyer(
+          buyerId: currentUser!.uid,
+          orderId: orderId,
+          status: 'pending',
+          sellerName: sellerName,
+        );
+      } else {
+        print('🔔 Skipping notifications until payment confirmed by gateway (awaiting_payment).');
+      }
       
       print('✅ Order notifications sent successfully');
     } catch (e) {
       debugPrint('❌ Error sending order notifications: $e');
     }
   }
-
   @override
   Widget build(BuildContext context) {
     if (!_paymentMethodsLoaded) {
@@ -5668,13 +5846,29 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                 ),
                               ],
                             )
-                          : Text(
-                              'No pickup points available',
-                              style: TextStyle(
-                                color: AppTheme.deepTeal,
-                                fontSize: 14,
-                                fontWeight: FontWeight.w600,
-                              ),
+                          : Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Text(
+                                  'No pickup points available',
+                                  style: TextStyle(
+                                    color: AppTheme.deepTeal,
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                if (_storePickupAvailable) ...[
+                                  SizedBox(height: 8),
+                                  Text(
+                                    'Store Pickup is available as a fallback',
+                                    style: TextStyle(
+                                      color: AppTheme.deepTeal.withOpacity(0.8),
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ],
+                              ],
                             ),
                     ),
                     SizedBox(height: 12),
@@ -5683,6 +5877,84 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                   // Service selection buttons (respect seller capabilities)
                   Row(
                     children: [
+                      if (_storePickupAvailable) Expanded(
+                        child: Container(
+                          decoration: BoxDecoration(
+                            gradient: _storePickupSelected 
+                                ? LinearGradient(colors: AppTheme.primaryGradient)
+                                : LinearGradient(colors: [AppTheme.angel, AppTheme.angel]),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: _storePickupSelected 
+                                  ? AppTheme.deepTeal.withOpacity(0.5)
+                                  : AppTheme.breeze.withOpacity(0.3),
+                              width: _storePickupSelected ? 2 : 1,
+                            ),
+                          ),
+                          child: Material(
+                            color: Colors.transparent,
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(12),
+                              onTap: () {
+                                setState(() {
+                                  _storePickupSelected = true;
+                                  _selectedServiceFilter = null;
+                                  if (_pickupPoints.isEmpty && _selectedPickupPoint == null) {
+                                    // Create a local store pickup point synthetic if missing
+                                    if (_selectedLat != null && _selectedLng != null) {
+                                      _selectedPickupPoint = PickupPoint(
+                                        id: 'local_store',
+                                        name: _storeName ?? 'Store Pickup',
+                                        address: 'Pickup at store',
+                                        latitude: _selectedLat!,
+                                        longitude: _selectedLng!,
+                                        type: 'Local Store',
+                                        distance: 0.0,
+                                        fee: 0.0,
+                                        operatingHours: '${_storeOpenHour ?? '08:00'} - ${_storeCloseHour ?? '18:00'}',
+                                      );
+                                      _deliveryFee = 0.0;
+                                    }
+                                  } else {
+                                    // Prefer creating a synthetic pickup based on seller coords when known
+                                    _deliveryFee = 0.0;
+                                  }
+                                });
+                              },
+                              child: Container(
+                                padding: EdgeInsets.symmetric(vertical: 16, horizontal: 12),
+                                child: Column(
+                                  children: [
+                                    Icon(
+                                      Icons.store,
+                                      color: _storePickupSelected ? AppTheme.angel : AppTheme.deepTeal,
+                                      size: 24,
+                                    ),
+                                    SizedBox(height: 8),
+                                    Text(
+                                      'Store Pickup',
+                                      style: TextStyle(
+                                        color: _storePickupSelected ? AppTheme.angel : AppTheme.deepTeal,
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                    Text(
+                                      'Collect at seller',
+                                      style: TextStyle(
+                                        color: _storePickupSelected ? AppTheme.angel.withOpacity(0.85) : AppTheme.deepTeal.withOpacity(0.7),
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      if (_storePickupAvailable && (_sellerPargoEnabled || _sellerPaxiEnabled)) SizedBox(width: 12),
                       if (_sellerPargoEnabled) Expanded(
                         child: Container(
                           decoration: BoxDecoration(
@@ -6491,7 +6763,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               ),
             ),
           ],
-          
           // Address Field (for delivery) or Pickup Location (for pickup)
           if (_isDelivery) ...[
             SafeUI.safeText(
@@ -6872,7 +7143,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 ),
               ),
             ],
-            
             // Pargo Pickup Points (for non-food pickup orders only)
             if (!_isDelivery && (_productCategory.toLowerCase() != 'food' || _hasNonFoodItems)) ...[
               SafeUI.safeText(
@@ -7502,8 +7772,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       ),
     );
   }
-  
-
   Widget _buildCustomerInfoSection() {
     return Container(
       padding: EdgeInsets.all(ResponsiveUtils.getHorizontalPadding(context)),
@@ -7871,9 +8139,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                         ),
                       ],
                   ),
-              
-
-              
               // Pickup points (Pargo) selector when in Pickup mode  
               // Show Pargo for non-food only carts OR mixed carts (non-food items can use Pargo)
               if (!_isDelivery && (_productCategory.toLowerCase() != 'food' || _hasNonFoodItems)) ...[
@@ -8569,83 +8834,86 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           // Payment method visual cues and security notes
           if (_selectedPaymentMethod != null) ...[
             SizedBox(height: ResponsiveUtils.getVerticalPadding(context) * 0.5),
+            if (_codDisabledReason != null && !_paymentMethods.any((m) => m.toLowerCase().contains('cash'))) ...[
+              Container(
+                width: double.infinity,
+                padding: EdgeInsets.all(ResponsiveUtils.getHorizontalPadding(context) * 0.6),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withOpacity(0.08),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.orange.withOpacity(0.2)),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(Icons.info_outline, color: Colors.orange, size: ResponsiveUtils.getIconSize(context, baseSize: 16)),
+                    SizedBox(width: ResponsiveUtils.getHorizontalPadding(context) * 0.4),
+                    Expanded(
+                      child: SafeUI.safeText(
+                        _codDisabledReason!,
+                        style: TextStyle(
+                          color: Colors.orange[800],
+                          fontSize: ResponsiveUtils.getTitleSize(context) - 4,
+                        ),
+                        maxLines: 3,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              SizedBox(height: ResponsiveUtils.getVerticalPadding(context) * 0.4),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: ElevatedButton.icon(
+                  onPressed: _isLoading ? null : _startWalletTopUp,
+                  icon: const Icon(Icons.account_balance_wallet),
+                  label: const Text('Top up wallet to enable COD'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.deepTeal,
+                    foregroundColor: Colors.white,
+                  ),
+                ),
+              ),
+              SizedBox(height: ResponsiveUtils.getVerticalPadding(context) * 0.5),
+            ],
             Container(
               padding: EdgeInsets.all(ResponsiveUtils.getHorizontalPadding(context) * 0.8),
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   colors: [
                     AppTheme.cloud.withOpacity(0.1),
-                    AppTheme.breeze.withOpacity(0.05),
+                    AppTheme.angel,
                   ],
                 ),
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: AppTheme.cloud.withOpacity(0.3),
-                  width: 1,
-                ),
               ),
               child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Container(
-                    padding: EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: _selectedPaymentMethod == 'PayFast (Card)' 
-                          ? AppTheme.deepTeal.withOpacity(0.2)
-                          : _selectedPaymentMethod == 'Bank Transfer (EFT)'
-                              ? AppTheme.deepTeal.withOpacity(0.2)
-                              : AppTheme.breeze.withOpacity(0.2),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Icon(
-                      _selectedPaymentMethod == 'PayFast (Card)' 
-                          ? Icons.credit_card
-                          : _selectedPaymentMethod == 'Bank Transfer (EFT)'
-                              ? Icons.account_balance
-                              : Icons.money_off,
-                      color: _selectedPaymentMethod == 'PayFast (Card)' 
-                          ? AppTheme.deepTeal
-                          : _selectedPaymentMethod == 'Bank Transfer (EFT)'
-                              ? AppTheme.deepTeal
-                              : AppTheme.breeze,
-                      size: 20,
-                    ),
+                  Icon(
+                    _selectedPaymentMethod!.toLowerCase().contains('cash')
+                        ? Icons.payments
+                        : _selectedPaymentMethod!.toLowerCase().contains('eft')
+                            ? Icons.account_balance
+                            : Icons.credit_card,
+                    color: AppTheme.deepTeal,
+                    size: ResponsiveUtils.getIconSize(context, baseSize: 18),
                   ),
                   SizedBox(width: ResponsiveUtils.getHorizontalPadding(context) * 0.5),
                   Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        SafeUI.safeText(
-                          _selectedPaymentMethod == 'PayFast (Card)' 
-                              ? 'Secure Card Payment'
-                              : _selectedPaymentMethod == 'Bank Transfer (EFT)'
-                                  ? 'Bank Transfer'
-                                  : 'Cash on Delivery',
-                          style: TextStyle(
-                            fontSize: ResponsiveUtils.getTitleSize(context) - 2,
-                            fontWeight: FontWeight.w600,
-                            color: _selectedPaymentMethod == 'PayFast (Card)' 
-                                ? AppTheme.deepTeal
-                                : _selectedPaymentMethod == 'Bank Transfer (EFT)'
-                                    ? AppTheme.deepTeal
-                                    : AppTheme.breeze,
-                          ),
-                          maxLines: 1,
-                        ),
-                        SafeUI.safeText(
-                          _selectedPaymentMethod == 'PayFast (Card)' 
-                              ? 'Your payment is protected by PayFast\'s secure gateway'
-                              : _selectedPaymentMethod == 'Bank Transfer (EFT)'
-                                  ? 'Transfer funds directly to our bank account'
-                                  : 'Pay when you receive your order',
-                                                      style: TextStyle(
-                              fontSize: ResponsiveUtils.getTitleSize(context) - 4,
-                              color: AppTheme.breeze,
-                              fontStyle: FontStyle.italic,
-                            ),
-                          maxLines: 2,
-                        ),
-                      ],
+                    child: SafeUI.safeText(
+                      _selectedPaymentMethod!.toLowerCase().contains('cash')
+                          ? 'Pay with cash on delivery or at pickup. Have exact change where possible.'
+                          : _selectedPaymentMethod!.toLowerCase().contains('eft')
+                              ? 'Transfer the total via EFT. Your order will be confirmed once payment is verified.'
+                              : 'Secure card payment powered by PayFast.'
+                              ,
+                      style: TextStyle(
+                        color: AppTheme.darkGrey,
+                        fontSize: ResponsiveUtils.getTitleSize(context) - 4,
+                        height: 1.3,
+                      ),
+                      maxLines: 3,
                     ),
                   ),
                 ],
@@ -9009,7 +9277,6 @@ class AddressSearchScreen extends StatefulWidget {
   @override
   _AddressSearchScreenState createState() => _AddressSearchScreenState();
 }
-
 class _AddressSearchScreenState extends State<AddressSearchScreen> {
   final TextEditingController _searchController = TextEditingController();
   List<Placemark> _suggestions = [];
@@ -9306,4 +9573,3 @@ class _AddressSearchScreenState extends State<AddressSearchScreen> {
     );
   }
 }
-

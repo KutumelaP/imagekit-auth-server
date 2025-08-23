@@ -15,10 +15,18 @@ class _PlatformSettingsSectionState extends State<PlatformSettingsSection> {
   final _feeController = TextEditingController();
   final _nameController = TextEditingController();
   final _contactController = TextEditingController();
+  // EFT bank details
+  final _eftAccountNameController = TextEditingController();
+  final _eftBankNameController = TextEditingController();
+  final _eftAccountNumberController = TextEditingController();
+  final _eftBranchCodeController = TextEditingController();
   bool _registrationEnabled = true;
   bool _moderationEnabled = true;
   bool _saving = false;
   Map<String, dynamic>? _settings;
+  // Pickup visibility
+  bool _pargoVisible = true;
+  bool _paxiVisible = true;
   // Notification fields (already present)
   final _messageController = TextEditingController();
   String _target = 'all';
@@ -44,6 +52,12 @@ class _PlatformSettingsSectionState extends State<PlatformSettingsSection> {
         _registrationEnabled = data['registrationEnabled'] != false;
         _moderationEnabled = data['moderationEnabled'] != false;
         _maintenanceMode = data['maintenanceMode'] == true;
+        _pargoVisible = data['pargoVisible'] != false;
+        _paxiVisible = data['paxiVisible'] != false;
+        _eftAccountNameController.text = data['eftAccountName'] ?? '';
+        _eftBankNameController.text = data['eftBankName'] ?? '';
+        _eftAccountNumberController.text = data['eftAccountNumber'] ?? '';
+        _eftBranchCodeController.text = data['eftBranchCode'] ?? '';
       });
     }
   }
@@ -58,6 +72,12 @@ class _PlatformSettingsSectionState extends State<PlatformSettingsSection> {
         'registrationEnabled': _registrationEnabled,
         'moderationEnabled': _moderationEnabled,
         'maintenanceMode': _maintenanceMode,
+        'pargoVisible': _pargoVisible,
+        'paxiVisible': _paxiVisible,
+        'eftAccountName': _eftAccountNameController.text.trim(),
+        'eftBankName': _eftBankNameController.text.trim(),
+        'eftAccountNumber': _eftAccountNumberController.text.trim(),
+        'eftBranchCode': _eftBranchCodeController.text.trim(),
       }, SetOptions(merge: true));
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Settings saved.')));
     } catch (e) {
@@ -92,6 +112,10 @@ class _PlatformSettingsSectionState extends State<PlatformSettingsSection> {
     _feeController.dispose();
     _nameController.dispose();
     _contactController.dispose();
+    _eftAccountNameController.dispose();
+    _eftBankNameController.dispose();
+    _eftAccountNumberController.dispose();
+    _eftBranchCodeController.dispose();
     super.dispose();
   }
 
@@ -195,6 +219,20 @@ class _PlatformSettingsSectionState extends State<PlatformSettingsSection> {
                               onChanged: (v) => setState(() => _maintenanceMode = v),
                             ),
                           ),
+                          Expanded(
+                            child: SwitchListTile(
+                              title: const Text('Show PARGO'),
+                              value: _pargoVisible,
+                              onChanged: (v) => setState(() => _pargoVisible = v),
+                            ),
+                          ),
+                          Expanded(
+                            child: SwitchListTile(
+                              title: const Text('Show PAXI'),
+                              value: _paxiVisible,
+                              onChanged: (v) => setState(() => _paxiVisible = v),
+                            ),
+                          ),
                           const SizedBox(width: 16),
                           ElevatedButton(
                             onPressed: _saving ? null : _saveSettings,
@@ -203,6 +241,58 @@ class _PlatformSettingsSectionState extends State<PlatformSettingsSection> {
                         ],
                       ),
                     ),
+                  ),
+                  const Divider(height: 32),
+                  Text('EFT Bank Details', style: Theme.of(context).textTheme.titleLarge?.copyWith(color: Theme.of(context).colorScheme.onSurface)),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _eftAccountNameController,
+                          decoration: InputDecoration(
+                            labelText: 'Account Name',
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: TextField(
+                          controller: _eftBankNameController,
+                          decoration: InputDecoration(
+                            labelText: 'Bank',
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _eftAccountNumberController,
+                          decoration: InputDecoration(
+                            labelText: 'Account Number',
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                          ),
+                          keyboardType: TextInputType.number,
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: TextField(
+                          controller: _eftBranchCodeController,
+                          decoration: InputDecoration(
+                            labelText: 'Branch Code',
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                          ),
+                          keyboardType: TextInputType.number,
+                        ),
+                      ),
+                    ],
                   ),
                   const Divider(height: 32),
                   // Notifications UI (already present)

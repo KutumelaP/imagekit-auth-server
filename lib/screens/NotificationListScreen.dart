@@ -33,6 +33,10 @@ class _NotificationListScreenState extends State<NotificationListScreen> with Wi
     _scrollController.addListener(_onScroll);
     _loadInitial();
     _maybeAutoClearOnOpen();
+    // Speak unread summary on open
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      NotificationService().speakUnreadSummaryIfEnabled();
+    });
   }
 
   Future<void> _maybeAutoClearOnOpen() async {
@@ -147,7 +151,17 @@ class _NotificationListScreenState extends State<NotificationListScreen> with Wi
                 'id': d.id,
                 ...d.data() as Map<String, dynamic>,
               })
-          .where((n) => n['type'] != 'chat_message')
+          .where((n) {
+            final t = (n['type'] ?? '').toString();
+            final title = (n['title'] ?? '').toString().trim();
+            final body = (n['body'] ?? '').toString().trim();
+            const allowed = {'new_order_seller','new_order_buyer','order_status','order'};
+            // Exclude chat messages and any generic/unknown entries (missing title/body or disallowed type)
+            if (t == 'chat_message') return false;
+            if (!allowed.contains(t)) return false;
+            if (title.isEmpty && body.isEmpty) return false;
+            return true;
+          })
           .toList();
 
       setState(() {
@@ -190,7 +204,16 @@ class _NotificationListScreenState extends State<NotificationListScreen> with Wi
                 'id': d.id,
                 ...d.data() as Map<String, dynamic>,
               })
-          .where((n) => n['type'] != 'chat_message')
+          .where((n) {
+            final t = (n['type'] ?? '').toString();
+            final title = (n['title'] ?? '').toString().trim();
+            final body = (n['body'] ?? '').toString().trim();
+            const allowed = {'new_order_seller','new_order_buyer','order_status','order'};
+            if (t == 'chat_message') return false;
+            if (!allowed.contains(t)) return false;
+            if (title.isEmpty && body.isEmpty) return false;
+            return true;
+          })
           .toList();
 
       setState(() {
@@ -217,10 +240,7 @@ class _NotificationListScreenState extends State<NotificationListScreen> with Wi
     try {
       await _notificationService.markNotificationAsRead(notificationId);
       // Recalculate badge after marking as read
-      await NotificationService().refreshNotifications();
-      // best-effort badge update through service helper
-      // ignore: unawaited_futures
-      NotificationService().showGeneralNotification(title: '', body: '');
+      await NotificationService().recalcBadge();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Notification marked as read'),
@@ -347,8 +367,36 @@ class _NotificationListScreenState extends State<NotificationListScreen> with Wi
     final timestamp = notification['timestamp'] as Timestamp?;
     final isRead = notification['read'] ?? false;
     final type = notification['type'] ?? '';
-    final title = notification['title'] ?? 'Notification';
-    final body = notification['body'] ?? '';
+    final rawTitle = (notification['title'] ?? '').toString().trim();
+    final rawBody = (notification['body'] ?? '').toString().trim();
+
+    String fallbackTitle;
+    switch (type) {
+      case 'new_order_seller':
+        fallbackTitle = 'New order received';
+        break;
+      case 'new_order_buyer':
+        fallbackTitle = 'Order placed';
+        break;
+      case 'order_status':
+      case 'order':
+        fallbackTitle = 'Order update';
+        break;
+      case 'chat_message':
+        fallbackTitle = 'New message';
+        break;
+      default:
+        fallbackTitle = '';
+    }
+
+    final title = rawTitle.isNotEmpty ? rawTitle : fallbackTitle;
+    final body = rawBody.isNotEmpty
+        ? rawBody
+        : (type == 'order_status' || type == 'order' || type == 'new_order_buyer' || type == 'new_order_seller')
+            ? 'Tap to view order details'
+            : (type == 'chat_message')
+                ? 'Tap to open chat'
+                : 'Tap to view details';
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),

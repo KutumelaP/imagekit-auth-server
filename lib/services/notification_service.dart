@@ -11,6 +11,8 @@ import 'package:flutter_tts/flutter_tts.dart';
 import 'package:marketplace_app/utils/web_env.dart';
 import 'package:flutter_app_badger/flutter_app_badger.dart'
   if (dart.library.html) 'package:marketplace_app/utils/badger_stub.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'dart:async';
 
 
 
@@ -29,17 +31,23 @@ class NotificationService {
   bool _systemNotificationsEnabled = true;
   bool _audioNotificationsEnabled = true;
   bool _inAppNotificationsEnabled = true;
-  bool _voiceAnnouncementsEnabled = false;
+  bool _voiceAnnouncementsEnabled = true;
+  bool _speakUnreadSummaryOnOpen = true;
   bool _autoClearBadgeOnNotificationsOpen = false;
 
   bool get systemNotificationsEnabled => _systemNotificationsEnabled;
   bool get audioNotificationsEnabled => _audioNotificationsEnabled;
   bool get inAppNotificationsEnabled => _inAppNotificationsEnabled;
   bool get voiceAnnouncementsEnabled => _voiceAnnouncementsEnabled;
+  bool get speakUnreadSummaryOnOpen => _speakUnreadSummaryOnOpen;
   bool get autoClearBadgeOnNotificationsOpen => _autoClearBadgeOnNotificationsOpen;
 
   // Firebase services
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  StreamSubscription<QuerySnapshot>? _notifSub;
+  StreamSubscription<RemoteMessage>? _fcmSub;
+  bool _notifListenerInitialized = false;
+  final Set<String> _spokenNotificationIds = <String>{};
   
   // Sound service for audio notifications
   final SoundService _soundService = SoundService();
@@ -91,6 +99,8 @@ class NotificationService {
       } catch (_) {}
       
       print('✅ Notification Service initialized');
+      _attachRealtimeSpeakListener();
+      _attachFcmOnMessageSpeak();
     } catch (e) {
       print('❌ Error initializing notification service: $e');
     }
@@ -142,7 +152,7 @@ class NotificationService {
     _systemNotificationsEnabled = prefs.getBool('system_notifications') ?? true;
     _audioNotificationsEnabled = prefs.getBool('audio_notifications') ?? true;
     _inAppNotificationsEnabled = prefs.getBool('inapp_notifications') ?? true;
-    _voiceAnnouncementsEnabled = prefs.getBool('voice_announcements') ?? false;
+    _voiceAnnouncementsEnabled = prefs.getBool('voice_announcements') ?? true;
     _autoClearBadgeOnNotificationsOpen = prefs.getBool('auto_clear_badge_notifications') ?? false;
     _ttsLanguage = prefs.getString('tts_language') ?? 'en-ZA';
     _ttsVoiceName = prefs.getString('tts_voice_name');
@@ -150,6 +160,7 @@ class NotificationService {
     _ttsRate = prefs.getDouble('tts_rate') ?? 0.45;
     _ttsPitch = prefs.getDouble('tts_pitch') ?? 1.0;
     _ttsVolume = prefs.getDouble('tts_volume') ?? 1.0;
+    _speakUnreadSummaryOnOpen = prefs.getBool('speak_unread_summary') ?? true;
     
     print('🔔 Notification preferences loaded: System: $_systemNotificationsEnabled, Audio: $_audioNotificationsEnabled, In-app: $_inAppNotificationsEnabled');
   }
@@ -161,6 +172,7 @@ class NotificationService {
     bool? inAppNotifications,
     bool? voiceAnnouncements,
     bool? autoClearBadgeOnNotificationsOpen,
+    bool? speakUnreadSummaryOnOpen,
   }) async {
     final prefs = await SharedPreferences.getInstance();
     
@@ -185,6 +197,10 @@ class NotificationService {
     if (autoClearBadgeOnNotificationsOpen != null) {
       _autoClearBadgeOnNotificationsOpen = autoClearBadgeOnNotificationsOpen;
       await prefs.setBool('auto_clear_badge_notifications', autoClearBadgeOnNotificationsOpen);
+    }
+    if (speakUnreadSummaryOnOpen != null) {
+      _speakUnreadSummaryOnOpen = speakUnreadSummaryOnOpen;
+      await prefs.setBool('speak_unread_summary', speakUnreadSummaryOnOpen);
     }
     
     print('🔔 Notification preferences updated');
@@ -553,6 +569,29 @@ class NotificationService {
     await _speakSafe(text);
   }
 
+  // Speak unread summary
+  Future<void> speakUnreadSummaryIfEnabled() async {
+    try {
+      if (!_voiceAnnouncementsEnabled || !_speakUnreadSummaryOnOpen) return;
+      final userId = FirebaseAuth.instance.currentUser?.uid;
+      if (userId == null) return;
+      final notifQuery = await _firestore
+          .collection('notifications')
+          .where('userId', isEqualTo: userId)
+          .where('read', isEqualTo: false)
+          .get();
+      final int notifUnread = notifQuery.size;
+      final int chatUnread = await _getTotalUnreadCount(userId);
+      final int total = notifUnread + chatUnread;
+      if (total <= 0) return;
+      final parts = <String>[];
+      if (notifUnread > 0) parts.add('$notifUnread ${notifUnread == 1 ? 'notification' : 'notifications'}');
+      if (chatUnread > 0) parts.add('$chatUnread ${chatUnread == 1 ? 'chat' : 'chats'}');
+      final phrase = 'You have ${parts.join(' and ')}.';
+      await _speakSafe(phrase);
+    } catch (_) {}
+  }
+
   // Show general notification
   Future<void> showGeneralNotification({
     required String title,
@@ -702,6 +741,89 @@ class NotificationService {
     await _updateBadgeForCurrentUser();
   }
 
+  void _attachRealtimeSpeakListener() {
+    try {
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      if (uid == null) return;
+      _notifSub?.cancel();
+      _notifListenerInitialized = false;
+      _notifSub = _firestore
+          .collection('notifications')
+          .where('userId', isEqualTo: uid)
+          .orderBy('timestamp', descending: true)
+          .limit(20)
+          .snapshots()
+          .listen((snapshot) async {
+        if (!_voiceAnnouncementsEnabled) return;
+        if (!_notifListenerInitialized) {
+          _notifListenerInitialized = true;
+          return;
+        }
+        for (final change in snapshot.docChanges) {
+          if (change.type == DocumentChangeType.added) {
+            final id = change.doc.id;
+            if (_spokenNotificationIds.contains(id)) continue;
+            _spokenNotificationIds.add(id);
+            final data = change.doc.data() as Map<String, dynamic>?;
+            if (data == null) continue;
+            await _speakForNotificationData(data);
+          }
+        }
+      }, onError: (e) {
+        print('❌ Realtime speak listener error: $e');
+      });
+    } catch (e) {
+      print('❌ Failed to attach realtime speak listener: $e');
+    }
+  }
+
+  void _attachFcmOnMessageSpeak() {
+    try {
+      if (kIsWeb) return;
+      _fcmSub?.cancel();
+      _fcmSub = FirebaseMessaging.onMessage.listen((RemoteMessage message) async {
+        if (!_voiceAnnouncementsEnabled) return;
+        final title = message.notification?.title ?? message.data['title']?.toString() ?? '';
+        final body = message.notification?.body ?? message.data['body']?.toString() ?? '';
+        if (title.isEmpty && body.isEmpty) return;
+        await _speakSafe('${title.isNotEmpty ? '$title. ' : ''}$body');
+      }, onError: (e) {
+        print('❌ FCM onMessage listener error: $e');
+      });
+    } catch (e) {
+      print('❌ Failed to attach FCM onMessage listener: $e');
+    }
+  }
+
+  Future<void> _speakForNotificationData(Map<String, dynamic> data) async {
+    try {
+      final type = (data['type'] as String?)?.toLowerCase() ?? '';
+      if (type == 'new_order_seller') {
+        final buyerName = data['data']?['buyerName']?.toString() ?? 'a customer';
+        final total = double.tryParse(data['data']?['orderTotal']?.toString() ?? '') ?? 0;
+        await _speakSafe('New order received. Buyer $buyerName. Total R${total.toStringAsFixed(2)}.');
+        return;
+      }
+      if (type == 'order_status') {
+        final status = data['data']?['status']?.toString() ?? 'updated';
+        final orderNumber = data['orderNumber']?.toString() ?? data['data']?['orderNumber']?.toString() ?? '';
+        if (orderNumber.isNotEmpty) {
+          await _speakSafe('Order number $orderNumber. Status now $status.');
+        } else {
+          await _speakSafe('Your order status is now $status.');
+        }
+        return;
+      }
+      final title = data['title']?.toString() ?? '';
+      final body = data['body']?.toString() ?? '';
+      if (title.isNotEmpty || body.isNotEmpty) {
+        await _speakSafe('${title.isNotEmpty ? '$title. ' : ''}$body');
+      }
+    } catch (e) {
+      print('❌ speakForNotificationData failed: $e');
+    }
+  }
+
   // Mark all notifications as read for current user
   Future<void> markAllNotificationsAsReadForCurrentUser() async {
     try {
@@ -758,6 +880,8 @@ class NotificationService {
   // Dispose
   void dispose() {
     _notificationController.close();
+    _notifSub?.cancel();
+    _fcmSub?.cancel();
   }
 
   // ===== COMPATIBILITY METHODS FOR EXISTING CODE =====
@@ -840,6 +964,12 @@ class NotificationService {
       });
       print('✅ Notification marked as read: $notificationId');
     } catch (e) {
+      final msg = e.toString();
+      // Soft-fail on permission issues so UX continues (rules may block updates)
+      if (msg.contains('permission-denied')) {
+        print('⚠️ Permission denied marking notification as read; continuing.');
+        return;
+      }
       print('❌ Error marking notification as read: $e');
       throw e;
     }

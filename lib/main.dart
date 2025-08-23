@@ -15,7 +15,9 @@ import 'services/fcm_config_service.dart';
 import 'services/awesome_notification_service.dart';
 import 'services/navigation_service.dart';
 import 'services/route_persistence_observer.dart';
-import 'screens/NotificationSettingsScreen.dart';
+import 'screens/notification_settings_screen.dart';
+import 'screens/security_settings_screen.dart';
+import 'screens/KycUploadScreen.dart';
 import 'screens/ChatRoute.dart';
 import 'services/global_message_listener.dart';
 import 'widgets/in_app_notification_widget.dart';
@@ -162,6 +164,8 @@ class MyApp extends StatelessWidget {
           '/cache-management': (context) => CacheManagementScreen(),
           '/my-products': (context) => SellerProductManagement(),
           '/notification-settings': (context) => const NotificationSettingsScreen(),
+          '/security-settings': (context) => const SecuritySettingsScreen(),
+          '/kyc': (context) => const KycUploadScreen(),
           '/my-stores': (context) => const MyStoresScreen(),
         },
         onGenerateRoute: (settings) {

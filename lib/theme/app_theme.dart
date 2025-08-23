@@ -261,9 +261,9 @@ class AppTheme {
       ),
     ),
 
-    // Card Theme (using complementary colors)
+    // Card Theme (set to angel as requested)
     cardTheme: CardThemeData(
-      color: paleLinen,
+      color: angel,
       elevation: 4,
       shadowColor: indigo.withOpacity(0.2),
       shape: RoundedRectangleBorder(
@@ -387,6 +387,8 @@ class AppTheme {
     // Snack Bar Theme
     snackBarTheme: SnackBarThemeData(
       backgroundColor: deepTeal,
+      behavior: SnackBarBehavior.floating,
+      elevation: 8,
       contentTextStyle: GoogleFonts.poppins(
         fontSize: 14,
         fontWeight: FontWeight.w500,
