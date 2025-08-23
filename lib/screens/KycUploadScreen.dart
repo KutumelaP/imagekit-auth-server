@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'dart:io';
 import '../theme/app_theme.dart';
 import '../services/imagekit_service.dart';
 
@@ -65,6 +66,65 @@ class _KycUploadScreenState extends State<KycUploadScreen> {
   Future<void> _pickSelfie() async {
     final x = await _picker.pickImage(source: ImageSource.camera, maxWidth: 2000, imageQuality: 90);
     if (x != null) setState(() => _selfie = x);
+  }
+
+  void _showImagePreview(String title, XFile? localFile, String? existingUrl) {
+    if (localFile == null && existingUrl == null) return;
+    
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  Text(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                  const Spacer(),
+                  IconButton(
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.close),
+                  ),
+                ],
+              ),
+            ),
+            Flexible(
+              child: Container(
+                constraints: const BoxConstraints(maxHeight: 400, maxWidth: 300),
+                child: localFile != null
+                    ? Image.file(
+                        File(localFile.path),
+                        fit: BoxFit.contain,
+                        errorBuilder: (context, error, stackTrace) => const Center(
+                          child: Icon(Icons.error, size: 48, color: Colors.red),
+                        ),
+                      )
+                    : Image.network(
+                        existingUrl!,
+                        fit: BoxFit.contain,
+                        loadingBuilder: (context, child, loadingProgress) {
+                          if (loadingProgress == null) return child;
+                          return Center(
+                            child: CircularProgressIndicator(
+                              value: loadingProgress.expectedTotalBytes != null
+                                  ? loadingProgress.cumulativeBytesLoaded / loadingProgress.expectedTotalBytes!
+                                  : null,
+                            ),
+                          );
+                        },
+                        errorBuilder: (context, error, stackTrace) => const Center(
+                          child: Icon(Icons.error, size: 48, color: Colors.red),
+                        ),
+                      ),
+              ),
+            ),
+            const SizedBox(height: 16),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _submit() async {
@@ -173,15 +233,81 @@ class _KycUploadScreenState extends State<KycUploadScreen> {
   }
 
   Widget _buildUploadTile(String title, XFile? localFile, String? existingUrl, VoidCallback onPick, { bool camera = false }) {
+    final hasImage = localFile != null || existingUrl != null;
+    
     return Container(
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), boxShadow: [
-        BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 12, offset: const Offset(0,4)),
-      ]),
-      child: ListTile(
-        leading: Icon(camera ? Icons.camera_alt : Icons.badge, color: AppTheme.deepTeal),
-        title: Text(title),
-        subtitle: existingUrl != null ? Text('Existing file linked', style: TextStyle(color: AppTheme.breeze)) : null,
-        trailing: TextButton.icon(onPressed: onPick, icon: const Icon(Icons.upload_file), label: const Text('Upload')),
+      decoration: BoxDecoration(
+        color: Colors.white, 
+        borderRadius: BorderRadius.circular(12), 
+        boxShadow: [
+          BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 12, offset: const Offset(0,4)),
+        ]
+      ),
+      child: Column(
+        children: [
+          ListTile(
+            leading: Icon(camera ? Icons.camera_alt : Icons.badge, color: AppTheme.deepTeal),
+            title: Text(title),
+            subtitle: existingUrl != null ? Text('Existing file linked', style: TextStyle(color: AppTheme.breeze)) : null,
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (hasImage)
+                  IconButton(
+                    onPressed: () => _showImagePreview(title, localFile, existingUrl),
+                    icon: const Icon(Icons.preview, color: AppTheme.deepTeal),
+                    tooltip: 'Preview',
+                  ),
+                TextButton.icon(
+                  onPressed: onPick, 
+                  icon: const Icon(Icons.upload_file), 
+                  label: const Text('Upload')
+                ),
+              ],
+            ),
+          ),
+          if (hasImage) ...[
+            Container(
+              height: 120,
+              margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: localFile != null
+                    ? Image.file(
+                        File(localFile.path),
+                        width: double.infinity,
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) => Container(
+                          color: Colors.grey[200],
+                          child: const Icon(Icons.error, size: 32, color: Colors.red),
+                        ),
+                      )
+                    : Image.network(
+                        existingUrl!,
+                        width: double.infinity,
+                        fit: BoxFit.cover,
+                        loadingBuilder: (context, child, loadingProgress) {
+                          if (loadingProgress == null) return child;
+                          return Container(
+                            color: Colors.grey[200],
+                            child: Center(
+                              child: CircularProgressIndicator(
+                                value: loadingProgress.expectedTotalBytes != null
+                                    ? loadingProgress.cumulativeBytesLoaded / loadingProgress.expectedTotalBytes!
+                                    : null,
+                              ),
+                            ),
+                          );
+                        },
+                        errorBuilder: (context, error, stackTrace) => Container(
+                          color: Colors.grey[200],
+                          child: const Icon(Icons.error, size: 32, color: Colors.red),
+                        ),
+                      ),
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }

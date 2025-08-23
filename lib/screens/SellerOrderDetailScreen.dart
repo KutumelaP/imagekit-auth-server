@@ -283,7 +283,7 @@ class _SellerOrderDetailScreenState extends State<SellerOrderDetailScreen>
   Widget _buildSliverAppBar(String status) {
     return SliverSafeArea(
       top: true,
-      child: SliverAppBar(
+      sliver: SliverAppBar(
         expandedHeight: 180,
         floating: false,
         pinned: true,

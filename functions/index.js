@@ -559,20 +559,160 @@ exports.verifyEmailOtp = functions.https.onCall(async (data, context) => {
 
 const IK_API_BASE = 'https://api.imagekit.io/v1';
 
-function isAdmin(context) {
+async function isAdmin(context) {
   const token = context.auth && context.auth.token;
-  return token && (token.admin === true || token.role === 'admin');
+  
+  // Check custom claims first
+  if (token && (token.admin === true || token.role === 'admin')) {
+    return true;
+  }
+  
+  // Fallback: check Firestore if custom claims not set
+  if (context.auth && context.auth.uid) {
+    try {
+      const userDoc = await admin.firestore().collection('users').doc(context.auth.uid).get();
+      if (userDoc.exists) {
+        const userData = userDoc.data();
+        const role = (userData.role || '').toString().toLowerCase();
+        return role === 'admin';
+      }
+    } catch (e) {
+      console.warn('Failed to check Firestore for admin role:', e.message);
+    }
+  }
+  
+  return false;
 }
 
-exports.listImages = functions.https.onCall(async (data, context) => {
-  if (!isAdmin(context)) {
-    throw new functions.https.HttpsError('permission-denied', 'Admin access required');
-  }
+// === ImageKit helper functions ===
+function getImageKitCredentials() {
+  // Try to get from environment variables first
+  const privateKey = process.env.IMAGEKIT_PRIVATE_KEY || 'private_cZ0y1MLeTaZbOYoxDAVI7fTIbTM=';
+  const publicKey = process.env.IMAGEKIT_PUBLIC_KEY || 'public_tAO0SkfLl/37FQN+23c/bkAyfYg=';
+  const urlEndpoint = process.env.IMAGEKIT_URL_ENDPOINT || 'https://ik.imagekit.io/tkhb6zllk';
+  
+  return { privateKey, publicKey, urlEndpoint };
+}
 
-  const { privateKey, path, limit = 100, skip = 0, searchQuery } = data || {};
-  if (!privateKey) throw new functions.https.HttpsError('invalid-argument', 'Missing private key');
+// Helper: verify admin from Authorization: Bearer <idToken>
+async function verifyAdminFromRequest(req) {
+  try {
+    const authHeader = req.headers['authorization'] || req.headers['Authorization'] || '';
+    const parts = String(authHeader).split(' ');
+    if (parts.length === 2 && parts[0] === 'Bearer' && parts[1]) {
+      const decoded = await admin.auth().verifyIdToken(parts[1]);
+      console.log('Token decoded:', { uid: decoded?.uid, email: decoded?.email, admin: decoded?.admin, role: decoded?.role });
+      
+      if (decoded && (decoded.admin === true || decoded.role === 'admin')) {
+        console.log('Admin access granted via token claims');
+        return true;
+      }
+      
+      // Fallback: check Firestore role
+      if (decoded && decoded.uid) {
+        console.log('Checking Firestore for user:', decoded.uid);
+        const userDoc = await admin.firestore().collection('users').doc(decoded.uid).get();
+        console.log('User doc exists:', userDoc.exists);
+        if (userDoc.exists) {
+          const userData = userDoc.data();
+          const role = (userData.role || '').toString().toLowerCase();
+          console.log('User role from Firestore:', role);
+          return role === 'admin';
+        } else {
+          console.log('User document not found in Firestore');
+        }
+      }
+    } else {
+      console.log('Invalid authorization header format');
+    }
+  } catch (e) {
+    console.error('verifyAdminFromRequest failed:', e.message);
+  }
+  return false;
+}
+
+// HTTP version for admin dashboard (GET with CORS)
+exports.listImagesHttp = functions.https.onRequest(async (req, res) => {
+  // Basic CORS headers (adjust origin as needed)
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
+
+  if (req.method !== 'GET') { res.status(405).json({ error: 'Method not allowed' }); return; }
+
+  // Require admin
+  const isAdminReq = await verifyAdminFromRequest(req);
+  if (!isAdminReq) { res.status(403).json({ error: 'Admin access required' }); return; }
 
   try {
+    const limit = Math.max(1, Math.min(1000, Number(req.query.limit || 100)));
+    const skip = Math.max(0, Number(req.query.skip || 0));
+    const path = req.query.path ? String(req.query.path) : undefined;
+    const searchQuery = req.query.searchQuery ? String(req.query.searchQuery) : undefined;
+
+    const { privateKey } = getImageKitCredentials();
+    if (!privateKey) { res.status(500).json({ error: 'ImageKit not configured' }); return; }
+
+    const params = new URLSearchParams();
+    params.append('limit', String(limit));
+    params.append('skip', String(skip));
+    if (path) params.append('path', path);
+    if (searchQuery) params.append('searchQuery', searchQuery);
+
+    const ikRes = await axios.get(`${IK_API_BASE}/files`, {
+      params,
+      headers: { Authorization: `Basic ${Buffer.from(`${privateKey}:`).toString('base64')}` },
+      timeout: 30000,
+    });
+
+    res.status(200).json({ files: ikRes.data || [], count: Array.isArray(ikRes.data) ? ikRes.data.length : 0 });
+  } catch (e) {
+    console.error('listImagesHttp error:', e?.response?.status, e?.response?.data || e.message);
+    if (e?.response?.status) {
+      res.status(e.response.status).json({ error: e.response.data || e.message });
+    } else {
+      res.status(500).json({ error: e.message });
+    }
+  }
+});
+
+exports.listImages = functions.https.onCall(async (data, context) => {
+  try {
+    // Check authentication
+    if (!context.auth) {
+      throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
+    }
+
+    // Check admin status
+    if (!(await isAdmin(context))) {
+      throw new functions.https.HttpsError('permission-denied', 'Admin access required');
+    }
+
+    const { privateKey: userPrivateKey, path, limit = 100, skip = 0, searchQuery } = data || {};
+    
+    // Use provided private key or fall back to default
+    const { privateKey } = getImageKitCredentials();
+    const finalPrivateKey = userPrivateKey || privateKey;
+    
+    // Validate required parameters
+    if (!finalPrivateKey) {
+      throw new functions.https.HttpsError('invalid-argument', 'Missing private key for ImageKit');
+    }
+
+    // Validate limit and skip
+    if (limit < 1 || limit > 1000) {
+      throw new functions.https.HttpsError('invalid-argument', 'Limit must be between 1 and 1000');
+    }
+
+    if (skip < 0) {
+      throw new functions.https.HttpsError('invalid-argument', 'Skip must be non-negative');
+    }
+
+    console.log('listImages called with:', { path, limit, skip, searchQuery: !!searchQuery });
+    console.log('User authenticated:', context.auth.uid, context.auth.token?.email);
+    console.log('Using ImageKit private key:', finalPrivateKey ? 'Present' : 'Missing');
+
     const params = new URLSearchParams();
     params.append('limit', String(limit));
     params.append('skip', String(skip));
@@ -582,21 +722,91 @@ exports.listImages = functions.https.onCall(async (data, context) => {
     const res = await axios.get(`${IK_API_BASE}/files`, {
       params,
       headers: {
-        Authorization: `Basic ${Buffer.from(`${privateKey}:`).toString('base64')}`,
+        Authorization: `Basic ${Buffer.from(`${finalPrivateKey}:`).toString('base64')}`,
       },
-      timeout: 20000,
+      timeout: 30000, // Increased timeout
     });
 
+    console.log('ImageKit response status:', res.status);
+    
     // ImageKit returns an array
-    return { files: res.data };
+    return { 
+      files: res.data || [],
+      success: true,
+      count: Array.isArray(res.data) ? res.data.length : 0
+    };
   } catch (e) {
-    console.error('listImages error', e?.response?.status, e?.response?.data || e.message);
-    throw new functions.https.HttpsError('internal', 'Failed to list images');
+    console.error('listImages error:', {
+      message: e.message,
+      status: e?.response?.status,
+      data: e?.response?.data,
+      code: e.code
+    });
+
+    // Handle specific error types
+    if (e.code === 'ECONNABORTED') {
+      throw new functions.https.HttpsError('deadline-exceeded', 'Request timeout - ImageKit service unavailable');
+    }
+    
+    if (e?.response?.status === 401) {
+      throw new functions.https.HttpsError('unauthenticated', 'Invalid ImageKit credentials');
+    }
+    
+    if (e?.response?.status === 403) {
+      throw new functions.https.HttpsError('permission-denied', 'ImageKit access denied');
+    }
+
+    // Generic error
+    throw new functions.https.HttpsError('internal', `Failed to list images: ${e.message}`);
+  }
+});
+
+// === Test ImageKit connectivity ===
+exports.testImageKit = functions.https.onCall(async (data, context) => {
+  try {
+    // Check authentication
+    if (!context.auth) {
+      throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
+    }
+
+    // Check admin status
+    if (!isAdmin(context)) {
+      throw new functions.https.HttpsError('permission-denied', 'Admin access required');
+    }
+
+    const { privateKey } = getImageKitCredentials();
+    
+    console.log('Testing ImageKit connectivity...');
+    
+    const res = await axios.get(`${IK_API_BASE}/files`, {
+      params: { limit: 1 },
+      headers: {
+        Authorization: `Basic ${Buffer.from(`${privateKey}:`).toString('base64')}`,
+      },
+      timeout: 10000,
+    });
+
+    console.log('ImageKit test successful:', res.status);
+    
+    return { 
+      success: true,
+      message: 'ImageKit connection successful',
+      status: res.status,
+      fileCount: Array.isArray(res.data) ? res.data.length : 0
+    };
+  } catch (e) {
+    console.error('ImageKit test failed:', e.message);
+    
+    return { 
+      success: false,
+      message: `ImageKit connection failed: ${e.message}`,
+      error: e.message
+    };
   }
 });
 
 exports.batchDeleteImages = functions.https.onCall(async (data, context) => {
-  if (!isAdmin(context)) {
+  if (!(await isAdmin(context))) {
     throw new functions.https.HttpsError('permission-denied', 'Admin access required');
   }
 
@@ -1032,3 +1242,56 @@ exports.onSellerApproved = functions.runWith({ timeoutSeconds: 60, memory: '256M
       return null;
     }
   });
+
+// === Set user custom claims based on Firestore role ===
+exports.setUserCustomClaims = functions.https.onCall(async (data, context) => {
+  try {
+    // Only allow admins to set custom claims
+    if (!context.auth) {
+      throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
+    }
+
+    // Check if the caller is admin
+    const callerUid = context.auth.uid;
+    const callerDoc = await admin.firestore().collection('users').doc(callerUid).get();
+    if (!callerDoc.exists || callerDoc.data().role !== 'admin') {
+      throw new functions.https.HttpsError('permission-denied', 'Only admins can set custom claims');
+    }
+
+    const { userId } = data;
+    if (!userId) {
+      throw new functions.https.HttpsError('invalid-argument', 'userId is required');
+    }
+
+    // Get user's role from Firestore
+    const userDoc = await admin.firestore().collection('users').doc(userId).get();
+    if (!userDoc.exists) {
+      throw new functions.https.HttpsError('not-found', 'User not found');
+    }
+
+    const userData = userDoc.data();
+    const role = userData.role || 'customer';
+
+    // Set custom claims
+    const customClaims = {
+      role: role,
+      admin: role === 'admin',
+      seller: role === 'seller',
+      customer: role === 'customer'
+    };
+
+    await admin.auth().setCustomUserClaims(userId, customClaims);
+
+    console.log(`Set custom claims for user ${userId}:`, customClaims);
+
+    return {
+      success: true,
+      message: `Custom claims set for user ${userId}`,
+      claims: customClaims
+    };
+
+  } catch (e) {
+    console.error('setUserCustomClaims error:', e);
+    throw new functions.https.HttpsError('internal', `Failed to set custom claims: ${e.message}`);
+  }
+});

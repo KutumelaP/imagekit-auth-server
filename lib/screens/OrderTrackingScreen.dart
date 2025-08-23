@@ -329,7 +329,7 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
     
     return SliverSafeArea(
       top: true,
-      child: SliverAppBar(
+      sliver: SliverAppBar(
         expandedHeight: 180,
         floating: false,
         pinned: true,

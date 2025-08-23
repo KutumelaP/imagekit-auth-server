@@ -1,8 +1,9 @@
-import 'dart:convert';
-import 'package:http/http.dart' as http;
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import '../config/image_api_config.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+import 'package:admin_dashboard/config/image_api_config.dart';
 
 class ImageCleanupService {
 	static Future<List<Map<String, dynamic>>> _listImagesPage({
@@ -11,18 +12,50 @@ class ImageCleanupService {
 		String? path,
 		String? searchQuery,
 	}) async {
-		final user = FirebaseAuth.instance.currentUser;
-		final idToken = await user?.getIdToken();
-		final url = ImageApiConfig.listUrl(limit: limit, skip: skip, path: path, searchQuery: searchQuery);
-		final res = await http.get(Uri.parse(url), headers: {
-			'Authorization': 'Bearer ${idToken ?? ''}',
-		});
-		if (res.statusCode == 200) {
-			final body = json.decode(res.body) as Map<String, dynamic>;
-			final files = body['files'];
-			if (files is List) return files.cast<Map<String, dynamic>>();
+		try {
+			// Always force refresh token to ensure latest custom claims are present
+			await FirebaseAuth.instance.currentUser?.getIdToken(true);
+
+			// 1) Callable first
+			final functions = FirebaseFunctions.instanceFor(region: 'us-central1');
+			final callable = functions.httpsCallable('listImages');
+			final data = <String, dynamic>{
+				'limit': limit,
+				'skip': skip,
+			};
+			if (path != null) data['path'] = path;
+			if (searchQuery != null) data['searchQuery'] = searchQuery;
+			final result = await callable.call(data);
+			final response = result.data as Map<String, dynamic>;
+			final files = response['files'] as List<dynamic>?;
+			if (files != null) {
+				return files.cast<Map<String, dynamic>>();
+			}
+
+			// 2) HTTP fallback
+			try {
+				final user = FirebaseAuth.instance.currentUser;
+				final idToken = await user?.getIdToken(true);
+				final url = ImageApiConfig.listUrl(limit: limit, skip: skip, path: path, searchQuery: searchQuery);
+				final res = await http.get(Uri.parse(url), headers: {
+					'Authorization': 'Bearer ${idToken ?? ''}',
+				});
+				if (res.statusCode == 200) {
+					final body = json.decode(res.body) as Map<String, dynamic>;
+					final files2 = body['files'];
+					if (files2 is List) {
+						return files2.cast<Map<String, dynamic>>();
+					}
+				}
+			} catch (eHttp) {
+				print('❌ HTTP listImagesHttp failed: $eHttp');
+			}
+
+			return [];
+		} catch (e) {
+			print('❌ Error listing images (callable first): $e');
+			return [];
 		}
-		return [];
 	}
 	
 	static Future<List<Map<String, dynamic>>> getAllImages({
@@ -41,17 +74,14 @@ class ImageCleanupService {
 	
 	static Future<bool> deleteImage(String fileId) async {
 		try {
-			final user = FirebaseAuth.instance.currentUser;
-			final idToken = await user?.getIdToken();
-			final res = await http.post(
-				Uri.parse(ImageApiConfig.batchDeleteUrl()),
-				headers: {
-					'Authorization': 'Bearer ${idToken ?? ''}',
-					'Content-Type': 'application/json',
-				},
-				body: json.encode({'fileIds': [fileId]}),
-			);
-			return res.statusCode == 200;
+			// Ensure fresh token with latest admin claims
+			await FirebaseAuth.instance.currentUser?.getIdToken(true);
+			final functions = FirebaseFunctions.instanceFor(region: 'us-central1');
+			final callable = functions.httpsCallable('batchDeleteImages');
+			
+			final result = await callable.call({'fileIds': [fileId]});
+			final response = result.data as Map<String, dynamic>;
+			return response['success'] == true;
 		} catch (e) {
 			print('❌ Error deleting image $fileId: $e');
 			return false;
@@ -60,17 +90,15 @@ class ImageCleanupService {
 	
 	static Future<Map<String, bool>> deleteImages(List<String> fileIds) async {
 		try {
-			final user = FirebaseAuth.instance.currentUser;
-			final idToken = await user?.getIdToken();
-			final res = await http.post(
-				Uri.parse(ImageApiConfig.batchDeleteUrl()),
-				headers: {
-					'Authorization': 'Bearer ${idToken ?? ''}',
-					'Content-Type': 'application/json',
-				},
-				body: json.encode({'fileIds': fileIds}),
-			);
-			if (res.statusCode == 200) {
+			// Ensure fresh token with latest admin claims
+			await FirebaseAuth.instance.currentUser?.getIdToken(true);
+			final functions = FirebaseFunctions.instanceFor(region: 'us-central1');
+			final callable = functions.httpsCallable('batchDeleteImages');
+			
+			final result = await callable.call({'fileIds': fileIds});
+			final response = result.data as Map<String, dynamic>;
+			
+			if (response['success'] == true) {
 				final results = <String, bool>{};
 				for (final id in fileIds) results[id] = true;
 				return results;
@@ -256,6 +284,41 @@ class ImageCleanupService {
 		} catch (e) {
 			print('❌ Error getting storage stats: $e');
 			return {};
+		}
+	}
+
+	// Set custom claims for the current user
+	static Future<bool> setUserCustomClaims() async {
+		try {
+			final user = FirebaseAuth.instance.currentUser;
+			if (user == null) return false;
+			
+			final functions = FirebaseFunctions.instanceFor(region: 'us-central1');
+			final callable = functions.httpsCallable('setUserCustomClaims');
+			
+			final result = await callable.call({'userId': user.uid});
+			final response = result.data as Map<String, dynamic>;
+			// Refresh current user's token so new claims are picked up immediately
+			await user.getIdToken(true);
+			
+			return response['success'] == true;
+		} catch (e) {
+			print('❌ Error setting custom claims: $e');
+			return false;
+		}
+	}
+
+	// Test method to verify listImages function works
+	static Future<bool> testListImages() async {
+		try {
+			// Ensure fresh token before testing
+			await FirebaseAuth.instance.currentUser?.getIdToken(true);
+			final images = await getAllImages(limit: 1, skip: 0);
+			print('✅ listImages test successful: ${images.length} images returned');
+			return true;
+		} catch (e) {
+			print('❌ listImages test failed: $e');
+			return false;
 		}
 	}
 }

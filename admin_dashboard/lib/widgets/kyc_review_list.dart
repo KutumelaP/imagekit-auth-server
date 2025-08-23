@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import '../theme/admin_theme.dart';
+import 'kyc_image_preview.dart';
 
 class KycReviewList extends StatefulWidget {
   const KycReviewList({super.key});
@@ -91,6 +92,17 @@ class _KycReviewListState extends State<KycReviewList> {
   }
 
   Widget _buildRow(_KycItem item) {
+    final List<KycImageData> images = [];
+    if (item.idFrontUrl != null) {
+      images.add(KycImageData(url: item.idFrontUrl!, label: 'ID Front'));
+    }
+    if (item.idBackUrl != null) {
+      images.add(KycImageData(url: item.idBackUrl!, label: 'ID Back'));
+    }
+    if (item.selfieUrl != null) {
+      images.add(KycImageData(url: item.selfieUrl!, label: 'Selfie'));
+    }
+
     return Container(
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surface,
@@ -111,53 +123,36 @@ class _KycReviewListState extends State<KycReviewList> {
               ],
             ),
             const SizedBox(height: 12),
-            Wrap(
-              spacing: 12,
-              runSpacing: 12,
-              children: [
-                if (item.idFrontUrl != null) _thumb(item.idFrontUrl!, 'ID Front'),
-                if (item.idBackUrl != null) _thumb(item.idBackUrl!, 'ID Back'),
-                if (item.selfieUrl != null) _thumb(item.selfieUrl!, 'Selfie'),
-              ],
-            ),
-            const SizedBox(height: 12),
+            if (images.isNotEmpty) ...[
+              KycImageGrid(images: images),
+              const SizedBox(height: 12),
+            ],
             Row(
               children: [
                 ElevatedButton.icon(
                   onPressed: () => _mark(item.userId, 'approved'),
                   icon: const Icon(Icons.check),
                   label: const Text('Approve'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.green,
+                    foregroundColor: Colors.white,
+                  ),
                 ),
                 const SizedBox(width: 12),
                 OutlinedButton.icon(
                   onPressed: () => _mark(item.userId, 'rejected'),
                   icon: const Icon(Icons.close),
                   label: const Text('Reject'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.red,
+                    side: const BorderSide(color: Colors.red),
+                  ),
                 ),
               ],
             )
           ],
         ),
       ),
-    );
-  }
-
-  Widget _thumb(String url, String label) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        ClipRRect(
-          borderRadius: BorderRadius.circular(8),
-          child: Image.network(
-            url,
-            width: 160,
-            height: 100,
-            fit: BoxFit.cover,
-          ),
-        ),
-        const SizedBox(height: 6),
-        Text(label, style: TextStyle(fontSize: 12, color: AdminTheme.mediumGrey)),
-      ],
     );
   }
 }

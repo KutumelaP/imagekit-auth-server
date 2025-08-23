@@ -12,8 +12,9 @@ class CategoriesSection extends StatefulWidget {
 class _CategoriesSectionState extends State<CategoriesSection> {
   void _showCategoryDialog({DocumentSnapshot? doc}) {
     final isEdit = doc != null;
-    final nameController = TextEditingController(text: isEdit ? doc['name'] : '');
-    final descController = TextEditingController(text: isEdit ? doc['description'] ?? '' : '');
+    final Map<String, dynamic>? data = isEdit ? (doc.data() as Map<String, dynamic>?) : null;
+    final nameController = TextEditingController(text: isEdit ? (data?['name'] ?? '') : '');
+    final descController = TextEditingController(text: isEdit ? (data?['description'] ?? '') : '');
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -55,7 +56,7 @@ class _CategoriesSectionState extends State<CategoriesSection> {
               final desc = descController.text.trim();
               if (name.isEmpty) return;
               if (isEdit) {
-                await doc!.reference.update({'name': name, 'description': desc});
+                await doc.reference.update({'name': name, 'description': desc});
               } else {
                 await widget.firestore.collection('categories').add({'name': name, 'description': desc});
               }
@@ -80,7 +81,7 @@ class _CategoriesSectionState extends State<CategoriesSection> {
           style: Theme.of(context).textTheme.headlineMedium,
         ),
         content: Text(
-          'Are you sure you want to delete "${doc['name']}"?',
+          'Are you sure you want to delete "${((doc.data() as Map<String, dynamic>?)?['name'] ?? 'Category')}"?',
           style: Theme.of(context).textTheme.bodyMedium,
         ),
         actions: [
@@ -158,17 +159,17 @@ class _CategoriesSectionState extends State<CategoriesSection> {
                                     mainAxisAlignment: MainAxisAlignment.center,
                                     children: [
                                       Text(
-                                        doc['name'], 
+                                        ((doc.data() as Map<String, dynamic>)['name'] ?? '').toString(), 
                                         style: Theme.of(context).textTheme.titleMedium?.copyWith(
                                           fontWeight: FontWeight.bold,
                                           color: Theme.of(context).colorScheme.onSurface,
                                         ),
                                       ),
-                                      if ((doc['description'] ?? '').toString().isNotEmpty)
+                                      if ((((doc.data() as Map<String, dynamic>)['description'] ?? '').toString()).isNotEmpty)
                                         Padding(
                                           padding: const EdgeInsets.only(top: 4.0),
                                           child: Text(
-                                            doc['description'], 
+                                            ((doc.data() as Map<String, dynamic>)['description'] ?? '').toString(), 
                                             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                                               color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
                                             ),

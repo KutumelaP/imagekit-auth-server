@@ -82,22 +82,37 @@ class ImageKitService {
         print('⚠️ Using fallback public key: ${publicKey.substring(0, 20)}...');
       }
 
-      // Handle file reading based on platform
-      List<int> bytes;
+      // Determine filename and prepare multipart file
       String fileName;
-      
+      http.MultipartFile multipartFile;
+
       if (kIsWeb && file is XFile) {
-        // Web: Use XFile
-        bytes = await file.readAsBytes();
-        fileName = customFileName ?? 
-            '${folder}/${user.uid}/${DateTime.now().millisecondsSinceEpoch}_${path.basename(file.path)}';
-      } else if (file is File) {
-        // Mobile: Use File
-        bytes = await file.readAsBytes();
-        fileName = customFileName ?? 
-            '${folder}/${user.uid}/${DateTime.now().millisecondsSinceEpoch}_${path.basename(file.path)}';
+        // Web: must use bytes
+        final bytes = await file.readAsBytes();
+        fileName = customFileName ?? '${folder}/${user.uid}/${DateTime.now().millisecondsSinceEpoch}_${path.basename(file.path)}';
+        multipartFile = http.MultipartFile.fromBytes(
+          'file',
+          bytes,
+          filename: path.basename(file.path),
+        );
       } else {
-        throw Exception('Unsupported file type');
+        // Mobile/Desktop: support both File and XFile by streaming from disk to save memory
+        File fileOnDisk;
+        if (file is File) {
+          fileOnDisk = file;
+        } else if (file is XFile) {
+          fileOnDisk = File(file.path);
+        } else {
+          throw Exception('Unsupported file type');
+        }
+        fileName = customFileName ?? '${folder}/${user.uid}/${DateTime.now().millisecondsSinceEpoch}_${path.basename(fileOnDisk.path)}';
+        final length = await fileOnDisk.length();
+        multipartFile = http.MultipartFile(
+          'file',
+          fileOnDisk.openRead(),
+          length,
+          filename: path.basename(fileOnDisk.path),
+        );
       }
 
       // Create request
@@ -118,13 +133,7 @@ class ImageKitService {
         request.fields['tags'] = tags.join(',');
       }
 
-      request.files.add(
-        http.MultipartFile.fromBytes(
-          'file',
-          bytes,
-          filename: path.basename(file.path),
-        ),
-      );
+      request.files.add(multipartFile);
 
       print('🔍 Sending ImageKit upload request...');
       final streamedResponse = await request.send().timeout(const Duration(seconds: 30));
@@ -172,22 +181,36 @@ class ImageKitService {
 
       print('🔍 Starting ImageKit public upload...');
 
-      // Handle file reading based on platform
-      List<int> bytes;
       String fileName;
-      
+      http.MultipartFile multipartFile;
+
       if (kIsWeb && file is XFile) {
-        // Web: Use XFile
-        bytes = await file.readAsBytes();
-        fileName = customFileName ?? 
-            '${folder}/${user.uid}/${DateTime.now().millisecondsSinceEpoch}_${path.basename(file.path)}';
-      } else if (file is File) {
-        // Mobile: Use File
-        bytes = await file.readAsBytes();
-        fileName = customFileName ?? 
-            '${folder}/${user.uid}/${DateTime.now().millisecondsSinceEpoch}_${path.basename(file.path)}';
+        // Web: must use bytes
+        final bytes = await file.readAsBytes();
+        fileName = customFileName ?? '${folder}/${user.uid}/${DateTime.now().millisecondsSinceEpoch}_${path.basename(file.path)}';
+        multipartFile = http.MultipartFile.fromBytes(
+          'file',
+          bytes,
+          filename: path.basename(file.path),
+        );
       } else {
-        throw Exception('Unsupported file type');
+        // Mobile/Desktop: support both File and XFile by streaming from disk to save memory
+        File fileOnDisk;
+        if (file is File) {
+          fileOnDisk = file;
+        } else if (file is XFile) {
+          fileOnDisk = File(file.path);
+        } else {
+          throw Exception('Unsupported file type');
+        }
+        fileName = customFileName ?? '${folder}/${user.uid}/${DateTime.now().millisecondsSinceEpoch}_${path.basename(fileOnDisk.path)}';
+        final length = await fileOnDisk.length();
+        multipartFile = http.MultipartFile(
+          'file',
+          fileOnDisk.openRead(),
+          length,
+          filename: path.basename(fileOnDisk.path),
+        );
       }
 
       // Use ImageKit's public upload API
@@ -205,13 +228,7 @@ class ImageKitService {
         request.fields['tags'] = tags.join(',');
       }
 
-      request.files.add(
-        http.MultipartFile.fromBytes(
-          'file',
-          bytes,
-          filename: path.basename(file.path),
-        ),
-      );
+      request.files.add(multipartFile);
 
       print('🔍 Sending ImageKit upload request...');
       final streamedResponse = await request.send().timeout(const Duration(seconds: 30));

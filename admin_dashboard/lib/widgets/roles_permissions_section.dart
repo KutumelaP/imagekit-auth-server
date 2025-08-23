@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 
 class RolesPermissionsSection extends StatefulWidget {
   @override
@@ -9,7 +8,7 @@ class RolesPermissionsSection extends StatefulWidget {
 
 class _RolesPermissionsSectionState extends State<RolesPermissionsSection> {
   String _selectedRole = 'admin';
-  bool _isLoading = false;
+  // removed unused loading flag
   
   final List<Map<String, dynamic>> _roles = [
     {
@@ -473,7 +472,9 @@ class _RolesPermissionsSectionState extends State<RolesPermissionsSection> {
                     const SizedBox(height: 8),
                     ...users.map((userDoc) {
                       final userData = userDoc.data() as Map<String, dynamic>;
-                      final currentRole = userData['role'] ?? 'customer';
+                      final currentRole = (userData['role'] ?? 'customer').toString();
+                      final roleNames = _roles.map((r) => r['name'] as String).toList();
+                      final dropdownValue = roleNames.contains(currentRole) ? currentRole : 'customer';
                       
                       return Card(
                         child: Padding(
@@ -495,13 +496,13 @@ class _RolesPermissionsSectionState extends State<RolesPermissionsSection> {
                                 child: Container(
                                   padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                                   decoration: BoxDecoration(
-                                    color: _getRoleColor(currentRole).withOpacity(0.1),
+                                    color: _getRoleColor(dropdownValue).withOpacity(0.1),
                                     borderRadius: BorderRadius.circular(12),
                                   ),
                                   child: Text(
-                                    _getRoleDisplayName(currentRole),
+                                    _getRoleDisplayName(dropdownValue),
                                     style: TextStyle(
-                                      color: _getRoleColor(currentRole),
+                                      color: _getRoleColor(dropdownValue),
                                       fontWeight: FontWeight.bold,
                                     ),
                                   ),
@@ -510,8 +511,8 @@ class _RolesPermissionsSectionState extends State<RolesPermissionsSection> {
                               Expanded(
                                 child: Row(
                                   children: [
-                                                                         DropdownButton<String>(
-                                       value: currentRole,
+                                    DropdownButton<String>(
+                                       value: dropdownValue,
                                        items: _roles.map((role) {
                                          return DropdownMenuItem<String>(
                                            value: role['name'] as String,
@@ -568,9 +569,7 @@ class _RolesPermissionsSectionState extends State<RolesPermissionsSection> {
   }
 
   Future<void> _updateUserRole(String userId, String newRole) async {
-    setState(() {
-      _isLoading = true;
-    });
+    // start update
 
     try {
       await FirebaseFirestore.instance
@@ -591,10 +590,6 @@ class _RolesPermissionsSectionState extends State<RolesPermissionsSection> {
           backgroundColor: Colors.red,
         ),
       );
-    } finally {
-      setState(() {
-        _isLoading = false;
-      });
-    }
+    } finally {}
   }
 } 

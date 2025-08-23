@@ -17,11 +17,11 @@ class ImageApiConfig {
     final qp = params.entries.map((e) => '${Uri.encodeQueryComponent(e.key)}=${Uri.encodeQueryComponent(e.value)}').join('&');
     // If using Cloud Function proxy, adjust paths accordingly; else assume /api/imagekit
     final isCf = baseUrl.contains('cloudfunctions.net');
-    return isCf ? '$baseUrl/listImages?$qp' : '$baseUrl/api/imagekit/list?$qp';
+    return isCf ? '$baseUrl/listImagesHttp?$qp' : '$baseUrl/api/imagekit/list?$qp';
   }
   
   static String batchDeleteUrl() {
     final isCf = baseUrl.contains('cloudfunctions.net');
-    return isCf ? '$baseUrl/batchDeleteImages' : '$baseUrl/api/imagekit/batchDelete';
+    return isCf ? '$baseUrl/batchDeleteImagesHttp' : '$baseUrl/api/imagekit/batchDelete';
   }
 }

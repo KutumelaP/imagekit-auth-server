@@ -257,7 +257,7 @@ class _StunningProductBrowserState extends State<StunningProductBrowser>
   Widget _buildSliverAppBar(bool isMobile) {
     return SliverSafeArea(
       top: true,
-      child: SliverAppBar(
+      sliver: SliverAppBar(
         expandedHeight: isMobile ? 120 : 160,
         floating: false,
         pinned: true,

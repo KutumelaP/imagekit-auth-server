@@ -124,39 +124,43 @@ class DashboardCacheService extends ChangeNotifier {
 
   /// Private method to fetch dashboard stats from Firestore
   Future<DashboardStats> _fetchDashboardStats(FirebaseFirestore firestore) async {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final todayTimestamp = Timestamp.fromDate(today);
-
-    // Execute queries in parallel for better performance
-    final futures = await Future.wait([
-      firestore.collection('users').get(),
-      firestore.collection('users').where('role', isEqualTo: 'seller').get(),
-      firestore.collection('users').where('role', isEqualTo: 'seller').where('status', isEqualTo: 'pending').get(),
-      firestore.collection('orders').where('timestamp', isGreaterThan: todayTimestamp).get(),
-      firestore.collection('orders').get(),
-      firestore.collection('reviews').where('timestamp', isGreaterThan: todayTimestamp).get(),
-    ]);
-
-    final allUsers = futures[0] as QuerySnapshot;
-    final allSellers = futures[1] as QuerySnapshot;
-    final pendingSellers = futures[2] as QuerySnapshot;
-    final todayOrders = futures[3] as QuerySnapshot;
-    final allOrders = futures[4] as QuerySnapshot;
-    final todayReviews = futures[5] as QuerySnapshot;
-
-    // Calculate platform fees
-    double totalRevenue = 0;
-    double todayRevenue = 0;
+    // Fetch all users and sellers
+    final allUsers = await firestore.collection('users').get();
+    final allSellers = await firestore.collection('users').where('role', isEqualTo: 'seller').get();
+    final pendingSellers = await firestore.collection('users').where('role', isEqualTo: 'seller').where('status', isEqualTo: 'pending').get();
     
-    for (var order in allOrders.docs) {
-      final data = order.data() as Map<String, dynamic>;
+    // Fetch orders for today and total
+    final now = DateTime.now();
+    final startOfDay = DateTime(now.year, now.month, now.day);
+    final todayOrders = await firestore
+        .collection('orders')
+        .where('timestamp', isGreaterThanOrEqualTo: Timestamp.fromDate(startOfDay))
+        .get();
+    final allOrders = await firestore.collection('orders').get();
+    
+    // Fetch reviews for today
+    final todayReviews = await firestore
+        .collection('reviews')
+        .where('timestamp', isGreaterThanOrEqualTo: Timestamp.fromDate(startOfDay))
+        .get();
+    
+    // Fetch KYC data
+    final pendingKycUsers = await firestore.collection('users').where('kycStatus', isEqualTo: 'pending').get();
+    final approvedKycUsers = await firestore.collection('users').where('kycStatus', isEqualTo: 'approved').get();
+    final rejectedKycUsers = await firestore.collection('users').where('kycStatus', isEqualTo: 'rejected').get();
+    
+    // Calculate revenue
+    double totalRevenue = 0.0;
+    double todayRevenue = 0.0;
+    
+    for (var doc in allOrders.docs) {
+      final data = doc.data();
       final fee = (data['platformFee'] ?? 0.0) as num;
       totalRevenue += fee.toDouble();
     }
-
-    for (var order in todayOrders.docs) {
-      final data = order.data() as Map<String, dynamic>;
+    
+    for (var doc in todayOrders.docs) {
+      final data = doc.data();
       final fee = (data['platformFee'] ?? 0.0) as num;
       todayRevenue += fee.toDouble();
     }
@@ -170,6 +174,9 @@ class DashboardCacheService extends ChangeNotifier {
       totalRevenue: totalRevenue,
       todayRevenue: todayRevenue,
       todayReviews: todayReviews.docs.length,
+      pendingKycSubmissions: pendingKycUsers.docs.length,
+      totalKycApproved: approvedKycUsers.docs.length,
+      totalKycRejected: rejectedKycUsers.docs.length,
       cacheTimestamp: DateTime.now(),
     );
   }
@@ -256,6 +263,9 @@ class DashboardStats {
   final double totalRevenue;
   final double todayRevenue;
   final int todayReviews;
+  final int pendingKycSubmissions;
+  final int totalKycApproved;
+  final int totalKycRejected;
   final DateTime cacheTimestamp;
 
   DashboardStats({
@@ -267,6 +277,9 @@ class DashboardStats {
     required this.totalRevenue,
     required this.todayRevenue,
     required this.todayReviews,
+    required this.pendingKycSubmissions,
+    required this.totalKycApproved,
+    required this.totalKycRejected,
     required this.cacheTimestamp,
   });
 
@@ -279,11 +292,13 @@ class DashboardStats {
   bool get hasHighPendingApprovals => pendingApprovals > 10;
   bool get hasLowDailyOrders => todayOrders < 5;
   bool get hasGoodRevenue => todayRevenue > 100;
+  bool get hasPendingKyc => pendingKycSubmissions > 0;
 
   @override
   String toString() {
     return 'DashboardStats(users: $totalUsers, sellers: $totalSellers, '
            'pending: $pendingApprovals, todayOrders: $todayOrders, '
-           'revenue: R${totalRevenue.toStringAsFixed(2)})';
+           'revenue: R${totalRevenue.toStringAsFixed(2)}, '
+           'pendingKyc: $pendingKycSubmissions)';
   }
 } 

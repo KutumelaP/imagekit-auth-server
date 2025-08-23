@@ -42,6 +42,7 @@ class MyApp extends StatelessWidget {
           theme: ThemeData(
             useMaterial3: true,
             brightness: Brightness.light,
+            fontFamily: GoogleFonts.notoSans().fontFamily,
             primaryColor: AdminTheme.deepTeal,
             scaffoldBackgroundColor: AdminTheme.whisper, // Use Whisper as scaffold background
             cardColor: AdminTheme.angel, // Use Angel as card background

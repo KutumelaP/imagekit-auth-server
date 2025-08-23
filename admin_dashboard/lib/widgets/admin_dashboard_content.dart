@@ -36,6 +36,7 @@ import 'image_management_section.dart';
 import 'paxi_pricing_management.dart';
 import 'risk_review_screen.dart';
 import 'kyc_review_list.dart';
+import 'kyc_overview_widget.dart';
 
 class AdminDashboardContent extends StatefulWidget {
   final String adminEmail;
@@ -106,6 +107,7 @@ class _AdminDashboardContentState extends State<AdminDashboardContent> {
     'PAXI Pricing Management',
     'Risk Review',
     'KYC Review',
+    'KYC Overview',
   ];
 
   @override
@@ -416,34 +418,37 @@ class _AdminDashboardContentState extends State<AdminDashboardContent> {
         case 29: return PaxiPricingManagement(); // PAXI Pricing Management
         case 30: return const RiskReviewScreen(); // Risk Review
         case 31: return const KycReviewList(); // KYC Review
+        case 32: return const KycOverviewWidget(); // KYC Overview
       default: return const SizedBox();
     }
   }
 
   Widget _buildQuickActions() {
-    return Padding(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Quick Actions',
-            style: TextStyle(
-              fontSize: 28,
-              fontWeight: FontWeight.bold,
+    return SingleChildScrollView(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Quick Actions',
+              style: TextStyle(
+                fontSize: 28,
+                fontWeight: FontWeight.bold,
+              ),
             ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Perform common administrative tasks with one click',
-            style: TextStyle(
-              color: AdminTheme.mediumGrey,
-              fontSize: 16,
+            const SizedBox(height: 8),
+            Text(
+              'Perform common administrative tasks with one click',
+              style: TextStyle(
+                color: AdminTheme.mediumGrey,
+                fontSize: 16,
+              ),
             ),
-          ),
-          const SizedBox(height: 32),
-          _buildQuickActionsGrid(),
-        ],
+            const SizedBox(height: 32),
+            _buildQuickActionsGrid(),
+          ],
+        ),
       ),
     );
   }
@@ -596,8 +601,8 @@ class _AdminDashboardContentState extends State<AdminDashboardContent> {
               double childAspectRatio;
               
               if (constraints.maxWidth > 1200) {
-                crossAxisCount = 4;
-                childAspectRatio = 2.0;
+                crossAxisCount = 5;
+                childAspectRatio = 1.6;
               } else if (constraints.maxWidth > 800) {
                 crossAxisCount = 3;
                 childAspectRatio = 1.8;
@@ -616,7 +621,7 @@ class _AdminDashboardContentState extends State<AdminDashboardContent> {
                 childAspectRatio: childAspectRatio,
                 crossAxisSpacing: 16,
                 mainAxisSpacing: 16,
-                children: List.generate(4, (index) => 
+                children: List.generate(5, (index) => 
                   SkeletonLoading(
                     isLoading: true,
                     child: SkeletonStatCard(),
@@ -638,8 +643,8 @@ class _AdminDashboardContentState extends State<AdminDashboardContent> {
             double childAspectRatio;
             
             if (constraints.maxWidth > 1200) {
-              crossAxisCount = 4;
-              childAspectRatio = 2.0;
+              crossAxisCount = 5;
+              childAspectRatio = 1.6;
             } else if (constraints.maxWidth > 800) {
               crossAxisCount = 3;
               childAspectRatio = 1.8;
@@ -690,6 +695,14 @@ class _AdminDashboardContentState extends State<AdminDashboardContent> {
               stats.hasHighPendingApprovals ? AdminTheme.error : AdminTheme.warning,
               isLoading: _cacheService.isLoadingStats,
               growth: null, // No growth for pending items
+            ),
+            _buildStatCard(
+              'Pending KYC',
+              stats.pendingKycSubmissions.toString(),
+              Icons.verified_user_outlined,
+              stats.hasPendingKyc ? AdminTheme.warning : AdminTheme.success,
+              isLoading: _cacheService.isLoadingStats,
+              growth: null,
             ),
           ],
             );
@@ -1071,6 +1084,12 @@ class _AdminDashboardContentState extends State<AdminDashboardContent> {
                   Icons.history,
                   AdminTheme.cloud,
                   () => widget.onSectionChanged(15),
+                ),
+                _buildQuickActionCard(
+                  'KYC Management',
+                  Icons.verified_user_outlined,
+                  AdminTheme.primaryColor,
+                  () => widget.onSectionChanged(32),
                 ),
               ],
             );

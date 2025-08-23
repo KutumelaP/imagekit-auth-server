@@ -575,7 +575,7 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
   Widget _buildStunningAppBar() {
     return SliverSafeArea(
       top: true,
-      child: SliverAppBar(
+      sliver: SliverAppBar(
         pinned: true,
         backgroundColor: AppTheme.deepTeal,
         automaticallyImplyLeading: false,

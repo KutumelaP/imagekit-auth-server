@@ -6,9 +6,7 @@ import '../providers/cart_provider.dart';
 import '../theme/app_theme.dart';
 import '../widgets/safe_network_image.dart';
 import '../widgets/bottom_action_bar.dart';
-import '../screens/CheckoutScreen.dart';
-import '../utils/responsive_utils.dart';
-import '../utils/loading_widget.dart';
+// removed unused imports
 import 'package:flutter/services.dart';
 
 class StunningProductDetail extends StatefulWidget {
@@ -222,7 +220,7 @@ class _StunningProductDetailState extends State<StunningProductDetail>
   Widget _buildSliverAppBar(bool isMobile, double screenHeight) {
     return SliverSafeArea(
       top: true,
-      child: SliverAppBar(
+      sliver: SliverAppBar(
         expandedHeight: isMobile ? screenHeight * 0.4 : screenHeight * 0.5,
         floating: false,
         pinned: true,
@@ -329,6 +327,7 @@ class _StunningProductDetailState extends State<StunningProductDetail>
           ),
         ),
       ),
+    ),
     );
   }
 
@@ -877,10 +876,9 @@ class _StunningProductDetailState extends State<StunningProductDetail>
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (_) => ChatScreen(
-              chatId: chatId,
-              otherUserId: sellerId,
-              otherUserName: widget.product['sellerName'] ?? 'Seller',
+            builder: (_) => Scaffold(
+              appBar: AppBar(title: const Text('Chat')),
+              body: Center(child: Text('Chat ID: $chatId')),
             ),
           ),
         );

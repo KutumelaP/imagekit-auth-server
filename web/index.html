@@ -265,7 +265,25 @@
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', function() {
         if (!window.__blockFlutter) {
-          navigator.serviceWorker.register('/flutter_service_worker.js');
+          // Register Flutter service worker
+          navigator.serviceWorker.register('/flutter_service_worker.js')
+            .then(function(registration) {
+              console.log('Flutter service worker registered successfully:', registration);
+            })
+            .catch(function(error) {
+              console.error('Flutter service worker registration failed:', error);
+            });
+          
+          // Register Firebase messaging service worker
+          navigator.serviceWorker.register('/firebase-messaging-sw.js', {
+            scope: '/firebase-cloud-messaging-push-scope'
+          })
+          .then(function(registration) {
+            console.log('FCM service worker registered successfully:', registration);
+          })
+          .catch(function(error) {
+            console.error('FCM service worker registration failed:', error);
+          });
         }
       });
     }
