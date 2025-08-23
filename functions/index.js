@@ -586,10 +586,13 @@ async function isAdmin(context) {
 
 // === ImageKit helper functions ===
 function getImageKitCredentials() {
-  // Try to get from environment variables first
-  const privateKey = process.env.IMAGEKIT_PRIVATE_KEY || 'private_cZ0y1MLeTaZbOYoxDAVI7fTIbTM=';
-  const publicKey = process.env.IMAGEKIT_PUBLIC_KEY || 'public_tAO0SkfLl/37FQN+23c/bkAyfYg=';
-  const urlEndpoint = process.env.IMAGEKIT_URL_ENDPOINT || 'https://ik.imagekit.io/tkhb6zllk';
+  // Try to get from Firebase Functions config first
+  const cfg = (functions && functions.config && functions.config()) ? functions.config() : {};
+  const imagekitCfg = (cfg && cfg.imagekit) ? cfg.imagekit : {};
+  
+  const privateKey = imagekitCfg.private_key || process.env.IMAGEKIT_PRIVATE_KEY || 'private_cZ0y1MLeTaZbOYoxDAVI7fTIbTM=';
+  const publicKey = imagekitCfg.public_key || process.env.IMAGEKIT_PUBLIC_KEY || 'public_tAO0SkfLl/37FQN+23cAyfYg=';
+  const urlEndpoint = imagekitCfg.url_endpoint || process.env.IMAGEKIT_URL_ENDPOINT || 'https://ik.imagekit.io/tkhb6zllk';
   
   return { privateKey, publicKey, urlEndpoint };
 }
@@ -761,74 +764,300 @@ exports.listImages = functions.https.onCall(async (data, context) => {
   }
 });
 
-// === Test ImageKit connectivity ===
-exports.testImageKit = functions.https.onCall(async (data, context) => {
+// Test ImageKit connectivity
+exports.testImageKitConnection = functions.https.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError('unauthenticated', 'Sign in required');
+  }
+  if (!(await isAdmin(context))) {
+    throw new functions.https.HttpsError('permission-denied', 'Admin access required');
+  }
+  
   try {
-    // Check authentication
-    if (!context.auth) {
-      throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
+    const { privateKey, urlEndpoint } = getImageKitCredentials();
+    if (!privateKey) {
+      return { 
+        success: false, 
+        error: 'ImageKit private key not configured',
+        message: 'Please set IMAGEKIT_PRIVATE_KEY environment variable'
+      };
     }
-
-    // Check admin status
-    if (!isAdmin(context)) {
-      throw new functions.https.HttpsError('permission-denied', 'Admin access required');
-    }
-
-    const { privateKey } = getImageKitCredentials();
     
-    console.log('Testing ImageKit connectivity...');
-    
-    const res = await axios.get(`${IK_API_BASE}/files`, {
+    // Test a simple API call
+    const testRes = await axios.get(`${IK_API_BASE}/files`, {
       params: { limit: 1 },
-      headers: {
-        Authorization: `Basic ${Buffer.from(`${privateKey}:`).toString('base64')}`,
-      },
+      headers: { Authorization: `Basic ${Buffer.from(`${privateKey}:`).toString('base64')}` },
       timeout: 10000,
     });
-
-    console.log('ImageKit test successful:', res.status);
     
-    return { 
+    return {
       success: true,
       message: 'ImageKit connection successful',
-      status: res.status,
-      fileCount: Array.isArray(res.data) ? res.data.length : 0
+      endpoint: urlEndpoint,
+      testResponse: {
+        status: testRes.status,
+        dataLength: Array.isArray(testRes.data) ? testRes.data.length : 'unknown',
+        hasFiles: Array.isArray(testRes.data) && testRes.data.length > 0
+      }
     };
   } catch (e) {
-    console.error('ImageKit test failed:', e.message);
-    
-    return { 
+    console.error('testImageKitConnection error:', e.message);
+    return {
       success: false,
-      message: `ImageKit connection failed: ${e.message}`,
-      error: e.message
+      error: e.message,
+      message: 'ImageKit connection failed',
+      details: {
+        status: e?.response?.status,
+        statusText: e?.response?.statusText,
+        data: e?.response?.data
+      }
     };
   }
 });
 
-exports.batchDeleteImages = functions.https.onCall(async (data, context) => {
+// Provide client-side upload auth for ImageKit (token, expire, signature)
+exports.getImageKitUploadAuth = functions.https.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError('unauthenticated', 'Sign in required');
+  }
+  try {
+    const { privateKey, publicKey, urlEndpoint } = getImageKitCredentials();
+    if (!privateKey || !publicKey) {
+      throw new functions.https.HttpsError('failed-precondition', 'ImageKit not configured');
+    }
+    const token = crypto.randomBytes(16).toString('hex');
+    const expire = Math.floor(Date.now() / 1000) + 5 * 60; // 5 minutes
+    const signature = crypto
+      .createHmac('sha1', privateKey)
+      .update(token + expire)
+      .digest('hex');
+    return { token, expire, signature, publicKey, urlEndpoint };
+  } catch (e) {
+    console.error('getImageKitUploadAuth error:', e.message);
+    throw e instanceof functions.https.HttpsError
+      ? e
+      : new functions.https.HttpsError('internal', 'Failed to generate upload auth');
+  }
+});
+
+// === Firestore mirror of ImageKit assets ===
+async function syncImageAssetsOnce({ pathPrefix = undefined, pageSize = 1000 } = {}) {
+  const { privateKey, urlEndpoint } = getImageKitCredentials();
+  if (!privateKey) throw new Error('ImageKit not configured');
+
+  let skip = 0;
+  let totalUpserts = 0;
+  for (;;) {
+    const params = new URLSearchParams();
+    params.append('limit', String(pageSize));
+    params.append('skip', String(skip));
+    if (pathPrefix) params.append('path', pathPrefix);
+
+    const ikRes = await axios.get(`${IK_API_BASE}/files`, {
+      params,
+      headers: { Authorization: `Basic ${Buffer.from(`${privateKey}:`).toString('base64')}` },
+      timeout: 60000,
+    });
+
+    const files = Array.isArray(ikRes.data) ? ikRes.data : [];
+    if (files.length === 0) break;
+
+    const batch = db.batch();
+    files.forEach((f) => {
+      try {
+        const fileId = f.fileId || f.file_id || f.id;
+        if (!fileId) return;
+        const filePath = String(f.filePath || f.file_path || f.path || '').trim();
+        const firstSegment = filePath.split('/')[0] || '';
+        const ref = db.collection('image_assets').doc(String(fileId));
+        batch.set(ref, {
+          fileId: String(fileId),
+          name: f.name || '',
+          filePath,
+          size: Number(f.size || 0),
+          url: f.url || (urlEndpoint ? `${urlEndpoint}/${filePath}` : ''),
+          type: firstSegment,
+          thumbnailUrl: f.thumbnailUrl || null,
+          height: Number(f.height || 0) || null,
+          width: Number(f.width || 0) || null,
+          lastSyncedAt: admin.firestore.FieldValue.serverTimestamp(),
+          createdAt: f.createdAt ? admin.firestore.Timestamp.fromDate(new Date(f.createdAt)) : admin.firestore.FieldValue.serverTimestamp(),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        }, { merge: true });
+        totalUpserts += 1;
+      } catch (_) {}
+    });
+    await batch.commit();
+
+    if (files.length < pageSize) break;
+    skip += files.length;
+  }
+  return { upserts: totalUpserts };
+}
+
+exports.syncImageAssetsNow = functions.https.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError('unauthenticated', 'Sign in required');
+  }
   if (!(await isAdmin(context))) {
     throw new functions.https.HttpsError('permission-denied', 'Admin access required');
   }
-
-  const { privateKey, fileIds } = data || {};
-  if (!privateKey) throw new functions.https.HttpsError('invalid-argument', 'Missing private key');
-  if (!Array.isArray(fileIds) || fileIds.length === 0) {
-    throw new functions.https.HttpsError('invalid-argument', 'fileIds is required');
-  }
-
   try {
-    const res = await axios.post(`${IK_API_BASE}/files/batch/deleteByFileIds`, { fileIds }, {
-      headers: {
-        Authorization: `Basic ${Buffer.from(`${privateKey}:`).toString('base64')}`,
-        'Content-Type': 'application/json',
-      },
-      timeout: 20000,
-    });
-
-    return res.data;
+    const pathPrefix = data && data.path ? String(data.path) : undefined;
+    
+    // Check ImageKit credentials first
+    const { privateKey, urlEndpoint } = getImageKitCredentials();
+    if (!privateKey) {
+      throw new Error('ImageKit private key not configured. Please set IMAGEKIT_PRIVATE_KEY environment variable.');
+    }
+    
+    console.log('Starting ImageKit sync with endpoint:', urlEndpoint);
+    const result = await syncImageAssetsOnce({ pathPrefix });
+    console.log('ImageKit sync completed successfully:', result);
+    return { success: true, synced: result.upserts, ...result };
   } catch (e) {
-    console.error('batchDeleteImages error', e?.response?.status, e?.response?.data || e.message);
-    throw new functions.https.HttpsError('internal', 'Failed to delete images');
+    console.error('syncImageAssetsNow error:', e.message, e.stack);
+    
+    // Provide more specific error messages
+    if (e.message.includes('ImageKit private key not configured')) {
+      throw new functions.https.HttpsError('failed-precondition', 'ImageKit not configured. Contact administrator.');
+    } else if (e.message.includes('timeout') || e.message.includes('ECONNRESET')) {
+      throw new functions.https.HttpsError('unavailable', 'ImageKit service temporarily unavailable. Please try again.');
+    } else if (e.message.includes('401') || e.message.includes('Unauthorized')) {
+      throw new functions.https.HttpsError('permission-denied', 'Invalid ImageKit credentials. Contact administrator.');
+    } else {
+      throw new functions.https.HttpsError('internal', `Sync failed: ${e.message}`);
+    }
+  }
+});
+
+exports.syncImageAssetsScheduled = functions.pubsub.schedule('every 24 hours').onRun(async () => {
+  try {
+    const result = await syncImageAssetsOnce({ pathPrefix: undefined, pageSize: 1000 });
+    console.log(`[image_assets_sync] upserts=${result.upserts}`);
+  } catch (e) {
+    console.error('[image_assets_sync] failed', e.message);
+  }
+  return null;
+});
+
+// Batch delete images from ImageKit and mirror collection
+exports.batchDeleteImages = functions.https.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError('unauthenticated', 'Sign in required');
+  }
+  if (!(await isAdmin(context))) {
+    throw new functions.https.HttpsError('permission-denied', 'Admin access required');
+  }
+  try {
+    console.log('batchDeleteImages called');
+    const fileIds = Array.isArray(data?.fileIds) ? data.fileIds.map(String) : [];
+    if (fileIds.length === 0) {
+      throw new functions.https.HttpsError('invalid-argument', 'fileIds required');
+    }
+    console.log('batchDeleteImages count:', fileIds.length, 'first', fileIds[0]);
+
+    const { privateKey } = getImageKitCredentials();
+    if (!privateKey) {
+      throw new functions.https.HttpsError('failed-precondition', 'ImageKit not configured');
+    }
+
+    // Delete from ImageKit (best-effort) and Firestore mirror
+    const headers = { Authorization: `Basic ${Buffer.from(`${privateKey}:`).toString('base64')}` };
+    const results = {};
+    const errors = {};
+    const batch = db.batch();
+    for (const id of fileIds) {
+      results[id] = false;
+      try {
+        const delRes = await axios.delete(`${IK_API_BASE}/files/${encodeURIComponent(id)}`, { headers, timeout: 20000 });
+        console.log('IK delete ok', id, delRes.status);
+        results[id] = true;
+      } catch (e) {
+        const status = e?.response?.status || 0;
+        const msg = e?.response?.data || e?.message || 'unknown';
+        console.warn('IK delete error', id, status, msg);
+        // Idempotent success if file already gone
+        if (status === 404) {
+          results[id] = true;
+        } else {
+          results[id] = false;
+          errors[id] = { status, message: msg };
+        }
+      }
+      // Only remove from mirror if IK deletion succeeded (or 404)
+      if (results[id] === true) {
+        batch.delete(db.collection('image_assets').doc(id));
+      }
+    }
+    await batch.commit();
+    const allOk = Object.values(results).every((v) => v === true);
+    return { success: allOk, results, errors: Object.keys(errors).length ? errors : null };
+  } catch (e) {
+    console.error('batchDeleteImages error:', e?.message || e);
+    // Return structured error instead of throwing to avoid client [internal]
+    return { success: false, error: e?.message || String(e) };
+  }
+});
+
+// Test function to debug batchDeleteImages
+exports.testBatchDelete = functions.https.onCall(async (data, context) => {
+  console.log('testBatchDelete: Starting test...');
+  
+  if (!context.auth) {
+    console.error('testBatchDelete: No auth context');
+    throw new functions.https.HttpsError('unauthenticated', 'No auth context');
+  }
+  
+  console.log('testBatchDelete: User authenticated:', context.auth.uid);
+  
+  try {
+    const isAdminResult = await isAdmin(context);
+    console.log('testBatchDelete: isAdmin result:', isAdminResult);
+    
+    if (!isAdminResult) {
+      console.error('testBatchDelete: User is not admin');
+      throw new functions.https.HttpsError('permission-denied', 'Not admin');
+    }
+    
+    console.log('testBatchDelete: User is admin, proceeding...');
+    
+    // Test ImageKit credentials
+    const { privateKey } = getImageKitCredentials();
+    console.log('testBatchDelete: Private key exists:', !!privateKey);
+    
+    if (!privateKey) {
+      throw new functions.https.HttpsError('failed-precondition', 'No private key');
+    }
+    
+    // Test a simple ImageKit API call
+    try {
+      const testResponse = await axios.get(`${IK_API_BASE}/files`, {
+        headers: { Authorization: `Basic ${Buffer.from(`${privateKey}:`).toString('base64')}` },
+        params: { limit: 1 },
+        timeout: 10000,
+      });
+      console.log('testBatchDelete: ImageKit API test successful, status:', testResponse.status);
+    } catch (ikError) {
+      console.error('testBatchDelete: ImageKit API test failed:', ikError.message);
+      if (ikError.response) {
+        console.error('testBatchDelete: ImageKit response status:', ikError.response.status);
+        console.error('testBatchDelete: ImageKit response data:', ikError.response.data);
+      }
+      throw new functions.https.HttpsError('internal', `ImageKit test failed: ${ikError.message}`);
+    }
+    
+    return { 
+      success: true, 
+      message: 'All tests passed',
+      userId: context.auth.uid,
+      isAdmin: true,
+      imageKitWorking: true
+    };
+    
+  } catch (error) {
+    console.error('testBatchDelete: Error during test:', error);
+    throw error;
   }
 });
 

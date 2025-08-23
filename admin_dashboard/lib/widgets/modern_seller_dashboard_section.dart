@@ -7,6 +7,7 @@ import 'dart:io';
 import 'package:image_picker/image_picker.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:path/path.dart' as path;
 import 'package:url_launcher/url_launcher.dart';
 import '../utils/order_utils.dart';
@@ -3305,6 +3306,55 @@ class _ModernSellerDashboardSectionState extends State<ModernSellerDashboardSect
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Embedded KYC upload card (no routing)
+          if ((_sellerData?['kycStatus'] ?? 'none') != 'approved')
+            Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.06),
+                    blurRadius: 10,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              margin: const EdgeInsets.only(bottom: 24),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(children: const [
+                      Icon(Icons.verified_user, color: Colors.orange),
+                      SizedBox(width: 8),
+                      Text('KYC Verification', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                    ]),
+                    const SizedBox(height: 8),
+                    Text('Upload ID document and proof of address to enable COD and payouts.', style: TextStyle(color: Colors.grey[700])),
+                    const SizedBox(height: 12),
+                    Wrap(spacing: 12, runSpacing: 12, children: [
+                      ElevatedButton.icon(
+                        onPressed: _uploadKycDocuments,
+                        icon: const Icon(Icons.upload_file),
+                        label: const Text('Upload KYC Documents'),
+                      ),
+                      if ((_sellerData?['kycStatus'] ?? 'none') == 'pending')
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: Colors.orange.withOpacity(0.08),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.orange.withOpacity(0.2)),
+                          ),
+                          child: const Text('Status: Pending review', style: TextStyle(color: Colors.orange)),
+                        ),
+                    ]),
+                  ],
+                ),
+              ),
+            ),
           if ((_sellerData?['kycStatus'] ?? 'none') != 'approved') ...[
             Container(
               decoration: BoxDecoration(
@@ -3678,6 +3728,90 @@ class _ModernSellerDashboardSectionState extends State<ModernSellerDashboardSect
         ],
       ),
     );
+  }
+
+  Future<void> _uploadKycDocuments() async {
+    try {
+      // Imports required: cloud_functions, image_picker, http, convert
+      // ignore: unused_local_variable
+      // Get upload auth from callable
+      final functions = FirebaseFunctions.instance;
+      final authRes = await functions.httpsCallable('getImageKitUploadAuth').call();
+      final auth = authRes.data as Map;
+      final token = auth['token'];
+      final expire = auth['expire'];
+      final signature = auth['signature'];
+      final publicKey = auth['publicKey'];
+      // ignore: unused_local_variable
+      final urlEndpoint = auth['urlEndpoint'];
+
+      // Pick files
+      final ImagePicker picker = ImagePicker();
+      final List<XFile> files = await picker.pickMultiImage(imageQuality: 90);
+      if (files.isEmpty) return;
+
+      // Upload sequentially to ImageKit REST API
+      for (final f in files) {
+        final bytes = await f.readAsBytes();
+        final b64 = base64Encode(bytes);
+        final form = {
+          'file': b64,
+          'fileName': f.name,
+          'token': token,
+          'expire': expire.toString(),
+          'signature': signature,
+          'publicKey': publicKey,
+          'folder': '/kyc/${_sellerId ?? 'unknown'}/',
+        };
+
+        final resp = await http.post(
+          Uri.parse('https://upload.imagekit.io/api/v1/files/upload'),
+          body: form,
+        );
+        if (resp.statusCode >= 200 && resp.statusCode < 300) {
+          final data = jsonDecode(resp.body) as Map<String, dynamic>;
+          final url = data['url'] as String?;
+          // Save to Firestore under user->kyc and central submissions
+          if (_sellerId != null && url != null) {
+            final now = DateTime.now();
+            await FirebaseFirestore.instance.collection('users').doc(_sellerId).collection('kyc').add({
+              'url': url,
+              'fileId': data['fileId'] ?? data['file_id'] ?? '',
+              'filePath': data['filePath'] ?? data['file_path'] ?? '',
+              'type': 'image',
+              'uploadedAt': now.toIso8601String(),
+            });
+            await FirebaseFirestore.instance.collection('kyc_submissions').add({
+              'userId': _sellerId,
+              'url': url,
+              'fileId': data['fileId'] ?? data['file_id'] ?? '',
+              'filePath': data['filePath'] ?? data['file_path'] ?? '',
+              'status': 'pending',
+              'submittedAt': now.toIso8601String(),
+            });
+          }
+        } else {
+          // surface error
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('KYC upload failed: ${resp.statusCode}')),
+            );
+          }
+        }
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('KYC documents uploaded')), 
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('KYC upload error: $e')),
+        );
+      }
+    }
   }
 
   Future<void> _toggleStoreStatus(bool isActive) async {

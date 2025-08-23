@@ -45,6 +45,7 @@ class AdminDashboardContent extends StatefulWidget {
   final FirebaseFirestore firestore;
   final int selectedSection;
   final ValueChanged<int> onSectionChanged;
+  final bool embedded;
   
   const AdminDashboardContent({
     required this.adminEmail, 
@@ -53,6 +54,7 @@ class AdminDashboardContent extends StatefulWidget {
     required this.firestore,
     required this.selectedSection,
     required this.onSectionChanged,
+    this.embedded = false,
   });
 
   @override
@@ -137,6 +139,21 @@ class _AdminDashboardContentState extends State<AdminDashboardContent> {
   @override
   Widget build(BuildContext context) {
     final allowedSections = <int>{...List.generate(_sections.length, (i) => i)};
+
+    // Embedded mode: render only the main content area without internal Scaffold/sidebar
+    if (widget.embedded) {
+      return PageStorage(
+        bucket: _pageStorageBucket,
+        child: IndexedStack(
+          index: widget.selectedSection,
+          children: List.generate(_sections.length, (i) {
+            return allowedSections.contains(i)
+              ? _getCachedSection(i)
+              : const SizedBox.shrink();
+          }),
+        ),
+      );
+    }
 
     return LayoutBuilder(
       builder: (context, constraints) {

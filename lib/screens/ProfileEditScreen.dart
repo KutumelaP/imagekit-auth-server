@@ -48,7 +48,8 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
   final TextEditingController _payoutBankNameController = TextEditingController();
   final TextEditingController _payoutAccountNumberController = TextEditingController();
   final TextEditingController _payoutBranchCodeController = TextEditingController();
-  String _payoutAccountType = 'Cheque/Current';
+  // Canonical account type keys to match stored values
+  String _payoutAccountType = 'cheque';
   bool _loadingPayout = false;
   bool _savingPayout = false;
   
@@ -65,6 +66,24 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
   // Delivery range variables
   double _deliveryRange = 50.0; // Default 50km range (0-1000 range slider)
   final _customRangeController = TextEditingController();
+
+  double _getCategoryDeliveryCapFromData(Map<String, dynamic> data) {
+    final cat = (data['storeCategory'] ?? '').toString().toLowerCase();
+    if (cat.contains('food')) return 20.0;
+    return 50.0;
+  }
+
+  double _getCategoryDeliveryCap() {
+    if (_selectedStoreCategory == null) return 50.0;
+    final category = _selectedStoreCategory!.toLowerCase();
+    if (category.contains('food') || category.contains('bakery') || category.contains('pastry') || 
+        category.contains('dessert') || category.contains('beverage') || category.contains('drink') ||
+        category.contains('coffee') || category.contains('tea') || category.contains('fruit') ||
+        category.contains('vegetable') || category.contains('produce') || category.contains('snack')) {
+      return 20.0; // Food category cap
+    }
+    return 50.0; // Non-food category cap
+  }
 
   @override
   void initState() {
@@ -99,6 +118,9 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
       _allowCOD = data['allowCOD'] != false;
       _minOrderForDelivery = (data['minOrderForDelivery'] ?? 0.0).toDouble();
       _deliveryTimeEstimateController.text = data['deliveryTimeEstimate'] ?? '';
+      // Apply capped default
+      final cap = _getCategoryDeliveryCapFromData(data);
+      _deliveryRange = (data['deliveryRange'] ?? cap).toDouble().clamp(0.0, cap);
       
       // Load store settings for sellers
       if (_isSeller) {
@@ -106,7 +128,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
         _isDeliveryAvailable = data['deliveryAvailable'] ?? false;
         
         // Load delivery range
-        _deliveryRange = (data['deliveryRange'] ?? 50.0).toDouble().clamp(0.0, 2000.0);
+        // _deliveryRange = (data['deliveryRange'] ?? 50.0).toDouble().clamp(0.0, 2000.0); // This line is now handled by the cap
         
         // Load delivery hours
         final startHourStr = data['deliveryStartHour'] ?? '08:00';
@@ -157,7 +179,24 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
           _payoutBankNameController.text = (d['bankName'] ?? '').toString();
           _payoutAccountNumberController.text = (d['accountNumber'] ?? '').toString();
           _payoutBranchCodeController.text = (d['branchCode'] ?? '').toString();
-          _payoutAccountType = (d['accountType'] ?? _payoutAccountType).toString();
+          final at = (d['accountType'] ?? _payoutAccountType).toString();
+          // Normalize possible display values to canonical keys
+          switch (at.toLowerCase()) {
+            case 'cheque/current':
+            case 'cheque':
+            case 'current':
+              _payoutAccountType = 'cheque';
+              break;
+            case 'savings':
+              _payoutAccountType = 'savings';
+              break;
+            case 'business cheque':
+            case 'business':
+              _payoutAccountType = 'business';
+              break;
+            default:
+              _payoutAccountType = 'cheque';
+          }
         }
       }
     } catch (e) {
@@ -1399,7 +1438,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
         ),
         const SizedBox(height: 16),
         
-        // Delivery Range Section
+        // Delivery Hours Section
         Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
@@ -1416,13 +1455,13 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
               Row(
                 children: [
                   Icon(
-                    Icons.radar,
+                    Icons.access_time,
                     color: AppTheme.deepTeal,
                     size: 24,
                   ),
                   const SizedBox(width: 12),
                   Text(
-                    'Delivery Range',
+                    'Delivery Hours',
                     style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w600,
@@ -1433,166 +1472,12 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
               ),
               const SizedBox(height: 12),
               Text(
-                'Set the maximum distance you\'re willing to deliver. Your store won\'t be visible to customers outside this range.',
+                'Tap on the time cards to edit store operating hours',
                 style: TextStyle(
                   fontSize: 12,
                   color: Colors.grey[600],
+                  fontStyle: FontStyle.italic,
                 ),
-              ),
-              const SizedBox(height: 16),
-              
-              // Range Slider
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        'Range: ${_deliveryRange.toStringAsFixed(0)} km',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                          color: AppTheme.deepTeal,
-                        ),
-                      ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: AppTheme.deepTeal.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Text(
-                          '${_deliveryRange.toStringAsFixed(0)} km',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: AppTheme.deepTeal,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  SliderTheme(
-                    data: SliderTheme.of(context).copyWith(
-                      activeTrackColor: AppTheme.deepTeal,
-                      inactiveTrackColor: AppTheme.cloud,
-                      thumbColor: AppTheme.deepTeal,
-                      overlayColor: AppTheme.deepTeal.withOpacity(0.2),
-                      valueIndicatorColor: AppTheme.deepTeal,
-                      valueIndicatorTextStyle: TextStyle(
-                        color: AppTheme.angel,
-                        fontWeight: FontWeight.w600,
-                      ),
-                      trackHeight: 4,
-                      thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8),
-                      overlayShape: const RoundSliderOverlayShape(overlayRadius: 16),
-                    ),
-                    child: Slider(
-                      value: _deliveryRange.clamp(0.0, 1000.0),
-                      min: 0.0,
-                      max: 1000.0,
-                      divisions: 100, // 10km increments
-                      label: '${_deliveryRange.toStringAsFixed(0)} km',
-                      onChanged: (value) {
-                        setState(() {
-                          _deliveryRange = value;
-                        });
-                      },
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        '0 km',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: AppTheme.mediumGrey,
-                        ),
-                      ),
-                      Text(
-                        '1000 km',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: AppTheme.mediumGrey,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  
-                  // Manual Range Input
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          'Need more than 1000km?',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: AppTheme.mediumGrey,
-                            fontStyle: FontStyle.italic,
-                          ),
-                        ),
-                      ),
-                      Container(
-                        width: 100,
-                        child: TextFormField(
-                          controller: _customRangeController,
-                          keyboardType: TextInputType.number,
-                          enabled: !_loading,
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: AppTheme.deepTeal,
-                          ),
-                          decoration: InputDecoration(
-                            hintText: 'Custom km',
-                            hintStyle: TextStyle(
-                              color: AppTheme.breeze,
-                              fontSize: 12,
-                            ),
-                            filled: true,
-                            fillColor: AppTheme.whisper,
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(8),
-                              borderSide: BorderSide(color: AppTheme.breeze.withOpacity(0.3)),
-                            ),
-                            enabledBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(8),
-                              borderSide: BorderSide(color: AppTheme.breeze.withOpacity(0.3)),
-                            ),
-                            focusedBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(8),
-                              borderSide: BorderSide(color: AppTheme.deepTeal, width: 1),
-                            ),
-                            contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                          ),
-                          onChanged: (value) {
-                            if (value.isNotEmpty) {
-                              final customRange = double.tryParse(value);
-                              if (customRange != null && customRange > 1000) {
-                                setState(() {
-                                  _deliveryRange = customRange;
-                                });
-                              }
-                            }
-                          },
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Tap on the slider or enter a custom value above 1000km',
-                    style: TextStyle(
-                      fontSize: 10,
-                      color: Colors.grey[500],
-                      fontStyle: FontStyle.italic,
-                    ),
-                  ),
-                ],
               ),
             ],
           ),
@@ -1808,267 +1693,392 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                           ],
                         ),
                       ),
-                      const SizedBox(height: 16),
-                      _buildSectionHeader('Cash on Delivery & Delivery Info'),
                       const SizedBox(height: 8),
                       Container(
-                        padding: const EdgeInsets.all(12),
+                        padding: const EdgeInsets.all(8),
                         decoration: BoxDecoration(
-                          color: AppTheme.cloud.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: AppTheme.deepTeal.withOpacity(0.2), width: 1),
+                          color: AppTheme.deepTeal.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: AppTheme.deepTeal.withOpacity(0.3),
+                            width: 1,
+                          ),
                         ),
-                        child: Column(
+                        child: Row(
                           children: [
-                            SwitchListTile(
-                              value: _allowCOD,
-                              onChanged: (v) async {
-                                setState(() { _allowCOD = v; });
-                                final user = FirebaseAuth.instance.currentUser;
-                                if (user != null) await FirebaseFirestore.instance.collection('users').doc(user.uid).update({'allowCOD': v});
-                              },
-                              title: const Text('Allow Cash on Delivery'),
-                              subtitle: const Text('May be disabled if verification/dues pending'),
+                            Icon(
+                              Icons.info_outline,
+                              size: 16,
+                              color: AppTheme.deepTeal,
                             ),
-                            const SizedBox(height: 8),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: TextFormField(
-                                    initialValue: _minOrderForDelivery.toStringAsFixed(0),
-                                    keyboardType: TextInputType.number,
-                                    decoration: InputDecoration(
-                                      labelText: 'Minimum order amount for delivery (R)',
-                                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                                      prefixIcon: const Icon(Icons.payments),
-                                    ),
-                                    onChanged: (v) {
-                                      final x = double.tryParse(v);
-                                      if (x != null) _minOrderForDelivery = x;
-                                    },
-                                    onEditingComplete: () async {
-                                      final user = FirebaseAuth.instance.currentUser;
-                                      if (user != null) await FirebaseFirestore.instance.collection('users').doc(user.uid).update({'minOrderForDelivery': _minOrderForDelivery});
-                                    },
-                                  ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'Nationwide Pickup: When enabled, non-food stores with Pargo/PAXI will be visible to buyers nationwide using the "Nationwide" filter on the store page.',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: AppTheme.deepTeal,
+                                  fontWeight: FontWeight.w500,
                                 ),
-                              ],
-                            ),
-                            const SizedBox(height: 8),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: TextField(
-                                    controller: _deliveryTimeEstimateController,
-                                    decoration: InputDecoration(
-                                      labelText: 'Delivery time estimate (e.g., 30–45 min)',
-                                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                                      prefixIcon: const Icon(Icons.timer),
-                                    ),
-                                    onSubmitted: (v) async {
-                                      final user = FirebaseAuth.instance.currentUser;
-                                      if (user != null) await FirebaseFirestore.instance.collection('users').doc(user.uid).update({'deliveryTimeEstimate': v});
-                                    },
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      _buildSectionHeader('Payout (Bank) Details'),
-                      const SizedBox(height: 8),
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: AppTheme.cloud.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: AppTheme.deepTeal.withOpacity(0.2), width: 1),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            if (_loadingPayout) ...[
-                              Row(children: const [
-                                SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
-                                SizedBox(width: 8),
-                                Text('Loading payout details...'),
-                              ]),
-                              const SizedBox(height: 8),
-                            ],
-                            TextField(
-                              controller: _payoutAccountHolderController,
-                              decoration: InputDecoration(
-                                labelText: 'Account Holder',
-                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                                prefixIcon: const Icon(Icons.person),
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            TextField(
-                              controller: _payoutBankNameController,
-                              decoration: InputDecoration(
-                                labelText: 'Bank Name',
-                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                                prefixIcon: const Icon(Icons.account_balance),
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: TextField(
-                                    controller: _payoutAccountNumberController,
-                                    keyboardType: TextInputType.number,
-                                    decoration: InputDecoration(
-                                      labelText: 'Account Number',
-                                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                                      prefixIcon: const Icon(Icons.numbers),
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: TextField(
-                                    controller: _payoutBranchCodeController,
-                                    keyboardType: TextInputType.number,
-                                    decoration: InputDecoration(
-                                      labelText: 'Branch Code',
-                                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                                      prefixIcon: const Icon(Icons.pin),
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 8),
-                            DropdownButtonFormField<String>(
-                              value: _payoutAccountType,
-                              items: const [
-                                DropdownMenuItem(value: 'Cheque/Current', child: Text('Cheque/Current')),
-                                DropdownMenuItem(value: 'Savings', child: Text('Savings')),
-                                DropdownMenuItem(value: 'Business Cheque', child: Text('Business Cheque')),
-                              ],
-                              onChanged: (v) => setState(() => _payoutAccountType = v ?? _payoutAccountType),
-                              decoration: InputDecoration(
-                                labelText: 'Account Type',
-                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                                prefixIcon: const Icon(Icons.account_balance_wallet),
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            Align(
-                              alignment: Alignment.centerLeft,
-                              child: ElevatedButton.icon(
-                                onPressed: _savingPayout ? null : () async {
-                                  final user = FirebaseAuth.instance.currentUser;
-                                  if (user == null) return;
-                                  setState(() { _savingPayout = true; });
-                                  try {
-                                    await FirebaseFirestore.instance
-                                        .collection('users')
-                                        .doc(user.uid)
-                                        .collection('payout')
-                                        .doc('bank')
-                                        .set({
-                                          'accountHolder': _payoutAccountHolderController.text.trim(),
-                                          'bankName': _payoutBankNameController.text.trim(),
-                                          'accountNumber': _payoutAccountNumberController.text.trim(),
-                                          'branchCode': _payoutBranchCodeController.text.trim(),
-                                          'accountType': _payoutAccountType,
-                                          'updatedAt': FieldValue.serverTimestamp(),
-                                        }, SetOptions(merge: true));
-                                    if (mounted) {
-                                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Payout details saved')));
-                                    }
-                                  } catch (e) {
-                                    if (mounted) {
-                                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed: $e')));
-                                    }
-                                  } finally {
-                                    if (mounted) setState(() { _savingPayout = false; });
-                                  }
-                                },
-                                icon: _savingPayout
-                                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                                    : const Icon(Icons.save),
-                                label: Text(_savingPayout ? 'Saving...' : 'Save Payout Details'),
                               ),
                             ),
                           ],
                         ),
                       ),
-                      const SizedBox(height: 16),
-                      _buildSectionHeader('Shortcuts'),
-                      const SizedBox(height: 8),
-                      Row(
+                    ],
+                    const SizedBox(height: 16),
+                    _buildSectionHeader('Delivery Range'),
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: AppTheme.cloud.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: AppTheme.deepTeal.withOpacity(0.2), width: 1),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Expanded(
-                            child: OutlinedButton.icon(
-                              onPressed: () => Navigator.pushNamed(context, '/notification-settings'),
-                              icon: const Icon(Icons.record_voice_over),
-                              label: const Text('Notification & Voice'),
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.delivery_dining,
+                                color: AppTheme.deepTeal,
+                                size: 20,
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                'Delivery Range: ${_deliveryRange.toStringAsFixed(0)} km',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppTheme.deepTeal,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
+                          SliderTheme(
+                            data: SliderTheme.of(context).copyWith(
+                              activeTrackColor: AppTheme.deepTeal,
+                              inactiveTrackColor: AppTheme.cloud.withOpacity(0.3),
+                              thumbColor: AppTheme.deepTeal,
+                              overlayColor: AppTheme.deepTeal.withOpacity(0.2),
+                              valueIndicatorColor: AppTheme.deepTeal,
+                              valueIndicatorTextStyle: TextStyle(
+                                color: AppTheme.angel,
+                                fontWeight: FontWeight.w600,
+                              ),
+                              trackHeight: 4,
+                              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8),
+                              overlayShape: const RoundSliderOverlayShape(overlayRadius: 16),
+                            ),
+                            child: Slider(
+                              value: _deliveryRange.clamp(0.0, _getCategoryDeliveryCap()),
+                              min: 0.0,
+                              max: _getCategoryDeliveryCap(),
+                              divisions: _getCategoryDeliveryCap().toInt(),
+                              label: '${_deliveryRange.toStringAsFixed(0)} km',
+                              onChanged: (value) {
+                                setState(() {
+                                  _deliveryRange = value;
+                                });
+                              },
                             ),
                           ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: OutlinedButton.icon(
-                              onPressed: () => Navigator.pushNamed(context, '/security-settings'),
-                              icon: const Icon(Icons.fingerprint),
-                              label: const Text('Security & Quick Login'),
+                          const SizedBox(height: 8),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                '0 km',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: AppTheme.mediumGrey,
+                                ),
+                              ),
+                              Text(
+                                '${_getCategoryDeliveryCap().toStringAsFixed(0)} km',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: AppTheme.mediumGrey,
+                                ),
+                              ),
+                            ],
+                          ),
+                                                     const SizedBox(height: 16),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Notes: Food is capped at 20 km, non-food at 50 km. Pickup (Pargo/PAXI) is local by default; buyers can use the Nationwide filter to see non-food pickup stores across SA.',
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: Colors.grey[500],
+                              fontStyle: FontStyle.italic,
                             ),
                           ),
                         ],
                       ),
-                    ],
-                    const SizedBox(height: 24),
-                    ElevatedButton(
-                      onPressed: _loading ? null : _saveProfile,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppTheme.deepTeal,
-                        foregroundColor: AppTheme.angel,
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        elevation: 2,
-                      ),
-                      child: _loading
-                          ? SizedBox(
-                              height: 20,
-                              width: 20,
-                              child: CircularProgressIndicator(
-                                color: AppTheme.angel,
-                                strokeWidth: 2,
-                              ),
-                            )
-                          : const Text(
-                              'Save Changes',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
                     ),
-                    const SizedBox(height: 32),
-                    Divider(),
                     const SizedBox(height: 16),
-                    ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.red,
-                        foregroundColor: AppTheme.angel,
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
+                    _buildSectionHeader('Cash on Delivery & Delivery Info'),
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: AppTheme.cloud.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: AppTheme.deepTeal.withOpacity(0.2), width: 1),
                       ),
-                      icon: Icon(Icons.delete_forever, color: AppTheme.angel),
-                      label: const Text('Delete Account'),
-                      onPressed: _loading ? null : _deleteAccount,
+                      child: Column(
+                        children: [
+                          SwitchListTile(
+                            value: _allowCOD,
+                            onChanged: (v) async {
+                              setState(() { _allowCOD = v; });
+                              final user = FirebaseAuth.instance.currentUser;
+                              if (user != null) await FirebaseFirestore.instance.collection('users').doc(user.uid).update({'allowCOD': v});
+                            },
+                            title: const Text('Allow Cash on Delivery'),
+                            subtitle: const Text('May be disabled if verification/dues pending'),
+                          ),
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: TextFormField(
+                                  initialValue: _minOrderForDelivery.toStringAsFixed(0),
+                                  keyboardType: TextInputType.number,
+                                  decoration: InputDecoration(
+                                    labelText: 'Minimum order amount for delivery (R)',
+                                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                                    prefixIcon: const Icon(Icons.payments),
+                                  ),
+                                  onChanged: (v) {
+                                    final x = double.tryParse(v);
+                                    if (x != null) _minOrderForDelivery = x;
+                                  },
+                                  onEditingComplete: () async {
+                                    final user = FirebaseAuth.instance.currentUser;
+                                    if (user != null) await FirebaseFirestore.instance.collection('users').doc(user.uid).update({'minOrderForDelivery': _minOrderForDelivery});
+                                  },
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: TextField(
+                                  controller: _deliveryTimeEstimateController,
+                                  decoration: InputDecoration(
+                                    labelText: 'Delivery time estimate (e.g., 30–45 min)',
+                                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                                    prefixIcon: const Icon(Icons.timer),
+                                  ),
+                                  onSubmitted: (v) async {
+                                    final user = FirebaseAuth.instance.currentUser;
+                                    if (user != null) await FirebaseFirestore.instance.collection('users').doc(user.uid).update({'deliveryTimeEstimate': v});
+                                  },
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    _buildSectionHeader('Payout (Bank) Details'),
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: AppTheme.cloud.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: AppTheme.deepTeal.withOpacity(0.2), width: 1),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (_loadingPayout) ...[
+                            Row(children: const [
+                              SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+                              SizedBox(width: 8),
+                              Text('Loading payout details...'),
+                            ]),
+                            const SizedBox(height: 8),
+                          ],
+                          TextField(
+                            controller: _payoutAccountHolderController,
+                            decoration: InputDecoration(
+                              labelText: 'Account Holder',
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                              prefixIcon: const Icon(Icons.person),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          TextField(
+                            controller: _payoutBankNameController,
+                            decoration: InputDecoration(
+                              labelText: 'Bank Name',
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                              prefixIcon: const Icon(Icons.account_balance),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: TextField(
+                                  controller: _payoutAccountNumberController,
+                                  keyboardType: TextInputType.number,
+                                  decoration: InputDecoration(
+                                    labelText: 'Account Number',
+                                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                                    prefixIcon: const Icon(Icons.numbers),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: TextField(
+                                  controller: _payoutBranchCodeController,
+                                  keyboardType: TextInputType.number,
+                                  decoration: InputDecoration(
+                                    labelText: 'Branch Code',
+                                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                                    prefixIcon: const Icon(Icons.pin),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          DropdownButtonFormField<String>(
+                            value: _payoutAccountType,
+                            items: const [
+                              DropdownMenuItem(value: 'cheque', child: Text('Cheque/Current')),
+                              DropdownMenuItem(value: 'savings', child: Text('Savings')),
+                              DropdownMenuItem(value: 'business', child: Text('Business Cheque')),
+                            ],
+                            onChanged: (v) => setState(() => _payoutAccountType = v ?? 'cheque'),
+                            decoration: InputDecoration(
+                              labelText: 'Account Type',
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                              prefixIcon: const Icon(Icons.account_balance_wallet),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: ElevatedButton.icon(
+                              onPressed: _savingPayout ? null : () async {
+                                final user = FirebaseAuth.instance.currentUser;
+                                if (user == null) return;
+                                setState(() { _savingPayout = true; });
+                                try {
+                                  await FirebaseFirestore.instance
+                                      .collection('users')
+                                      .doc(user.uid)
+                                      .collection('payout')
+                                      .doc('bank')
+                                      .set({
+                                        'accountHolder': _payoutAccountHolderController.text.trim(),
+                                        'bankName': _payoutBankNameController.text.trim(),
+                                        'accountNumber': _payoutAccountNumberController.text.trim(),
+                                        'branchCode': _payoutBranchCodeController.text.trim(),
+                                        'accountType': _payoutAccountType,
+                                        'updatedAt': FieldValue.serverTimestamp(),
+                                      }, SetOptions(merge: true));
+                                  if (mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Payout details saved')));
+                                  }
+                                } catch (e) {
+                                  if (mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed: $e')));
+                                  }
+                                } finally {
+                                  if (mounted) setState(() { _savingPayout = false; });
+                                }
+                              },
+                              icon: _savingPayout
+                                  ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                                  : const Icon(Icons.save),
+                              label: Text(_savingPayout ? 'Saving...' : 'Save Payout Details'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    _buildSectionHeader('Shortcuts'),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: () => Navigator.pushNamed(context, '/notification-settings'),
+                            icon: const Icon(Icons.record_voice_over),
+                            label: const Text('Notification & Voice'),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: () => Navigator.pushNamed(context, '/security-settings'),
+                            icon: const Icon(Icons.fingerprint),
+                            label: const Text('Security & Quick Login'),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
-                ),
+                  const SizedBox(height: 24),
+                  ElevatedButton(
+                    onPressed: _loading ? null : _saveProfile,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppTheme.deepTeal,
+                      foregroundColor: AppTheme.angel,
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      elevation: 2,
+                    ),
+                    child: _loading
+                        ? SizedBox(
+                            height: 20,
+                            width: 20,
+                            child: CircularProgressIndicator(
+                              color: AppTheme.angel,
+                              strokeWidth: 2,
+                            ),
+                          )
+                        : const Text(
+                            'Save Changes',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                  ),
+                  const SizedBox(height: 32),
+                  Divider(),
+                  const SizedBox(height: 16),
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.red,
+                      foregroundColor: AppTheme.angel,
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    icon: Icon(Icons.delete_forever, color: AppTheme.angel),
+                    label: const Text('Delete Account'),
+                    onPressed: _loading ? null : _deleteAccount,
+                  ),
+                ],
               ),
             ),
     );

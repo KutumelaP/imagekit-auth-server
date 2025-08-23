@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/image_cleanup_service.dart';
 import '../theme/admin_theme.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 
 class ImageManagementSection extends StatefulWidget {
   const ImageManagementSection({Key? key}) : super(key: key);
@@ -11,16 +12,49 @@ class ImageManagementSection extends StatefulWidget {
 
 class _ImageManagementSectionState extends State<ImageManagementSection> {
   bool _isLoading = false;
+  bool _isDeleting = false;
+  int _deletionProgress = 0;
+  Map<String, String> _deletionErrors = {};
   Map<String, dynamic> _storageStats = {};
   List<Map<String, dynamic>> _orphanedImages = [];
-  Map<String, int> _cleanupResults = {};
-  
+  String _selectedOrphanType = 'all';
+  List<Map<String, dynamic>> _filteredOrphanedImages = [];
+
+  String _normalizePath(String? raw) {
+    final p = (raw ?? '').trim();
+    if (p.isEmpty) return '';
+    // Remove all leading slashes
+    return p.replaceFirst(RegExp(r'^/+'), '');
+  }
+
   @override
   void initState() {
     super.initState();
     _loadStorageStats();
   }
-  
+
+  void _updateFilteredImages() {
+    if (_selectedOrphanType == 'all') {
+      _filteredOrphanedImages = _orphanedImages;
+    } else {
+      _filteredOrphanedImages = _orphanedImages.where((img) {
+        final path = _normalizePath(img['filePath'] as String?);
+        switch (_selectedOrphanType) {
+          case 'products':
+            return path.startsWith('products/');
+          case 'profiles':
+            return path.startsWith('profile_images/');
+          case 'stores':
+            return path.startsWith('store_images/');
+          case 'chat':
+            return path.startsWith('chat_images/');
+          default:
+            return false;
+        }
+      }).toList();
+    }
+  }
+
   Future<void> _loadStorageStats() async {
     setState(() => _isLoading = true);
     try {
@@ -31,266 +65,373 @@ class _ImageManagementSectionState extends State<ImageManagementSection> {
       });
     } catch (e) {
       setState(() => _isLoading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error loading storage stats: $e')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error loading stats: $e')),
+        );
+      }
     }
   }
-  
+
   Future<void> _findOrphanedImages() async {
     setState(() => _isLoading = true);
     try {
-      final orphanedProducts = await ImageCleanupService.findOrphanedProductImages();
-      final orphanedProfiles = await ImageCleanupService.findOrphanedProfileImages();
-      final orphanedStores = await ImageCleanupService.findOrphanedStoreImages();
-      final orphanedChats = await ImageCleanupService.findOrphanedChatImages();
+      final allOrphaned = <Map<String, dynamic>>[];
+      
+      // Get all types of orphaned images
+      final productOrphans = await ImageCleanupService.findOrphanedProductImages();
+      final profileOrphans = await ImageCleanupService.findOrphanedProfileImages();
+      final storeOrphans = await ImageCleanupService.findOrphanedStoreImages();
+      final chatOrphans = await ImageCleanupService.findOrphanedChatImages();
+      
+      allOrphaned.addAll(productOrphans);
+      allOrphaned.addAll(profileOrphans);
+      allOrphaned.addAll(storeOrphans);
+      allOrphaned.addAll(chatOrphans);
       
       setState(() {
-        _orphanedImages = [
-          ...orphanedProducts.map((img) => {...img, 'type': 'Product'}),
-          ...orphanedProfiles.map((img) => {...img, 'type': 'Profile'}),
-          ...orphanedStores.map((img) => {...img, 'type': 'Store'}),
-          ...orphanedChats.map((img) => {...img, 'type': 'Chat'}),
-        ];
+        _orphanedImages = allOrphaned;
+        _updateFilteredImages();
         _isLoading = false;
       });
     } catch (e) {
       setState(() => _isLoading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error finding orphaned images: $e')),
-      );
-    }
-  }
-  
-  Future<void> _cleanupOrphanedImages() async {
-    setState(() => _isLoading = true);
-    try {
-      final results = await ImageCleanupService.cleanupOrphanedImages();
-      setState(() {
-        _cleanupResults = results;
-        _isLoading = false;
-      });
-      
-      // Reload stats after cleanup
-      await _loadStorageStats();
-      await _findOrphanedImages();
-      
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Cleanup completed: ${results.values.fold(0, (sum, count) => sum + count)} images removed'),
-          backgroundColor: AdminTheme.success,
-        ),
-      );
-    } catch (e) {
-      setState(() => _isLoading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error during cleanup: $e')),
-      );
-    }
-  }
-  
-  Future<void> _deleteSpecificImage(String fileId) async {
-    try {
-      final success = await ImageCleanupService.deleteImage(fileId);
-      if (success) {
-        setState(() {
-          _orphanedImages.removeWhere((img) => img['fileId'] == fileId);
-        });
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Image deleted successfully')),
-        );
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to delete image')),
+          SnackBar(content: Text('Error finding orphaned images: $e')),
         );
       }
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error deleting image: $e')),
-      );
     }
   }
-  
-  String _formatFileSize(int bytes) {
-    if (bytes < 1024) return '$bytes B';
-    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
-    if (bytes < 1024 * 1024 * 1024) return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
-    return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
-  }
-  
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      color: AdminTheme.whisper,
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Header
-            Row(
-              children: [
-                Icon(Icons.image, size: 32, color: AdminTheme.deepTeal),
-                const SizedBox(width: 16),
-                Text(
-                  'Image Management',
-                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                    color: AdminTheme.deepTeal,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 24),
-            
-            // Storage Statistics
-            _buildStorageStatsCard(),
-            const SizedBox(height: 24),
-            
-            // Action Buttons
-            _buildActionButtons(),
-            const SizedBox(height: 24),
-            
-            // Cleanup Results
-            if (_cleanupResults.isNotEmpty) _buildCleanupResultsCard(),
-            if (_cleanupResults.isNotEmpty) const SizedBox(height: 24),
-            
-            // Orphaned Images List
-            if (_orphanedImages.isNotEmpty) _buildOrphanedImagesCard(),
-          ],
-        ),
+
+  Future<void> _deleteOrphanedImages() async {
+    if (_filteredOrphanedImages.isEmpty) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Delete Orphaned Images'),
+        content: Text('Are you sure you want to delete ${_filteredOrphanedImages.length} orphaned images? This action cannot be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: Text('Delete'),
+          ),
+        ],
       ),
     );
+
+    if (confirmed != true) return;
+
+    setState(() {
+      _isDeleting = true;
+      _deletionProgress = 0;
+      _deletionErrors = <String, String>{};
+    });
+
+    final fileIds = _filteredOrphanedImages.map((img) => img['fileId'] as String).toList();
+    final results = await ImageCleanupService.deleteImages(fileIds);
+
+    // Track failed deletions for retry
+    final failedDeletions = <String>[];
+    for (final entry in results.entries) {
+      if (entry.value) {
+        _deletionProgress++;
+      } else {
+        failedDeletions.add(entry.key);
+        // Try to get error message from the service
+        _deletionErrors[entry.key] = 'Deletion failed - check console for details';
+      }
+    }
+
+    setState(() {
+      _isDeleting = false;
+      _deletionProgress = 0;
+    });
+
+    // Show results
+    final successCount = results.values.where((success) => success).length;
+    final failureCount = results.values.where((success) => !success).length;
+
+    if (failureCount > 0) {
+      // Show detailed error dialog with retry option
+      final shouldRetry = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text('Deletion Results'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('✅ Successfully deleted: $successCount images'),
+              SizedBox(height: 8),
+              Text('❌ Failed to delete: $failureCount images'),
+              if (_deletionErrors.isNotEmpty) ...[
+                SizedBox(height: 16),
+                Text('Failed deletions:', style: TextStyle(fontWeight: FontWeight.bold)),
+                SizedBox(height: 8),
+                ..._deletionErrors.entries.take(5).map((e) => 
+                  Padding(
+                    padding: EdgeInsets.only(bottom: 4),
+                    child: Text('• ${e.key}: ${e.value}', style: TextStyle(fontSize: 12)),
+                  )
+                ),
+                if (_deletionErrors.length > 5)
+                  Text('... and ${_deletionErrors.length - 5} more', style: TextStyle(fontStyle: FontStyle.italic)),
+              ],
+              SizedBox(height: 16),
+              Text('Would you like to retry the failed deletions?'),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: Text('Close'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              style: TextButton.styleFrom(foregroundColor: Colors.orange),
+              child: Text('Retry Failed'),
+            ),
+          ],
+        ),
+      );
+
+      if (shouldRetry == true && failedDeletions.isNotEmpty) {
+        // Retry failed deletions
+        await _retryFailedDeletions(failedDeletions);
+      }
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('✅ Successfully deleted $successCount orphaned images'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    }
+
+    // Refresh the orphaned images list
+    await _findOrphanedImages();
   }
-  
-  Widget _buildStorageStatsCard() {
-    return Container(
-      width: double.infinity,
+
+  Future<void> _retryFailedDeletions(List<String> failedFileIds) async {
+    setState(() {
+      _isDeleting = true;
+      _deletionProgress = 0;
+      _deletionErrors.clear();
+    });
+
+    final results = await ImageCleanupService.deleteImages(failedFileIds);
+    
+    final successCount = results.values.where((success) => success).length;
+    final failureCount = results.values.where((success) => !success).length;
+
+    setState(() {
+      _isDeleting = false;
+      _deletionProgress = 0;
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Retry complete: $successCount succeeded, $failureCount still failed'),
+        backgroundColor: failureCount > 0 ? Colors.orange : Colors.green,
+        duration: Duration(seconds: 3),
+      ),
+    );
+
+    // Refresh the orphaned images list
+    await _findOrphanedImages();
+  }
+
+  Map<String, int> _getOrphanCountsByType() {
+    final counts = <String, int>{};
+    counts['all'] = _orphanedImages.length;
+    counts['products'] = _orphanedImages.where((img) {
+      final path = _normalizePath(img['filePath'] as String?);
+      return path.startsWith('products/');
+    }).length;
+    counts['profiles'] = _orphanedImages.where((img) {
+      final path = _normalizePath(img['filePath'] as String?);
+      return path.startsWith('profile_images/');
+    }).length;
+    counts['stores'] = _orphanedImages.where((img) {
+      final path = _normalizePath(img['filePath'] as String?);
+      return path.startsWith('store_images/');
+    }).length;
+    counts['chat'] = _orphanedImages.where((img) {
+      final path = _normalizePath(img['filePath'] as String?);
+      return path.startsWith('chat_images/');
+    }).length;
+    return counts;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final orphanCounts = _getOrphanCountsByType();
+    
+    return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
-      decoration: AdminTheme.cardDecoration(),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Icon(Icons.storage, color: AdminTheme.deepTeal),
-              const SizedBox(width: 12),
-              Text(
-                'Storage Statistics',
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: AdminTheme.deepTeal,
-                ),
-              ),
-            ],
+          Text(
+            'Image Management',
+            style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+              fontWeight: FontWeight.bold,
+              color: AdminTheme.deepTeal,
+            ),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 24),
           
-          if (_isLoading)
-            const Center(child: CircularProgressIndicator())
-          else if (_storageStats.isEmpty)
-            const Text('No storage data available')
-          else
-            _buildStorageStatsGrid(),
+          // Storage Stats
+          if (_storageStats != null) ...[
+            _buildStatsGrid(),
+            const SizedBox(height: 24),
+          ],
+          
+          // Action Buttons
+          _buildActionButtons(),
+          const SizedBox(height: 24),
+          
+          // Orphaned Images Section
+          if (_orphanedImages.isNotEmpty) ...[
+            _buildOrphanedImagesSection(orphanCounts),
+            const SizedBox(height: 24),
+          ],
         ],
       ),
     );
   }
-  
-  Widget _buildStorageStatsGrid() {
+
+  Widget _buildStatsGrid() {
+    final int orphanedCount = _orphanedImages.length;
+    final int orphanedBytes = _orphanedImages.fold<int>(0, (sum, img) => sum + ((img['size'] as int?) ?? 0));
+    String _formatMb(num mb) => '${mb.toStringAsFixed(1)} MB';
+
+    final String totalSizeLabel = () {
+      final totalSizeMbStr = _storageStats!['totalSizeMB'];
+      if (totalSizeMbStr is String && totalSizeMbStr.isNotEmpty) {
+        return '$totalSizeMbStr MB';
+      }
+      final totalBytes = _storageStats!['totalSizeBytes'];
+      if (totalBytes is int && totalBytes > 0) {
+        return _formatMb(totalBytes / (1024 * 1024));
+      }
+      return '0 MB';
+    }();
+
+    final String orphanedSizeLabel = _formatMb(orphanedBytes / (1024 * 1024));
+
     return GridView.count(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
-      crossAxisCount: 3,
+      crossAxisCount: 4,
       crossAxisSpacing: 16,
       mainAxisSpacing: 16,
-      childAspectRatio: 2.5,
+      childAspectRatio: 2.8,
       children: [
-        _buildStatItem(
+        _buildStatCard(
           'Total Images',
-          '${_storageStats['totalImages'] ?? 0}',
+          _storageStats!['totalImages']?.toString() ?? '0',
           Icons.image,
-          AdminTheme.info,
+          AdminTheme.deepTeal,
         ),
-        _buildStatItem(
+        _buildStatCard(
           'Total Size',
-          '${_storageStats['totalSizeMB'] ?? '0'} MB',
+          totalSizeLabel,
           Icons.storage,
+          AdminTheme.success,
+        ),
+        _buildStatCard(
+          'Orphaned Images',
+          orphanedCount.toString(),
+          Icons.delete_outline,
           AdminTheme.warning,
         ),
-        _buildStatItem(
-          'Orphaned Images',
-          '${_orphanedImages.length}',
+        _buildStatCard(
+          'Orphaned Size',
+          orphanedSizeLabel,
           Icons.delete_sweep,
           AdminTheme.error,
         ),
       ],
     );
   }
-  
-  Widget _buildStatItem(String label, String value, IconData icon, Color color) {
+
+  Widget _buildStatCard(String title, String value, IconData icon, Color color) {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
+        color: Colors.white,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withOpacity(0.3)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(icon, color: color, size: 24),
-          const SizedBox(height: 8),
+          Row(
+            children: [
+              Icon(icon, color: color, size: 20),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w500,
+                    color: Colors.grey,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
           Text(
             value,
-            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+            style: TextStyle(
+              fontSize: 18,
               fontWeight: FontWeight.bold,
               color: color,
             ),
-          ),
-          Text(
-            label,
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: color.withOpacity(0.8),
-            ),
-            textAlign: TextAlign.center,
           ),
         ],
       ),
     );
   }
-  
+
   Widget _buildActionButtons() {
     return Row(
       children: [
-        ElevatedButton.icon(
-          onPressed: _isLoading ? null : _loadStorageStats,
-          icon: const Icon(Icons.refresh),
-          label: const Text('Refresh Stats'),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: AdminTheme.info,
-            foregroundColor: Colors.white,
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-          ),
-        ),
-        const SizedBox(width: 16),
         ElevatedButton.icon(
           onPressed: _isLoading ? null : _findOrphanedImages,
           icon: const Icon(Icons.search),
           label: const Text('Find Orphaned Images'),
           style: ElevatedButton.styleFrom(
-            backgroundColor: AdminTheme.warning,
+            backgroundColor: AdminTheme.deepTeal,
             foregroundColor: Colors.white,
             padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
           ),
         ),
         const SizedBox(width: 16),
         ElevatedButton.icon(
-          onPressed: _isLoading || _orphanedImages.isEmpty ? null : _cleanupOrphanedImages,
-          icon: const Icon(Icons.cleaning_services),
-          label: const Text('Cleanup All'),
+          onPressed: _isLoading ? null : _syncImageAssets,
+          icon: const Icon(Icons.sync),
+          label: const Text('Sync Image Assets'),
           style: ElevatedButton.styleFrom(
-            backgroundColor: AdminTheme.success,
+            backgroundColor: AdminTheme.info,
             foregroundColor: Colors.white,
             padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
           ),
@@ -298,124 +439,262 @@ class _ImageManagementSectionState extends State<ImageManagementSection> {
       ],
     );
   }
-  
-  Widget _buildCleanupResultsCard() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(24),
-      decoration: AdminTheme.cardDecoration(),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(Icons.check_circle, color: AdminTheme.success),
-              const SizedBox(width: 12),
-              Text(
-                'Cleanup Results',
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: AdminTheme.success,
-                ),
+
+  Widget _buildOrphanedImagesSection(Map<String, int> orphanCounts) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Text(
+              'Orphaned Images (${_filteredOrphanedImages.length})',
+              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                fontWeight: FontWeight.bold,
+                color: AdminTheme.warning,
               ),
-            ],
+            ),
+            const Spacer(),
+            if (_filteredOrphanedImages.isNotEmpty)
+              ElevatedButton(
+                onPressed: _filteredOrphanedImages.isEmpty || _isDeleting ? null : _deleteOrphanedImages,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red,
+                  foregroundColor: Colors.white,
+                ),
+                child: _isDeleting 
+                  ? Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                          ),
+                        ),
+                        SizedBox(width: 8),
+                        Text('Deleting...'),
+                      ],
+                    )
+                  : Text('Delete ${_filteredOrphanedImages.length}'),
+              ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        
+        // Filter Chips
+        Wrap(
+          spacing: 8,
+          children: [
+            FilterChip(
+              label: Text('All (${orphanCounts['all']})'),
+              selected: _selectedOrphanType == 'all',
+              onSelected: (selected) {
+                setState(() {
+                  _selectedOrphanType = 'all';
+                  _updateFilteredImages();
+                });
+              },
+              selectedColor: AdminTheme.deepTeal.withOpacity(0.2),
+            ),
+            FilterChip(
+              label: Text('Products (${orphanCounts['products']})'),
+              selected: _selectedOrphanType == 'products',
+              onSelected: (selected) {
+                setState(() {
+                  _selectedOrphanType = 'products';
+                  _updateFilteredImages();
+                });
+              },
+              selectedColor: AdminTheme.deepTeal.withOpacity(0.2),
+            ),
+            FilterChip(
+              label: Text('Profile Images (${orphanCounts['profiles']})'),
+              selected: _selectedOrphanType == 'profiles',
+              onSelected: (selected) {
+                setState(() {
+                  _selectedOrphanType = 'profiles';
+                  _updateFilteredImages();
+                });
+              },
+              selectedColor: AdminTheme.deepTeal.withOpacity(0.2),
+            ),
+            FilterChip(
+              label: Text('Store Images (${orphanCounts['stores']})'),
+              selected: _selectedOrphanType == 'stores',
+              onSelected: (selected) {
+                setState(() {
+                  _selectedOrphanType = 'stores';
+                  _updateFilteredImages();
+                });
+              },
+              selectedColor: AdminTheme.deepTeal.withOpacity(0.2),
+            ),
+            FilterChip(
+              label: Text('Chat Images (${orphanCounts['chat']})'),
+              selected: _selectedOrphanType == 'chat',
+              onSelected: (selected) {
+                setState(() {
+                  _selectedOrphanType = 'chat';
+                  _updateFilteredImages();
+                });
+              },
+              selectedColor: AdminTheme.deepTeal.withOpacity(0.2),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        
+        // Images Grid
+        GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 4,
+            crossAxisSpacing: 16,
+            mainAxisSpacing: 16,
+            childAspectRatio: 1,
           ),
-          const SizedBox(height: 20),
-          
-          Wrap(
-            spacing: 16,
-            runSpacing: 16,
-            children: _cleanupResults.entries.map((entry) {
-              return Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                decoration: BoxDecoration(
-                  color: AdminTheme.success.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: AdminTheme.success.withOpacity(0.3)),
-                ),
-                child: Text(
-                  '${entry.key}: ${entry.value} deleted',
-                  style: TextStyle(
-                    color: AdminTheme.success,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              );
-            }).toList(),
+          itemCount: _filteredOrphanedImages.length,
+          itemBuilder: (context, index) {
+            final image = _filteredOrphanedImages[index];
+            return _buildImageCard(image);
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _buildImageCard(Map<String, dynamic> image) {
+    final url = image['url'] as String? ?? '';
+    final name = image['name'] as String? ?? 'Unknown';
+    final path = image['filePath'] as String? ?? '';
+    final size = image['size'] as int? ?? 0;
+    
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
           ),
         ],
       ),
-    );
-  }
-  
-  Widget _buildOrphanedImagesCard() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(24),
-      decoration: AdminTheme.cardDecoration(),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Row(
-            children: [
-              Icon(Icons.delete_sweep, color: AdminTheme.error),
-              const SizedBox(width: 12),
-              Text(
-                'Orphaned Images (${_orphanedImages.length})',
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: AdminTheme.error,
-                ),
-              ),
-            ],
+          Expanded(
+            child: ClipRRect(
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
+              child: url.isNotEmpty
+                  ? Image.network(
+                      url,
+                      fit: BoxFit.cover,
+                      width: double.infinity,
+                      errorBuilder: (context, error, stackTrace) {
+                        return Container(
+                          color: Colors.grey[200],
+                          child: const Icon(Icons.broken_image, size: 32),
+                        );
+                      },
+                    )
+                  : Container(
+                      color: Colors.grey[200],
+                      child: const Icon(Icons.image, size: 32),
+                    ),
+            ),
           ),
-          const SizedBox(height: 20),
-          
-          SizedBox(
-            height: 400,
-            child: ListView.builder(
-              itemCount: _orphanedImages.length,
-              itemBuilder: (context, index) {
-                final image = _orphanedImages[index];
-                return Card(
-                  margin: const EdgeInsets.only(bottom: 8),
-                  child: ListTile(
-                    leading: Container(
-                      width: 50,
-                      height: 50,
-                      decoration: BoxDecoration(
-                        color: AdminTheme.angel,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Icon(
-                        Icons.image,
-                        color: AdminTheme.deepTeal,
-                      ),
-                    ),
-                    title: Text(
-                      image['name'] ?? 'Unknown',
-                      style: const TextStyle(fontWeight: FontWeight.w600),
-                    ),
-                    subtitle: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('Type: ${image['type']}'),
-                        Text('Size: ${_formatFileSize(image['size'] ?? 0)}'),
-                        Text('Path: ${image['filePath'] ?? 'Unknown'}'),
-                      ],
-                    ),
-                    trailing: IconButton(
-                      icon: const Icon(Icons.delete, color: AdminTheme.error),
-                      onPressed: () => _deleteSpecificImage(image['fileId']),
-                      tooltip: 'Delete this image',
-                    ),
+          Container(
+            padding: const EdgeInsets.all(6),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  name,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w500,
                   ),
-                );
-              },
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  path,
+                  style: const TextStyle(
+                    fontSize: 9,
+                    color: Colors.grey,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '${(size / 1024 / 1024).toStringAsFixed(1)} MB',
+                  style: const TextStyle(
+                    fontSize: 9,
+                    color: Colors.grey,
+                  ),
+                ),
+              ],
             ),
           ),
         ],
       ),
     );
+  }
+
+  Future<void> _syncImageAssets() async {
+    setState(() => _isLoading = true);
+    try {
+      final functions = FirebaseFunctions.instance;
+      final result = await functions.httpsCallable('syncImageAssetsNow').call();
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Sync completed: ${result.data['synced']} images synced')),
+        );
+      }
+      
+      // Refresh data
+      await _loadStorageStats();
+      await _findOrphanedImages();
+    } catch (e) {
+      setState(() => _isLoading = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error syncing images: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _testBatchDelete() async {
+    setState(() => _isLoading = true);
+    try {
+      final functions = FirebaseFunctions.instanceFor(region: 'us-central1');
+      final result = await functions.httpsCallable('testBatchDelete').call();
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Test completed: ${result.data['message']}')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error testing delete function: $e')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
   }
 }

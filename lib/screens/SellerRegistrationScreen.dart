@@ -176,11 +176,16 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
                 size: 28,
               ),
               const SizedBox(width: 12),
-              const Text(
-                'Registration Complete!',
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 20,
+              const Expanded(
+                child: Text(
+                  'Registration Complete!',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 20,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
+                  softWrap: false,
                 ),
               ),
             ],
@@ -218,12 +223,17 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
                           size: 20,
                         ),
                         const SizedBox(width: 8),
-                        const Text(
-                          'Important Notice',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16,
-                            color: Colors.black87,
+                        const Expanded(
+                          child: Text(
+                            'Important Notice',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                              color: Colors.black87,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                            maxLines: 1,
+                            softWrap: false,
                           ),
                         ),
                       ],
@@ -936,7 +946,7 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
 
       // TTS welcome (seller)
       try {
-        await NotificationService().speakPreview('Congrats—your seller account is live. Let’s get those orders rolling.');
+        await NotificationService().speakPreview("Congrats—your seller account is live. Let's get those orders rolling.");
       } catch (_) {}
 
       // Refresh user data in provider to reflect the role change
@@ -1678,6 +1688,12 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
         ),
       ),
     );
+  }
+
+  double _getCategoryDeliveryCap() {
+    final cat = (_selectedStoreCategory ?? '').toLowerCase();
+    if (cat.contains('food')) return 20.0;
+    return 50.0;
   }
 
   @override
@@ -2531,10 +2547,10 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
                                       overlayShape: const RoundSliderOverlayShape(overlayRadius: 16),
                                     ),
                                     child: Slider(
-                                      value: _deliveryRange.clamp(0.0, 1000.0),
+                                      value: _deliveryRange.clamp(0.0, _getCategoryDeliveryCap()),
                                       min: 0.0,
-                                      max: 1000.0,
-                                      divisions: 100, // 10km increments
+                                      max: _getCategoryDeliveryCap(),
+                                      divisions: _getCategoryDeliveryCap().toInt(),
                                       label: '${_deliveryRange.toStringAsFixed(0)} km',
                                       onChanged: (value) {
                                         setState(() {
@@ -2555,7 +2571,7 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
                                         ),
                                       ),
                                       Text(
-                                        '1000 km',
+                                        '${_getCategoryDeliveryCap().toStringAsFixed(0)} km',
                                         style: TextStyle(
                                           fontSize: 12,
                                           color: AppTheme.mediumGrey,
@@ -2570,7 +2586,7 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
                                     children: [
                                       Expanded(
                                         child: Text(
-                                          'Need more than 1000km?',
+                                          'Maximum visible range is capped (${(_selectedStoreCategory ?? '') == 'Food' ? '20 km' : '50 km'}).',
                                           style: TextStyle(
                                             fontSize: 12,
                                             color: AppTheme.mediumGrey,
@@ -2583,13 +2599,13 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
                                         child: TextFormField(
                                           controller: _customRangeController,
                                           keyboardType: TextInputType.number,
-                                          enabled: !_isLoading,
+                                          enabled: false,
                                           style: TextStyle(
                                             fontSize: 12,
                                             color: AppTheme.deepTeal,
                                           ),
                                           decoration: InputDecoration(
-                                            hintText: 'Custom km',
+                                            hintText: 'Not needed',
                                             hintStyle: TextStyle(
                                               color: AppTheme.breeze,
                                               fontSize: 12,
@@ -2624,42 +2640,51 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
                                       ),
                                     ],
                                   ),
-                                                                  ],
-                                ),
-                                const SizedBox(height: 12),
-                                Container(
-                                  padding: const EdgeInsets.all(12),
-                                  decoration: BoxDecoration(
-                                    color: AppTheme.primaryGreen.withOpacity(0.1),
-                                    borderRadius: BorderRadius.circular(8),
-                                    border: Border.all(
-                                      color: AppTheme.primaryGreen.withOpacity(0.3),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    'Notes: Food is capped at 20 km, non-food at 50 km. Pickup (Pargo/PAXI) is local by default; buyers can use the Nationwide filter to see non-food pickup stores across SA.',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      color: Colors.grey[500],
+                                      fontStyle: FontStyle.italic,
                                     ),
                                   ),
-                                  child: Row(
-                                    children: [
-                                      Icon(
-                                        Icons.info_outline,
-                                        size: 16,
-                                        color: AppTheme.primaryGreen,
-                                      ),
-                                      const SizedBox(width: 8),
-                                      Expanded(
-                                        child: Text(
-                                          'Important: Your store will only be visible to customers within your delivery range. Customers outside this range won\'t see your store in search results.',
-                                          style: TextStyle(
-                                            fontSize: 11,
-                                            color: AppTheme.primaryGreen,
-                                            fontWeight: FontWeight.w500,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
+                                ],
+                              ),
+                              const SizedBox(height: 12),
+                              Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: AppTheme.primaryGreen.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(
+                                    color: AppTheme.primaryGreen.withOpacity(0.3),
                                   ),
                                 ),
-                              ],
-                            ),
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      Icons.info_outline,
+                                      size: 16,
+                                      color: AppTheme.primaryGreen,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        'Important: Your store will only be visible to customers within your delivery range. Customers outside this range won\'t see your store in search results.',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: AppTheme.primaryGreen,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
                           ),
+                        ),
                         
                         // PAXI Pickup Service Section (hidden if disabled globally)
                         if (_paxiVisible) Container(

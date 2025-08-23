@@ -373,7 +373,30 @@ class _StoreSelectionScreenState extends State<StoreSelectionScreen> {
       final review = await _getStoreReviewSummary(storeId);
       final storeLat = _parseCoordinate(userData['latitude']);
       final storeLng = _parseCoordinate(userData['longitude']);
-      final deliveryRange = (userData['deliveryRange'] ?? 1000.0).toDouble(); // Use new deliveryRange field
+      final deliveryRangeRaw = (userData['deliveryRange'] ?? 0.0).toDouble();
+      final bool deliveryAvailable = userData['deliveryAvailable'] == true;
+      final bool pargoEnabled = userData['pargoEnabled'] == true;
+      final bool paxiEnabled = userData['paxiEnabled'] == true;
+      final String category = (userData['storeCategory'] ?? '').toString();
+      // Category caps (can be tuned or moved to config)
+      const double foodCapKm = 20.0;
+      const double nonFoodDeliveryCapKm = 50.0;
+      const double pickupFoodDefaultKm = 12.0;
+      const double pickupNonFoodDefaultKm = 30.0;
+      const double noDeliveryNoPickupDefaultKm = 5.0;
+      // Compute service radius
+      double serviceRadiusKm;
+      final bool hasPickup = pargoEnabled || paxiEnabled;
+      final bool isFood = _isFoodCategory(category);
+      if (deliveryAvailable && deliveryRangeRaw > 0) {
+        serviceRadiusKm = isFood
+            ? deliveryRangeRaw.clamp(1.0, foodCapKm)
+            : deliveryRangeRaw.clamp(1.0, nonFoodDeliveryCapKm);
+      } else if (hasPickup) {
+        serviceRadiusKm = isFood ? pickupFoodDefaultKm : pickupNonFoodDefaultKm;
+      } else {
+        serviceRadiusKm = noDeliveryNoPickupDefaultKm;
+      }
       double? distance;
       bool inRange = true;
       
@@ -416,15 +439,23 @@ class _StoreSelectionScreenState extends State<StoreSelectionScreen> {
             storeLng,
           ) / 1000;
           
-          // Check if store is within delivery range
-          inRange = distance <= deliveryRange;
+          // Check if store is within service radius
+          inRange = distance <= serviceRadiusKm;
+          // Nationwide pickup override: show non-food pickup stores regardless of distance
+          if (_activeFilter == 'nationwide' && hasPickup && !isFood) {
+            inRange = true;
+          }
           
-          print('🔍 DEBUG: Store ${userData['storeName']} - Distance: ${distance.toStringAsFixed(1)}km, Delivery Range: ${deliveryRange.toStringAsFixed(1)}km, In Range: $inRange');
+          print('🔍 DEBUG: Store ${userData['storeName']} - Distance: ${distance.toStringAsFixed(1)}km, ServiceRadius: ${serviceRadiusKm.toStringAsFixed(1)}km, In Range: $inRange, Delivery: $deliveryAvailable/$deliveryRangeRaw km, Pickup: $hasPickup, Category: $category');
         }
       } else {
-        // If we can't calculate distance, still show the store but mark distance as null
-        inRange = true;
-        print('🔍 DEBUG: Store ${userData['storeName']} - Could not calculate distance, showing store');
+        // If we can't calculate distance, do not show (requires location for local-first discovery)
+        inRange = false;
+        // Nationwide pickup override: include non-food pickup stores even without user coords
+        if (_activeFilter == 'nationwide' && hasPickup && !isFood) {
+          inRange = true;
+        }
+        print('🔍 DEBUG: Store ${userData['storeName']} - Could not calculate distance, ' + (inRange ? 'showing due to nationwide pickup' : 'hiding store (no user/store coords)'));
       }
       
       // Fetch favoriteCount for this store
@@ -459,7 +490,7 @@ class _StoreSelectionScreenState extends State<StoreSelectionScreen> {
           'introVideoUrl': userData['introVideoUrl'] as String?,
           // Add delivery fields
           'deliveryAvailable': userData['deliveryAvailable'] ?? false,
-          'deliveryRange': userData['deliveryRange'] ?? 500.0,
+          'deliveryRange': deliveryRangeRaw,
           // Add story media fields
           'storyPhotoUrls': userData['storyPhotoUrls'] as List<dynamic>?,
           'storyVideoUrl': userData['storyVideoUrl'] as String?,
@@ -469,6 +500,8 @@ class _StoreSelectionScreenState extends State<StoreSelectionScreen> {
           'isVerified': userData['isVerified'] ?? false, // Add isVerified field
           'storeOpenHour': userData['storeOpenHour'] as String?,
           'storeCloseHour': userData['storeCloseHour'] as String?,
+          'pargoEnabled': pargoEnabled,
+          'paxiEnabled': paxiEnabled,
         });
       }
     }
@@ -491,6 +524,11 @@ class _StoreSelectionScreenState extends State<StoreSelectionScreen> {
       return parsed;
     }
     return null;
+  }
+
+  bool _isFoodCategory(String category) {
+    final c = category.toLowerCase();
+    return c.contains('food') || c.contains('meal') || c.contains('bak') || c.contains('pastr') || c.contains('dessert') || c.contains('beverage') || c.contains('drink') || c.contains('coffee') || c.contains('tea') || c.contains('fruit') || c.contains('vegetable') || c.contains('produce') || c.contains('snack');
   }
 
   bool userLatLngValid(Position? userPos, dynamic storeLat, dynamic storeLng, double deliveryRange) {
@@ -1945,6 +1983,14 @@ void _navigateToStoreProfile(Map<String, dynamic> store) {
         // Show stores with 4+ star rating
         filtered = filtered.where((store) => store['avgRating'] >= 4.0).toList();
         break;
+      case 'nationwide':
+        // Show non-food stores that support pickup (Pargo/PAXI), distance ignored
+        filtered = filtered.where((store) {
+          final category = (store['category'] ?? '').toString();
+          final hasPickup = (store['pargoEnabled'] == true) || (store['paxiEnabled'] == true);
+          return hasPickup && !_isFoodCategory(category);
+        }).toList();
+        break;
       case 'all':
       default:
         // Show all stores
@@ -2014,6 +2060,8 @@ void _navigateToStoreProfile(Map<String, dynamic> store) {
                 _buildFilterChip('Delivery', 'delivery', Icons.delivery_dining),
                 const SizedBox(width: 6),
                 _buildFilterChip('4+ Star', 'high_rating', Icons.star),
+                const SizedBox(width: 6),
+                _buildFilterChip('Nationwide', 'nationwide', Icons.public),
               ],
             ),
           ),
