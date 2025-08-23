@@ -3,13 +3,12 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
 import '../providers/cart_provider.dart';
-import 'ChatScreen.dart';
 import '../theme/app_theme.dart';
 import '../widgets/safe_network_image.dart';
 import '../widgets/bottom_action_bar.dart';
 import '../screens/CheckoutScreen.dart';
 import '../utils/responsive_utils.dart';
-
+import '../utils/loading_widget.dart';
 import 'package:flutter/services.dart';
 
 class StunningProductDetail extends StatefulWidget {
@@ -223,19 +222,18 @@ class _StunningProductDetailState extends State<StunningProductDetail>
   Widget _buildSliverAppBar(bool isMobile, double screenHeight) {
     return SliverSafeArea(
       top: true,
-      sliver: SliverAppBar(
+      child: SliverAppBar(
         expandedHeight: isMobile ? screenHeight * 0.4 : screenHeight * 0.5,
         floating: false,
         pinned: true,
-        snap: false,
         backgroundColor: AppTheme.deepTeal,
         foregroundColor: Colors.white,
         systemOverlayStyle: SystemUiOverlayStyle.light,
-      leading: IconButton(
-        icon: const Icon(Icons.arrow_back, color: Colors.white),
-        onPressed: () => Navigator.of(context).pop(),
-      ),
-              actions: [
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+        actions: [
           // Cart with count
           Consumer<CartProvider>(
             builder: (context, cartProvider, child) {
@@ -330,7 +328,6 @@ class _StunningProductDetailState extends State<StunningProductDetail>
             ),
           ),
         ),
-      ),
       ),
     );
   }
@@ -803,6 +800,9 @@ class _StunningProductDetailState extends State<StunningProductDetail>
     );
     
     if (success) {
+      // Show success message
+      _showSnackBar('Product added to cart!', AppTheme.primaryGreen);
+      
       // Navigate to cart
       Navigator.pushNamed(context, '/cart');
     } else {

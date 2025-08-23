@@ -31,7 +31,6 @@ class _SellerOrderDetailScreenState extends State<SellerOrderDetailScreen>
   bool _notifying = false;
   bool _addingTracking = false;
   List<Map<String, dynamic>> _savedDrivers = [];
-  bool _reviewingEft = false;
 
   @override
   void initState() {
@@ -262,9 +261,6 @@ class _SellerOrderDetailScreenState extends State<SellerOrderDetailScreen>
                       
                       // Payment Information Card
                       _buildPaymentInfoCard(paymentMethod, paymentStatus, total),
-
-                      // EFT Review Card (if awaiting EFT)
-                      _buildEftReviewCard(orderRef, order),
                       
                       // Status Management Card
                       _buildStatusManagementCard(orderRef, status, sellerName),
@@ -287,7 +283,7 @@ class _SellerOrderDetailScreenState extends State<SellerOrderDetailScreen>
   Widget _buildSliverAppBar(String status) {
     return SliverSafeArea(
       top: true,
-      sliver: SliverAppBar(
+      child: SliverAppBar(
         expandedHeight: 180,
         floating: false,
         pinned: true,
@@ -436,9 +432,7 @@ class _SellerOrderDetailScreenState extends State<SellerOrderDetailScreen>
           _buildInfoRow(
             Icons.receipt_long,
             'Order ID',
-            (order['orderNumber'] is String && (order['orderNumber'] as String).isNotEmpty)
-                ? OrderUtils.formatShortOrderNumber(order['orderNumber'])
-                : '#${widget.orderId.substring(0, (widget.orderId.length >= 8 ? 8 : widget.orderId.length)).toUpperCase()}',
+            OrderUtils.formatShortOrderNumber(widget.orderId),
           ),
           _buildInfoRow(
             Icons.store,
@@ -1066,218 +1060,6 @@ class _SellerOrderDetailScreenState extends State<SellerOrderDetailScreen>
         ),
       ),
     );
-  }
-
-  Widget _buildEftReviewCard(DocumentReference orderRef, Map<String, dynamic> order) {
-    final pm = (order['paymentMethod'] as String?)?.toLowerCase() ?? '';
-    final ps = (order['paymentStatus'] as String?)?.toLowerCase() ?? '';
-    final isEftAwaiting = (pm.contains('eft') || pm.contains('bank transfer')) && ps == 'awaiting_payment';
-    if (!isEftAwaiting) return const SizedBox.shrink();
-
-    final proofUrl = order['paymentProofUrl'] as String?;
-    final proofStatus = (order['paymentProofStatus'] as String?) ?? 'none';
-
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.08),
-            blurRadius: 15,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(Icons.verified, color: Colors.purple, size: 24),
-              const SizedBox(width: 8),
-              Text(
-                'EFT Proof Review',
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: Theme.of(context).colorScheme.onSurface,
-                ),
-              ),
-              const Spacer(),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: Colors.orange.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Text(
-                  'AWAITING PAYMENT',
-                  style: TextStyle(color: Colors.orange, fontWeight: FontWeight.bold, fontSize: 12),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          if (proofUrl != null && proofUrl.isNotEmpty) ...[
-            ClipRRect(
-              borderRadius: BorderRadius.circular(12),
-              child: Image.network(
-                proofUrl,
-                height: 180,
-                width: double.infinity,
-                fit: BoxFit.cover,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: proofStatus == 'approved' ? Colors.green.withOpacity(0.1)
-                        : proofStatus == 'rejected' ? Colors.red.withOpacity(0.1)
-                        : Colors.blue.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    proofStatus.toUpperCase(),
-                    style: TextStyle(
-                      color: proofStatus == 'approved' ? Colors.green
-                          : proofStatus == 'rejected' ? Colors.red
-                          : Colors.blue,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 12,
-                    ),
-                  ),
-                ),
-                const Spacer(),
-                TextButton.icon(
-                  onPressed: () async {
-                    final uri = Uri.parse(proofUrl);
-                    if (await canLaunchUrl(uri)) {
-                      await launchUrl(uri, mode: LaunchMode.externalApplication);
-                    }
-                  },
-                  icon: const Icon(Icons.open_in_new),
-                  label: const Text('Open'),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: _reviewingEft ? null : () => _approveEftPayment(orderRef),
-                    icon: _reviewingEft
-                        ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                        : const Icon(Icons.check),
-                    label: Text(_reviewingEft ? 'Approving...' : 'Mark as Paid'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.green,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: _reviewingEft ? null : () => _rejectEftPayment(orderRef),
-                    icon: const Icon(Icons.close, color: Colors.red),
-                    label: const Text('Reject', style: TextStyle(color: Colors.red)),
-                    style: OutlinedButton.styleFrom(
-                      side: const BorderSide(color: Colors.red),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ] else ...[
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.orange.withOpacity(0.06),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.orange.withOpacity(0.2)),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.info_outline, color: Colors.orange, size: 18),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'No payment proof uploaded by buyer yet. You can keep the order in awaiting payment.',
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.orange[800]),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Future<void> _approveEftPayment(DocumentReference orderRef) async {
-    setState(() { _reviewingEft = true; });
-    try {
-      await orderRef.update({
-        'paymentStatus': 'paid',
-        'status': 'confirmed',
-        'paymentProofStatus': 'approved',
-        'paidAt': FieldValue.serverTimestamp(),
-        'trackingUpdates': FieldValue.arrayUnion([{
-          'description': 'Payment verified (EFT) by seller',
-          'timestamp': FieldValue.serverTimestamp(),
-          'by': 'seller',
-        }]),
-      });
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Order marked as paid and confirmed.')),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error approving payment: $e')),
-        );
-      }
-    } finally {
-      if (mounted) setState(() { _reviewingEft = false; });
-    }
-  }
-
-  Future<void> _rejectEftPayment(DocumentReference orderRef) async {
-    setState(() { _reviewingEft = true; });
-    try {
-      await orderRef.update({
-        'paymentProofStatus': 'rejected',
-        'trackingUpdates': FieldValue.arrayUnion([{
-          'description': 'EFT proof rejected by seller. Please re-upload a clear proof of payment.',
-          'timestamp': FieldValue.serverTimestamp(),
-          'by': 'seller',
-        }]),
-      });
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Buyer notified to re-upload proof.')),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error rejecting proof: $e')),
-        );
-      }
-    } finally {
-      if (mounted) setState(() { _reviewingEft = false; });
-    }
   }
 
   String _getCustomerName(Map<String, dynamic> order) {

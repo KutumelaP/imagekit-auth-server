@@ -1,13 +1,19 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
+import '../theme/app_theme.dart';
+import '../widgets/safe_network_image.dart';
+import '../widgets/home_navigation_button.dart';
+import '../widgets/bottom_action_bar.dart';
+import '../screens/CheckoutScreen.dart';
 import '../providers/cart_provider.dart';
+import 'package:flutter/services.dart';
 
 import '../widgets/loading_widget.dart';
 import '../constants/app_constants.dart';
 import '../models/cart_item.dart';
-import 'CheckoutScreen.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import '../theme/app_theme.dart';
 import '../theme/app_theme.dart' show SafeUI, ResponsiveUtils;
 import '../widgets/bottom_action_bar.dart';
 
@@ -110,6 +116,7 @@ class _EnhancedCartScreenState extends State<EnhancedCartScreen>
         foregroundColor: AppTheme.angel,
         elevation: 0,
         centerTitle: false,
+        systemOverlayStyle: SystemUiOverlayStyle.light,
         title: SafeUI.safeText(
           'Shopping Cart',
           style: TextStyle(

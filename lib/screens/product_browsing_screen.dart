@@ -12,6 +12,7 @@ import '../services/performance_service.dart';
 // import '../constants/app_constants.dart';
 import '../providers/cart_provider.dart';
 import '../widgets/enhanced_filter_widget.dart';
+import 'package:flutter/services.dart';
 
 const String googleMapsApiKey = 'YOUR_GOOGLE_MAPS_API_KEY'; // TODO: Replace with your real key
 
@@ -301,6 +302,7 @@ class _ProductBrowsingScreenState extends State<ProductBrowsingScreen>
       backgroundColor: AppTheme.deepTeal,
       foregroundColor: Colors.white,
       iconTheme: const IconThemeData(color: Colors.white),
+      systemOverlayStyle: SystemUiOverlayStyle.light,
       title: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

@@ -29,6 +29,7 @@ class _CartScreenState extends State<CartScreen> {
         backgroundColor: AppTheme.deepTeal,
         foregroundColor: AppTheme.angel,
         elevation: 0,
+        systemOverlayStyle: SystemUiOverlayStyle.light,
         actions: [
           HomeNavigationButton(
             backgroundColor: AppTheme.deepTeal,
@@ -37,10 +38,8 @@ class _CartScreenState extends State<CartScreen> {
           const SizedBox(width: 16),
         ],
       ),
-      body: SafeArea(
-        bottom: true,
-        child: Consumer<CartProvider>(
-          builder: (context, cartProvider, child) {
+      body: Consumer<CartProvider>(
+        builder: (context, cartProvider, child) {
           final cartItems = cartProvider.items;
           
           if (cartItems.isEmpty) {
@@ -211,13 +210,13 @@ class _CartScreenState extends State<CartScreen> {
                     icon: const Icon(Icons.shopping_cart_checkout),
                     label: 'Checkout',
                     isPrimary: true,
+                    height: 50,
                   ),
                 ],
-              )
+              ),
             ],
           );
         },
-        ),
       ),
     );
   }

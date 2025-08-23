@@ -12,6 +12,7 @@ import '../widgets/message_status_indicator.dart';
 import '../widgets/home_navigation_button.dart';
 import '../services/awesome_notification_service.dart';
 import 'store_page.dart';
+import 'package:flutter/services.dart';
 
 class ChatScreen extends StatefulWidget {
   final String chatId;
@@ -602,6 +603,7 @@ class _ChatScreenState extends State<ChatScreen> {
         backgroundColor: AppTheme.deepTeal,
         foregroundColor: Colors.white,
         elevation: 0,
+        systemOverlayStyle: SystemUiOverlayStyle.light,
         actions: [
           // Search button
           IconButton(

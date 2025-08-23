@@ -23,9 +23,7 @@ import '../services/global_message_listener.dart';
 import '../widgets/notification_badge.dart';
 import '../widgets/chat_badge.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import '../widgets/safe_network_image.dart';
-import 'package:flutter/services.dart';
+import 'package:flutter/services.dart'; // Added import for SystemUiOverlayStyle
 
 class SimpleHomeScreen extends StatefulWidget {
   const SimpleHomeScreen({super.key});
@@ -35,17 +33,12 @@ class SimpleHomeScreen extends StatefulWidget {
 }
 
 class _SimpleHomeScreenState extends State<SimpleHomeScreen> 
-    with TickerProviderStateMixin, WidgetsBindingObserver {
+    with TickerProviderStateMixin {
   List<Map<String, dynamic>> _categories = [];
   bool _isLoading = true;
   String? _error;
-  // Chat listeners
-  StreamSubscription<QuerySnapshot>? _buyerChatsSub;
-  StreamSubscription<QuerySnapshot>? _sellerChatsSub;
-  final Map<String, StreamSubscription<QuerySnapshot>> _chatMessageSubs = {};
+  StreamSubscription<QuerySnapshot>? _messageListener;
   Map<String, String> _lastMessageIds = {}; // Track last message ID for each chat
-  final ScrollController _scrollController = ScrollController();
-  late final VoidCallback _scrollListener;
   
   // Smooth animations
   late AnimationController _fadeController;
@@ -56,7 +49,6 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addObserver(this);
     _initializeAnimations();
     _initializeScreen();
     _setupMessageListener();
@@ -65,42 +57,14 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
     // Start global message listener for chat notifications
     GlobalMessageListener().startListening();
     
-    // Initialize user provider data - only if not already loaded
+    // Initialize user provider data
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final userProvider = Provider.of<UserProvider>(context, listen: false);
-      // Only load user data if not already loaded to prevent refresh loops
-      if (userProvider.user == null && !userProvider.isLoading) {
-        print('🔍 DEBUG: Loading user data from home screen');
-        userProvider.loadUserData();
-      } else {
-        print('🔍 DEBUG: User data already loaded or loading, skipping');
-      }
+      userProvider.loadUserData();
     });
     
     // Request location permission when app starts
     _requestLocationPermission();
-
-    // Restore scroll position if available (inline to avoid order issues)
-    (() async {
-      try {
-        final prefs = await SharedPreferences.getInstance();
-        final offset = prefs.getDouble(_homeScrollKey);
-        if (offset != null) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (_scrollController.hasClients) {
-              _scrollController.jumpTo(offset);
-            }
-          });
-        }
-      } catch (_) {}
-    })();
-    _scrollListener = () async {
-      try {
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setDouble(_homeScrollKey, _scrollController.position.pixels);
-      } catch (_) {}
-    };
-    _scrollController.addListener(_scrollListener);
   }
   
   Future<void> _requestLocationPermission() async {
@@ -141,34 +105,30 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
     if (currentUser == null) return;
 
     // Listen for new messages in user's chats (simplified approach)
-    _buyerChatsSub?.cancel();
-    _buyerChatsSub = FirebaseFirestore.instance
+    _messageListener = FirebaseFirestore.instance
         .collection('chats')
         .where('buyerId', isEqualTo: currentUser.uid)
         .snapshots()
         .listen((snapshot) {
       for (final chatDoc in snapshot.docs) {
-        _attachChatListener(chatDoc.id, currentUser.uid);
+        _listenForNewMessagesInChat(chatDoc.id, currentUser.uid);
       }
     });
 
     // Also listen for seller chats
-    _sellerChatsSub?.cancel();
-    _sellerChatsSub = FirebaseFirestore.instance
+    FirebaseFirestore.instance
         .collection('chats')
         .where('sellerId', isEqualTo: currentUser.uid)
         .snapshots()
         .listen((snapshot) {
       for (final chatDoc in snapshot.docs) {
-        _attachChatListener(chatDoc.id, currentUser.uid);
+        _listenForNewMessagesInChat(chatDoc.id, currentUser.uid);
       }
     });
   }
 
-  void _attachChatListener(String chatId, String currentUserId) {
-    // Avoid duplicate listeners per chat
-    _chatMessageSubs.remove(chatId)?.cancel();
-    final sub = FirebaseFirestore.instance
+  void _listenForNewMessagesInChat(String chatId, String currentUserId) {
+    FirebaseFirestore.instance
         .collection('chats')
         .doc(chatId)
         .collection('messages')
@@ -190,7 +150,6 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
         }
       }
     });
-    _chatMessageSubs[chatId] = sub;
   }
 
   // void _showIncomingMessageNotification(Map<String, dynamic> messageData, String chatId) {
@@ -295,30 +254,8 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
   @override
   void dispose() {
     _fadeController.dispose();
-    _cancelAllChatListeners();
-    _scrollController.removeListener(_scrollListener);
-    _scrollController.dispose();
-    WidgetsBinding.instance.removeObserver(this);
+    _messageListener?.cancel(); // Cancel the listener
     super.dispose();
-  }
-
-  void _cancelAllChatListeners() {
-    _buyerChatsSub?.cancel();
-    _sellerChatsSub?.cancel();
-    for (final sub in _chatMessageSubs.values) {
-      sub.cancel();
-    }
-    _chatMessageSubs.clear();
-  }
-
-  // Pause/resume background listeners based on app lifecycle
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive) {
-      _cancelAllChatListeners();
-    } else if (state == AppLifecycleState.resumed) {
-      _setupMessageListener();
-    }
   }
 
   Future<void> _initializeScreen() async {
@@ -340,13 +277,6 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
       }
     }
   }
-
-  // ===== Scroll persistence =====
-  static const String _homeScrollKey = 'home_scroll_offset_v1';
-
-  // Backward-compat placeholders (not used after inline impl)
-  void _persistScrollPosition() {}
-  Future<void> _restoreScrollPosition() async {}
 
   Future<void> _loadCategories() async {
     try {
@@ -416,34 +346,22 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
       builder: (context, userProvider, child) {
     return Scaffold(
       backgroundColor: AppTheme.angel,
-          floatingActionButton: userProvider.isSeller
-              ? Builder(builder: (context){
-                  final pad = MediaQuery.of(context).padding.bottom;
-                  return Padding(
-                    padding: EdgeInsets.only(bottom: (pad > 0 ? pad : 12) + 8, right: 4),
-                    child: FloatingActionButton(
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const StunningProductUpload(
-                              storeId: 'all',
-                              storeName: 'My Store',
-                            ),
-                          ),
-                        );
-                      },
-                      backgroundColor: AppTheme.deepTeal,
-                      foregroundColor: Colors.white,
-                      child: const Icon(Icons.add_shopping_cart),
-                      tooltip: 'Upload Product',
-                    ),
-                  );
-                })
-              : null,
+          floatingActionButton: userProvider.isSeller ? FloatingActionButton(
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const StunningProductUpload(
+                        storeId: 'all',
+                        storeName: 'My Store',
+                      )),
+              );
+            },
+            backgroundColor: AppTheme.deepTeal,
+            foregroundColor: Colors.white,
+            child: const Icon(Icons.add_shopping_cart),
+            tooltip: 'Upload Product',
+          ) : null,
       body: SafeArea(
-        top: false,
-        bottom: true,
         child: FadeTransition(
           opacity: _fadeAnimation,
           child: _buildBody(),
@@ -637,15 +555,16 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
         return RefreshIndicator(
           onRefresh: _loadCategories,
           child: CustomScrollView(
-            controller: _scrollController,
             physics: const BouncingScrollPhysics(),
-            cacheExtent: 600,
             slivers: [
               _buildStunningAppBar(),
               _buildWelcomeHero(),
               _buildCategoriesHeaderSliver(),
               _buildCategoriesGridSliver(),
               _buildMyPurchasesSection(),
+              SliverToBoxAdapter(
+                child: SizedBox(height: MediaQuery.of(context).size.height * 0.05),
+              ),
             ],
           ),
         );
@@ -656,11 +575,8 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
   Widget _buildStunningAppBar() {
     return SliverSafeArea(
       top: true,
-      sliver: SliverAppBar(
+      child: SliverAppBar(
         pinned: true,
-        snap: false,
-        floating: false,
-        toolbarHeight: 64,
         backgroundColor: AppTheme.deepTeal,
         automaticallyImplyLeading: false,
         systemOverlayStyle: SystemUiOverlayStyle.light,
@@ -1698,20 +1614,53 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
       return _buildDefaultCategoryImage(categoryName);
     }
     
-    // Use SafeNetworkImage for downscaled, cached rendering
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        return ClipRRect(
-          borderRadius: BorderRadius.circular(8),
-          child: SafeNetworkImage(
-            imageUrl: imageUrl.toString(),
-            width: constraints.maxWidth.isFinite ? constraints.maxWidth : null,
-            height: constraints.maxHeight.isFinite ? constraints.maxHeight : null,
-            fit: BoxFit.cover,
-            borderRadius: BorderRadius.circular(8),
-          ),
-        );
-      },
+    // Try to load the original image first
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(8),
+      child: Image.network(
+        imageUrl.toString(),
+        width: double.infinity,
+        height: double.infinity,
+        fit: BoxFit.cover,
+        errorBuilder: (context, error, stackTrace) {
+          print('🔍 DEBUG: Category image failed to load: $categoryName - $error');
+          // Try to use default image for specific categories
+          return _buildDefaultCategoryImage(categoryName);
+        },
+        loadingBuilder: (context, child, loadingProgress) {
+          if (loadingProgress == null) return child;
+          return Container(
+            width: double.infinity,
+            height: double.infinity,
+            decoration: BoxDecoration(
+              color: AppTheme.breeze.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Center(
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                valueColor: AlwaysStoppedAnimation<Color>(AppTheme.deepTeal),
+              ),
+            ),
+          );
+        },
+        // Add cache headers for better performance
+        headers: const {
+          'Cache-Control': 'max-age=3600',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        },
+        // Add frameBuilder for better loading experience
+        frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
+          if (wasSynchronouslyLoaded) return child;
+          return AnimatedOpacity(
+            opacity: frame == null ? 0 : 1,
+            duration: const Duration(milliseconds: 300),
+            child: child,
+          );
+        },
+        // Add retry mechanism for mobile
+        gaplessPlayback: true,
+      ),
     );
   }
 
@@ -1719,23 +1668,48 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
     final defaultImageUrl = _getDefaultCategoryImage(categoryName);
     print('🔍 DEBUG: Loading default image for category: $categoryName - URL: $defaultImageUrl');
     
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        return ClipRRect(
-          borderRadius: BorderRadius.circular(8),
-          child: SafeNetworkImage(
-            imageUrl: defaultImageUrl,
-            width: constraints.maxWidth.isFinite ? constraints.maxWidth : null,
-            height: constraints.maxHeight.isFinite ? constraints.maxHeight : null,
-            fit: BoxFit.cover,
-            borderRadius: BorderRadius.circular(8),
-            errorBuilder: (context, error, stack) {
-              print('🔍 DEBUG: Default image also failed for category: $categoryName - $error');
-              return _buildCategoryIconFallback(categoryName);
-            },
-          ),
-        );
-      },
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(8),
+      child: Image.network(
+        defaultImageUrl,
+        width: double.infinity,
+        height: double.infinity,
+        fit: BoxFit.cover,
+        errorBuilder: (context, error, stackTrace) {
+          print('🔍 DEBUG: Default image also failed for category: $categoryName - $error');
+          return _buildCategoryIconFallback(categoryName);
+        },
+        loadingBuilder: (context, child, loadingProgress) {
+          if (loadingProgress == null) return child;
+          return Container(
+            width: double.infinity,
+            height: double.infinity,
+            decoration: BoxDecoration(
+              color: AppTheme.breeze.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Center(
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                valueColor: AlwaysStoppedAnimation<Color>(AppTheme.deepTeal),
+              ),
+            ),
+          );
+        },
+        headers: const {
+          'Cache-Control': 'max-age=3600',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        },
+        frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
+          if (wasSynchronouslyLoaded) return child;
+          return AnimatedOpacity(
+            opacity: frame == null ? 0 : 1,
+            duration: const Duration(milliseconds: 300),
+            child: child,
+          );
+        },
+        gaplessPlayback: true,
+      ),
     );
   }
 

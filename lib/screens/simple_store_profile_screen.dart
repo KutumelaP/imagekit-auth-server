@@ -10,6 +10,7 @@ import 'dart:ui' show ImageByteFormat;
 import 'dart:async';
 import '../theme/app_theme.dart';
 import '../widgets/safe_network_image.dart';
+import '../widgets/bottom_action_bar.dart';
 import 'store_reviews_page.dart';
 // Removed zoom view import
 import 'package:url_launcher/url_launcher.dart';
