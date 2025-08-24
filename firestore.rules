@@ -83,6 +83,10 @@ service cloud.firestore {
         allow create: if isOwner(userId) || isAdmin();
         allow update, delete: if isAdmin();
       }
+      // Allow admin functions to delete all subcollections
+      match /{document=**} {
+        allow read, write: if isAdmin();
+      }
       match /kyc/{docId} {
         allow read, write: if isOwner(userId) || isAdmin();
       }
