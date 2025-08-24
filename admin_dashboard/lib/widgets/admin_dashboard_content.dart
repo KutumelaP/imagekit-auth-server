@@ -70,7 +70,7 @@ class _AdminDashboardContentState extends State<AdminDashboardContent> {
   Widget _getCachedSection(int index) {
     if (_cachedSectionWidgets[index] == null) {
       _cachedSectionWidgets[index] = KeyedSubtree(
-        key: PageStorageKey('section_' + index.toString()),
+        key: ValueKey('section_' + index.toString()),
         child: _sectionWidget(index),
       );
     }
