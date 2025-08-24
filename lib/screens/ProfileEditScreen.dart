@@ -66,6 +66,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
   // Delivery range variables
   double _deliveryRange = 50.0; // Default 50km range (0-1000 range slider)
   final _customRangeController = TextEditingController();
+  String? _selectedStoreCategory; // Store category for delivery range caps
 
   double _getCategoryDeliveryCapFromData(Map<String, dynamic> data) {
     final cat = (data['storeCategory'] ?? '').toString().toLowerCase();
@@ -121,6 +122,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
       // Apply capped default
       final cap = _getCategoryDeliveryCapFromData(data);
       _deliveryRange = (data['deliveryRange'] ?? cap).toDouble().clamp(0.0, cap);
+      _selectedStoreCategory = data['storeCategory']; // Load store category
       
       // Load store settings for sellers
       if (_isSeller) {
@@ -796,6 +798,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
       if (_profileImageUrl != null) 'profileImageUrl': _profileImageUrl,
       'storyPhotoUrls': _storyPhotoUrls,
       'storyVideoUrl': _storyVideoUrl,
+      'storeCategory': _selectedStoreCategory, // Save store category
       
       // Store settings for sellers
       if (_isSeller) 'isStoreOpen': _isStoreOpen,
@@ -2032,53 +2035,53 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                         ),
                       ],
                     ),
+                    const SizedBox(height: 24),
+                    ElevatedButton(
+                      onPressed: _loading ? null : _saveProfile,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppTheme.deepTeal,
+                        foregroundColor: AppTheme.angel,
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        elevation: 2,
+                      ),
+                      child: _loading
+                          ? SizedBox(
+                              height: 20,
+                              width: 20,
+                              child: CircularProgressIndicator(
+                                color: AppTheme.angel,
+                                strokeWidth: 2,
+                              ),
+                            )
+                          : const Text(
+                              'Save Changes',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                    ),
+                    const SizedBox(height: 32),
+                    Divider(),
+                    const SizedBox(height: 16),
+                    ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.red,
+                        foregroundColor: AppTheme.angel,
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      icon: Icon(Icons.delete_forever, color: AppTheme.angel),
+                      label: const Text('Delete Account'),
+                      onPressed: _loading ? null : _deleteAccount,
+                    ),
                   ],
-                  const SizedBox(height: 24),
-                  ElevatedButton(
-                    onPressed: _loading ? null : _saveProfile,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppTheme.deepTeal,
-                      foregroundColor: AppTheme.angel,
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      elevation: 2,
-                    ),
-                    child: _loading
-                        ? SizedBox(
-                            height: 20,
-                            width: 20,
-                            child: CircularProgressIndicator(
-                              color: AppTheme.angel,
-                              strokeWidth: 2,
-                            ),
-                          )
-                        : const Text(
-                            'Save Changes',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                  ),
-                  const SizedBox(height: 32),
-                  Divider(),
-                  const SizedBox(height: 16),
-                  ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.red,
-                      foregroundColor: AppTheme.angel,
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                    icon: Icon(Icons.delete_forever, color: AppTheme.angel),
-                    label: const Text('Delete Account'),
-                    onPressed: _loading ? null : _deleteAccount,
-                  ),
-                ],
+                ),
               ),
             ),
     );
