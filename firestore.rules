@@ -77,6 +77,12 @@ service cloud.firestore {
       match /payout/{docId} {
         allow read, write: if isOwner(userId) || isAdmin();
       }
+      // Seller payout requests (user-scoped view)
+      match /payouts/{payoutId} {
+        allow read: if isOwner(userId) || isAdmin();
+        allow create: if isOwner(userId) || isAdmin();
+        allow update, delete: if isAdmin();
+      }
       match /kyc/{docId} {
         allow read, write: if isOwner(userId) || isAdmin();
       }
@@ -283,5 +289,30 @@ service cloud.firestore {
     match /escrow_stats/{id} { allow read, write: if isAdmin(); }
     match /admin_notifications/{id} { allow read, write: if isAdmin(); }
     match /system_metrics/{id} { allow read, write: if isAdmin(); }
+
+    // Global payouts (admin control surface)
+    match /payouts/{payoutId} {
+      allow read: if isAdmin() || (isAuthenticated() && resource.data.sellerId == request.auth.uid);
+      allow create, update, delete: if isAdmin();
+    }
+
+    // Platform receivables (COD/settlements)
+    match /platform_receivables/{sellerId} {
+      allow read: if isAdmin() || isOwner(sellerId);
+      match /entries/{entryId} {
+        allow read: if isAdmin() || isOwner(sellerId);
+        // Only server (admin functions) can mutate; sellers cannot forge availability/settlement
+        allow create: if isAdmin();
+        allow update: if isAdmin();
+        allow delete: if isAdmin();
+      }
+      match /settlements/{settlementId} {
+        allow read: if isAdmin() || isOwner(sellerId);
+        allow create, update, delete: if isAdmin();
+      }
+    }
+
+    // Push status (admin-only diagnostics)
+    match /push_status/{id} { allow read: if isAdmin(); }
   }
 }

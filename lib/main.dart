@@ -38,6 +38,7 @@ import 'screens/CheckoutScreen.dart';
 import 'screens/AdminRoute.dart';
 import 'screens/StoreProfileRouteLoader.dart';
 import 'screens/MyStoresScreen.dart';
+import 'screens/SellerPayoutsScreen.dart';
 
 import 'dart:async';
 import 'utils/safari_optimizer.dart';
@@ -167,6 +168,7 @@ class MyApp extends StatelessWidget {
           '/security-settings': (context) => const SecuritySettingsScreen(),
           '/kyc': (context) => const KycUploadScreen(),
           '/my-stores': (context) => const MyStoresScreen(),
+          '/seller-payouts': (context) => const SellerPayoutsScreen(),
         },
         onGenerateRoute: (settings) {
           // Handle routes with parameters

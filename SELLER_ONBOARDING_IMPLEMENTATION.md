@@ -27,17 +27,19 @@ Created a comprehensive **6-step onboarding process** that sellers **must comple
 
 #### **Step 2: How Payments Work**
 - Customers pay via PayFast (secure)
-- You receive 90% of earnings within 24 hours
-- 10% held for 30 days (protection against returns)
-- Platform fees: 5% (orders R50+) / 3% (orders <R50)
+- You receive 100% of earnings after order completion
+- No holdback period - money available immediately
+- Platform fees handled separately by admin
 - PayFast fees: 3.5% + R2 per transaction
+- Request payouts when you want (minimum R100)
 
 #### **Step 3: Return & Refund Policy**
 - 7-day return window for most products
 - No returns for food items (safety)
 - Returns must be valid (defective, wrong item, etc.)
-- Holdback covers return costs automatically
+- Returns affect your available balance directly
 - Platform mediates all return disputes
+- Admin reviews all returns for fairness
 
 #### **Step 4: Your Responsibilities**
 - Provide accurate product descriptions
@@ -51,7 +53,9 @@ Created a comprehensive **6-step onboarding process** that sellers **must comple
 - Seller delivery (your own delivery)
 - Hybrid delivery (both options)
 - Pickup only (customers collect)
+- Nationwide pickup (Pargo/PAXI services)
 - Set your own delivery fees and ranges
+- Category-aware delivery caps (food: 20km, others: 50km)
 
 #### **Step 6: Support & Success**
 - 24/7 customer support
@@ -111,7 +115,7 @@ Login → "Register as Seller" → Comprehensive Onboarding (6 steps) → Regist
 ### **💰 Financial Transparency**
 - **Payment Timeline**: When sellers receive money
 - **Fee Structure**: Platform and PayFast fees clearly explained
-- **Holdback System**: 10% protection mechanism
+- **Payment System**: 100% available after order completion
 - **Payment Methods**: PayFast integration details
 
 ### **🔄 Return Policy**
@@ -125,6 +129,7 @@ Login → "Register as Seller" → Comprehensive Onboarding (6 steps) → Regist
 - **Seller Delivery**: Self-managed delivery
 - **Hybrid Mode**: Both options available
 - **Pickup Only**: Customer collection option
+- **Nationwide Pickup**: Pargo/PAXI services available
 
 ### **🎯 Responsibilities**
 - **Product Accuracy**: Honest descriptions required

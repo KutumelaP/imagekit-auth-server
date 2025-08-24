@@ -211,22 +211,17 @@ class _UserManagementTableState extends State<UserManagementTable> {
   }
 
   Future<void> _deleteUser(DocumentSnapshot doc) async {
-    final userData = doc.data() as Map<String, dynamic>;
     final docId = doc.id;
-    await doc.reference.delete();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('User deleted'),
-        action: SnackBarAction(
-          label: 'Undo',
-          onPressed: () async {
-            await FirebaseFirestore.instance.collection('users').doc(docId).set(userData);
-          },
-        ),
-        duration: Duration(seconds: 5),
-      ),
-    );
-    setState(() {});
+    final callable = FirebaseFunctions.instance.httpsCallable('adminDeleteUser');
+    try {
+      await callable.call({'userId': docId});
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('User account deleted (Auth + Firestore)')));
+      setState(() {});
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Delete failed: $e')));
+    }
   }
 
   @override

@@ -733,6 +733,8 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
                 }
               } else if (value == 'profile') {
                 Navigator.push(context, MaterialPageRoute(builder: (_) => const ProfileEditScreen()));
+              } else if (value == 'seller_payouts') {
+                Navigator.pushNamed(context, '/seller-payouts');
               } else if (value == 'register') {
                 print('🔍 DEBUG: Start Selling button pressed');
                 print('🔍 DEBUG: Navigating to SellerRegistrationScreen');
@@ -953,6 +955,42 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
                             ),
                             Text(
                               'Update your information',
+                              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                color: AppTheme.cloud,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                PopupMenuItem(
+                  value: 'seller_payouts',
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: AppTheme.deepTeal.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Icon(Icons.account_balance_wallet, size: 18, color: AppTheme.deepTeal),
+                        ),
+                        const SizedBox(width: 12),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Earnings & Payouts',
+                              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            Text(
+                              'View balance, request payout',
                               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                                 color: AppTheme.cloud,
                               ),

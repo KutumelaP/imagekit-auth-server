@@ -37,6 +37,7 @@ import 'paxi_pricing_management.dart';
 import 'risk_review_screen.dart';
 import 'kyc_review_list.dart';
 import 'kyc_overview_widget.dart';
+import 'admin_payouts_section.dart';
 
 class AdminDashboardContent extends StatefulWidget {
   final String adminEmail;
@@ -110,6 +111,7 @@ class _AdminDashboardContentState extends State<AdminDashboardContent> {
     'Risk Review',
     'KYC Review',
     'KYC Overview',
+    'Payouts',
   ];
 
   @override
@@ -436,6 +438,7 @@ class _AdminDashboardContentState extends State<AdminDashboardContent> {
         case 30: return const RiskReviewScreen(); // Risk Review
         case 31: return const KycReviewList(); // KYC Review
         case 32: return const KycOverviewWidget(); // KYC Overview
+        case 33: return const AdminPayoutsSection(); // Payouts
       default: return const SizedBox();
     }
   }

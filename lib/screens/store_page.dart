@@ -517,11 +517,12 @@ class _StoreSelectionScreenState extends State<StoreSelectionScreen> {
   // Helper method to parse coordinates from various types
   double? _parseCoordinate(dynamic value) {
     if (value == null) return null;
-    if (value is double) return value;
-    if (value is int) return value.toDouble();
+    if (value is num) return value.toDouble();
     if (value is String) {
-      final parsed = double.tryParse(value);
-      return parsed;
+      // Trim whitespace and normalize comma decimals
+      final normalized = value.trim().replaceAll(',', '.');
+      if (normalized.isEmpty) return null;
+      return double.tryParse(normalized);
     }
     return null;
   }

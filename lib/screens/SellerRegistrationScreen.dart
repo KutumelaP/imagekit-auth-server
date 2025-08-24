@@ -786,6 +786,61 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
       return;
     }
 
+    // Service selection validation: at least one service must be enabled
+    final bool anyServiceEnabled = _isDeliveryAvailable || _paxiEnabled || _pargoEnabled;
+    if (!anyServiceEnabled) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Choose at least one service: Delivery or PAXI/Pargo'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    // Food category requires local delivery to be visible (nationwide pickup is non-food only)
+    bool _isFoodCat(String? c) {
+      final s = (c ?? '').toLowerCase();
+      return s.contains('food') || s.contains('meal') || s.contains('bak') || s.contains('pastr') || s.contains('dessert') || s.contains('beverage') || s.contains('drink') || s.contains('coffee') || s.contains('tea') || s.contains('fruit') || s.contains('vegetable') || s.contains('produce') || s.contains('snack');
+    }
+    if (_isFoodCat(_selectedStoreCategory) && !_isDeliveryAvailable) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Food stores must enable local delivery to be visible.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    // If delivery is enabled, coordinates are required for distance-based discovery
+    if (_isDeliveryAvailable && (_latitude == null || _longitude == null)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Location is required for delivery. Please enable location and set your store location.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    // Enforce category delivery caps (Food: 20km, Non-food: 50km)
+    double _capForCategory(String? c) {
+      return _isFoodCat(c) ? 20.0 : 50.0;
+    }
+    final double cap = _capForCategory(_selectedStoreCategory);
+    if (_deliveryRange > cap) {
+      setState(() {
+        _deliveryRange = cap;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Delivery range capped to ${cap.toStringAsFixed(0)} km for your category.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+    }
+
     // Additional validation for PAXI service
     if (_paxiEnabled && (_latitude == null || _longitude == null)) {
       ScaffoldMessenger.of(context).showSnackBar(

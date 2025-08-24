@@ -151,6 +151,39 @@ exports.payfastNotify = functions.https.onRequest(async (req, res) => {
             timestamp: admin.firestore.FieldValue.serverTimestamp(),
           });
         }
+
+        // 3) Ledger entry (escrow/receivable) for online (PayFast) payments
+        try {
+          if (sellerId && Number(totalPrice) > 0) {
+            const commissionPct = Number(process.env.PLATFORM_COMMISSION_PCT || 0.1);
+            const gross = Math.round(Number(totalPrice) * 100) / 100;
+            const commission = Math.round(gross * commissionPct * 100) / 100;
+            const net = Math.round((gross - commission) * 100) / 100;
+            const eref = db
+              .collection('platform_receivables')
+              .doc(sellerId)
+              .collection('entries')
+              .doc(orderId);
+            await eref.set(
+              {
+                orderId,
+                orderRef: db.collection('orders').doc(orderId),
+                paymentGateway: 'payfast',
+                pfPaymentId: pfPaymentId || null,
+                source: 'online',
+                status: 'held', // becomes 'available' on delivery/confirmation
+                gross,
+                commission,
+                net,
+                createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+              },
+              { merge: true }
+            );
+          }
+        } catch (e) {
+          console.warn('[ledger] Failed to write receivable entry', e);
+        }
       } catch (e) {
         console.warn('notify on paid error', e);
       }
@@ -1400,6 +1433,39 @@ exports.autoCancelStaleEftOrders = functions.pubsub.schedule('every 24 hours').o
   }
 });
 
+// Optional: auto-release receivables after holdback days (OFF by default; enable via env)
+exports.autoReleaseReceivables = functions.pubsub.schedule('every 24 hours').onRun(async () => {
+  try {
+    const enabled = String(process.env.AUTO_RELEASE_ENABLED || 'false').toLowerCase() === 'true';
+    if (!enabled) return null;
+    const holdbackDays = Number(process.env.HOLDBACK_DAYS || 7);
+    const cutoff = new Date(Date.now() - holdbackDays * 24 * 60 * 60 * 1000);
+    // Find entries that are available and older than cutoff but not locked/settled
+    const sellersSnap = await db.collection('platform_receivables').get();
+    let flipped = 0;
+    for (const sellerDoc of sellersSnap.docs) {
+      const entriesSnap = await sellerDoc.ref
+        .collection('entries')
+        .where('status', '==', 'available')
+        .where('availableAt', '<=', admin.firestore.Timestamp.fromDate(cutoff))
+        .get();
+      const batch = db.batch();
+      entriesSnap.docs.forEach((e) => {
+        batch.update(e.ref, { status: 'available', // already available; retained for extensibility
+          updatedAt: admin.firestore.FieldValue.serverTimestamp() });
+      });
+      if (entriesSnap.size > 0) {
+        await batch.commit();
+        flipped += entriesSnap.size;
+      }
+    }
+    console.log(`[autoRelease] verified ${flipped} entries remain available after holdback`);
+  } catch (e) {
+    console.error('[autoRelease] error', e);
+  }
+  return null;
+});
+
 // Notify seller via branded email when admin approves their store
 exports.onSellerApproved = functions.runWith({ timeoutSeconds: 60, memory: '256MB' }).firestore
   .document('users/{userId}')
@@ -1472,6 +1538,31 @@ exports.onSellerApproved = functions.runWith({ timeoutSeconds: 60, memory: '256M
     }
   });
 
+// === Flip receivable to available when order is finalized (delivered/completed/confirmed) ===
+exports.onOrderFinalized = functions.runWith({ timeoutSeconds: 60, memory: '256MB' }).firestore
+  .document('orders/{orderId}')
+  .onUpdate(async (change, context) => {
+    try {
+      const before = change.before.data() || {};
+      const after = change.after.data() || {};
+      const finalized = ['delivered', 'completed', 'confirmed'];
+      const wasFinal = finalized.includes(String(before.status || '').toLowerCase());
+      const isFinal = finalized.includes(String(after.status || '').toLowerCase());
+      if (isFinal && !wasFinal) {
+        const sellerId = after.sellerId;
+        const orderId = context.params.orderId;
+        if (sellerId) {
+          const eref = db.collection('platform_receivables').doc(sellerId).collection('entries').doc(orderId);
+          await eref.set({ status: 'available', availableAt: admin.firestore.FieldValue.serverTimestamp(), updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
+        }
+      }
+      return null;
+    } catch (e) {
+      console.error('[ledger] onOrderFinalized failed', e);
+      return null;
+    }
+  });
+
 // === Set user custom claims based on Firestore role ===
 exports.setUserCustomClaims = functions.https.onCall(async (data, context) => {
   try {
@@ -1523,4 +1614,516 @@ exports.setUserCustomClaims = functions.https.onCall(async (data, context) => {
     console.error('setUserCustomClaims error:', e);
     throw new functions.https.HttpsError('internal', `Failed to set custom claims: ${e.message}`);
   }
+});
+
+// ===== Seller payouts (bank details already stored under users/{uid}/payout/bank) =====
+const COMMISSION_PCT = Number(process.env.PLATFORM_COMMISSION_PCT || 0.1); // 10% default
+const MIN_PAYOUT_AMOUNT = Number(process.env.MIN_PAYOUT_AMOUNT || 50); // R50 default
+
+function toRand(n) { return Math.round(Number(n || 0) * 100) / 100; }
+
+// Ledger-driven available balance: sum receivable entries marked 'available' and not locked
+async function computeSellerAvailableBalance(sellerId) {
+  const entriesSnap = await db
+    .collection('platform_receivables')
+    .doc(sellerId)
+    .collection('entries')
+    .where('status', '==', 'available')
+    .get();
+  let gross = 0;
+  let commission = 0;
+  let net = 0;
+  const orderIds = [];
+  const entryIds = [];
+  entriesSnap.docs.forEach((doc) => {
+    const e = doc.data() || {};
+    // Skip if locked to a payout
+    if (e.payoutLockId) return;
+    const g = Number(e.gross || 0);
+    const c = Number(e.commission || 0);
+    const n = Number(e.net || (g - c));
+    if (n > 0) {
+      gross += g;
+      commission += c;
+      net += n;
+      if (e.orderId) orderIds.push(e.orderId);
+      entryIds.push(doc.id);
+    }
+  });
+  return { gross: toRand(gross), commission: toRand(commission), net: toRand(net), count: entryIds.length, orderIds, entryIds };
+}
+
+// Internal: get eligible receivable entries for seller (available and not locked)
+async function getEligibleReceivablesForSeller(sellerId) {
+  const snap = await db
+    .collection('platform_receivables')
+    .doc(sellerId)
+    .collection('entries')
+    .where('status', '==', 'available')
+    .get();
+  const entryIds = [];
+  let gross = 0, commission = 0, net = 0;
+  const orders = [];
+  snap.docs.forEach((d) => {
+    const e = d.data() || {};
+    if (e.payoutLockId) return; // skip locked
+    const g = Number(e.gross || 0);
+    const c = Number(e.commission || 0);
+    const n = Number(e.net || (g - c));
+    if (n > 0) {
+      entryIds.push(d.id);
+      gross += g; commission += c; net += n;
+      if (e.orderId) orders.push(e.orderId);
+    }
+  });
+  return { entryIds, gross: toRand(gross), commission: toRand(commission), net: toRand(net), orderIds: orders };
+}
+
+exports.getSellerAvailableBalance = functions.https.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError('unauthenticated', 'Sign in required');
+  }
+  const callerUid = context.auth.uid;
+  const targetUid = String(data?.userId || callerUid);
+
+  // Only admin can query others' balances
+  if (targetUid !== callerUid) {
+    const isAdmin = context.auth.token?.admin === true || context.auth.token?.role === 'admin';
+    if (!isAdmin) throw new functions.https.HttpsError('permission-denied', 'Not allowed');
+  }
+
+  const result = await computeSellerAvailableBalance(targetUid);
+  return { ...result, minPayoutAmount: MIN_PAYOUT_AMOUNT, commissionPct: COMMISSION_PCT };
+});
+
+exports.requestPayout = functions.https.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError('unauthenticated', 'Sign in required');
+  }
+  const sellerId = context.auth.uid;
+  // Prevent concurrent requests and duplicates
+  const lockRef = db.collection('payout_locks').doc(sellerId);
+  const existingLock = await lockRef.get();
+  if (existingLock.exists) {
+    throw new functions.https.HttpsError('resource-exhausted', 'Please wait before trying again');
+  }
+  const inProgress = await db.collection('payouts')
+    .where('sellerId', '==', sellerId)
+    .where('status', 'in', ['requested','processing'])
+    .limit(1)
+    .get();
+  if (!inProgress.empty) {
+    throw new functions.https.HttpsError('failed-precondition', 'A payout request is already in progress');
+  }
+  const { net, gross, commission, orderIds, entryIds, count } = await computeSellerAvailableBalance(sellerId);
+  if (net <= 0 || count === 0) {
+    throw new functions.https.HttpsError('failed-precondition', 'No funds available to payout');
+  }
+  if (net < MIN_PAYOUT_AMOUNT) {
+    throw new functions.https.HttpsError('failed-precondition', `Minimum payout amount is R${MIN_PAYOUT_AMOUNT.toFixed(2)}`);
+  }
+
+  // Fetch bank snapshot
+  const bankDoc = await db.collection('users').doc(sellerId).collection('payout').doc('bank').get();
+  if (!bankDoc.exists) {
+    throw new functions.https.HttpsError('failed-precondition', 'Bank details missing');
+  }
+  const bank = bankDoc.data();
+
+  // Create payout request and lock orders to this payout
+  const payoutRef = db.collection('payouts').doc();
+  const userPayoutRef = db.collection('users').doc(sellerId).collection('payouts').doc(payoutRef.id);
+
+  await db.runTransaction(async (tx) => {
+    const now = admin.firestore.FieldValue.serverTimestamp();
+    // short-lived lock
+    tx.set(lockRef, { createdAt: now }, { merge: true });
+    const base = {
+      id: payoutRef.id,
+      sellerId,
+      currency: 'ZAR',
+      amount: net,
+      gross,
+      commission,
+      status: 'requested',
+      orderIds,
+      entryIds,
+      bankSnapshot: {
+        accountHolder: bank.accountHolder || null,
+        bankName: bank.bankName || null,
+        accountNumber: bank.accountNumber || null,
+        branchCode: bank.branchCode || null,
+        accountType: bank.accountType || null,
+      },
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    tx.set(payoutRef, base, { merge: true });
+    tx.set(userPayoutRef, base, { merge: true });
+
+    // Lock receivable entries to this payout to prevent double counting
+    if (Array.isArray(entryIds)) {
+      entryIds.forEach((eid) => {
+        const eref = db.collection('platform_receivables').doc(sellerId).collection('entries').doc(eid);
+        tx.set(eref, { status: 'locked', payoutLockId: payoutRef.id, lockedAt: now, updatedAt: now }, { merge: true });
+      });
+    }
+    // Mark orders for UI traceability (best effort)
+    if (Array.isArray(orderIds)) {
+      orderIds.forEach((id) => {
+        const oref = db.collection('orders').doc(id);
+        tx.set(oref, { payoutRequestId: payoutRef.id, updatedAt: now }, { merge: true });
+      });
+    }
+  });
+
+  // best-effort lock expiry
+  try { setTimeout(() => lockRef.delete().catch(() => {}), 30000); } catch (_) {}
+
+  return { ok: true, payoutId: payoutRef.id, amount: net, orderCount: count };
+});
+
+exports.adminUpdatePayoutStatus = functions.https.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError('unauthenticated', 'Sign in required');
+  }
+  const isAdmin = context.auth.token?.admin === true || context.auth.token?.role === 'admin';
+  if (!isAdmin) throw new functions.https.HttpsError('permission-denied', 'Admin only');
+
+  const payoutId = String(data?.payoutId || '').trim();
+  const status = String(data?.status || '').toLowerCase(); // requested|processing|paid|failed|cancelled
+  const reference = String(data?.reference || '').trim() || null;
+  if (!payoutId || !status) {
+    throw new functions.https.HttpsError('invalid-argument', 'payoutId and status are required');
+  }
+  const allowed = ['requested','processing','paid','failed','cancelled'];
+  if (!allowed.includes(status)) {
+    throw new functions.https.HttpsError('invalid-argument', 'Invalid status');
+  }
+
+  const pref = db.collection('payouts').doc(payoutId);
+  const psnap = await pref.get();
+  if (!psnap.exists) throw new functions.https.HttpsError('not-found', 'Payout not found');
+  const pdata = psnap.data() || {};
+  const sellerId = pdata.sellerId;
+  const userPayoutRef = db.collection('users').doc(sellerId).collection('payouts').doc(payoutId);
+
+  await db.runTransaction(async (tx) => {
+    const now = admin.firestore.FieldValue.serverTimestamp();
+    tx.set(pref, { status, reference, updatedAt: now }, { merge: true });
+    tx.set(userPayoutRef, { status, reference, updatedAt: now }, { merge: true });
+
+    if (status === 'paid') {
+      const orderIds = Array.isArray(pdata.orderIds) ? pdata.orderIds : [];
+      const entryIds = Array.isArray(pdata.entryIds) ? pdata.entryIds : [];
+      orderIds.forEach(id => {
+        const oref = db.collection('orders').doc(id);
+        tx.set(oref, { disbursedToSeller: true, disbursedAt: now, payoutId }, { merge: true });
+      });
+      if (sellerId && entryIds.length > 0) {
+        entryIds.forEach((eid) => {
+          const eref = db.collection('platform_receivables').doc(sellerId).collection('entries').doc(eid);
+          tx.set(eref, { status: 'settled', settledAt: now, payoutId, updatedAt: now }, { merge: true });
+        });
+      }
+      if (sellerId && typeof pdata.amount === 'number') {
+        const sref = db.collection('platform_receivables').doc(sellerId).collection('settlements').doc();
+        tx.set(sref, {
+          method: 'payout_manual',
+          amountPaid: Number(pdata.amount) || 0,
+          payoutId,
+          reference: reference || null,
+          createdAt: now,
+        });
+      }
+    }
+
+    if (status === 'failed' || status === 'cancelled') {
+      const orderIds = Array.isArray(pdata.orderIds) ? pdata.orderIds : [];
+      const entryIds = Array.isArray(pdata.entryIds) ? pdata.entryIds : [];
+      orderIds.forEach(id => {
+        const oref = db.collection('orders').doc(id);
+        tx.set(oref, { payoutRequestId: admin.firestore.FieldValue.delete(), updatedAt: now }, { merge: true });
+      });
+      if (sellerId && entryIds.length > 0) {
+        entryIds.forEach((eid) => {
+          const eref = db.collection('platform_receivables').doc(sellerId).collection('entries').doc(eid);
+          tx.set(eref, { status: 'available', payoutLockId: admin.firestore.FieldValue.delete(), updatedAt: now }, { merge: true });
+        });
+      }
+    }
+  });
+
+  return { ok: true };
+});
+
+// === Admin: delete a user (Auth + Firestore doc + subcollections + tokens)
+exports.adminDeleteUser = functions.https.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError('unauthenticated', 'Sign in required');
+  }
+  const isAdminCaller = context.auth.token?.admin === true || context.auth.token?.role === 'admin';
+  if (!isAdminCaller) {
+    throw new functions.https.HttpsError('permission-denied', 'Admin only');
+  }
+  const userId = String(data?.userId || '').trim();
+  if (!userId) {
+    throw new functions.https.HttpsError('invalid-argument', 'userId is required');
+  }
+
+  // 1) Delete subcollections under users/{uid}
+  const userRef = db.collection('users').doc(userId);
+  try {
+    const subcollections = await userRef.listCollections();
+    for (const col of subcollections) {
+      // Delete in batches of 500
+      let lastDoc = null;
+      for (;;) {
+        let q = col.limit(500);
+        if (lastDoc) q = q.startAfter(lastDoc);
+        const snap = await q.get();
+        if (snap.empty) break;
+        const batch = db.batch();
+        snap.docs.forEach((d) => batch.delete(d.ref));
+        await batch.commit();
+        lastDoc = snap.docs[snap.docs.length - 1];
+        if (snap.size < 500) break;
+      }
+    }
+  } catch (e) {
+    console.warn('[adminDeleteUser] subcollections cleanup failed (continuing):', e?.message || e);
+  }
+
+  // 2) Delete top-level FCM tokens owned by user
+  try {
+    const tokenSnap = await db.collection('fcm_tokens').where('userId', '==', userId).get();
+    if (!tokenSnap.empty) {
+      const batch = db.batch();
+      tokenSnap.docs.forEach((d) => batch.delete(d.ref));
+      await batch.commit();
+    }
+  } catch (e) {
+    console.warn('[adminDeleteUser] token cleanup failed (continuing):', e?.message || e);
+  }
+
+  // 3) Delete the user document
+  try {
+    await userRef.delete();
+  } catch (e) {
+    console.warn('[adminDeleteUser] user doc delete failed:', e?.message || e);
+  }
+
+  // 4) Delete Auth user
+  try {
+    await admin.auth().deleteUser(userId);
+  } catch (e) {
+    // If already deleted, ignore
+    if (String(e?.errorInfo?.code || e?.code || '').includes('auth/user-not-found')) {
+      console.log('[adminDeleteUser] auth user not found; continuing');
+    } else {
+      console.warn('[adminDeleteUser] auth delete failed:', e?.message || e);
+    }
+  }
+
+  // Note: We purposely do not delete historical orders/chats for auditability.
+  return { ok: true };
+});
+
+// === Admin: reconcile EFT CSV (manual upload paste) ===
+exports.reconcileEftCsv = functions.https.onCall(async (data, context) => {
+  if (!context.auth) throw new functions.https.HttpsError('unauthenticated', 'Sign in required');
+  const isAdminCaller = context.auth.token?.admin === true || context.auth.token?.role === 'admin';
+  if (!isAdminCaller) throw new functions.https.HttpsError('permission-denied', 'Admin only');
+  const csv = String(data?.csv || '').trim();
+  const delimiter = String(data?.delimiter || ',');
+  if (!csv) throw new functions.https.HttpsError('invalid-argument', 'csv is required');
+
+  const lines = csv.split(/\r?\n/).filter(l => l.trim().length > 0);
+  const header = lines[0];
+  const rows = lines.slice(1);
+  const headers = header.split(delimiter).map(h => h.trim().toLowerCase());
+  const idxRef = headers.findIndex(h => h.includes('reference') || h === 'ref' || h === 'orderid' || h === 'order_id');
+  const idxAmt = headers.findIndex(h => h.includes('amount') || h === 'amt' || h === 'value' || h === 'gross');
+  if (idxRef < 0 || idxAmt < 0) {
+    throw new functions.https.HttpsError('invalid-argument', 'CSV must include reference and amount columns');
+  }
+
+  const matched = [];
+  const unmatched = [];
+  for (const line of rows) {
+    const cols = line.split(delimiter);
+    const refRaw = (cols[idxRef] || '').toString().trim();
+    const amtRaw = (cols[idxAmt] || '').toString().trim().replace(/[,\s]/g, '');
+    const amount = Number(amtRaw);
+    const orderId = refRaw; // Expect exact order ID in reference
+    if (!orderId || !isFinite(amount) || amount <= 0) {
+      unmatched.push({ reference: refRaw, amount });
+      continue;
+    }
+    try {
+      const oref = db.collection('orders').doc(orderId);
+      const osnap = await oref.get();
+      if (!osnap.exists) { unmatched.push({ reference: refRaw, amount, reason: 'order_not_found' }); continue; }
+      const odata = osnap.data() || {};
+      const status = String(odata.status || '').toLowerCase();
+      const paymentStatus = String(odata.paymentStatus || '').toLowerCase();
+      const total = Number(odata.totalPrice || odata.total || 0);
+      if (paymentStatus === 'paid') { matched.push({ orderId, amount, note: 'already_paid' }); continue; }
+      if (Math.abs(total - amount) > 0.01) { unmatched.push({ orderId, amount, expected: total, reason: 'amount_mismatch' }); continue; }
+      await oref.set({ paymentMethod: 'eft', paymentStatus: 'paid', updatedAt: admin.firestore.FieldValue.serverTimestamp(), trackingUpdates: admin.firestore.FieldValue.arrayUnion({ by: 'admin', description: 'EFT payment received and reconciled', timestamp: new Date().toISOString() }) }, { merge: true });
+      await db.collection('recent_payments').add({ orderId, method: 'eft', amount, reconciledAt: admin.firestore.FieldValue.serverTimestamp(), by: context.auth.uid });
+      matched.push({ orderId, amount });
+    } catch (e) {
+      unmatched.push({ reference: refRaw, amount, error: String(e.message || e) });
+    }
+  }
+  return { ok: true, matched, unmatched, totalRows: rows.length };
+});
+
+// === Admin: mark single EFT paid (manual) ===
+exports.adminMarkEftPaid = functions.https.onCall(async (data, context) => {
+  if (!context.auth) throw new functions.https.HttpsError('unauthenticated', 'Sign in required');
+  const isAdminCaller = context.auth.token?.admin === true || context.auth.token?.role === 'admin';
+  if (!isAdminCaller) throw new functions.https.HttpsError('permission-denied', 'Admin only');
+  const orderId = String(data?.orderId || '').trim();
+  const amount = Number(data?.amount || 0);
+  const override = Boolean(data?.override === true);
+  if (!orderId || amount <= 0) throw new functions.https.HttpsError('invalid-argument', 'orderId and amount required');
+  const oref = db.collection('orders').doc(orderId);
+  const osnap = await oref.get();
+  if (!osnap.exists) throw new functions.https.HttpsError('not-found', 'Order not found');
+  const odata = osnap.data() || {};
+  const total = Number(odata.totalPrice || odata.total || 0);
+  if (!override && Math.abs(total - amount) > 0.01) {
+    throw new functions.https.HttpsError('failed-precondition', 'Amount mismatch; enable override to force');
+  }
+  await oref.set({ paymentMethod: 'eft', paymentStatus: 'paid', updatedAt: admin.firestore.FieldValue.serverTimestamp(), trackingUpdates: admin.firestore.FieldValue.arrayUnion({ by: 'admin', description: 'EFT payment marked paid', timestamp: new Date().toISOString() }) }, { merge: true });
+  await db.collection('recent_payments').add({ orderId, method: 'eft', amount, reconciledAt: admin.firestore.FieldValue.serverTimestamp(), by: context.auth.uid, override });
+  return { ok: true };
+});
+
+// === Admin: create payout batch for all eligible sellers, email CSV ===
+exports.createPayoutBatch = functions.https.onCall(async (data, context) => {
+  if (!context.auth) throw new functions.https.HttpsError('unauthenticated', 'Sign in required');
+  const isAdminCaller = context.auth.token?.admin === true || context.auth.token?.role === 'admin';
+  if (!isAdminCaller) throw new functions.https.HttpsError('permission-denied', 'Admin only');
+  const minAmount = Number(data?.minAmount || MIN_PAYOUT_AMOUNT);
+  const maxSellers = Number(data?.maxSellers || 1000);
+  const batchLabel = data?.label ? String(data.label) : new Date().toISOString().slice(0,10);
+
+  const adminEmail = process.env.ADMIN_PAYOUT_EMAIL || '';
+  const transporter = await ensureTransporter().catch(() => null);
+
+  const sellersSnap = await db.collection('platform_receivables').get();
+  let processed = 0;
+  let created = 0;
+  const csvRows = [['payoutId','sellerId','amount','gross','commission','orders','accountHolder','bankName','accountNumber','branchCode','reference']];
+
+  for (const sellerDoc of sellersSnap.docs) {
+    if (processed >= maxSellers) break;
+    const sellerId = sellerDoc.id;
+    const elig = await getEligibleReceivablesForSeller(sellerId);
+    if (elig.net < minAmount || elig.entryIds.length === 0) { processed += 1; continue; }
+
+    // fetch bank snapshot
+    const bankDoc = await db.collection('users').doc(sellerId).collection('payout').doc('bank').get();
+    if (!bankDoc.exists) { processed += 1; continue; }
+    const bank = bankDoc.data() || {};
+
+    const payoutRef = db.collection('payouts').doc();
+    const userPayoutRef = db.collection('users').doc(sellerId).collection('payouts').doc(payoutRef.id);
+
+    await db.runTransaction(async (tx) => {
+      const now = admin.firestore.FieldValue.serverTimestamp();
+      const base = {
+        id: payoutRef.id,
+        sellerId,
+        currency: 'ZAR',
+        amount: elig.net,
+        gross: elig.gross,
+        commission: elig.commission,
+        status: 'processing', // directly to processing for batch
+        orderIds: elig.orderIds,
+        entryIds: elig.entryIds,
+        batchLabel,
+        bankSnapshot: {
+          accountHolder: bank.accountHolder || null,
+          bankName: bank.bankName || null,
+          accountNumber: bank.accountNumber || null,
+          branchCode: bank.branchCode || null,
+          accountType: bank.accountType || null,
+        },
+        createdAt: now,
+        updatedAt: now,
+      };
+      tx.set(payoutRef, base, { merge: true });
+      tx.set(userPayoutRef, base, { merge: true });
+      // lock entries
+      elig.entryIds.forEach((eid) => {
+        const eref = db.collection('platform_receivables').doc(sellerId).collection('entries').doc(eid);
+        tx.set(eref, { status: 'locked', payoutLockId: payoutRef.id, lockedAt: now, updatedAt: now }, { merge: true });
+      });
+      // mark orders with payoutRef (best-effort trace)
+      elig.orderIds.forEach((oid) => {
+        const oref = db.collection('orders').doc(oid);
+        tx.set(oref, { payoutRequestId: payoutRef.id, updatedAt: now }, { merge: true });
+      });
+    });
+
+    created += 1;
+    processed += 1;
+    csvRows.push([
+      payoutRef.id,
+      sellerId,
+      String(elig.net.toFixed(2)),
+      String(elig.gross.toFixed(2)),
+      String(elig.commission.toFixed(2)),
+      String(elig.orderIds.length),
+      bank.accountHolder || '',
+      bank.bankName || '',
+      bank.accountNumber || '',
+      bank.branchCode || '',
+      '',
+    ]);
+  }
+
+  // Build CSV
+  const csv = csvRows.map((r) => r.map((c) => {
+    const s = String(c ?? '');
+    return /[",\n]/.test(s) ? '"' + s.replace(/"/g,'""') + '"' : s;
+  }).join(','))
+  .join('\n');
+
+  // Email CSV (best effort)
+  if (transporter && adminEmail) {
+    try {
+      const from = process.env.MAIL_FROM || '';
+      await transporter.sendMail({
+        from: from || undefined,
+        to: adminEmail,
+        subject: `[Payout Batch] ${batchLabel} (${created} payouts)`,
+        text: csv,
+        attachments: [{ filename: `payout_batch_${batchLabel}.csv`, content: csv, contentType: 'text/csv' }],
+      });
+    } catch (e) {
+      console.warn('[batch email] failed', e);
+    }
+  }
+
+  return { ok: true, created, processed, csv };
+});
+
+// Weekly auto-batch (disabled unless env set)
+exports.autoCreatePayoutBatch = functions.pubsub.schedule('0 8 * * 1').onRun(async () => {
+  try {
+    const enabled = String(process.env.AUTO_BATCH_ENABLED || 'false').toLowerCase() === 'true';
+    if (!enabled) return null;
+    const minAmount = Number(process.env.MIN_PAYOUT_AMOUNT || 50);
+    const result = await exports.createPayoutBatch.run({ data: { minAmount, label: 'auto_weekly' } });
+    console.log('[autoCreatePayoutBatch] result', result);
+  } catch (e) {
+    console.error('[autoCreatePayoutBatch] error', e);
+  }
+  return null;
 });

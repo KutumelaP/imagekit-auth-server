@@ -39,10 +39,11 @@ class _SellerOnboardingScreenState extends State<SellerOnboardingScreen> with Ti
       color: AppTheme.deepTeal,
       content: [
         'Customers pay via PayFast (secure)',
-        'You receive 90% of earnings within 24 hours',
-        '10% held for 30 days (protection against returns)',
-        'Platform fees: 5% (orders R50+) / 3% (orders <R50)',
-        'PayFast fees: 3.5% + R2 per transaction'
+        'You receive 100% of earnings after order completion',
+        'No holdback period - money available immediately',
+        'Platform fees handled separately by admin',
+        'PayFast fees: 3.5% + R2 per transaction',
+        'Request payouts when you want (minimum R100)'
       ],
     ),
     OnboardingStep(
@@ -54,8 +55,9 @@ class _SellerOnboardingScreenState extends State<SellerOnboardingScreen> with Ti
         '7-day return window for most products',
         'No returns for food items (safety)',
         'Returns must be valid (defective, wrong item, etc.)',
-        'Holdback covers return costs automatically',
-        'Platform mediates all return disputes'
+        'Returns affect your available balance directly',
+        'Platform mediates all return disputes',
+        'Admin reviews all returns for fairness'
       ],
     ),
     OnboardingStep(
@@ -81,7 +83,9 @@ class _SellerOnboardingScreenState extends State<SellerOnboardingScreen> with Ti
         'Seller delivery (your own delivery)',
         'Hybrid delivery (both options)',
         'Pickup only (customers collect)',
-        'Set your own delivery fees and ranges'
+        'Nationwide pickup (Pargo/PAXI services)',
+        'Set your own delivery fees and ranges',
+        'Category-aware delivery caps (food: 20km, others: 50km)'
       ],
     ),
     OnboardingStep(
