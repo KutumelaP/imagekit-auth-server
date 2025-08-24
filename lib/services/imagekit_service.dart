@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:path/path.dart' as path;
 import 'package:flutter/foundation.dart';
@@ -10,11 +11,8 @@ class ImageKitService {
   // Remove hardcoded public key - will get it from server
   // static const String _publicKey = 'public_tAO0SkfLl/37FQN+23c/bkAyfYg=';
   
-  // Multiple authentication server URLs for fallback
-  static const List<String> _authServerUrls = [
-    'https://imagekit-auth-server-f4te.onrender.com/auth', // Try remote first
-    'http://localhost:3001/auth', // Local fallback
-  ];
+  // Use Firebase callable to fetch auth; legacy URLs retained as last-resort fallback if needed
+  static const List<String> _legacyAuthServerUrls = [];
   
   static const String _uploadUrl = 'https://upload.imagekit.io/api/v1/files/upload';
 
@@ -34,40 +32,41 @@ class ImageKitService {
 
       print('🔍 Getting ImageKit auth parameters...');
       
-      // Try multiple authentication servers
+      // Preferred: Firebase callable function
       Map<String, dynamic>? authParams;
-      String? workingServer;
-      
-      for (String serverUrl in _authServerUrls) {
-        try {
-          print('🔍 Trying authentication server: $serverUrl');
-          
-          final response = await http.get(
-            Uri.parse(serverUrl),
-            headers: {'Content-Type': 'application/json'},
-          ).timeout(const Duration(seconds: 15));
+      try {
+        final callable = FirebaseFunctions.instance.httpsCallable('getImageKitUploadAuth');
+        final result = await callable.call();
+        final data = result.data;
+        if (data is Map) {
+          authParams = Map<String, dynamic>.from(data as Map);
+          print('✅ Got ImageKit auth params via Firebase callable');
+        }
+      } catch (e) {
+        print('⚠️ Firebase callable getImageKitUploadAuth failed: $e');
+      }
 
-          if (response.statusCode == 200) {
-            authParams = Map<String, dynamic>.from(json.decode(response.body));
-            workingServer = serverUrl;
-            print('✅ Got ImageKit auth params from: $workingServer');
-            break;
-          } else {
-            print('⚠️ Server $serverUrl returned status: ${response.statusCode}');
-          }
-        } catch (e) {
-          print('⚠️ Failed to connect to $serverUrl: $e');
-          continue;
+      // Legacy fallback (disabled by default)
+      if (authParams == null) {
+        for (String serverUrl in _legacyAuthServerUrls) {
+          try {
+            final response = await http.get(Uri.parse(serverUrl), headers: {'Content-Type': 'application/json'}).timeout(const Duration(seconds: 15));
+            if (response.statusCode == 200) {
+              authParams = Map<String, dynamic>.from(json.decode(response.body));
+              print('✅ Got ImageKit auth params from legacy: $serverUrl');
+              break;
+            }
+          } catch (_) {}
         }
       }
 
       if (authParams == null) {
-        throw Exception('All authentication servers failed. Please check your ImageKit configuration.');
+        throw Exception('Authentication failed. Please check ImageKit callable configuration.');
       }
 
       // Validate auth parameters
       if (authParams['token'] == null || authParams['signature'] == null || authParams['expire'] == null) {
-        throw Exception('Invalid authentication parameters received from $workingServer');
+        throw Exception('Invalid authentication parameters received from ImageKit auth');
       }
 
       // Get public key from server config to ensure signature matches

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../theme/app_theme.dart';
 import 'SellerRegistrationScreen.dart';
@@ -17,6 +18,7 @@ class _SellerOnboardingScreenState extends State<SellerOnboardingScreen> with Ti
   bool _hasReadTerms = false;
   bool _hasReadPaymentTerms = false;
   bool _hasReadReturnPolicy = false;
+  double? _platformFeePct;
 
   final List<OnboardingStep> _steps = [
     OnboardingStep(
@@ -108,6 +110,7 @@ class _SellerOnboardingScreenState extends State<SellerOnboardingScreen> with Ti
     super.initState();
     _pageController = PageController();
     _tabController = TabController(length: _steps.length, vsync: this);
+    _loadPlatformFee();
   }
 
   @override
@@ -143,6 +146,21 @@ class _SellerOnboardingScreenState extends State<SellerOnboardingScreen> with Ti
       );
       _tabController.animateTo(_currentPage);
     }
+  }
+
+  Future<void> _loadPlatformFee() async {
+    try {
+      final doc = await FirebaseFirestore.instance.collection('admin_settings').doc('payment_settings').get();
+      final data = doc.data() ?? {};
+      final pct = (data['platformFeePercentage'] is num)
+          ? (data['platformFeePercentage'] as num).toDouble()
+          : double.tryParse('${data['platformFeePercentage']}');
+      if (pct != null && mounted) {
+        setState(() {
+          _platformFeePct = pct;
+        });
+      }
+    } catch (_) {}
   }
 
   void _proceedToRegistration() async {
@@ -242,6 +260,36 @@ class _SellerOnboardingScreenState extends State<SellerOnboardingScreen> with Ti
               ],
             ),
           )).toList(),
+
+          if (step.title == 'How Payments Work') ...[
+            SizedBox(height: ResponsiveUtils.getVerticalPadding(context)),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppTheme.primaryGreen.withOpacity(0.08),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppTheme.primaryGreen.withOpacity(0.2)),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.percent, color: AppTheme.primaryGreen, size: 18),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      _platformFeePct != null
+                          ? 'Current platform commission: ${_platformFeePct!.toStringAsFixed(1)}% (may change)'
+                          : 'Platform commission: set by platform (may change)',
+                      style: TextStyle(
+                        color: AppTheme.deepTeal,
+                        fontSize: ResponsiveUtils.getTitleSize(context) - 6,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ],
       ),
     );

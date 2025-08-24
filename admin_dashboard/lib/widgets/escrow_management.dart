@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:intl/intl.dart';
+// removed: import 'package:intl/intl.dart';
 import '../theme/admin_theme.dart';
 
 class EscrowManagement extends StatefulWidget {
@@ -14,8 +14,7 @@ class _EscrowManagementState extends State<EscrowManagement> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   bool _isLoading = true;
   Map<String, dynamic> _stats = {};
-  List<Map<String, dynamic>> _recentPayments = [];
-  List<Map<String, dynamic>> _pendingHoldbacks = [];
+  // legacy fields removed
 
   @override
   void initState() {
@@ -29,14 +28,8 @@ class _EscrowManagementState extends State<EscrowManagement> {
     });
 
     try {
-      // Load escrow statistics
-      await _loadEscrowStats();
-      
-      // Load recent payments
-      await _loadRecentPayments();
-      
-      // Load pending holdbacks
-      await _loadPendingHoldbacks();
+      // Load ledger-based statistics (current system)
+      await _loadLedgerStats();
     } catch (e) {
       print('Error loading escrow data: $e');
     } finally {
@@ -46,106 +39,67 @@ class _EscrowManagementState extends State<EscrowManagement> {
     }
   }
 
-  Future<void> _loadEscrowStats() async {
+  // removed legacy _loadEscrowStats
+
+  double _toDouble(dynamic v) {
+    if (v is num) return v.toDouble();
+    if (v is String) return double.tryParse(v) ?? 0.0;
+    return 0.0;
+  }
+
+  Future<void> _loadLedgerStats() async {
     try {
-      // Get escrow payments collection
-      QuerySnapshot escrowQuery = await _firestore
-          .collection('escrow_payments')
-          .get();
+      double totalAvailable = 0;
+      double totalLocked = 0;
+      double totalSettled = 0;
+      double pendingPayoutsAmount = 0;
+      int pendingPayoutsCount = 0;
 
-      double totalEscrowAmount = 0;
-      double totalHoldbackAmount = 0;
-      double totalReleasedAmount = 0;
-      int pendingPayments = 0;
-      int completedPayments = 0;
-
-      for (var doc in escrowQuery.docs) {
-        Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
-        
-        if (data['paymentStatus'] == 'completed') {
-          totalEscrowAmount += (data['orderTotal'] ?? 0.0);
-          totalHoldbackAmount += (data['holdbackAmount'] ?? 0.0);
-          completedPayments++;
-        } else if (data['paymentStatus'] == 'pending') {
-          pendingPayments++;
-        }
+      // Sum over all sellers via collection group queries
+      final availableSnap = await _firestore.collectionGroup('entries').where('status', isEqualTo: 'available').get();
+      for (final d in availableSnap.docs) {
+        final m = d.data();
+        totalAvailable += _toDouble(m['net'] ?? m['amount']);
       }
 
-      // Get holdback schedules
-      QuerySnapshot holdbackQuery = await _firestore
-          .collection('holdback_schedules')
-          .where('status', isEqualTo: 'released')
-          .get();
-
-      for (var doc in holdbackQuery.docs) {
-        Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
-        totalReleasedAmount += (data['holdbackAmount'] ?? 0.0);
+      final lockedSnap = await _firestore.collectionGroup('entries').where('status', isEqualTo: 'locked').get();
+      for (final d in lockedSnap.docs) {
+        final m = d.data();
+        totalLocked += _toDouble(m['net'] ?? m['amount']);
       }
+
+      final settlementsSnap = await _firestore.collectionGroup('settlements').get();
+      for (final d in settlementsSnap.docs) {
+        final m = d.data();
+        final paid = _toDouble(m['amountPaid']);
+        final collected = _toDouble(m['amountCollected']);
+        totalSettled += paid > 0 ? paid : collected;
+      }
+
+      final payoutsSnap = await _firestore.collection('payouts').where('status', whereIn: ['requested', 'processing']).get();
+      for (final d in payoutsSnap.docs) {
+        final m = d.data();
+        pendingPayoutsAmount += _toDouble(m['amount']);
+      }
+      pendingPayoutsCount = payoutsSnap.size;
 
       setState(() {
         _stats = {
-          'totalEscrowAmount': totalEscrowAmount,
-          'totalHoldbackAmount': totalHoldbackAmount,
-          'totalReleasedAmount': totalReleasedAmount,
-          'pendingPayments': pendingPayments,
-          'completedPayments': completedPayments,
+          'totalAvailable': totalAvailable,
+          'totalLocked': totalLocked,
+          'totalSettled': totalSettled,
+          'pendingPayoutsAmount': pendingPayoutsAmount,
+          'pendingPayoutsCount': pendingPayoutsCount,
         };
       });
     } catch (e) {
-      print('Error loading escrow stats: $e');
+      print('Error loading ledger stats: $e');
     }
   }
 
-  Future<void> _loadRecentPayments() async {
-    try {
-      QuerySnapshot paymentsQuery = await _firestore
-          .collection('seller_payments')
-          .orderBy('createdAt', descending: true)
-          .limit(10)
-          .get();
+  // removed legacy _loadRecentPayments
 
-      List<Map<String, dynamic>> payments = [];
-      for (var doc in paymentsQuery.docs) {
-        Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
-        payments.add({
-          'id': doc.id,
-          ...data,
-        });
-      }
-
-      setState(() {
-        _recentPayments = payments;
-      });
-    } catch (e) {
-      print('Error loading recent payments: $e');
-    }
-  }
-
-  Future<void> _loadPendingHoldbacks() async {
-    try {
-      QuerySnapshot holdbackQuery = await _firestore
-          .collection('holdback_schedules')
-          .where('status', isEqualTo: 'scheduled')
-          .orderBy('releaseDate')
-          .limit(10)
-          .get();
-
-      List<Map<String, dynamic>> holdbacks = [];
-      for (var doc in holdbackQuery.docs) {
-        Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
-        holdbacks.add({
-          'id': doc.id,
-          ...data,
-        });
-      }
-
-      setState(() {
-        _pendingHoldbacks = holdbacks;
-      });
-    } catch (e) {
-      print('Error loading pending holdbacks: $e');
-    }
-  }
+  // removed legacy _loadPendingHoldbacks
 
   @override
   Widget build(BuildContext context) {
@@ -159,15 +113,7 @@ class _EscrowManagementState extends State<EscrowManagement> {
                 _buildHeader(),
                 const SizedBox(height: 24),
                 _buildStatsCards(),
-                const SizedBox(height: 24),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(child: _buildRecentPayments()),
-                    const SizedBox(width: 24),
-                    Expanded(child: _buildPendingHoldbacks()),
-                  ],
-                ),
+                // Removed legacy recent payments and holdbacks sections
               ],
             ),
           );
@@ -204,7 +150,7 @@ class _EscrowManagementState extends State<EscrowManagement> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Escrow Management',
+                  'Ledger Overview',
                   style: AdminTheme.headlineLarge.copyWith(
                     color: AdminTheme.angel,
                     fontWeight: FontWeight.bold,
@@ -212,7 +158,7 @@ class _EscrowManagementState extends State<EscrowManagement> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Monitor payments, holdbacks, and escrow balances',
+                  'Platform receivables, payouts, and settlements',
                   style: AdminTheme.bodyMedium.copyWith(
                     color: AdminTheme.angel.withOpacity(0.9),
                   ),
@@ -235,26 +181,26 @@ class _EscrowManagementState extends State<EscrowManagement> {
       childAspectRatio: 1.5,
       children: [
         _buildStatCard(
-          'Total Escrow',
-          'R${_stats['totalEscrowAmount']?.toStringAsFixed(2) ?? '0.00'}',
+          'Available Balance (All Sellers)',
+          'R${(_stats['totalAvailable'] ?? 0.0).toStringAsFixed(2)}',
           Icons.account_balance_wallet,
           AdminTheme.deepTeal,
         ),
         _buildStatCard(
-          'Holdback Amount',
-          'R${_stats['totalHoldbackAmount']?.toStringAsFixed(2) ?? '0.00'}',
-          Icons.lock,
+          'Locked (In Payout Flows)',
+          'R${(_stats['totalLocked'] ?? 0.0).toStringAsFixed(2)}',
+          Icons.lock_clock,
           AdminTheme.warning,
         ),
         _buildStatCard(
-          'Released Amount',
-          'R${_stats['totalReleasedAmount']?.toStringAsFixed(2) ?? '0.00'}',
-          Icons.payment,
+          'Settled To Sellers',
+          'R${(_stats['totalSettled'] ?? 0.0).toStringAsFixed(2)}',
+          Icons.payments,
           AdminTheme.success,
         ),
         _buildStatCard(
-          'Pending Payments',
-          '${_stats['pendingPayments'] ?? 0}',
+          'Pending Payouts',
+          'R${(_stats['pendingPayoutsAmount'] ?? 0.0).toStringAsFixed(2)} (${_stats['pendingPayoutsCount'] ?? 0})',
           Icons.schedule,
           AdminTheme.info,
         ),
@@ -307,268 +253,13 @@ class _EscrowManagementState extends State<EscrowManagement> {
     );
   }
 
-  Widget _buildRecentPayments() {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: AdminTheme.angel,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AdminTheme.cloud.withOpacity(0.3)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(Icons.payment, color: AdminTheme.deepTeal),
-              const SizedBox(width: 8),
-              Text(
-                'Recent Payments',
-                style: AdminTheme.headlineMedium.copyWith(
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          _recentPayments.isEmpty
-              ? Center(
-                  child: Text(
-                    'No recent payments',
-                    style: AdminTheme.bodyMedium.copyWith(
-                      color: AdminTheme.cloud,
-                    ),
-                  ),
-                )
-              : Column(
-                  children: _recentPayments.map((payment) {
-                    return _buildPaymentCard(payment);
-                  }).toList(),
-                ),
-        ],
-      ),
-    );
-  }
+  // removed legacy _buildRecentPayments
 
-  Widget _buildPaymentCard(Map<String, dynamic> payment) {
-    final amount = payment['amount'] ?? 0.0;
-    final status = payment['status'] ?? 'pending';
-    final createdAt = payment['createdAt'] as Timestamp?;
-    final sellerId = payment['sellerId'] ?? 'Unknown';
+  // removed legacy _buildPaymentCard
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: _getStatusColor(status).withOpacity(0.1),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: _getStatusColor(status).withOpacity(0.3)),
-      ),
-      child: Row(
-        children: [
-          Icon(
-            _getStatusIcon(status),
-            color: _getStatusColor(status),
-            size: 20,
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'R${amount.toStringAsFixed(2)}',
-                  style: AdminTheme.titleSmall.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                Text(
-                  'Seller: ${sellerId.substring(0, 8)}...',
-                  style: AdminTheme.bodySmall.copyWith(
-                    color: AdminTheme.cloud,
-                  ),
-                ),
-                if (createdAt != null)
-                  Text(
-                    DateFormat('MMM dd, yyyy').format(createdAt.toDate()),
-                    style: AdminTheme.bodySmall.copyWith(
-                      color: AdminTheme.cloud,
-                    ),
-                  ),
-              ],
-            ),
-          ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: _getStatusColor(status).withOpacity(0.2),
-              borderRadius: BorderRadius.circular(4),
-            ),
-            child: Text(
-              status.toUpperCase(),
-              style: AdminTheme.bodySmall.copyWith(
-                color: _getStatusColor(status),
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  // removed legacy _buildPendingHoldbacks
 
-  Widget _buildPendingHoldbacks() {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: AdminTheme.angel,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AdminTheme.cloud.withOpacity(0.3)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(Icons.schedule, color: AdminTheme.deepTeal),
-              const SizedBox(width: 8),
-              Text(
-                'Pending Holdbacks',
-                style: AdminTheme.headlineMedium.copyWith(
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          _pendingHoldbacks.isEmpty
-              ? Center(
-                  child: Text(
-                    'No pending holdbacks',
-                    style: AdminTheme.bodyMedium.copyWith(
-                      color: AdminTheme.cloud,
-                    ),
-                  ),
-                )
-              : Column(
-                  children: _pendingHoldbacks.map((holdback) {
-                    return _buildHoldbackCard(holdback);
-                  }).toList(),
-                ),
-        ],
-      ),
-    );
-  }
+  // removed legacy _buildHoldbackCard
 
-  Widget _buildHoldbackCard(Map<String, dynamic> holdback) {
-    final amount = holdback['holdbackAmount'] ?? 0.0;
-    final releaseDate = holdback['releaseDate'] as Timestamp?;
-    final sellerId = holdback['sellerId'] ?? 'Unknown';
-    final orderId = holdback['orderId'] ?? 'Unknown';
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: AdminTheme.warning.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AdminTheme.warning.withOpacity(0.3)),
-      ),
-      child: Row(
-        children: [
-          Icon(
-            Icons.lock,
-            color: AdminTheme.warning,
-            size: 20,
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'R${amount.toStringAsFixed(2)}',
-                  style: AdminTheme.titleSmall.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                Text(
-                  'Order: ${orderId.substring(0, 8)}...',
-                  style: AdminTheme.bodySmall.copyWith(
-                    color: AdminTheme.cloud,
-                  ),
-                ),
-                if (releaseDate != null)
-                  Text(
-                    'Release: ${DateFormat('MMM dd, yyyy').format(releaseDate.toDate())}',
-                    style: AdminTheme.bodySmall.copyWith(
-                      color: AdminTheme.cloud,
-                    ),
-                  ),
-              ],
-            ),
-          ),
-          IconButton(
-            onPressed: () => _releaseHoldback(holdback['id']),
-            icon: Icon(Icons.lock_open, color: AdminTheme.success),
-            tooltip: 'Release Holdback',
-          ),
-        ],
-      ),
-    );
-  }
-
-  Color _getStatusColor(String status) {
-    switch (status.toLowerCase()) {
-      case 'completed':
-        return AdminTheme.success;
-      case 'pending':
-        return AdminTheme.warning;
-      case 'failed':
-        return AdminTheme.error;
-      default:
-        return AdminTheme.cloud;
-    }
-  }
-
-  IconData _getStatusIcon(String status) {
-    switch (status.toLowerCase()) {
-      case 'completed':
-        return Icons.check_circle;
-      case 'pending':
-        return Icons.schedule;
-      case 'failed':
-        return Icons.error;
-      default:
-        return Icons.payment;
-    }
-  }
-
-  Future<void> _releaseHoldback(String holdbackId) async {
-    try {
-      await _firestore
-          .collection('holdback_schedules')
-          .doc(holdbackId)
-          .update({
-        'status': 'released',
-        'releasedAt': FieldValue.serverTimestamp(),
-      });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Holdback released successfully!'),
-          backgroundColor: AdminTheme.success,
-        ),
-      );
-
-      await _loadEscrowData();
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error releasing holdback: $e'),
-          backgroundColor: AdminTheme.error,
-        ),
-      );
-    }
-  }
+  // removed unused legacy helpers
 } 

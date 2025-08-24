@@ -32,6 +32,11 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
   final _storeNameController = TextEditingController();
   final _contactController = TextEditingController();
   final _locationController = TextEditingController();
+  final _addressLine1Controller = TextEditingController();
+  final _addressLine2Controller = TextEditingController();
+  final _cityController = TextEditingController();
+  final _postalCodeController = TextEditingController();
+  String? _formattedAddress;
   String? _selectedStoreCategory;
   final _deliveryFeeController = TextEditingController();
   final _minOrderController = TextEditingController();
@@ -332,6 +337,10 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
     _storeNameController.dispose();
     _contactController.dispose();
     _locationController.dispose();
+    _addressLine1Controller.dispose();
+    _addressLine2Controller.dispose();
+    _cityController.dispose();
+    _postalCodeController.dispose();
     _deliveryFeeController.dispose();
     _minOrderController.dispose();
     _storyController.dispose();
@@ -765,8 +774,19 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
       );
 
       final placemark = placemarks.first;
-      final address = '${placemark.locality}, ${placemark.country}';
-      _locationController.text = address;
+      final line1 = [placemark.street, placemark.subLocality].where((e) => e != null && e!.isNotEmpty).join(', ');
+      final line2 = [placemark.locality, placemark.administrativeArea].where((e) => e != null && e!.isNotEmpty).join(', ');
+      final postal = placemark.postalCode ?? '';
+      final country = placemark.country ?? '';
+      final formatted = [line1, line2, postal, country].where((e) => e != null && e!.toString().trim().isNotEmpty).join(', ');
+      setState(() {
+        _addressLine1Controller.text = line1;
+        _addressLine2Controller.text = line2;
+        _cityController.text = placemark.locality ?? '';
+        _postalCodeController.text = postal;
+        _formattedAddress = formatted;
+        _locationController.text = formatted.isNotEmpty ? formatted : (_locationController.text.isNotEmpty ? _locationController.text : '${placemark.locality}, ${placemark.country}');
+      });
     } catch (e) {
       print('Error getting address: $e');
     }
@@ -964,6 +984,11 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
         'verified': false,
         'paused': false,
         'platformFeeExempt': false,
+        'formattedAddress': _formattedAddress ?? _locationController.text.trim(),
+        'addressLine1': _addressLine1Controller.text.trim(),
+        'addressLine2': _addressLine2Controller.text.trim(),
+        'city': _cityController.text.trim(),
+        'postalCode': _postalCodeController.text.trim(),
       });
 
       // Save payout details to secure sub-document
@@ -1910,6 +1935,41 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
                         prefixIcon: Icons.location_on,
                         validator: (value) => value == null || value.isEmpty ? 'Enter store location' : null,
                       ),
+                      // Detailed Address
+                      _buildEnhancedTextField(
+                        controller: _addressLine1Controller,
+                        label: 'Address Line 1',
+                        hint: 'Street and number',
+                        prefixIcon: Icons.home,
+                      ),
+                      _buildEnhancedTextField(
+                        controller: _addressLine2Controller,
+                        label: 'Address Line 2 (optional)',
+                        hint: 'Complex/Suburb',
+                        prefixIcon: Icons.apartment,
+                      ),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _buildEnhancedTextField(
+                              controller: _cityController,
+                              label: 'City/Town',
+                              hint: 'e.g., Kempton Park',
+                              prefixIcon: Icons.location_city,
+                            ),
+                          ),
+                          SizedBox(width: ResponsiveUtils.getHorizontalPadding(context) * 0.5),
+                          Expanded(
+                            child: _buildEnhancedTextField(
+                              controller: _postalCodeController,
+                              label: 'Postal Code',
+                              hint: 'e.g., 1619',
+                              prefixIcon: Icons.local_post_office,
+                              keyboardType: TextInputType.number,
+                            ),
+                          ),
+                        ],
+                      ),
                       Container(
                         width: double.infinity,
                         height: 48,
@@ -1981,7 +2041,7 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
                       ),
                       _buildSwitchTile(
                         title: 'Offer Delivery',
-                        subtitle: 'Provide delivery service to customers',
+                        subtitle: 'Provide local doorstep delivery to customers',
                         value: _isDeliveryAvailable,
                         onChanged: (value) => setState(() => _isDeliveryAvailable = value),
                       ),
@@ -1990,6 +2050,60 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
                         subtitle: 'Customers can pay cash on delivery/pickup (fees apply)',
                         value: _allowCOD,
                         onChanged: (value) => setState(() => _allowCOD = value),
+                      ),
+                      const SizedBox(height: 16),
+                      // Pickup Services (decoupled from Offer Delivery)
+                      Container(
+                        margin: const EdgeInsets.only(bottom: 16),
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: AppTheme.angel,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: AppTheme.breeze.withOpacity(0.3),
+                          ),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(Icons.store_mall_directory, color: AppTheme.deepTeal, size: 20),
+                                const SizedBox(width: 8),
+                                Text(
+                                  'Pickup Services',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppTheme.deepTeal,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Pickup via PAXI/Pargo does not require Offer Delivery. Non‑food pickup stores are discoverable via the Nationwide filter.',
+                              style: TextStyle(fontSize: 12, color: AppTheme.mediumGrey),
+                            ),
+                            const SizedBox(height: 8),
+                            if (_paxiVisible)
+                              SwitchListTile(
+                                title: const Text('Enable PAXI Pickup Service'),
+                                subtitle: const Text('Let customers collect at PAXI points'),
+                                value: _paxiEnabled,
+                                onChanged: (v) => setState(() => _paxiEnabled = v),
+                                activeColor: AppTheme.primaryGreen,
+                              ),
+                            if (_pargoVisible)
+                              SwitchListTile(
+                                title: const Text('Enable Pargo Pickup Service'),
+                                subtitle: const Text('Let customers collect at Pargo points'),
+                                value: _pargoEnabled,
+                                onChanged: (v) => setState(() => _pargoEnabled = v),
+                                activeColor: AppTheme.primaryGreen,
+                              ),
+                          ],
+                        ),
                       ),
                       if (_isDeliveryAvailable) ...[
                         // Delivery Fee Information Note
@@ -2636,68 +2750,9 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
                                   ),
                                   const SizedBox(height: 16),
                                   
-                                  // Manual Range Input
-                                  Row(
-                                    children: [
-                                      Expanded(
-                                        child: Text(
-                                          'Maximum visible range is capped (${(_selectedStoreCategory ?? '') == 'Food' ? '20 km' : '50 km'}).',
-                                          style: TextStyle(
-                                            fontSize: 12,
-                                            color: AppTheme.mediumGrey,
-                                            fontStyle: FontStyle.italic,
-                                          ),
-                                        ),
-                                      ),
-                                      Container(
-                                        width: 100,
-                                        child: TextFormField(
-                                          controller: _customRangeController,
-                                          keyboardType: TextInputType.number,
-                                          enabled: false,
-                                          style: TextStyle(
-                                            fontSize: 12,
-                                            color: AppTheme.deepTeal,
-                                          ),
-                                          decoration: InputDecoration(
-                                            hintText: 'Not needed',
-                                            hintStyle: TextStyle(
-                                              color: AppTheme.breeze,
-                                              fontSize: 12,
-                                            ),
-                                            filled: true,
-                                            fillColor: AppTheme.whisper,
-                                            border: OutlineInputBorder(
-                                              borderRadius: BorderRadius.circular(8),
-                                              borderSide: BorderSide(color: AppTheme.breeze.withOpacity(0.3)),
-                                            ),
-                                            enabledBorder: OutlineInputBorder(
-                                              borderRadius: BorderRadius.circular(8),
-                                              borderSide: BorderSide(color: AppTheme.breeze.withOpacity(0.3)),
-                                            ),
-                                            focusedBorder: OutlineInputBorder(
-                                              borderRadius: BorderRadius.circular(8),
-                                              borderSide: BorderSide(color: AppTheme.deepTeal, width: 1),
-                                            ),
-                                            contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                                          ),
-                                          onChanged: (value) {
-                                            if (value.isNotEmpty) {
-                                              final customRange = double.tryParse(value);
-                                              if (customRange != null && customRange > 1000) {
-                                                setState(() {
-                                                  _deliveryRange = customRange;
-                                                });
-                                              }
-                                            }
-                                          },
-                                        ),
-                                      ),
-                                    ],
-                                  ),
                                   const SizedBox(height: 8),
                                   Text(
-                                    'Notes: Food is capped at 20 km, non-food at 50 km. Pickup (Pargo/PAXI) is local by default; buyers can use the Nationwide filter to see non-food pickup stores across SA.',
+                                    'Notes: Delivery range applies only when Offer Delivery is ON. Food capped at 20 km; non‑food at 50 km. If you offer pickup only (Pargo/PAXI), delivery range is ignored. Non‑food pickup stores can be discovered with the Nationwide filter.',
                                     style: TextStyle(
                                       fontSize: 10,
                                       color: Colors.grey[500],
@@ -2741,8 +2796,8 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
                           ),
                         ),
                         
-                        // PAXI Pickup Service Section (hidden if disabled globally)
-                        if (_paxiVisible) Container(
+                        // PAXI Pickup Service Section (moved above; keep disabled here to avoid duplicate UI)
+                        if (false && _paxiVisible) Container(
                           margin: const EdgeInsets.only(bottom: 16),
                           padding: const EdgeInsets.all(16),
                           decoration: BoxDecoration(
@@ -2853,8 +2908,8 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
                           ),
                         ),
                         
-                        // Pargo Pickup Service Section (hidden if disabled globally)
-                        if (_pargoVisible) Container(
+                        // Pargo Pickup Service Section (moved above; keep disabled here to avoid duplicate UI)
+                        if (false && _pargoVisible) Container(
                           margin: const EdgeInsets.only(bottom: 16),
                           padding: const EdgeInsets.all(16),
                           decoration: BoxDecoration(

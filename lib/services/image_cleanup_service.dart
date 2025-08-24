@@ -1,13 +1,11 @@
 import 'dart:convert';
-import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 
 class ImageCleanupService {
   static const String _imagekitUrl = 'https://api.imagekit.io/v1';
   static const String _privateKey = 'private_'; // You'll need to add your private key
-  static const String _publicKey = 'public_tAO0SkfLl/37FQN+23c/bkAyfYg=';
+  // Public key not used client-side here; cleanup should be done via secure Cloud Function
   
   /// Get all images from ImageKit with pagination
   static Future<List<Map<String, dynamic>>> getAllImages({

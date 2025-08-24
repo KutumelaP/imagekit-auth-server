@@ -23,7 +23,7 @@ class _PlatformSettingsSectionState extends State<PlatformSettingsSection> {
   bool _registrationEnabled = true;
   bool _moderationEnabled = true;
   bool _saving = false;
-  Map<String, dynamic>? _settings;
+  // removed unused _settings
   // Pickup visibility
   bool _pargoVisible = true;
   bool _paxiVisible = true;
@@ -45,8 +45,9 @@ class _PlatformSettingsSectionState extends State<PlatformSettingsSection> {
     final data = doc.data();
     if (data != null) {
       setState(() {
-        _settings = data;
-        _feeController.text = (data['platformFee'] ?? '').toString();
+        // _settings removed; apply fields directly
+        // platformFee here is legacy and not used; fee managed in Payment Settings
+        _feeController.text = '';
         _nameController.text = data['platformName'] ?? '';
         _contactController.text = data['contactInfo'] ?? '';
         _registrationEnabled = data['registrationEnabled'] != false;
@@ -159,17 +160,8 @@ class _PlatformSettingsSectionState extends State<PlatformSettingsSection> {
                     ),
                   Row(
                     children: [
-                      Expanded(
-                        child: TextField(
-                          controller: _feeController,
-                          decoration: InputDecoration(
-                            labelText: 'Platform Fee (%)',
-                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                          ),
-                          keyboardType: TextInputType.numberWithOptions(decimal: true),
-                        ),
-                      ),
-                      const SizedBox(width: 16),
+                      // Removed duplicate Platform Fee field; controlled in Payment Settings
+                      const SizedBox(width: 0),
                       Expanded(
                         child: TextField(
                           controller: _nameController,

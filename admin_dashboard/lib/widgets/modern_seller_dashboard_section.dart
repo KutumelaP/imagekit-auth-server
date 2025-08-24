@@ -2758,17 +2758,14 @@ class _ModernSellerDashboardSectionState extends State<ModernSellerDashboardSect
 
   Future<String?> _uploadImageToImageKit(File file, String sellerId) async {
     try {
-      // Get authentication parameters from backend
-      final response = await http.get(Uri.parse('https://imagekit-auth-server-f4te.onrender.com/auth'));
-      if (response.statusCode != 200) {
-        throw Exception('Failed to get authentication parameters');
-      }
-      
-      final authParams = json.decode(response.body);
+      // Get authentication parameters from Firebase callable
+      final callable = FirebaseFunctions.instance.httpsCallable('getImageKitUploadAuth');
+      final result = await callable.call();
+      final authParams = result.data as Map;
       final bytes = await file.readAsBytes();
       final fileName = 'products/$sellerId/${DateTime.now().millisecondsSinceEpoch}_${path.basename(file.path)}';
       
-      final publicKey = 'public_tAO0SkfLl/37FQN+23c/bkAyfYg=';
+      final publicKey = (authParams['publicKey'] ?? '').toString();
       final token = authParams['token'];
       final signature = authParams['signature'];
       final expire = authParams['expire'];

@@ -167,18 +167,6 @@ class _StoreSelectionScreenState extends State<StoreSelectionScreen> {
     // For now, show all sellers regardless of status for testing
     print('🔍 DEBUG: Starting store query...');
     
-    // First, let's check if there are any users at all
-    final allUsersQuery = await FirebaseFirestore.instance
-        .collection('users')
-        .limit(10)
-        .get();
-    
-    print('🔍 DEBUG: Total users in database: ${allUsersQuery.docs.length}');
-    for (var doc in allUsersQuery.docs) {
-      final data = doc.data();
-      print('🔍 DEBUG: User ${doc.id} - Role: ${data['role'] ?? 'no role'}, StoreName: ${data['storeName'] ?? 'no store name'}');
-    }
-    
     final userQuery = await FirebaseFirestore.instance
         .collection('users')
         .where('role', isEqualTo: 'seller')
@@ -1980,10 +1968,6 @@ void _navigateToStoreProfile(Map<String, dynamic> store) {
         // Show stores that offer delivery
         filtered = filtered.where((store) => store['deliveryAvailable'] == true).toList();
         break;
-      case 'high_rating':
-        // Show stores with 4+ star rating
-        filtered = filtered.where((store) => store['avgRating'] >= 4.0).toList();
-        break;
       case 'nationwide':
         // Show non-food stores that support pickup (Pargo/PAXI), distance ignored
         filtered = filtered.where((store) {
@@ -2059,8 +2043,6 @@ void _navigateToStoreProfile(Map<String, dynamic> store) {
                 _buildFilterChip('Nearby', 'nearby', Icons.location_on),
                 const SizedBox(width: 6),
                 _buildFilterChip('Delivery', 'delivery', Icons.delivery_dining),
-                const SizedBox(width: 6),
-                _buildFilterChip('4+ Star', 'high_rating', Icons.star),
                 const SizedBox(width: 6),
                 _buildFilterChip('Nationwide', 'nationwide', Icons.public),
               ],

@@ -155,7 +155,16 @@ exports.payfastNotify = functions.https.onRequest(async (req, res) => {
         // 3) Ledger entry (escrow/receivable) for online (PayFast) payments
         try {
           if (sellerId && Number(totalPrice) > 0) {
-            const commissionPct = Number(process.env.PLATFORM_COMMISSION_PCT || 0.1);
+            // Commission percent from admin settings (fallback to env)
+            let commissionPct = Number(process.env.PLATFORM_COMMISSION_PCT || 0.1);
+            try {
+              const feeDoc = await db.collection('admin_settings').doc('payment_settings').get();
+              const feeData = feeDoc.exists ? feeDoc.data() : {};
+              const cfgPct = Number(feeData?.platformFeePercentage);
+              if (!isNaN(cfgPct) && cfgPct >= 0 && cfgPct <= 0.5) {
+                commissionPct = cfgPct / 100; // stored as percent in UI
+              }
+            } catch (_) {}
             const gross = Math.round(Number(totalPrice) * 100) / 100;
             const commission = Math.round(gross * commissionPct * 100) / 100;
             const net = Math.round((gross - commission) * 100) / 100;
@@ -1617,7 +1626,19 @@ exports.setUserCustomClaims = functions.https.onCall(async (data, context) => {
 });
 
 // ===== Seller payouts (bank details already stored under users/{uid}/payout/bank) =====
-const COMMISSION_PCT = Number(process.env.PLATFORM_COMMISSION_PCT || 0.1); // 10% default
+async function getCommissionPct() {
+  let pct = Number(process.env.PLATFORM_COMMISSION_PCT || 0.1);
+  try {
+    const doc = await db.collection('admin_settings').doc('payment_settings').get();
+    const data = doc.exists ? (doc.data() || {}) : {};
+    const cfgPct = Number(data.platformFeePercentage);
+    if (!isNaN(cfgPct) && cfgPct >= 0 && cfgPct <= 50) {
+      pct = cfgPct / 100;
+    }
+  } catch (_) {}
+  return pct;
+}
+const COMMISSION_PCT_FALLBACK = Number(process.env.PLATFORM_COMMISSION_PCT || 0.1);
 const MIN_PAYOUT_AMOUNT = Number(process.env.MIN_PAYOUT_AMOUNT || 50); // R50 default
 
 function toRand(n) { return Math.round(Number(n || 0) * 100) / 100; }
@@ -1693,7 +1714,8 @@ exports.getSellerAvailableBalance = functions.https.onCall(async (data, context)
   }
 
   const result = await computeSellerAvailableBalance(targetUid);
-  return { ...result, minPayoutAmount: MIN_PAYOUT_AMOUNT, commissionPct: COMMISSION_PCT };
+  const cpct = await getCommissionPct().catch(() => COMMISSION_PCT_FALLBACK);
+  return { ...result, minPayoutAmount: MIN_PAYOUT_AMOUNT, commissionPct: cpct };
 });
 
 exports.requestPayout = functions.https.onCall(async (data, context) => {
@@ -1863,7 +1885,18 @@ exports.adminDeleteUser = functions.https.onCall(async (data, context) => {
   if (!context.auth) {
     throw new functions.https.HttpsError('unauthenticated', 'Sign in required');
   }
-  const isAdminCaller = context.auth.token?.admin === true || context.auth.token?.role === 'admin';
+  let isAdminCaller = context.auth.token?.admin === true || context.auth.token?.role === 'admin';
+  if (!isAdminCaller) {
+    // Fallback to Firestore role check to support dashboards that gate by users/{uid}.role
+    try {
+      const callerDoc = await db.collection('users').doc(context.auth.uid).get();
+      if (callerDoc.exists && (callerDoc.data()?.role === 'admin')) {
+        isAdminCaller = true;
+      }
+    } catch (e) {
+      // ignore and use claims-only result
+    }
+  }
   if (!isAdminCaller) {
     throw new functions.https.HttpsError('permission-denied', 'Admin only');
   }
@@ -1907,14 +1940,130 @@ exports.adminDeleteUser = functions.https.onCall(async (data, context) => {
     console.warn('[adminDeleteUser] token cleanup failed (continuing):', e?.message || e);
   }
 
-  // 3) Delete the user document
+  // 3) Delete seller stores
+  try {
+    let lastStore = null;
+    for (;;) {
+      let q = db.collection('stores').where('sellerId', '==', userId).limit(500);
+      if (lastStore) q = q.startAfter(lastStore);
+      const snap = await q.get();
+      if (snap.empty) break;
+      const batch = db.batch();
+      snap.docs.forEach((d) => batch.delete(d.ref));
+      await batch.commit();
+      lastStore = snap.docs[snap.docs.length - 1];
+      if (snap.size < 500) break;
+    }
+  } catch (e) {
+    console.warn('[adminDeleteUser] stores cleanup failed (continuing):', e?.message || e);
+  }
+
+  // 4) Delete seller products
+  try {
+    let lastProduct = null;
+    for (;;) {
+      let q = db.collection('products').where('ownerId', '==', userId).limit(500);
+      if (lastProduct) q = q.startAfter(lastProduct);
+      const snap = await q.get();
+      if (snap.empty) break;
+      const batch = db.batch();
+      snap.docs.forEach((d) => batch.delete(d.ref));
+      await batch.commit();
+      lastProduct = snap.docs[snap.docs.length - 1];
+      if (snap.size < 500) break;
+    }
+  } catch (e) {
+    console.warn('[adminDeleteUser] products cleanup failed (continuing):', e?.message || e);
+  }
+
+  // 5) Delete orders where seller is this user OR buyer is this user
+  try {
+    const deleteOrdersWhere = async (field) => {
+      let lastDoc = null;
+      for (;;) {
+        let q = db.collection('orders').where(field, '==', userId).limit(300);
+        if (lastDoc) q = q.startAfter(lastDoc);
+        const snap = await q.get();
+        if (snap.empty) break;
+        const batch = db.batch();
+        snap.docs.forEach((d) => batch.delete(d.ref));
+        await batch.commit();
+        lastDoc = snap.docs[snap.docs.length - 1];
+        if (snap.size < 300) break;
+      }
+    };
+    await deleteOrdersWhere('sellerId');
+    await deleteOrdersWhere('buyerId');
+  } catch (e) {
+    console.warn('[adminDeleteUser] orders cleanup failed (continuing):', e?.message || e);
+  }
+
+  // 6) Delete chats where user is buyer or seller (include messages subcollection)
+  try {
+    let lastChat = null;
+    for (;;) {
+      let q = db.collection('chats').where('sellerId', '==', userId).limit(200);
+      if (lastChat) q = q.startAfter(lastChat);
+      const snap = await q.get();
+      if (snap.empty) break;
+      for (const d of snap.docs) {
+        // delete messages subcollection in batches
+        const msgCol = d.ref.collection('messages');
+        let lastMsg = null;
+        for (;;) {
+          let mq = msgCol.limit(500);
+          if (lastMsg) mq = mq.startAfter(lastMsg);
+          const ms = await mq.get();
+          if (ms.empty) break;
+          const mb = db.batch();
+          ms.docs.forEach((m) => mb.delete(m.ref));
+          await mb.commit();
+          lastMsg = ms.docs[ms.docs.length - 1];
+          if (ms.size < 500) break;
+        }
+        await d.ref.delete();
+      }
+      lastChat = snap.docs[snap.docs.length - 1];
+      if (snap.size < 200) break;
+    }
+    // Chats where user is buyer
+    lastChat = null;
+    for (;;) {
+      let q = db.collection('chats').where('buyerId', '==', userId).limit(200);
+      if (lastChat) q = q.startAfter(lastChat);
+      const snap = await q.get();
+      if (snap.empty) break;
+      for (const d of snap.docs) {
+        const msgCol = d.ref.collection('messages');
+        let lastMsg = null;
+        for (;;) {
+          let mq = msgCol.limit(500);
+          if (lastMsg) mq = mq.startAfter(lastMsg);
+          const ms = await mq.get();
+          if (ms.empty) break;
+          const mb = db.batch();
+          ms.docs.forEach((m) => mb.delete(m.ref));
+          await mb.commit();
+          lastMsg = ms.docs[ms.docs.length - 1];
+          if (ms.size < 500) break;
+        }
+        await d.ref.delete();
+      }
+      lastChat = snap.docs[snap.docs.length - 1];
+      if (snap.size < 200) break;
+    }
+  } catch (e) {
+    console.warn('[adminDeleteUser] chats cleanup failed (continuing):', e?.message || e);
+  }
+
+  // 7) Delete the user document
   try {
     await userRef.delete();
   } catch (e) {
     console.warn('[adminDeleteUser] user doc delete failed:', e?.message || e);
   }
 
-  // 4) Delete Auth user
+  // 8) Delete Auth user
   try {
     await admin.auth().deleteUser(userId);
   } catch (e) {

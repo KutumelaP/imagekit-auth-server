@@ -187,14 +187,19 @@ class DashboardCacheService extends ChangeNotifier {
     final allSellers = await firestore.collection('users').where('role', isEqualTo: 'seller').get();
     final pendingSellers = await firestore.collection('users').where('role', isEqualTo: 'seller').where('status', isEqualTo: 'pending').get();
     
-    // Fetch orders for today and total
+    // Fetch orders for today, last 30 days, and total
     final now = DateTime.now();
     final startOfDay = DateTime(now.year, now.month, now.day);
+    final startOf30Days = now.subtract(const Duration(days: 30));
     final todayOrders = await firestore
         .collection('orders')
         .where('timestamp', isGreaterThanOrEqualTo: Timestamp.fromDate(startOfDay))
         .get();
     final allOrders = await firestore.collection('orders').get();
+    final last30Orders = await firestore
+        .collection('orders')
+        .where('timestamp', isGreaterThanOrEqualTo: Timestamp.fromDate(startOf30Days))
+        .get();
     
     // Fetch reviews for today
     final todayReviews = await firestore
@@ -207,9 +212,11 @@ class DashboardCacheService extends ChangeNotifier {
     final approvedKycUsers = await firestore.collection('users').where('kycStatus', isEqualTo: 'approved').get();
     final rejectedKycUsers = await firestore.collection('users').where('kycStatus', isEqualTo: 'rejected').get();
     
-    // Calculate revenue
+    // Calculate revenue and GMV windows
     double totalRevenue = 0.0;
     double todayRevenue = 0.0;
+    double last30Gmv = 0.0;
+    double last30PlatformFee = 0.0;
     
     for (var doc in allOrders.docs) {
       final data = doc.data();
@@ -223,6 +230,21 @@ class DashboardCacheService extends ChangeNotifier {
       todayRevenue += fee.toDouble();
     }
 
+    for (var doc in last30Orders.docs) {
+      final data = doc.data();
+      // GMV approximation: prefer totalPrice, else orderTotal, else totalAmount
+      final num gmvComponent = (data['totalPrice'] ?? data['orderTotal'] ?? data['totalAmount'] ?? 0.0) as num;
+      last30Gmv += gmvComponent.toDouble();
+      final fee = (data['platformFee'] ?? 0.0) as num;
+      if (fee == 0.0) {
+        // fallback compute if needed
+        final pfPct = (data['platformFeePercent'] ?? 0.0) as num;
+        last30PlatformFee += (gmvComponent.toDouble() * (pfPct.toDouble() / 100.0));
+      } else {
+        last30PlatformFee += fee.toDouble();
+      }
+    }
+
     return DashboardStats(
       totalUsers: allUsers.docs.length,
       totalSellers: allSellers.docs.length,
@@ -231,6 +253,8 @@ class DashboardCacheService extends ChangeNotifier {
       totalOrders: allOrders.docs.length,
       totalRevenue: totalRevenue,
       todayRevenue: todayRevenue,
+      last30Gmv: last30Gmv,
+      last30PlatformFee: last30PlatformFee,
       todayReviews: todayReviews.docs.length,
       pendingKycSubmissions: pendingKycUsers.docs.length,
       totalKycApproved: approvedKycUsers.docs.length,
@@ -325,6 +349,8 @@ class DashboardStats {
   final int totalOrders;
   final double totalRevenue;
   final double todayRevenue;
+  final double last30Gmv;
+  final double last30PlatformFee;
   final int todayReviews;
   final int pendingKycSubmissions;
   final int totalKycApproved;
@@ -339,6 +365,8 @@ class DashboardStats {
     required this.totalOrders,
     required this.totalRevenue,
     required this.todayRevenue,
+    required this.last30Gmv,
+    required this.last30PlatformFee,
     required this.todayReviews,
     required this.pendingKycSubmissions,
     required this.totalKycApproved,

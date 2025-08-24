@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
 import 'package:http/http.dart' as http;
+import 'package:cloud_functions/cloud_functions.dart';
 import 'dart:convert';
 import 'package:path/path.dart' as path;
 import '../theme/app_theme.dart';
@@ -23,6 +24,11 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
   final _nameController = TextEditingController();
   final _contactController = TextEditingController();
   final _locationController = TextEditingController();
+  final _addressLine1Controller = TextEditingController();
+  final _addressLine2Controller = TextEditingController();
+  final _cityTextController = TextEditingController();
+  final _postalCodeTextController = TextEditingController();
+  String? _formattedAddress;
   final _storyController = TextEditingController();
   final _specialtiesController = TextEditingController();
   final _passionController = TextEditingController();
@@ -65,7 +71,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
   
   // Delivery range variables
   double _deliveryRange = 50.0; // Default 50km range (0-1000 range slider)
-  final _customRangeController = TextEditingController();
+  // removed custom range controller
   String? _selectedStoreCategory; // Store category for delivery range caps
 
   double _getCategoryDeliveryCapFromData(Map<String, dynamic> data) {
@@ -103,6 +109,11 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
       _nameController.text = data['storeName'] ?? data['username'] ?? '';
       _contactController.text = data['contact'] ?? '';
       _locationController.text = data['location'] ?? '';
+      _addressLine1Controller.text = data['addressLine1'] ?? '';
+      _addressLine2Controller.text = data['addressLine2'] ?? '';
+      _cityTextController.text = data['city'] ?? '';
+      _postalCodeTextController.text = (data['postalCode'] ?? '').toString();
+      _formattedAddress = data['formattedAddress'];
       _storyController.text = data['story'] ?? '';
       _specialtiesController.text = (data['specialties'] is List)
         ? (data['specialties'] as List).join(', ')
@@ -214,15 +225,14 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
       if (user == null) throw Exception('User not logged in');
       print('DEBUG: Getting ImageKit auth parameters from server...');
 
-      // Get authentication parameters from backend
-      final response = await http.get(Uri.parse('https://imagekit-auth-server-f4te.onrender.com/auth'));
-
-      if (response.statusCode != 200) {
-        print('DEBUG: Failed to get ImageKit auth parameters. Response: ${response.body}');
-        throw Exception('Failed to get authentication parameters');
+      // Get authentication parameters from Firebase callable
+      final callable = FirebaseFunctions.instance.httpsCallable('getImageKitUploadAuth');
+      final result = await callable.call();
+      final data = result.data;
+      if (data is! Map) {
+        throw Exception('Invalid auth response');
       }
-      
-      final authParams = Map<String, dynamic>.from(jsonDecode(response.body));
+      final authParams = Map<String, dynamic>.from(data as Map);
       print('DEBUG: Got ImageKit auth params: ${authParams.toString()}');
       
       // Read file bytes safely
@@ -253,7 +263,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
       );
       
       request.fields.addAll({
-        'publicKey': 'public_tAO0SkfLl/37FQN+23c/bkAyfYg=',
+        'publicKey': (authParams['publicKey'] ?? '').toString(),
         'token': authParams['token'],
         'signature': authParams['signature'],
         'expire': authParams['expire'].toString(),
@@ -294,15 +304,14 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
       if (user == null) throw Exception('User not logged in');
       print('DEBUG: Getting ImageKit auth parameters for video upload...');
 
-      // Get authentication parameters from backend
-      final response = await http.get(Uri.parse('https://imagekit-auth-server-f4te.onrender.com/auth'));
-
-      if (response.statusCode != 200) {
-        print('DEBUG: Failed to get ImageKit auth parameters. Response: ${response.body}');
-        throw Exception('Failed to get authentication parameters');
+      // Get authentication parameters from Firebase callable
+      final callable = FirebaseFunctions.instance.httpsCallable('getImageKitUploadAuth');
+      final result = await callable.call();
+      final data = result.data;
+      if (data is! Map) {
+        throw Exception('Invalid auth response');
       }
-      
-      final authParams = Map<String, dynamic>.from(jsonDecode(response.body));
+      final authParams = Map<String, dynamic>.from(data as Map);
       print('DEBUG: Got ImageKit auth params for video: ${authParams.toString()}');
       
       // Read file bytes safely
@@ -333,7 +342,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
       );
       
       request.fields.addAll({
-        'publicKey': 'public_tAO0SkfLl/37FQN+23c/bkAyfYg=',
+        'publicKey': (authParams['publicKey'] ?? '').toString(),
         'token': authParams['token'],
         'signature': authParams['signature'],
         'expire': authParams['expire'].toString(),
@@ -438,14 +447,14 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) throw Exception('User not logged in');
       
-      print('DEBUG: Getting ImageKit auth parameters from server...');
-      final response = await http.get(Uri.parse('https://imagekit-auth-server-f4te.onrender.com/auth'));
-      
-      if (response.statusCode != 200) {
-        throw Exception('Failed to get authentication parameters');
+      print('DEBUG: Getting ImageKit auth parameters from callable...');
+      final callable = FirebaseFunctions.instance.httpsCallable('getImageKitUploadAuth');
+      final result = await callable.call();
+      final data = result.data;
+      if (data is! Map) {
+        throw Exception('Invalid auth response');
       }
-      
-      final authParams = Map<String, dynamic>.from(jsonDecode(response.body));
+      final authParams = Map<String, dynamic>.from(data as Map);
       final bytes = await file.readAsBytes();
       final fileName = 'profile_images/${user.uid}/${DateTime.now().millisecondsSinceEpoch}_${path.basename(file.path)}';
       
@@ -455,7 +464,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
       );
       
       request.fields.addAll({
-        'publicKey': 'public_tAO0SkfLl/37FQN+23c/bkAyfYg=',
+        'publicKey': (authParams['publicKey'] ?? '').toString(),
         'token': authParams['token'],
         'signature': authParams['signature'],
         'expire': authParams['expire'].toString(),
@@ -792,6 +801,11 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
       if (!_isSeller) 'username': _nameController.text.trim(),
       'contact': _contactController.text.trim(),
       'location': _locationController.text.trim(),
+      'formattedAddress': (_formattedAddress ?? _locationController.text.trim()),
+      'addressLine1': _addressLine1Controller.text.trim(),
+      'addressLine2': _addressLine2Controller.text.trim(),
+      'city': _cityTextController.text.trim(),
+      'postalCode': _postalCodeTextController.text.trim(),
       'story': _storyController.text.trim(),
       'specialties': _specialtiesController.text.trim().split(',').map((s) => s.trim()).where((s) => s.isNotEmpty).toList(),
       'passion': _passionController.text.trim(),
@@ -897,10 +911,14 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
     _nameController.dispose();
     _contactController.dispose();
     _locationController.dispose();
+    _addressLine1Controller.dispose();
+    _addressLine2Controller.dispose();
+    _cityTextController.dispose();
+    _postalCodeTextController.dispose();
     _storyController.dispose();
     _specialtiesController.dispose();
     _passionController.dispose();
-    _customRangeController.dispose();
+    // removed custom range controller
     super.dispose();
   }
 
@@ -1626,8 +1644,25 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                     const SizedBox(height: 16),
                     _buildThemedTextField(
                       controller: _locationController,
-                      labelText: 'Location',
+                      labelText: 'Store Location',
                     ),
+                    _buildThemedTextField(
+                      controller: _addressLine1Controller,
+                      labelText: 'Address Line 1',
+                      suffixIcon: const Icon(Icons.home),
+                    ),
+                    const SizedBox(height: 12),
+                    _buildThemedTextField(
+                      controller: _addressLine2Controller,
+                      labelText: 'Address Line 2 (optional)',
+                      suffixIcon: const Icon(Icons.apartment),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(children:[
+                      Expanded(child: _buildThemedTextField(controller: _cityTextController, labelText: 'City/Town', suffixIcon: const Icon(Icons.location_city))),
+                      const SizedBox(width: 8),
+                      Expanded(child: _buildThemedTextField(controller: _postalCodeTextController, labelText: 'Postal Code', suffixIcon: const Icon(Icons.local_post_office))),
+                    ]),
                     if (_isSeller && _kycStatus != 'approved') ...[
                       const SizedBox(height: 12),
                       Container(

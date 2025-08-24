@@ -691,13 +691,31 @@ class _AdminDashboardContentState extends State<AdminDashboardContent> {
                       growth: stats?.orderGrowth,
                     ),
                     _buildStatCard(
-                      'Platform Revenue',
+                      'Platform Revenue (All Time)',
                       stats != null ? 'R${stats.totalRevenue.toStringAsFixed(2)}' : '—',
                       Icons.receipt,
                       AdminTheme.indigo,
                       isLoading: stats == null && _cacheService.isLoadingStats,
                       growth: stats?.revenueGrowth,
                     ),
+                    if (stats != null)
+                      _buildStatCard(
+                        'GMV (Last 30 Days)',
+                        'R${stats.last30Gmv.toStringAsFixed(2)}',
+                        Icons.stacked_line_chart,
+                        AdminTheme.deepTeal,
+                        isLoading: false,
+                        growth: null,
+                      ),
+                    if (stats != null)
+                      _buildStatCard(
+                        'Platform Fee (Last 30 Days)',
+                        'R${stats.last30PlatformFee.toStringAsFixed(2)}',
+                        Icons.savings,
+                        AdminTheme.indigo,
+                        isLoading: false,
+                        growth: null,
+                      ),
                     _buildStatCard(
                       'Pending Approvals',
                       (stats?.pendingApprovals ?? quick?['pendingApprovals'] ?? 0).toString(),

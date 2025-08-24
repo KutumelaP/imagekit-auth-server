@@ -2854,6 +2854,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       final seller = sellerDoc.data()!;
       _storeName = seller['storeName'] ?? 'Store';
       _storeOpen = seller['isStoreOpen'] ?? false;
+      final bool sellerDeliveryAvailable = seller['deliveryAvailable'] == true;
+      final bool sellerPlatformDeliveryEnabled = seller['platformDeliveryEnabled'] == true;
+      final bool sellerSellerDeliveryEnabled = seller['sellerDeliveryEnabled'] == true;
       final storeLat = seller['latitude'];
       final storeLng = seller['longitude'];
       // Check seller's delivery fee preference
@@ -2898,6 +2901,12 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
       _sellerPargoEnabled = (seller['pargoEnabled'] ?? false) && pargoVisible;
       _sellerPaxiEnabled = (seller['paxiEnabled'] ?? false) && paxiVisible;
+      // Enforce seller delivery gating
+      if (!sellerDeliveryAvailable || (!sellerPlatformDeliveryEnabled && !sellerSellerDeliveryEnabled)) {
+        if (_isDelivery) {
+          setState(() { _isDelivery = false; });
+        }
+      }
       // Store pickup available if seller has coordinates
       _storePickupAvailable = (storeLat != null && storeLng != null);
       
@@ -8873,6 +8882,20 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                     foregroundColor: Colors.white,
                   ),
                 ),
+              ),
+              const SizedBox(height: 6),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(Icons.info_outline, size: 14, color: Colors.grey),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'Why top-up? It helps reduce no‑shows and covers courier costs for COD orders. If you pay online, no top‑up is needed.',
+                      style: TextStyle(color: Colors.grey[700], fontSize: 12, height: 1.3),
+                    ),
+                  ),
+                ],
               ),
               SizedBox(height: ResponsiveUtils.getVerticalPadding(context) * 0.5),
             ],

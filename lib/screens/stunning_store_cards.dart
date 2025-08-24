@@ -98,145 +98,158 @@ class StunningStoreCard extends StatelessWidget {
     print('  - Product images: $productImages');
     print('  - Profile image: $profileImageUrl');
     
-    return Container(
-      height: 200,
-      decoration: BoxDecoration(
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      child: Stack(
-        children: [
-          // Product Images Slideshow or Profile Image
-          if (productImages.isNotEmpty)
-            SafeNetworkImage(
-              imageUrl: productImages.first,
-              width: double.infinity,
-              height: 200,
-              fit: BoxFit.cover,
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-            )
-          else if (profileImageUrl != null && profileImageUrl.isNotEmpty)
-            SafeNetworkImage(
-              imageUrl: profileImageUrl,
-              width: double.infinity,
-              height: 200,
-              fit: BoxFit.cover,
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-            )
-          else
-            _buildPlaceholderImage(),
-          
-          // Gradient Overlay
-          Container(
-            decoration: BoxDecoration(
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  Colors.transparent,
-                  Colors.black.withOpacity(0.3),
-                ],
-              ),
+    return GestureDetector(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => StunningProductBrowser(
+              storeId: store['storeId'],
+              storeName: store['storeName'] ?? 'Store',
             ),
           ),
-          
-          // Store Name Overlay
-          Positioned(
-            bottom: 16,
-            left: 16,
-            right: 16,
-            child: Text(
-              store['storeName'] ?? 'Store Name',
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-                shadows: [
-                  Shadow(
-                    color: Colors.black54,
-                    offset: Offset(1, 1),
-                    blurRadius: 3,
-                  ),
-                ],
-              ),
-            ),
-          ),
-          
-          // Behind the Brand Badge
-          if (store['story'] != null && store['story'].toString().isNotEmpty)
-            Positioned(
-              top: 16,
-              right: 16,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [AppTheme.deepTeal, AppTheme.cloud],
-                  ),
-                  borderRadius: BorderRadius.circular(20),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.2),
-                      blurRadius: 8,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(
-                      Icons.business,
-                      color: Colors.white,
-                      size: 14,
-                    ),
-                    const SizedBox(width: 4),
-                    const Text(
-                      'Brand',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
+        );
+      },
+      child: Container(
+        height: 200,
+        decoration: BoxDecoration(
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        child: Stack(
+          children: [
+            // Product Images Slideshow or Profile Image
+            if (productImages.isNotEmpty)
+              SafeNetworkImage(
+                imageUrl: productImages.first,
+                width: double.infinity,
+                height: 200,
+                fit: BoxFit.cover,
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+              )
+            else if (profileImageUrl != null && profileImageUrl.isNotEmpty)
+              SafeNetworkImage(
+                imageUrl: profileImageUrl,
+                width: double.infinity,
+                height: 200,
+                fit: BoxFit.cover,
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+              )
+            else
+              _buildPlaceholderImage(),
+            
+            // Gradient Overlay
+            Container(
+              decoration: BoxDecoration(
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.transparent,
+                    Colors.black.withOpacity(0.3),
                   ],
                 ),
               ),
             ),
-          
-          // Image count indicator for multiple images
-          if (productImages.length > 1)
+            
+            // Store Name Overlay
             Positioned(
-              top: 16,
+              bottom: 16,
               left: 16,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: Colors.black.withOpacity(0.6),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(
-                      Icons.photo_library,
-                      size: 14,
-                      color: Colors.white,
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      '${productImages.length}',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
-                      ),
+              right: 16,
+              child: Text(
+                store['storeName'] ?? 'Store Name',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  shadows: [
+                    Shadow(
+                      color: Colors.black54,
+                      offset: Offset(1, 1),
+                      blurRadius: 3,
                     ),
                   ],
                 ),
               ),
             ),
-        ],
+            
+            // Behind the Brand Badge
+            if (store['story'] != null && store['story'].toString().isNotEmpty)
+              Positioned(
+                top: 16,
+                right: 16,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [AppTheme.deepTeal, AppTheme.cloud],
+                    ),
+                    borderRadius: BorderRadius.circular(20),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.2),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.business,
+                        color: Colors.white,
+                        size: 14,
+                      ),
+                      const SizedBox(width: 4),
+                      const Text(
+                        'Brand',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            
+            // Image count indicator for multiple images
+            if (productImages.length > 1)
+              Positioned(
+                top: 16,
+                left: 16,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.6),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.photo_library,
+                        size: 14,
+                        color: Colors.white,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        '${productImages.length}',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -392,6 +405,45 @@ class StunningStoreCard extends StatelessWidget {
                         ],
                       ),
                     ),
+                  const SizedBox(width: 4),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: (store['isStoreOpen'] == true)
+                          ? AppTheme.primaryGreen.withOpacity(0.1)
+                          : AppTheme.primaryRed.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: (store['isStoreOpen'] == true)
+                            ? AppTheme.primaryGreen
+                            : AppTheme.primaryRed,
+                        width: 1,
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          (store['isStoreOpen'] == true) ? Icons.circle : Icons.circle_outlined,
+                          size: 8,
+                          color: (store['isStoreOpen'] == true)
+                              ? AppTheme.primaryGreen
+                              : AppTheme.primaryRed,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          (store['isStoreOpen'] == true) ? 'Open' : 'Closed',
+                          style: TextStyle(
+                            color: (store['isStoreOpen'] == true)
+                                ? AppTheme.primaryGreen
+                                : AppTheme.primaryRed,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ],
               ),
               const SizedBox(height: 4),
