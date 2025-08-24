@@ -314,5 +314,11 @@ service cloud.firestore {
 
     // Push status (admin-only diagnostics)
     match /push_status/{id} { allow read: if isAdmin(); }
+    
+    // Payout locks (for admin payout management)
+    match /payout_locks/{sellerId} {
+      allow read, write: if isAdmin();
+      allow create, delete: if isAuthenticated() && isOwner(sellerId);
+    }
   }
 }
