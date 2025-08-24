@@ -273,6 +273,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       case 30: return Icons.warning; // Risk Review
       case 31: return Icons.verified_user; // KYC Review
       case 32: return Icons.people_outline; // KYC Overview
+      case 33: return Icons.account_balance_wallet; // Payouts
       default: return Icons.dashboard;
     }
   }
@@ -1029,5 +1030,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     'Risk Review',
     'KYC Review',
     'KYC Overview',
+    'Payouts',
   ];
 } 
