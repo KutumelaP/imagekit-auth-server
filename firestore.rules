@@ -61,6 +61,20 @@ service cloud.firestore {
         // Allow admin to read for verification
         allow read: if isAdmin();
       }
+
+      // Payout subcollection - Allow users to manage their own payout settings
+      match /payout/{payoutDocId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+        // Allow admin to read for verification
+        allow read: if isAdmin();
+      }
+
+      // Payouts subcollection - Allow users to read their own payout history
+      match /payouts/{payoutId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+        // Allow admin to manage all payouts
+        allow read, write: if isAdmin();
+      }
     }
 
     // CONFIG - Allow unauthenticated access for app initialization
