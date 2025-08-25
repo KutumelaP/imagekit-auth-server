@@ -1291,7 +1291,10 @@ exports.syncImageAssetsScheduled = functions.pubsub.schedule('every 24 hours').o
 });
 
 // Batch delete images from ImageKit and mirror collection
-exports.batchDeleteImages = functions.https.onCall(async (data, context) => {
+exports.batchDeleteImages = functions.runWith({
+  timeoutSeconds: 540,  // 9 minutes max
+  memory: '1GB'
+}).https.onCall(async (data, context) => {
   if (!context.auth) {
     throw new functions.https.HttpsError('unauthenticated', 'Sign in required');
   }
@@ -1304,6 +1307,18 @@ exports.batchDeleteImages = functions.https.onCall(async (data, context) => {
     if (fileIds.length === 0) {
       throw new functions.https.HttpsError('invalid-argument', 'fileIds required');
     }
+    
+    // Limit batch size to prevent timeouts
+    const MAX_BATCH_SIZE = 50;
+    if (fileIds.length > MAX_BATCH_SIZE) {
+      return {
+        success: false,
+        error: `Batch size too large. Maximum ${MAX_BATCH_SIZE} images per batch. Please split into smaller batches.`,
+        maxBatchSize: MAX_BATCH_SIZE,
+        providedCount: fileIds.length
+      };
+    }
+    
     console.log('batchDeleteImages count:', fileIds.length, 'first', fileIds[0]);
 
     const { privateKey } = getImageKitCredentials();
@@ -1311,37 +1326,90 @@ exports.batchDeleteImages = functions.https.onCall(async (data, context) => {
       throw new functions.https.HttpsError('failed-precondition', 'ImageKit not configured');
     }
 
-    // Delete from ImageKit (best-effort) and Firestore mirror
+    // Delete from ImageKit with chunked parallel processing
     const headers = { Authorization: `Basic ${Buffer.from(`${privateKey}:`).toString('base64')}` };
     const results = {};
     const errors = {};
-    const batch = db.batch();
-    for (const id of fileIds) {
-      results[id] = false;
-      try {
-        const delRes = await axios.delete(`${IK_API_BASE}/files/${encodeURIComponent(id)}`, { headers, timeout: 20000 });
-        console.log('IK delete ok', id, delRes.status);
-        results[id] = true;
-      } catch (e) {
-        const status = e?.response?.status || 0;
-        const msg = e?.response?.data || e?.message || 'unknown';
-        console.warn('IK delete error', id, status, msg);
-        // Idempotent success if file already gone
-        if (status === 404) {
-          results[id] = true;
-        } else {
-          results[id] = false;
-          errors[id] = { status, message: msg };
+    
+    // Process in chunks of 10 for parallel execution
+    const CHUNK_SIZE = 10;
+    const chunks = [];
+    for (let i = 0; i < fileIds.length; i += CHUNK_SIZE) {
+      chunks.push(fileIds.slice(i, i + CHUNK_SIZE));
+    }
+    
+    console.log(`Processing ${fileIds.length} images in ${chunks.length} chunks of ${CHUNK_SIZE}`);
+    
+    for (const [chunkIndex, chunk] of chunks.entries()) {
+      console.log(`Processing chunk ${chunkIndex + 1}/${chunks.length}`);
+      
+      // Process chunk in parallel
+      const chunkPromises = chunk.map(async (id) => {
+        try {
+          const delRes = await axios.delete(`${IK_API_BASE}/files/${encodeURIComponent(id)}`, { 
+            headers, 
+            timeout: 15000  // Reduced individual timeout
+          });
+          console.log('IK delete ok', id, delRes.status);
+          return { id, success: true };
+        } catch (e) {
+          const status = e?.response?.status || 0;
+          const msg = e?.response?.data || e?.message || 'unknown';
+          console.warn('IK delete error', id, status, msg);
+          // Idempotent success if file already gone
+          if (status === 404) {
+            return { id, success: true };
+          } else {
+            return { id, success: false, error: { status, message: msg } };
+          }
+        }
+      });
+      
+      const chunkResults = await Promise.all(chunkPromises);
+      
+      // Process chunk results
+      for (const result of chunkResults) {
+        results[result.id] = result.success;
+        if (!result.success && result.error) {
+          errors[result.id] = result.error;
         }
       }
-      // Only remove from mirror if IK deletion succeeded (or 404)
-      if (results[id] === true) {
-        batch.delete(db.collection('image_assets').doc(id));
+      
+      // Small delay between chunks to be gentle on ImageKit API
+      if (chunkIndex < chunks.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
       }
     }
-    await batch.commit();
+
+    // Update Firestore mirror in batches
+    const successfulIds = Object.keys(results).filter(id => results[id] === true);
+    console.log(`Updating Firestore mirror for ${successfulIds.length} successful deletions`);
+    
+    // Process Firestore updates in batches of 500 (Firestore limit)
+    for (let i = 0; i < successfulIds.length; i += 500) {
+      const batch = db.batch();
+      const batchIds = successfulIds.slice(i, i + 500);
+      for (const id of batchIds) {
+        batch.delete(db.collection('image_assets').doc(id));
+      }
+      await batch.commit();
+    }
+    
     const allOk = Object.values(results).every((v) => v === true);
-    return { success: allOk, results, errors: Object.keys(errors).length ? errors : null };
+    const summary = {
+      total: fileIds.length,
+      successful: Object.values(results).filter(v => v === true).length,
+      failed: Object.values(results).filter(v => v === false).length
+    };
+    
+    console.log('batchDeleteImages summary:', summary);
+    
+    return { 
+      success: allOk, 
+      results, 
+      errors: Object.keys(errors).length ? errors : null,
+      summary
+    };
   } catch (e) {
     console.error('batchDeleteImages error:', e?.message || e);
     // Return structured error instead of throwing to avoid client [internal]

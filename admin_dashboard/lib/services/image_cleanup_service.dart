@@ -61,43 +61,89 @@ class ImageCleanupService {
 	
 	static Future<Map<String, bool>> deleteImages(List<String> fileIds) async {
 		final Map<String, bool> overallResults = {};
+		
+		if (fileIds.isEmpty) {
+			return overallResults;
+		}
+		
 		try {
 			print('🔄 Starting deletion of ${fileIds.length} images...');
 			await FirebaseAuth.instance.currentUser?.getIdToken(true);
 			final functions = FirebaseFunctions.instanceFor(region: 'us-central1');
 			final callable = functions.httpsCallable('batchDeleteImages');
 			
-			print('📞 Calling batchDeleteImages with fileIds: $fileIds');
-			final result = await callable.call({'fileIds': fileIds});
-			print('📥 Raw response from Cloud Function: ${result.data}');
+			// Split into batches if needed (server limit is 50)
+			const int maxBatchSize = 50;
+			final List<List<String>> batches = [];
+			for (int i = 0; i < fileIds.length; i += maxBatchSize) {
+				batches.add(fileIds.sublist(i, i + maxBatchSize > fileIds.length ? fileIds.length : i + maxBatchSize));
+			}
 			
-			final response = result.data as Map<String, dynamic>;
-			print('🔍 Parsed response: $response');
+			print('📦 Processing ${fileIds.length} images in ${batches.length} batches (max $maxBatchSize per batch)');
 			
-			if (response['success'] == true && response['results'] is Map) {
-				final Map<String, dynamic> serverResults = Map<String, dynamic>.from(response['results']);
-				print('✅ Server results: $serverResults');
+			for (int batchIndex = 0; batchIndex < batches.length; batchIndex++) {
+				final currentBatch = batches[batchIndex];
+				print('📦 Processing batch ${batchIndex + 1}/${batches.length} with ${currentBatch.length} images');
 				
-				for (final fileId in fileIds) {
-					final itemResult = serverResults[fileId];
-					print('📋 Processing result for $fileId: $itemResult');
+				try {
+					print('📞 Calling batchDeleteImages with batch: $currentBatch');
+					final result = await callable.call({'fileIds': currentBatch});
+					print('📥 Raw response from Cloud Function: ${result.data}');
 					
-					if (itemResult != null && itemResult['success'] == true) {
-						overallResults[fileId] = true;
-						print('✅ Successfully deleted $fileId from ImageKit');
+					final response = result.data as Map<String, dynamic>;
+					print('🔍 Parsed response: $response');
+					
+					if (response['success'] == true && response['results'] is Map) {
+						final Map<String, dynamic> serverResults = Map<String, dynamic>.from(response['results']);
+						print('✅ Server results for batch ${batchIndex + 1}: $serverResults');
+						
+						for (final fileId in currentBatch) {
+							final itemResult = serverResults[fileId];
+							print('📋 Processing result for $fileId: $itemResult');
+							
+							if (itemResult == true) {
+								overallResults[fileId] = true;
+								print('✅ Successfully deleted $fileId from ImageKit');
+							} else {
+								overallResults[fileId] = false;
+								print('❌ Server deletion failed for $fileId');
+							}
+						}
+						
+						// Show progress summary
+						if (response['summary'] is Map) {
+							final summary = response['summary'] as Map<String, dynamic>;
+							print('📊 Batch ${batchIndex + 1} summary: ${summary['successful']}/${summary['total']} successful');
+						}
+					} else if (response['maxBatchSize'] != null) {
+						// Handle batch size error specifically
+						print('❌ Batch size too large: ${response['error']}');
+						for (final id in currentBatch) {
+							overallResults[id] = false;
+						}
+						break; // Stop processing remaining batches
 					} else {
-						overallResults[fileId] = false;
-						print('❌ Server deletion failed for $fileId: ${itemResult?['message'] ?? 'Unknown error'}');
+						print('❌ Server batchDeleteImages call failed for batch ${batchIndex + 1}: ${response['error'] ?? 'Unknown error'}');
+						print('❌ Full response: $response');
+						for (final id in currentBatch) {
+							overallResults[id] = false;
+						}
+					}
+					
+					// Small delay between batches to be gentle on the server
+					if (batchIndex < batches.length - 1) {
+						print('⏳ Waiting 2 seconds before next batch...');
+						await Future.delayed(const Duration(seconds: 2));
+					}
+					
+				} catch (batchError) {
+					print('❌ Error processing batch ${batchIndex + 1}: $batchError');
+					for (final id in currentBatch) {
+						overallResults[id] = false;
 					}
 				}
-			} else {
-				print('❌ Server batchDeleteImages call failed: ${response['message'] ?? 'Unknown error'}');
-				print('❌ Full response: $response');
-				// Don't remove from Firestore mirror if server call fails entirely
-				for (final id in fileIds) {
-					overallResults[id] = false;
-				}
 			}
+			
 		} catch (e, stackTrace) {
 			print('❌ Error calling batchDeleteImages callable: $e');
 			print('❌ Stack trace: $stackTrace');
@@ -114,15 +160,20 @@ class ImageCleanupService {
 		final successfulFileIds = overallResults.entries.where((e) => e.value == true).map((e) => e.key).toList();
 		if (successfulFileIds.isNotEmpty) {
 			print('🗑️ Removing ${successfulFileIds.length} successfully deleted items from Firestore mirror...');
-			final batch = FirebaseFirestore.instance.batch();
-			for (final fileId in successfulFileIds) {
-				batch.delete(FirebaseFirestore.instance.collection('image_assets').doc(fileId));
-			}
-			try {
-				await batch.commit();
-				print('✅ Successfully removed ${successfulFileIds.length} items from Firestore mirror.');
-			} catch (e) {
-				print('❌ Error removing items from Firestore mirror: $e');
+			
+			// Process Firestore updates in batches of 500 (Firestore limit)
+			for (int i = 0; i < successfulFileIds.length; i += 500) {
+				final batch = FirebaseFirestore.instance.batch();
+				final batchIds = successfulFileIds.sublist(i, i + 500 > successfulFileIds.length ? successfulFileIds.length : i + 500);
+				for (final fileId in batchIds) {
+					batch.delete(FirebaseFirestore.instance.collection('image_assets').doc(fileId));
+				}
+				try {
+					await batch.commit();
+					print('✅ Successfully removed batch of ${batchIds.length} items from Firestore mirror.');
+				} catch (e) {
+					print('❌ Error removing batch from Firestore mirror: $e');
+				}
 			}
 		}
 		
