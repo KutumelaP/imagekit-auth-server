@@ -446,7 +446,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           .get();
       
       if (cartSnapshot.docs.isNotEmpty) {
-        print('🔍 DEBUG: Cart has ${cartSnapshot.docs.length} items');
+        if (kDebugMode) print('🔍 DEBUG: Cart has ${cartSnapshot.docs.length} items');
         
         // Separate food and non-food items
         List<Map<String, dynamic>> foodItems = [];
@@ -456,14 +456,14 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         
         for (var doc in cartSnapshot.docs) {
           final data = doc.data();
-          print('🔍 DEBUG: Cart item data: ${data.toString()}');
+          if (kDebugMode) print('🔍 DEBUG: Cart item data: ${data.toString()}');
           final category = data['category']?.toString().toLowerCase() ?? '';
-          print('🔍 DEBUG: Checking category: "$category" from data: ${data['category']}');
+          if (kDebugMode) print('🔍 DEBUG: Checking category: "$category" from data: ${data['category']}');
           
           if (category == 'food') {
             hasFood = true;
             foodItems.add(data);
-            print('🔍 DEBUG: Found food item: ${data['name'] ?? 'Unknown'}');
+            if (kDebugMode) print('🔍 DEBUG: Found food item: ${data['name'] ?? 'Unknown'}');
           } else {
             hasNonFood = true;
             nonFoodItems.add(data);
@@ -2982,47 +2982,31 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         
         // KYC gate: Check both seller and buyer KYC status
         final sellerKyc = (seller['kycStatus'] as String?) ?? 'none';
-        print('🔍 DEBUG: Seller KYC status: $sellerKyc');
+        if (kDebugMode) print('🔍 DEBUG: Seller KYC status: $sellerKyc');
         if (sellerKyc.toLowerCase() != 'approved') {
           _paymentMethods.removeWhere((m) => m.toLowerCase().contains('cash'));
           if (_selectedPaymentMethod != null && _selectedPaymentMethod!.toLowerCase().contains('cash')) {
             _selectedPaymentMethod = null;
           }
           _codDisabledReason = 'Cash on Delivery disabled: seller identity verification pending';
-          print('🔍 DEBUG: COD disabled by seller KYC, payment methods: $_paymentMethods');
+          if (kDebugMode) print('🔍 DEBUG: COD disabled by seller KYC, payment methods: $_paymentMethods');
         }
         
-        // Also check buyer's KYC status
-        final currentUser = FirebaseAuth.instance.currentUser;
-        if (currentUser != null) {
-          final buyerDoc = await FirebaseFirestore.instance
-              .collection('users')
-              .doc(currentUser.uid)
-              .get();
-          final buyerKyc = (buyerDoc.data()?['kycStatus'] as String?) ?? 'none';
-          print('🔍 DEBUG: Buyer KYC status: $buyerKyc');
-          if (buyerKyc.toLowerCase() != 'approved') {
-            _paymentMethods.removeWhere((m) => m.toLowerCase().contains('cash'));
-            if (_selectedPaymentMethod != null && _selectedPaymentMethod!.toLowerCase().contains('cash')) {
-              _selectedPaymentMethod = null;
-            }
-            _codDisabledReason = 'Cash on Delivery disabled: complete your identity verification in Profile settings';
-            print('🔍 DEBUG: COD disabled by buyer KYC, payment methods: $_paymentMethods');
-          }
-        }
+        // Note: Buyers do not need KYC verification to use COD
+        // Only sellers need KYC verification to offer COD as a payment method
       } catch (e) {
         debugPrint('⚠️ COD gating check failed: $e');
       }
 
       // Debug payment methods loading
-      print('🔍 DEBUG: FINAL Payment methods loaded: $_paymentMethods');
-      print('🔍 DEBUG: FINAL COD disabled reason: $_codDisabledReason');
-      print('🔍 DEBUG: FINAL Payment methods count: ${_paymentMethods.length}');
-      print('🔍 DEBUG: Seller Pargo enabled: $_sellerPargoEnabled');
-      print('🔍 DEBUG: Seller PAXI enabled: $_sellerPaxiEnabled');
+      if (kDebugMode) print('🔍 DEBUG: FINAL Payment methods loaded: $_paymentMethods');
+      if (kDebugMode) print('🔍 DEBUG: FINAL COD disabled reason: $_codDisabledReason');
+      if (kDebugMode) print('🔍 DEBUG: FINAL Payment methods count: ${_paymentMethods.length}');
+      if (kDebugMode) print('🔍 DEBUG: Seller Pargo enabled: $_sellerPargoEnabled');
+      if (kDebugMode) print('🔍 DEBUG: Seller PAXI enabled: $_sellerPaxiEnabled');
       
       if (storeLat == null || storeLng == null) {
-        print('🔍 DEBUG: Store location not available, using default delivery fee');
+        if (kDebugMode) print('🔍 DEBUG: Store location not available, using default delivery fee');
         _deliveryFee = 15.0; // Default delivery fee
         _deliveryDistance = 5.0; // Default distance
         if (mounted) setState(() {});
