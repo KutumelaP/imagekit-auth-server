@@ -3362,24 +3362,188 @@ class _ModernSellerDashboardSectionState extends State<ModernSellerDashboardSect
   Widget _buildMyProducts() {
     return Container(
       padding: const EdgeInsets.all(16),
-      alignment: Alignment.center,
-      child: const Text('My Products (coming soon)'),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 2))],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text('My Products', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              TextButton(
+                onPressed: () {
+                  // Navigate to product management
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Navigate to full product management')),
+                  );
+                },
+                child: const Text('View All'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          if (_userProducts.isEmpty)
+            const Center(
+              child: Column(
+                children: [
+                  Icon(Icons.inventory_2_outlined, size: 48, color: Colors.grey),
+                  SizedBox(height: 8),
+                  Text('No products yet', style: TextStyle(color: Colors.grey)),
+                ],
+              ),
+            )
+          else
+            ListView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: _userProducts.length > 3 ? 3 : _userProducts.length,
+              itemBuilder: (context, index) {
+                final product = _userProducts[index];
+                return ListTile(
+                  leading: ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: Image.network(
+                      product['imageUrl'] ?? '',
+                      width: 50,
+                      height: 50,
+                      fit: BoxFit.cover,
+                      errorBuilder: (context, error, stackTrace) => Container(
+                        width: 50,
+                        height: 50,
+                        color: Colors.grey[200],
+                        child: const Icon(Icons.image, color: Colors.grey),
+                      ),
+                    ),
+                  ),
+                  title: Text(product['name'] ?? 'Unknown Product'),
+                  subtitle: Text('R${(product['price'] ?? 0).toStringAsFixed(2)}'),
+                  trailing: Text(product['category'] ?? ''),
+                );
+              },
+            ),
+        ],
+      ),
     );
   }
 
   Widget _buildInventory() {
     return Container(
       padding: const EdgeInsets.all(16),
-      alignment: Alignment.center,
-      child: const Text('Inventory (coming soon)'),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 2))],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Inventory Summary', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 16),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              _buildInventoryCard('Total Products', _userProducts.length.toString(), Icons.inventory),
+              _buildInventoryCard('Active', _userProducts.where((p) => p['status'] != 'inactive').length.toString(), Icons.check_circle, Colors.green),
+              _buildInventoryCard('Low Stock', _userProducts.where((p) => (p['stock'] ?? 0) < 5).length.toString(), Icons.warning, Colors.orange),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInventoryCard(String title, String value, IconData icon, [Color? color]) {
+    return Column(
+      children: [
+        Icon(icon, size: 32, color: color ?? Colors.blue),
+        const SizedBox(height: 8),
+        Text(value, style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: color ?? Colors.blue)),
+        Text(title, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+      ],
     );
   }
 
   Widget _buildCustomerReviews() {
     return Container(
       padding: const EdgeInsets.all(16),
-      alignment: Alignment.center,
-      child: const Text('Customer Reviews (coming soon)'),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 2))],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text('Recent Reviews', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              TextButton(
+                onPressed: () {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Navigate to all reviews')),
+                  );
+                },
+                child: const Text('View All'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          StreamBuilder<QuerySnapshot>(
+            stream: FirebaseFirestore.instance
+                .collection('reviews')
+                .where('sellerId', isEqualTo: FirebaseAuth.instance.currentUser?.uid)
+                .orderBy('timestamp', descending: true)
+                .limit(3)
+                .snapshots(),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              
+              if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                return const Center(
+                  child: Column(
+                    children: [
+                      Icon(Icons.star_outline, size: 48, color: Colors.grey),
+                      SizedBox(height: 8),
+                      Text('No reviews yet', style: TextStyle(color: Colors.grey)),
+                    ],
+                  ),
+                );
+              }
+              
+              return ListView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: snapshot.data!.docs.length,
+                itemBuilder: (context, index) {
+                  final review = snapshot.data!.docs[index].data() as Map<String, dynamic>;
+                  return ListTile(
+                    leading: CircleAvatar(
+                      child: Text(review['userName']?.toString().substring(0, 1).toUpperCase() ?? 'U'),
+                    ),
+                    title: Text(review['userName'] ?? 'Anonymous'),
+                    subtitle: Text(review['comment'] ?? 'No comment'),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: List.generate(5, (starIndex) => Icon(
+                        starIndex < (review['rating'] ?? 0) ? Icons.star : Icons.star_border,
+                        color: Colors.orange,
+                        size: 16,
+                      )),
+                    ),
+                  );
+                },
+              );
+            },
+          ),
+        ],
+      ),
     );
   }
 
