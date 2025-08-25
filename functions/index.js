@@ -273,16 +273,15 @@ exports.payfastFormRedirect = functions.https.onRequest(async (req, res) => {
       const usePassphrase = merchantId !== '10000100' && !!passphrase; // Sandbox merchant uses no passphrase
       const keys = Object.keys(postData).filter((k) => k !== 'signature').sort();
       const encoded = keys.map((k) => `${k}=${pfEncode(postData[k])}`).join('&');
-      const toSignWith = `${encoded}&passphrase=${passphrase}`;
-      const sigWith = crypto.createHash('md5').update(toSignWith).digest('hex');
-      const sigNo = crypto.createHash('md5').update(encoded).digest('hex');
-      // Choose signature mode: query param sig=with|none (default: with, matching dashboard setting)
-      const sigMode = String(data.sig || 'with');
-      postData.signature = sigMode === 'with' ? sigWith : sigNo;
+      // Generate signature based on merchant type (production uses passphrase, sandbox doesn't)
+      const toSign = usePassphrase ? `${encoded}&passphrase=${passphrase}` : encoded;
+      const signature = crypto.createHash('md5').update(toSign).digest('hex');
+      postData.signature = signature;
+      const sigMode = usePassphrase ? 'with_passphrase' : 'no_passphrase';
       console.log('[payfastFormRedirect] sig_set=true mode=', sigMode, ' merchant_id=', merchantId);
       console.log('[payfastFormRedirect] encoded=', encoded);
-      console.log('[payfastFormRedirect] computed_signature_no_pass=', sigNo);
-      console.log('[payfastFormRedirect] computed_signature_with_pass=', sigWith);
+      console.log('[payfastFormRedirect] toSign=', toSign);
+      console.log('[payfastFormRedirect] computed_signature=', signature);
     } catch (e) {
       console.warn('[payfastFormRedirect] sig_compute_failed', e?.message || e);
     }
