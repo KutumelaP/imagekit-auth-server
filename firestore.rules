@@ -246,6 +246,11 @@ service cloud.firestore {
       // Users cannot update or delete submissions - admin only
     }
 
+    // UPLOAD_LOGS - For tracking file uploads
+    match /upload_logs/{logId} {
+      allow read, write: if isAdmin();
+    }
+
     // Admin-only collections
     match /emails/{emailId} {
       allow read, write: if isAdmin();

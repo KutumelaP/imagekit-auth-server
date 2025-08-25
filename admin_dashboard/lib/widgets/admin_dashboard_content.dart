@@ -40,6 +40,7 @@ import 'kyc_review_list.dart';
 import 'kyc_overview_widget.dart';
 import 'admin_payouts_section.dart';
 import 'customer_support_section.dart';
+import 'upload_management_section.dart';
 
 class AdminDashboardContent extends StatefulWidget {
   final String adminEmail;
@@ -116,6 +117,7 @@ class _AdminDashboardContentState extends State<AdminDashboardContent> {
     'KYC Overview',
     'Payouts',
     'Customer Support',
+    'Upload Management',
   ];
 
   @override
@@ -445,6 +447,7 @@ class _AdminDashboardContentState extends State<AdminDashboardContent> {
       case 33: return const KycOverviewWidget(); // KYC Overview
       case 34: return const AdminPayoutsSection(); // Payouts
       case 35: return const CustomerSupportSection(); // Customer Support
+      case 36: return const UploadManagementSection(); // Upload Management
       default: return const SizedBox();
     }
   }
@@ -1132,6 +1135,12 @@ class _AdminDashboardContentState extends State<AdminDashboardContent> {
                   Icons.support_agent,
                   Colors.purple,
                   () => widget.onSectionChanged(35),
+                ),
+                _buildQuickActionCard(
+                  'Upload Management',
+                  Icons.cloud_upload,
+                  Colors.indigo,
+                  () => widget.onSectionChanged(36),
                 ),
               ],
             );
