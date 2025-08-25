@@ -8,6 +8,7 @@ import 'package:geolocator/geolocator.dart';
 // Unused heavy imports removed to reduce bundle size
 import 'stunning_store_cards.dart';
 import '../theme/app_theme.dart';
+import '../utils/time_utils.dart';
 // import '../widgets/robust_image.dart';
 import '../widgets/home_navigation_button.dart';
 import 'simple_store_profile_screen.dart';
@@ -522,6 +523,120 @@ class _StoreSelectionScreenState extends State<StoreSelectionScreen> {
 
   bool userLatLngValid(Position? userPos, dynamic storeLat, dynamic storeLng, double deliveryRange) {
     return userPos != null && storeLat != null && storeLng != null && deliveryRange > 0;
+  }
+
+  bool _isStoreCurrentlyOpen(Map<String, dynamic> store) {
+    // First check: Manual store toggle (seller can manually close store)
+    if (store['isStoreOpen'] == false) {
+      return false; // Seller manually closed the store - always respect this
+    }
+    
+    // Second check: Automatic hours (if store is manually "open", check if within hours)
+    final storeOpenHour = store['storeOpenHour'] as String?;
+    final storeCloseHour = store['storeCloseHour'] as String?;
+    
+    if (storeOpenHour == null || storeCloseHour == null) {
+      return store['isStoreOpen'] ?? false; // Fallback to manual store open status if no hours set
+    }
+    
+    try {
+      final now = DateTime.now();
+      final currentTime = TimeOfDay(hour: now.hour, minute: now.minute);
+      
+      // Parse store hours
+      final openParts = storeOpenHour.split(':');
+      final closeParts = storeCloseHour.split(':');
+      
+      if (openParts.length != 2 || closeParts.length != 2) {
+        return store['isStoreOpen'] ?? false; // Fallback if time format is invalid
+      }
+      
+      final openHour = int.parse(openParts[0]);
+      final openMinute = int.parse(openParts[1]);
+      final closeHour = int.parse(closeParts[0]);
+      final closeMinute = int.parse(closeParts[1]);
+      
+      final openTime = TimeOfDay(hour: openHour, minute: openMinute);
+      final closeTime = TimeOfDay(hour: closeHour, minute: closeMinute);
+      
+      // Convert to minutes for easier comparison
+      final currentMinutes = currentTime.hour * 60 + currentTime.minute;
+      final openMinutes = openTime.hour * 60 + openTime.minute;
+      final closeMinutes = closeTime.hour * 60 + closeTime.minute;
+      
+      bool withinOperatingHours;
+      // Handle cases where store is open past midnight
+      if (closeMinutes < openMinutes) {
+        // Store closes after midnight
+        withinOperatingHours = currentMinutes >= openMinutes || currentMinutes <= closeMinutes;
+      } else {
+        // Store closes on the same day
+        withinOperatingHours = currentMinutes >= openMinutes && currentMinutes <= closeMinutes;
+      }
+      
+      // Combined logic: Store is open if manual toggle is true AND within operating hours
+      return (store['isStoreOpen'] ?? true) && withinOperatingHours;
+      
+    } catch (e) {
+      return store['isStoreOpen'] ?? false; // Fallback to manual store open status
+    }
+  }
+
+  String _getStoreStatusText(Map<String, dynamic> store) {
+    // Check manual toggle first
+    if (store['isStoreOpen'] == false) {
+      return 'Temp Closed';
+    }
+    
+    // Check if we have operating hours
+    final storeOpenHour = store['storeOpenHour'] as String?;
+    final storeCloseHour = store['storeCloseHour'] as String?;
+    
+    if (storeOpenHour == null || storeCloseHour == null) {
+      return store['isStoreOpen'] == true ? 'Open' : 'Closed';
+    }
+    
+    // Check if within operating hours
+    try {
+      final now = DateTime.now();
+      final currentTime = TimeOfDay(hour: now.hour, minute: now.minute);
+      
+      final openParts = storeOpenHour.split(':');
+      final closeParts = storeCloseHour.split(':');
+      
+      if (openParts.length != 2 || closeParts.length != 2) {
+        return store['isStoreOpen'] == true ? 'Open' : 'Closed';
+      }
+      
+      final openHour = int.parse(openParts[0]);
+      final openMinute = int.parse(openParts[1]);
+      final closeHour = int.parse(closeParts[0]);
+      final closeMinute = int.parse(closeParts[1]);
+      
+      final openTime = TimeOfDay(hour: openHour, minute: openMinute);
+      final closeTime = TimeOfDay(hour: closeHour, minute: closeMinute);
+      
+      final currentMinutes = currentTime.hour * 60 + currentTime.minute;
+      final openMinutes = openTime.hour * 60 + openTime.minute;
+      final closeMinutes = closeTime.hour * 60 + closeTime.minute;
+      
+      bool withinOperatingHours;
+      if (closeMinutes < openMinutes) {
+        withinOperatingHours = currentMinutes >= openMinutes || currentMinutes <= closeMinutes;
+      } else {
+        withinOperatingHours = currentMinutes >= openMinutes && currentMinutes <= closeMinutes;
+      }
+      
+      if (store['isStoreOpen'] == true && withinOperatingHours) {
+        return 'Open';
+      } else if (store['isStoreOpen'] == true && !withinOperatingHours) {
+        return 'Closed (Hours)';
+      } else {
+        return 'Closed';
+      }
+    } catch (e) {
+      return store['isStoreOpen'] == true ? 'Open' : 'Closed';
+    }
   }
 
   // ignore: unused_element
@@ -1099,12 +1214,12 @@ void _navigateToStoreProfile(Map<String, dynamic> store) {
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                       decoration: BoxDecoration(
-                        color: (store['isStoreOpen'] == true) 
+                        color: _isStoreCurrentlyOpen(store) 
                           ? AppTheme.primaryGreen.withOpacity(0.1)
                           : AppTheme.primaryRed.withOpacity(0.1),
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(
-                          color: (store['isStoreOpen'] == true) 
+                          color: _isStoreCurrentlyOpen(store) 
                             ? AppTheme.primaryGreen
                             : AppTheme.primaryRed,
                           width: 1,
@@ -1114,21 +1229,21 @@ void _navigateToStoreProfile(Map<String, dynamic> store) {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Icon(
-                            (store['isStoreOpen'] == true) 
+                            _isStoreCurrentlyOpen(store) 
                               ? Icons.store
                               : Icons.store_mall_directory,
                             size: 12,
-                            color: (store['isStoreOpen'] == true) 
+                            color: _isStoreCurrentlyOpen(store) 
                               ? AppTheme.primaryGreen
                               : AppTheme.primaryRed,
                           ),
                           const SizedBox(width: 4),
                           Text(
-                            (store['isStoreOpen'] == true) ? 'Open' : 'Closed',
+                            _getStoreStatusText(store),
                             style: TextStyle(
                               fontSize: 10,
                               fontWeight: FontWeight.w600,
-                              color: (store['isStoreOpen'] == true) 
+                              color: _isStoreCurrentlyOpen(store) 
                                 ? AppTheme.primaryGreen
                                 : AppTheme.primaryRed,
                             ),
@@ -1161,7 +1276,10 @@ void _navigateToStoreProfile(Map<String, dynamic> store) {
                             ),
                             const SizedBox(width: 4),
                             Text(
-                              '${store['storeOpenHour']} - ${store['storeCloseHour']}',
+                              TimeUtils.formatTimeRangeToAmPm(
+                                store['storeOpenHour'] ?? '08:00',
+                                store['storeCloseHour'] ?? '18:00',
+                              ),
                               style: TextStyle(
                                 fontSize: 10,
                                 fontWeight: FontWeight.w600,

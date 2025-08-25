@@ -664,11 +664,58 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
     return const TimeOfDay(hour: 8, minute: 0);
   }
 
-  // Helper function to format TimeOfDay to string
+  // Helper function to format TimeOfDay to string (24-hour for storage)
   String _formatTimeOfDay(TimeOfDay time) {
     final hour = time.hour.toString().padLeft(2, '0');
     final minute = time.minute.toString().padLeft(2, '0');
     return '$hour:$minute';
+  }
+
+  // Helper function to format TimeOfDay to AM/PM for display
+  String _formatTimeOfDayAmPm(TimeOfDay time) {
+    final hour = time.hourOfPeriod == 0 ? 12 : time.hourOfPeriod;
+    final minute = time.minute.toString().padLeft(2, '0');
+    final period = time.period == DayPeriod.am ? 'AM' : 'PM';
+    return '$hour:$minute $period';
+  }
+
+  // Helper function to show what customers will see for store status
+  String _getCustomerVisibleStatus() {
+    // Check manual toggle first
+    if (!_isStoreOpen) {
+      return 'Temp Closed';
+    }
+    
+    // Check if within operating hours
+    try {
+      final now = DateTime.now();
+      final currentTime = TimeOfDay(hour: now.hour, minute: now.minute);
+      
+      // Convert to minutes for easier comparison
+      final currentMinutes = currentTime.hour * 60 + currentTime.minute;
+      final openMinutes = _storeOpenTime.hour * 60 + _storeOpenTime.minute;
+      final closeMinutes = _storeCloseTime.hour * 60 + _storeCloseTime.minute;
+      
+      bool withinOperatingHours;
+      // Handle cases where store is open past midnight
+      if (closeMinutes < openMinutes) {
+        // Store closes after midnight
+        withinOperatingHours = currentMinutes >= openMinutes || currentMinutes <= closeMinutes;
+      } else {
+        // Store closes on the same day
+        withinOperatingHours = currentMinutes >= openMinutes && currentMinutes <= closeMinutes;
+      }
+      
+      if (_isStoreOpen && withinOperatingHours) {
+        return 'Open';
+      } else if (_isStoreOpen && !withinOperatingHours) {
+        return 'Closed (Hours)';
+      } else {
+        return 'Closed';
+      }
+    } catch (e) {
+      return _isStoreOpen ? 'Open' : 'Closed';
+    }
   }
 
   // Function to select delivery start time
@@ -1069,12 +1116,26 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                         color: AppTheme.deepTeal,
                       ),
                     ),
-                    Text(
-                      _isStoreOpen ? 'Store is Open' : 'Store is Closed',
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: _isStoreOpen ? Colors.green : Colors.red,
-                      ),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _isStoreOpen ? 'Store is Open' : 'Store is Closed',
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: _isStoreOpen ? Colors.green : Colors.red,
+                          ),
+                        ),
+                        if (_storeOpenTime != null && _storeCloseTime != null)
+                          Text(
+                            'Customers see: ${_getCustomerVisibleStatus()}',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: AppTheme.mediumGrey,
+                              fontStyle: FontStyle.italic,
+                            ),
+                          ),
+                      ],
                     ),
                   ],
                 ),
@@ -1218,7 +1279,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                                     ),
                                   ),
                                   Text(
-                                    _formatTimeOfDay(_deliveryStartTime),
+                                    _formatTimeOfDayAmPm(_deliveryStartTime),
                                     style: TextStyle(
                                       fontSize: 16,
                                       fontWeight: FontWeight.w600,
@@ -1272,7 +1333,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                                     ),
                                   ),
                                   Text(
-                                    _formatTimeOfDay(_deliveryEndTime),
+                                    _formatTimeOfDayAmPm(_deliveryEndTime),
                                     style: TextStyle(
                                       fontSize: 16,
                                       fontWeight: FontWeight.w600,
@@ -1376,7 +1437,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                                     ),
                                   ),
                                   Text(
-                                    _formatTimeOfDay(_storeOpenTime),
+                                    _formatTimeOfDayAmPm(_storeOpenTime),
                                     style: TextStyle(
                                       fontSize: 16,
                                       fontWeight: FontWeight.w600,
@@ -1430,7 +1491,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                                     ),
                                   ),
                                   Text(
-                                    _formatTimeOfDay(_storeCloseTime),
+                                    _formatTimeOfDayAmPm(_storeCloseTime),
                                     style: TextStyle(
                                       fontSize: 16,
                                       fontWeight: FontWeight.w600,

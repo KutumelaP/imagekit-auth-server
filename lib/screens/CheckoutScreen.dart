@@ -11,6 +11,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:url_launcher/url_launcher_string.dart';
 import '../services/payfast_service.dart';
 import '../services/biometric_stepup.dart';
 import 'dart:io';
@@ -28,6 +29,7 @@ import '../services/urban_delivery_service.dart';
 import '../services/delivery_fulfillment_service.dart';
 import '../widgets/home_navigation_button.dart';
 import '../services/courier_quote_service.dart';
+import '../utils/time_utils.dart';
 import '../widgets/paxi_delivery_speed_selector.dart';
 import '../config/paxi_config.dart';
 import 'package:cloud_functions/cloud_functions.dart';
@@ -153,7 +155,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             administrativeArea: admin,
           );
         }).toList();
-        setState(() {
+        if (mounted) setState(() {
           _pickupAddressSuggestions = suggestions.cast<Placemark>();
         });
       }
@@ -278,7 +280,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       if (instr != null && instr.isNotEmpty) _deliveryInstructionsController.text = instr;
       if (isDel != null) _isDelivery = isDel;
       if (pay != null && pay.isNotEmpty) _selectedPaymentMethod = pay;
-      setState(() {});
+      if (mounted) setState(() {});
     } catch (_) {}
   }
 
@@ -469,7 +471,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           }
         }
         
-        setState(() {
+        if (mounted) setState(() {
           _hasFoodItems = hasFood;
           _hasNonFoodItems = hasNonFood;
           _foodItems = foodItems;
@@ -1037,7 +1039,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                     Expanded(
                       child: ElevatedButton(
                         onPressed: () {
-                          setState(() {
+                          if (mounted) setState(() {
                             _selectedPickupPoint = point;
                             _deliveryFee = point.fee;
                           });
@@ -1698,14 +1700,14 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     _addressSearchTimer?.cancel();
     _addressSearchTimer = Timer(const Duration(milliseconds: 500), () async {
       if (query.trim().length < 3) {
-        setState(() {
+        if (mounted) setState(() {
           _addressSuggestions = [];
           _isSearchingAddress = false;
         });
       return;
     }
     
-      setState(() {
+      if (mounted) setState(() {
         _isSearchingAddress = true;
       });
 
@@ -1750,7 +1752,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           }
           
           print('🔍 Total placemarks found: ${placemarks.length}');
-          setState(() {
+          if (mounted) setState(() {
             _addressSuggestions = placemarks;
             _isSearchingAddress = false;
           });
@@ -1765,7 +1767,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           }
         } else {
           print('🔍 No locations found for query: $query');
-          setState(() {
+          if (mounted) setState(() {
             _addressSuggestions = [];
             _isSearchingAddress = false;
           });
@@ -1773,7 +1775,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     } catch (e) {
         print('❌ Error searching addresses: $e');
         // Fallback for any platform: allow user to use entered address
-        setState(() {
+        if (mounted) setState(() {
           _addressSuggestions = [
             Placemark(
               name: query,
@@ -1876,7 +1878,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           );
         }
         
-        setState(() {
+        if (mounted) setState(() {
           _addressSuggestions = suggestions;
           _isSearchingAddress = false;
         });
@@ -1935,7 +1937,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         ),
       );
       
-      setState(() {
+      if (mounted) setState(() {
         _addressSuggestions = fallbackSuggestions;
         _isSearchingAddress = false;
       });
@@ -1947,7 +1949,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   Future<void> _loadPickupPointsForCurrentAddress() async {
     try {
       if (_addressController.text.trim().length < 3) return;
-      setState(() => _isLoadingPickupPoints = true);
+      if (mounted) setState(() => _isLoadingPickupPoints = true);
       final locs = await locationFromAddress(_addressController.text.trim());
       if (locs.isNotEmpty) {
         final loc = locs.first;
@@ -1958,20 +1960,20 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     } catch (_) {
       // ignore
     } finally {
-      setState(() => _isLoadingPickupPoints = false);
+      if (mounted) setState(() => _isLoadingPickupPoints = false);
     }
   }
   // Search for pickup addresses - Enhanced to show full business/complex names instead of just street names
   // Now using same comprehensive strategy as delivery with improved business name extraction
   Future<void> _searchPickupAddress(String query) async {
     if (query.trim().isEmpty) {
-      setState(() {
+      if (mounted) setState(() {
         _pickupAddressSuggestions = [];
       });
       return;
     }
 
-    setState(() {
+    if (mounted) setState(() {
       _isSearchingAddress = true;
     });
 
@@ -2016,14 +2018,14 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         }
         
         print('🔍 Total pickup placemarks found: ${placemarks.length}');
-        setState(() {
+        if (mounted) setState(() {
           _pickupAddressSuggestions = placemarks;
         });
 
         // Enrich with business/complex names from Nominatim as well (mobile)
         await _enrichPickupSuggestionsWithNominatim(query);
         if (mounted) {
-          setState(() {
+          if (mounted) setState(() {
             _isSearchingAddress = false;
           });
         }
@@ -2039,7 +2041,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         }
       } else {
         print('🔍 No pickup locations found for query: $query');
-        setState(() {
+        if (mounted) setState(() {
           _pickupAddressSuggestions = [];
           _isSearchingAddress = false;
         });
@@ -2047,7 +2049,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     } catch (e) {
       print('❌ Error searching pickup addresses: $e');
       // Fallback for any platform: allow user to use entered address (same as delivery)
-      setState(() {
+      if (mounted) setState(() {
         _pickupAddressSuggestions = [
           Placemark(
             name: query, // Use the query as business name for better pickup identification
@@ -2146,7 +2148,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           );
         }
         
-        setState(() {
+        if (mounted) setState(() {
           _pickupAddressSuggestions = suggestions;
           _isSearchingAddress = false;
         });
@@ -2158,7 +2160,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     } catch (e) {
       print('❌ Nominatim pickup geocoding error: $e');
       // Fallback: allow user to use entered address
-      setState(() {
+      if (mounted) setState(() {
         _pickupAddressSuggestions = [
           Placemark(
             name: query, // Use the query as business name for better pickup identification
@@ -2240,7 +2242,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
       if (newSuggestions.isEmpty) return;
 
-      setState(() {
+      if (mounted) setState(() {
         final Set<String> existingKeys = _pickupAddressSuggestions
             .map((pm) => '${pm.name}|${pm.street}|${pm.locality}|${pm.administrativeArea}')
             .toSet();
@@ -2578,7 +2580,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             ),
             ElevatedButton(
               onPressed: () {
-                setState(() {
+                if (mounted) setState(() {
                   _selectedPickupPoint = point;
                   _deliveryFee = point.fee;
                 });
@@ -2618,7 +2620,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   Future<void> _loadPickupPointsForCurrentLocation() async {
     try {
       print('🚚 DEBUG: Loading pickup points for current location...');
-      setState(() => _isLoadingPickupPoints = true);
+      if (mounted) setState(() => _isLoadingPickupPoints = true);
       
       // Try to get current position
       final position = await Geolocator.getCurrentPosition(
@@ -2642,13 +2644,13 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       _selectedLng = 28.227473;
       await _loadPickupPointsForCoordinates(-26.0625279, 28.227473);
     } finally {
-      setState(() => _isLoadingPickupPoints = false);
+      if (mounted) setState(() => _isLoadingPickupPoints = false);
     }
   }
 
   Future<void> _loadPickupPointsForCoordinates(double latitude, double longitude) async {
     print('🚚 DEBUG: Loading pickup points for coordinates: $latitude, $longitude');
-    setState(() {
+    if (mounted) setState(() {
       _isLoadingPickupPoints = true;
       _pickupPoints = [];
       _selectedPickupPoint = null;
@@ -2667,7 +2669,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         print('🚚 DEBUG: Point $i: ${point.name} - isPargo: ${point.isPargoPoint}, isPaxi: ${point.isPaxiPoint}');
       }
       
-      setState(() {
+      if (mounted) setState(() {
         _allPickupPoints = points; // Store all points
         _pickupPoints = points; // Initially show all points
         if (_pickupPoints.isNotEmpty) {
@@ -2727,7 +2729,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     } catch (e) {
       print('❌ DEBUG: Error loading pickup points: $e');
     } finally {
-      setState(() => _isLoadingPickupPoints = false);
+      if (mounted) setState(() => _isLoadingPickupPoints = false);
     }
   }
   void _filterPickupPointsByService(String? service) {
@@ -2736,7 +2738,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     print('🔍 DEBUG: Pargo points: ${_allPickupPoints.where((point) => point.isPargoPoint).length}');
     print('🔍 DEBUG: PAXI points: ${_allPickupPoints.where((point) => point.isPaxiPoint).length}');
     
-    setState(() {
+    if (mounted) setState(() {
       _isLoadingPickupPoints = true;
       _selectedServiceFilter = service;
       if (service == null) {
@@ -2759,7 +2761,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             type: 'Local Store',
             distance: 0.0,
             fee: 0.0,
-            operatingHours: '${_storeOpenHour ?? '08:00'} - ${_storeCloseHour ?? '18:00'}',
+            operatingHours: TimeUtils.formatTimeRangeToAmPm(
+              _storeOpenHour ?? '08:00',
+              _storeCloseHour ?? '18:00',
+            ),
           );
           _pickupPoints = [storePickupPoint];
           _allPickupPoints.add(storePickupPoint);
@@ -2805,7 +2810,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     if (currentUser == null) {
       print('🔍 DEBUG: No current user, skipping delivery calculation');
       // Set default payment methods and mark as loaded even without user
-      setState(() {
+      if (mounted) setState(() {
         _paymentMethods = ['Cash on Delivery', 'PayFast (Card)', 'Bank Transfer (EFT)'];
         _paymentMethodsLoaded = true;
         _deliveryFee = 15.0;
@@ -2827,7 +2832,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       if (cartSnapshot.docs.isEmpty) {
         print('🔍 DEBUG: No cart items found');
         // Set default values and mark as loaded even without cart items
-        setState(() {
+        if (mounted) setState(() {
           _paymentMethods = ['Cash on Delivery', 'PayFast (Card)', 'Bank Transfer (EFT)'];
           _paymentMethodsLoaded = true;
           _deliveryFee = 15.0;
@@ -2841,7 +2846,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       if (ownerId == null) {
         print('🔍 DEBUG: No seller ID found in cart item');
         // Set default values and mark as loaded even without seller ID
-        setState(() {
+        if (mounted) setState(() {
           _paymentMethods = ['Cash on Delivery', 'PayFast (Card)', 'Bank Transfer (EFT)'];
           _paymentMethodsLoaded = true;
           _deliveryFee = 15.0;
@@ -2860,7 +2865,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       if (!sellerDoc.exists) {
         print('🔍 DEBUG: Seller document does not exist');
         // Set default values and mark as loaded even without seller document
-        setState(() {
+        if (mounted) setState(() {
           _paymentMethods = ['Cash on Delivery', 'PayFast (Card)', 'Bank Transfer (EFT)'];
           _paymentMethodsLoaded = true;
           _deliveryFee = 15.0;
@@ -2900,15 +2905,23 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       print('  - seller storeOpenHour: ${seller['storeOpenHour']}');
       print('  - seller storeCloseHour: ${seller['storeCloseHour']}');
       _paymentMethods = List<String>.from(seller['paymentMethods'] ?? ['Cash on Delivery', 'PayFast']);
+      print('🔍 DEBUG: Raw seller paymentMethods: ${seller['paymentMethods']}');
+      print('🔍 DEBUG: Initial _paymentMethods: $_paymentMethods');
       
       // Respect seller's allowCOD flag
-      final bool sellerAllowsCOD = (seller['allowCOD'] != false);
-      if (!sellerAllowsCOD) {
-        _paymentMethods.removeWhere((m) => m.toLowerCase().contains('cash'));
-        if (_selectedPaymentMethod != null && _selectedPaymentMethod!.toLowerCase().contains('cash')) {
-          _selectedPaymentMethod = null;
+      try {
+        final bool sellerAllowsCOD = (seller['allowCOD'] != false);
+        print('🔍 DEBUG: allowCOD flag: ${seller['allowCOD']} -> sellerAllowsCOD: $sellerAllowsCOD');
+        if (!sellerAllowsCOD) {
+          _paymentMethods.removeWhere((m) => m.toLowerCase().contains('cash'));
+          if (_selectedPaymentMethod != null && _selectedPaymentMethod!.toLowerCase().contains('cash')) {
+            _selectedPaymentMethod = null;
+          }
+          _codDisabledReason = 'Cash on Delivery disabled by seller';
+          print('🔍 DEBUG: COD disabled by seller, payment methods: $_paymentMethods');
         }
-        _codDisabledReason = 'Cash on Delivery disabled by seller';
+      } catch (e) {
+        print('🔍 ERROR: allowCOD check failed: $e');
       }
       
       _excludedZones = List<String>.from(seller['excludedZones'] ?? []);
@@ -2966,20 +2979,39 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       // Gate COD if seller has overdue COD receivables OR KYC not approved
       try {
         await _checkAndGateCOD(ownerId);
-        // KYC gate: if seller kycStatus != 'approved', remove COD
+        
+        // KYC gate: Check both seller and buyer KYC status
         final sellerKyc = (seller['kycStatus'] as String?) ?? 'none';
+        print('🔍 DEBUG: Seller KYC status: $sellerKyc');
         if (sellerKyc.toLowerCase() != 'approved') {
           _paymentMethods.removeWhere((m) => m.toLowerCase().contains('cash'));
           _codDisabledReason = 'Cash on Delivery disabled: seller identity verification pending';
+          print('🔍 DEBUG: COD disabled by seller KYC, payment methods: $_paymentMethods');
+        }
+        
+        // Also check buyer's KYC status
+        final currentUser = FirebaseAuth.instance.currentUser;
+        if (currentUser != null) {
+          final buyerDoc = await FirebaseFirestore.instance
+              .collection('users')
+              .doc(currentUser.uid)
+              .get();
+          final buyerKyc = (buyerDoc.data()?['kycStatus'] as String?) ?? 'none';
+          print('🔍 DEBUG: Buyer KYC status: $buyerKyc');
+          if (buyerKyc.toLowerCase() != 'approved') {
+            _paymentMethods.removeWhere((m) => m.toLowerCase().contains('cash'));
+            _codDisabledReason = 'Cash on Delivery disabled: identity verification required';
+            print('🔍 DEBUG: COD disabled by buyer KYC, payment methods: $_paymentMethods');
+          }
         }
       } catch (e) {
         debugPrint('⚠️ COD gating check failed: $e');
       }
 
       // Debug payment methods loading
-      print('🔍 DEBUG: Payment methods loaded: $_paymentMethods');
-      print('🔍 DEBUG: Seller data: ${seller['paymentMethods']}');
-      print('🔍 DEBUG: Payment methods count: ${_paymentMethods.length}');
+      print('🔍 DEBUG: FINAL Payment methods loaded: $_paymentMethods');
+      print('🔍 DEBUG: FINAL COD disabled reason: $_codDisabledReason');
+      print('🔍 DEBUG: FINAL Payment methods count: ${_paymentMethods.length}');
       print('🔍 DEBUG: Seller Pargo enabled: $_sellerPargoEnabled');
       print('🔍 DEBUG: Seller PAXI enabled: $_sellerPaxiEnabled');
       
@@ -2987,7 +3019,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         print('🔍 DEBUG: Store location not available, using default delivery fee');
         _deliveryFee = 15.0; // Default delivery fee
         _deliveryDistance = 5.0; // Default distance
-        setState(() {});
+        if (mounted) setState(() {});
           return;
       }
       
@@ -3131,10 +3163,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       await _fetchPlatformFeeConfigAndExemption(ownerId);
       
       // Ensure UI updates with new delivery fee
-      setState(() {});
+      if (mounted) setState(() {});
       print('🔍 DEBUG: Delivery fee calculation completed');
     } finally {
-        setState(() {
+        if (mounted) setState(() {
         _paymentMethodsLoaded = true;
       });
     }
@@ -3169,10 +3201,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
   Future<void> _startWalletTopUp() async {
     try {
-      setState(() { _isLoading = true; });
+      if (mounted) setState(() { _isLoading = true; });
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) {
-        setState(() { _isLoading = false; });
+        if (mounted) setState(() { _isLoading = false; });
         return;
       }
       // Determine sellerId from cart for top-up attribution
@@ -3183,7 +3215,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           .limit(1)
           .get();
       if (cartSnapshot.docs.isEmpty) {
-        setState(() { _isLoading = false; });
+        if (mounted) setState(() { _isLoading = false; });
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Add an item first to identify seller for COD gating')),
         );
@@ -3192,7 +3224,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       final first = cartSnapshot.docs.first.data();
       final String sellerId = first['sellerId'] ?? first['ownerId'] ?? '';
       if (sellerId.isEmpty) {
-        setState(() { _isLoading = false; });
+        if (mounted) setState(() { _isLoading = false; });
         return;
       }
       // Suggest top-up equal to due or minimum R300
@@ -3223,8 +3255,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         'email_address': user.email ?? 'user@example.com',
         'name_first': (user.displayName ?? 'User').split(' ').first,
         'name_last': (user.displayName ?? '').split(' ').skip(1).join(' '),
-        'cell_number': '',
-        'm_payment_id': 'WALLET_${user.uid}',
+        'cell_number': '0606304683',
         'custom_str1': 'WALLET_${user.uid}',
         'custom_str2': sellerId,
         'custom_str3': user.uid,
@@ -3232,22 +3263,75 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         'sandbox': PayFastService.isProduction ? 'false' : 'true',
       };
       
-      setState(() { _isLoading = false; });
+      if (mounted) setState(() { _isLoading = false; });
       
-      // Use the form redirect URL directly with payment data
-      final String formUrl = '${PayFastService.formRedirectUrl}?${Uri(queryParameters: paymentData).query}';
-      if (await canLaunchUrl(Uri.parse(formUrl))) {
-        await launchUrl(Uri.parse(formUrl), mode: LaunchMode.externalApplication);
+      // Use PayFastService to create payment and get URL
+      final paymentResult = await PayFastService.createPayment(
+        amount: suggestedTopUp.toString(),
+        itemName: 'Wallet Top-up',
+        itemDescription: 'Top-up to enable COD',
+        customerEmail: user.email ?? 'user@example.com',
+        customerFirstName: (user.displayName ?? 'User').split(' ').first,
+        customerLastName: (user.displayName ?? '').split(' ').skip(1).join(' '),
+        customerPhone: '0606304683',
+        customString1: 'WALLET_${user.uid}',
+        customString2: sellerId,
+        customString3: user.uid,
+        customString4: 'wallet_topup',
+      );
+      
+      if (paymentResult['success']) {
+        // Always POST to Cloud Function, then open returned HTML
+        final response = await http.post(
+          Uri.parse(paymentResult['paymentUrl']),
+          headers: {'Content-Type': 'application/json'},
+          body: json.encode(paymentResult['paymentData']),
+        );
+        
+        if (response.statusCode == 200) {
+          final htmlContent = response.body;
+          if (htmlContent.contains('form') && htmlContent.contains('payfast.co.za')) {
+            final formUrl = 'data:text/html;charset=utf-8,${Uri.encodeComponent(htmlContent)}';
+            if (kIsWeb) {
+              print('🔍 DEBUG: Launching PayFast form (web, _self) [top-up]');
+              final launched = await launchUrlString(formUrl, webOnlyWindowName: '_self');
+              if (!launched) {
+                // Fallback: navigate to bridge via GET (server will POST to PayFast)
+                final Map<String, dynamic> pd = Map<String, dynamic>.from(paymentResult['paymentData'] as Map);
+                final qp = pd.map((k, v) => MapEntry(k, v.toString()));
+                final url = Uri.parse(paymentResult['paymentUrl']).replace(queryParameters: qp).toString();
+                print('🔍 DEBUG: Fallback to bridge (GET, _self) [top-up]');
+                await launchUrlString(url, webOnlyWindowName: '_self');
+              }
+            } else {
+              final uri = Uri.parse(formUrl);
+              print('🔍 DEBUG: Launching PayFast form (mobile/external) [top-up]');
+              await launchUrl(uri, mode: LaunchMode.externalApplication);
+            }
+          } else if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Invalid response from payment server')),
+            );
+          }
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('PayFast setup failed: ${response.statusCode}')),
+          );
+        }
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Unable to open PayFast')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('PayFast setup failed: ${paymentResult['error']}')),
+        );
       }
     } catch (e) {
-      setState(() { _isLoading = false; });
+      if (mounted) setState(() { _isLoading = false; });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Top-up failed: $e')),
       );
     }
   }
+
+
 
   int _calculateRealisticDeliveryTime({
     required double distance,
@@ -3286,7 +3370,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   }
 
   void _onRuralDeliveryOptionSelected(String deliveryType, double fee) {
-      setState(() {
+      if (mounted) setState(() {
       _selectedRuralDeliveryType = deliveryType;
       _ruralDeliveryFee = fee;
       _deliveryFee = fee; // Update the main delivery fee
@@ -3298,7 +3382,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   }
   
   void _onUrbanDeliveryOptionSelected(String deliveryType, double fee) {
-      setState(() {
+      if (mounted) setState(() {
       _selectedUrbanDeliveryType = deliveryType;
       _urbanDeliveryFee = fee;
       _deliveryFee = fee; // Update the main delivery fee
@@ -3340,8 +3424,14 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   }
 
   bool _isStoreCurrentlyOpen() {
+    // First check: Manual store toggle (seller can manually close store)
+    if (_storeOpen == false) {
+      return false; // Seller manually closed the store - always respect this
+    }
+    
+    // Second check: Automatic hours (if store is manually "open", check if within hours)
     if (_storeOpenHour == null || _storeCloseHour == null) {
-      return _storeOpen ?? false; // Fallback to manual store open status
+      return _storeOpen ?? false; // Fallback to manual store open status if no hours set
     }
     
     try {
@@ -3369,25 +3459,104 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       final openMinutes = openTime.hour * 60 + openTime.minute;
       final closeMinutes = closeTime.hour * 60 + closeTime.minute;
       
+      bool withinOperatingHours;
       // Handle cases where store is open past midnight
       if (closeMinutes < openMinutes) {
         // Store closes after midnight
-        return currentMinutes >= openMinutes || currentMinutes <= closeMinutes;
+        withinOperatingHours = currentMinutes >= openMinutes || currentMinutes <= closeMinutes;
       } else {
         // Store closes on the same day
-        return currentMinutes >= openMinutes && currentMinutes <= closeMinutes;
+        withinOperatingHours = currentMinutes >= openMinutes && currentMinutes <= closeMinutes;
       }
+      
+      // Combined logic: Store is open if manual toggle is true AND within operating hours
+      return (_storeOpen ?? true) && withinOperatingHours;
+      
     } catch (e) {
       print('🔍 DEBUG: Error checking store hours: $e');
       return _storeOpen ?? false; // Fallback to manual store open status
     }
   }
 
+  String _getStoreStatusText() {
+    // Check manual toggle first
+    if (_storeOpen == false) {
+      return 'Store Temporarily Closed';
+    }
+    
+    // Check if we have operating hours
+    if (_storeOpenHour == null || _storeCloseHour == null) {
+      return _storeOpen == true ? 'Store is Open' : 'Store is Closed';
+    }
+    
+    // Check if within operating hours
+    try {
+      final now = DateTime.now();
+      final currentTime = TimeOfDay(hour: now.hour, minute: now.minute);
+      
+      final openParts = _storeOpenHour!.split(':');
+      final closeParts = _storeCloseHour!.split(':');
+      
+      if (openParts.length != 2 || closeParts.length != 2) {
+        return _storeOpen == true ? 'Store is Open' : 'Store is Closed';
+      }
+      
+      final openHour = int.parse(openParts[0]);
+      final openMinute = int.parse(openParts[1]);
+      final closeHour = int.parse(closeParts[0]);
+      final closeMinute = int.parse(closeParts[1]);
+      
+      final openTime = TimeOfDay(hour: openHour, minute: openMinute);
+      final closeTime = TimeOfDay(hour: closeHour, minute: closeMinute);
+      
+      final currentMinutes = currentTime.hour * 60 + currentTime.minute;
+      final openMinutes = openTime.hour * 60 + openTime.minute;
+      final closeMinutes = closeTime.hour * 60 + closeTime.minute;
+      
+      bool withinOperatingHours;
+      if (closeMinutes < openMinutes) {
+        withinOperatingHours = currentMinutes >= openMinutes || currentMinutes <= closeMinutes;
+      } else {
+        withinOperatingHours = currentMinutes >= openMinutes && currentMinutes <= closeMinutes;
+      }
+      
+      if (_storeOpen == true && withinOperatingHours) {
+        return 'Store is Open';
+      } else if (_storeOpen == true && !withinOperatingHours) {
+        return 'Store Closed (Outside Hours)';
+      } else {
+        return 'Store is Closed';
+      }
+    } catch (e) {
+      return _storeOpen == true ? 'Store is Open' : 'Store is Closed';
+    }
+  }
+
 
   Future<void> _submitOrder() async {
-    if (_isLoading || _orderCompleted) return; // Prevent multiple submissions
-    if (!_formKey.currentState!.validate()) return;
+    print('🔍 DEBUG: ==> _submitOrder() START <==');
+    print('🔍 DEBUG: _isLoading: $_isLoading');
+    print('🔍 DEBUG: _orderCompleted: $_orderCompleted');
+    
+    if (_isLoading || _orderCompleted) {
+      print('🔍 DEBUG: Early return - loading or completed');
+      return; // Prevent multiple submissions
+    }
+    
+    print('🔍 DEBUG: Checking form validation...');
+    print('🔍 DEBUG: Name: ${_nameController.text}');
+    print('🔍 DEBUG: Address: ${_addressController.text}');
+    print('🔍 DEBUG: Phone: ${_phoneController.text}');
+    print('🔍 DEBUG: _isDelivery: $_isDelivery');
+    
+    if (!_formKey.currentState!.validate()) {
+      print('🔍 DEBUG: Form validation failed');
+      return;
+    }
+    print('🔍 DEBUG: Form validation passed');
+    
     if (_selectedPaymentMethod == null) {
+      print('🔍 DEBUG: No payment method selected');
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please select a payment method')),
       );
@@ -3395,6 +3564,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       }
       
     print('🔍 DEBUG: _submitOrder called with payment method: $_selectedPaymentMethod');
+    print('🔍 DEBUG: Setting _isLoading = true');
+    if (mounted) setState(() => _isLoading = true);
 
     if (currentUser == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -3544,28 +3715,46 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               },
             );
           } catch (_) {}
+          if (mounted) setState(() => _isLoading = false);
           return;
         }
       }
     } catch (e) {
       print('⚠️ Risk engine evaluation failed: $e');
     }
+    print('🔍 DEBUG: About to validate order...');
     if (!await _validateOrderBeforePayment()) {
-      print('🔍 DEBUG: Order validation failed');
+      print('🔍 DEBUG: Order validation failed - setting _isLoading = false');
+      if (mounted) setState(() => _isLoading = false);
       return;
     }
     print('🔍 DEBUG: Order validation passed');
 
     // Handle different payment methods
     final pm = _selectedPaymentMethod!.toLowerCase();
-    if (pm.contains('eft')) {
-      await _processBankTransferEFT();
-    } else if (pm.contains('payfast') || pm.contains('card')) {
-      await _processPayFastPayment();
-    } else if (pm.contains('cash')) {
-      await _processCashOnDelivery();
-    } else {
-      await _completeOrder();
+    print('🔍 DEBUG: Processing payment method: $pm');
+    
+    try {
+      if (pm.contains('eft')) {
+        print('🔍 DEBUG: Processing Bank Transfer EFT');
+        await _processBankTransferEFT();
+      } else if (pm.contains('payfast') || pm.contains('card')) {
+        print('🔍 DEBUG: Processing PayFast payment');
+        await _processPayFastPayment();
+      } else if (pm.contains('cash')) {
+        print('🔍 DEBUG: Processing Cash on Delivery');
+        await _processCashOnDelivery();
+      } else {
+        print('🔍 DEBUG: Processing default order completion');
+        await _completeOrder();
+      }
+      print('🔍 DEBUG: Payment processing completed');
+    } catch (e) {
+      print('🔍 ERROR: Payment processing failed: $e');
+      if (mounted) setState(() => _isLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Payment processing failed: $e')),
+      );
     }
   }
 
@@ -4459,12 +4648,18 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   }
 
   Future<bool> _validateOrderBeforePayment() async {
+    print('🔍 DEBUG: ==> _validateOrderBeforePayment() START <==');
     try {
       // Check delivery zones
+      print('🔍 DEBUG: Checking delivery zones...');
+      print('🔍 DEBUG: _excludedZones: $_excludedZones');
+      print('🔍 DEBUG: _addressController.text: ${_addressController.text}');
+      
     if (_excludedZones.isNotEmpty) {
       final address = _addressController.text.toLowerCase();
       final blocked = _excludedZones.any((zone) => address.contains(zone.toLowerCase()));
       if (blocked) {
+        print('🔍 DEBUG: VALIDATION FAILED - Address blocked by delivery zones');
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Delivery is not available to your address')),
         );
@@ -4473,7 +4668,12 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     }
 
       // Check minimum order
+      print('🔍 DEBUG: Checking minimum order...');
+      print('🔍 DEBUG: _minOrderForDelivery: $_minOrderForDelivery');
+      print('🔍 DEBUG: widget.totalPrice: ${widget.totalPrice}');
+      
     if (_minOrderForDelivery != null && widget.totalPrice < _minOrderForDelivery!) {
+      print('🔍 DEBUG: VALIDATION FAILED - Minimum order not met');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Minimum order for delivery is R${_minOrderForDelivery!.toStringAsFixed(2)}')),
       );
@@ -4481,7 +4681,12 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       }
 
       // Check PAXI delivery speed selection if PAXI is selected
+      print('🔍 DEBUG: Checking PAXI delivery speed...');
+      print('🔍 DEBUG: _selectedServiceFilter: $_selectedServiceFilter');
+      print('🔍 DEBUG: _selectedPaxiDeliverySpeed: $_selectedPaxiDeliverySpeed');
+      
       if (_selectedServiceFilter == 'paxi' && _selectedPaxiDeliverySpeed == null) {
+        print('🔍 DEBUG: VALIDATION FAILED - PAXI delivery speed not selected');
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Please select a PAXI delivery speed')),
         );
@@ -4532,8 +4737,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         }
       }
 
+      print('🔍 DEBUG: All validations passed - returning true');
       return true;
     } catch (e) {
+      print('🔍 ERROR: Validation error: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error validating order: ${e.toString()}')),
       );
@@ -4542,7 +4749,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   }
 
   Future<void> _processPayFastPayment() async {
-    setState(() => _isLoading = true);
+    if (mounted) setState(() => _isLoading = true);
 
     try {
       // Generate order info
@@ -4550,63 +4757,99 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       final orderNumber = 'ORD-${now.day.toString().padLeft(2, '0')}${now.month.toString().padLeft(2, '0')}${now.year}-${now.hour.toString().padLeft(2, '0')}${now.minute.toString().padLeft(2, '0')}-${currentUser!.uid.substring(0, 3).toUpperCase()}';
       final totalAmount = widget.totalPrice + (_isDelivery ? (_deliveryFee ?? 0.0) : 0.0);
 
-      // Generate PayFast URL
-      final paymentUrl = _generatePayFastUrl(
-        orderId: orderNumber,
-        amount: totalAmount,
-        buyerEmail: currentUser!.email ?? 'test@example.com',
-        buyerName: _nameController.text.trim().isNotEmpty 
-            ? _nameController.text.trim() 
-            : 'Customer',
-      );
-
-      setState(() => _isLoading = false);
-
       // Create 'awaiting_payment' order record before redirecting
       await _completeOrder(paymentStatusOverride: 'awaiting_payment');
 
       // Show payment confirmation
       final shouldProceed = await _showPaymentConfirmationDialog(totalAmount);
-      if (!shouldProceed) return;
+      if (!shouldProceed) {
+        if (mounted) setState(() => _isLoading = false);
+        return;
+      }
 
-      // Launch PayFast
-      await _launchPayFastPayment(paymentUrl, orderNumber);
+      // Get seller ID from cart items (same pattern as _completeOrder)
+      final cartSnapshot = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(currentUser!.uid)
+          .collection('cart')
+          .get();
+      
+      final cartItems = cartSnapshot.docs.map((doc) => doc.data()).toList();
+      final sellerId = cartItems.first['sellerId'] ?? cartItems.first['ownerId'] ?? '';
+
+      // Use PayFastService (same as wallet top-up) for consistent payment processing
+      final paymentResult = await PayFastService.createPayment(
+        amount: totalAmount.toString(),
+        itemName: 'Food Order $orderNumber',
+        itemDescription: 'Marketplace order from seller',
+        customerEmail: currentUser!.email ?? 'test@example.com',
+        customerFirstName: _nameController.text.trim().isNotEmpty 
+            ? _nameController.text.trim().split(' ').first
+            : 'Customer',
+        customerLastName: _nameController.text.trim().isNotEmpty && _nameController.text.trim().split(' ').length > 1
+            ? _nameController.text.trim().split(' ').skip(1).join(' ')
+            : 'Customer',
+        customerPhone: '0606304683',
+        customString1: orderNumber,
+        customString2: currentUser!.uid,
+        customString3: sellerId,
+        customString4: 'order_payment',
+      );
+
+      if (paymentResult['success']) {
+        // Always POST to Cloud Function, then open returned HTML
+        final response = await http.post(
+          Uri.parse(paymentResult['paymentUrl']),
+          headers: {'Content-Type': 'application/json'},
+          body: json.encode(paymentResult['paymentData']),
+        );
+        
+        if (response.statusCode == 200) {
+          final htmlContent = response.body;
+          if (htmlContent.contains('form') && htmlContent.contains('payfast.co.za')) {
+            final formUrl = 'data:text/html;charset=utf-8,${Uri.encodeComponent(htmlContent)}';
+            if (kIsWeb) {
+              print('🔍 DEBUG: Launching PayFast form (web, _self) [order]');
+              final launched = await launchUrlString(formUrl, webOnlyWindowName: '_self');
+              if (!launched) {
+                // Fallback: navigate to bridge via GET (server will POST to PayFast)
+                final Map<String, dynamic> pd = Map<String, dynamic>.from(paymentResult['paymentData'] as Map);
+                final qp = pd.map((k, v) => MapEntry(k, v.toString()));
+                final url = Uri.parse(paymentResult['paymentUrl']).replace(queryParameters: qp).toString();
+                print('🔍 DEBUG: Fallback to bridge (GET, _self) [order]');
+                await launchUrlString(url, webOnlyWindowName: '_self');
+              } else {
+                if (mounted) _showPaymentReturnDialog(orderNumber);
+              }
+            } else {
+              final uri = Uri.parse(formUrl);
+              print('🔍 DEBUG: Launching PayFast form (mobile/external) [order]');
+              await launchUrl(uri, mode: LaunchMode.externalApplication);
+              if (mounted) _showPaymentReturnDialog(orderNumber);
+            }
+          } else if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Invalid response from payment server')),
+            );
+          }
+        } else {
+          throw 'PayFast setup failed: ${response.statusCode}';
+        }
+      } else {
+        throw 'PayFast payment creation failed: ${paymentResult['error']}';
+      }
+
+      if (mounted) setState(() => _isLoading = false);
 
     } catch (e) {
-      setState(() => _isLoading = false);
-            ScaffoldMessenger.of(context).showSnackBar(
+      if (mounted) setState(() => _isLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Payment setup failed: ${e.toString()}')),
       );
     }
   }
 
-  String _generatePayFastUrl({
-    required String orderId,
-    required double amount,
-    required String buyerEmail,
-    required String buyerName,
-  }) {
-    // Use Cloud Function for consistent signature generation
-    final params = {
-      'merchant_id': PayFastService.merchantId,
-      'merchant_key': PayFastService.merchantKey,
-      'return_url': PayFastService.returnUrl,
-      'cancel_url': PayFastService.cancelUrl,
-      'notify_url': PayFastService.notifyUrl,
-      'amount': amount.toStringAsFixed(2),
-      'item_name': 'Food Order $orderId',
-      'name_first': buyerName.split(' ').first,
-      'name_last': buyerName.split(' ').length > 1 ? buyerName.split(' ').last : '',
-      'email_address': buyerEmail,
-      'm_payment_id': orderId,
-      'custom_str1': orderId,
-      'custom_str2': currentUser!.uid,
-      'sandbox': PayFastService.isProduction ? 'false' : 'true',
-    };
-    
-    // Return Cloud Function URL instead of direct PayFast URL
-    return '${PayFastService.formRedirectUrl}?${Uri(queryParameters: params).query}';
-  }
+
 
   Future<bool> _showPaymentConfirmationDialog(double totalAmount) async {
     return await showDialog<bool>(
@@ -4724,25 +4967,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     ) ?? false;
   }
 
-  Future<void> _launchPayFastPayment(String paymentUrl, String orderNumber) async {
-    try {
-      final uri = Uri.parse(paymentUrl);
-                      if (await canLaunchUrl(uri)) {
-                        await launchUrl(uri, mode: LaunchMode.externalApplication);
-        
-        // Show return dialog
-        if (mounted) {
-          _showPaymentReturnDialog(orderNumber);
-        }
-      } else {
-        throw 'Could not launch PayFast payment URL';
-      }
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not open payment gateway: ${e.toString()}')),
-      );
-    }
-  }
+
 
   void _showPaymentReturnDialog(String orderNumber) {
     showDialog(
@@ -4822,7 +5047,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     // Check if store is currently open
     if (!_isStoreCurrentlyOpen()) {
       print('🔍 DEBUG: Store is currently closed');
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -4836,7 +5061,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     }
     
     print('🔍 DEBUG: Starting _completeOrder for payment method: $_selectedPaymentMethod');
-    setState(() => _isLoading = true);
+    if (mounted) setState(() => _isLoading = true);
     
     String? orderNumber;
 
@@ -5077,7 +5302,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       cartProvider.clearCart();
 
       _orderCompleted = true; // Mark order as completed
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
 
       if (!mounted) return orderNumber;
 
@@ -5109,7 +5334,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       );
     } catch (e) {
       _orderCompleted = false; // Reset on error
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
       debugPrint('Checkout error: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -5469,19 +5694,19 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               ),
               SizedBox(width: ResponsiveUtils.getHorizontalPadding(context) * 0.3),
               SafeUI.safeText(
-                _isStoreCurrentlyOpen() ? 'Store is Open' : 'Store is Closed',
+                _getStoreStatusText(),
                 style: TextStyle(
                   fontSize: ResponsiveUtils.getTitleSize(context) - 2,
                   fontWeight: FontWeight.w600,
                   color: _isStoreCurrentlyOpen() ? AppTheme.deepTeal : Colors.red,
                 ),
-                maxLines: 1,
+                maxLines: 2,
               ),
             ],
           ),
           SizedBox(height: ResponsiveUtils.getVerticalPadding(context) * 0.3),
           SafeUI.safeText(
-            'Operating Hours: ${_storeOpenHour ?? 'N/A'} - ${_storeCloseHour ?? 'N/A'}',
+            'Operating Hours: ${_storeOpenHour != null && _storeCloseHour != null ? TimeUtils.formatTimeRangeToAmPm(_storeOpenHour!, _storeCloseHour!) : 'N/A'}',
             style: TextStyle(
               fontSize: ResponsiveUtils.getTitleSize(context) - 2,
               color: AppTheme.breeze,
@@ -5631,7 +5856,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               Expanded(
                 child: GestureDetector(
                   onTap: _deliveryAllowed ? () {
-                    setState(() {
+                    if (mounted) setState(() {
                       _isDelivery = true;
                       _calculateDeliveryFeeAndCheckStore();
                     });
@@ -5699,7 +5924,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                   onTap: () {
                     print('🔴 DEBUG: PICKUP BUTTON 1 CLICKED!');
                     print('🔴 DEBUG: Before setState - _isDelivery: $_isDelivery');
-                    setState(() {
+                    if (mounted) setState(() {
                       _isDelivery = false;
                       _isLoadingPickupPoints = true; // show inline spinner immediately
                       print('🔴 DEBUG: Inside setState - _isDelivery: $_isDelivery');
@@ -6128,7 +6353,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                 value: speed,
                                 groupValue: _selectedPaxiDeliverySpeed,
                                 onChanged: (v) {
-                                  setState(() {
+                                  if (mounted) setState(() {
                                     _selectedPaxiDeliverySpeed = v;
                                     _deliveryFee = PaxiConfig.getPrice(v!);
                                   });
@@ -6217,7 +6442,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                 _searchPickupAddress(value);
                               });
                             } else {
-                              setState(() {
+                              if (mounted) setState(() {
                                 _pickupAddressSuggestions = [];
                               });
                             }
@@ -6255,7 +6480,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                         icon: Icon(Icons.clear, color: AppTheme.deepTeal),
                                         onPressed: () {
                                           _pickupAddressController.clear();
-                                          setState(() {
+                                          if (mounted) setState(() {
                                             _pickupAddressSuggestions = [];
                                           });
                                         },
@@ -6327,7 +6552,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                       style: TextStyle(color: AppTheme.deepTeal.withOpacity(0.7), fontSize: 12),
                                     ),
                                     onTap: () async {
-                                      setState(() {
+                                      if (mounted) setState(() {
                                         _pickupAddressSuggestions = [];
                                         _isDelivery = false;
                                         _isLoadingPickupPoints = true;
@@ -6348,7 +6573,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                         print('❌ Error converting entered pickup address to coordinates: $e');
                                       } finally {
                                         if (mounted) {
-                                          setState(() {
+                                          if (mounted) setState(() {
                                             _isLoadingPickupPoints = false;
                                           });
                                         }
@@ -6383,7 +6608,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                       : null,
                                   onTap: () async {
                                     _pickupAddressController.text = address;
-                                    setState(() {
+                                    if (mounted) setState(() {
                                       _pickupAddressSuggestions = [];
                                       // Keep pickup UI visible during geocode + fetch
                                       _isDelivery = false;
@@ -6410,7 +6635,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                       print('❌ Error converting pickup address to coordinates: $e');
                                     } finally {
                                       if (mounted) {
-                                        setState(() {
+                                        if (mounted) setState(() {
                                           _isLoadingPickupPoints = false;
                                         });
                                       }
@@ -6771,7 +6996,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                 size: 18,
                               ),
                               onTap: () {
-                                setState(() {
+                                if (mounted) setState(() {
                                   _selectedPickupPoint = point;
                                   _deliveryFee = point.fee;
                                 });
@@ -6815,7 +7040,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                   if (value.length >= 3) {
                     _searchAddressesInline(value);
                   } else {
-                    setState(() {
+                    if (mounted) setState(() {
                       // Reset inline search state
                       _addressSuggestions = [];
                     });
@@ -6896,7 +7121,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                         maxLines: 2,
                       ),
                       onTap: () async {
-                        setState(() {
+                        if (mounted) setState(() {
                           _addressController.text = '${placemark.street ?? ''}, ${placemark.locality ?? ''}, ${placemark.administrativeArea ?? ''}';
                           // Reset inline search state
                           _addressSuggestions = [];
@@ -6954,7 +7179,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                     if (value.length >= 3) {
                       _searchAddressesInline(value);
                     } else {
-                      setState(() {
+                      if (mounted) setState(() {
                         _addressSuggestions = [];
                       });
                     }
@@ -7034,7 +7259,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                           maxLines: 2,
                         ),
                         onTap: () async {
-                          setState(() {
+                          if (mounted) setState(() {
                             _addressController.text = '${placemark.street ?? ''}, ${placemark.locality ?? ''}, ${placemark.administrativeArea ?? ''}';
                             _addressSuggestions = [];
                           });
@@ -7268,7 +7493,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                     child: InkWell(
                       borderRadius: BorderRadius.circular(16),
                       onTap: () {
-                        setState(() {
+                        if (mounted) setState(() {
                           _selectedPickupPoint = point;
                           _deliveryFee = point.fee;
                         });
@@ -7918,7 +8143,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                     Expanded(
                       child: GestureDetector(
                         onTap: () {
-                          setState(() {
+                          if (mounted) setState(() {
                             _isDelivery = true;
                           });
                           if (currentUser != null) {
@@ -7961,7 +8186,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                         onTap: _productCategory.toLowerCase() == 'food' ? null : () {
                           print('🔴 DEBUG: PICKUP BUTTON 2 CLICKED!');
                           print('🔴 DEBUG: Before setState - _isDelivery: $_isDelivery');
-                          setState(() {
+                          if (mounted) setState(() {
                             _isDelivery = false;
                             _deliveryFee = 0.0;
                             _deliveryDistance = 0.0;
@@ -8058,7 +8283,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                               onPressed: () {
                                 _addressController.clear();
                                 _validatedAddress = null;
-                    setState(() {
+                    if (mounted) setState(() {
                                   _addressSuggestions = [];
                                   _isSearchingAddress = false;
                                 });
@@ -8067,7 +8292,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                           : Icon(Icons.search, color: AppTheme.deepTeal),
                 ),
                 onChanged: (value) {
-                  setState(() {});
+                  if (mounted) setState(() {});
                   if (value.trim().isNotEmpty) {
                     _searchAddressesInline(value);
                     } else {
@@ -8120,7 +8345,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                 ),
                                 onTap: () {
                                   _validatedAddress = _addressController.text;
-                                  setState(() {
+                                  if (mounted) setState(() {
                                     _addressSuggestions = [];
                                   });
                                   _calculateDeliveryFeeAndCheckStore();
@@ -8152,7 +8377,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                               onTap: () {
                                 _addressController.text = address;
                                 _validatedAddress = address;
-                                setState(() {
+                                if (mounted) setState(() {
                                   _addressSuggestions = [];
                                 });
                                 _calculateDeliveryFeeAndCheckStore();
@@ -8834,7 +9059,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                       maxLines: 1,
                     )))
                 .toList(),
-            onChanged: _isLoading ? null : (val) => setState(() => _selectedPaymentMethod = val),
+            onChanged: _isLoading ? null : (val) {
+              if (mounted) setState(() => _selectedPaymentMethod = val);
+            },
             decoration: InputDecoration(
               labelText: 'Select Payment Method',
               labelStyle: TextStyle(color: AppTheme.breeze),
@@ -8861,7 +9088,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             if (_codDisabledReason != null && 
                 _selectedPaymentMethod!.toLowerCase().contains('cash') &&
                 !_paymentMethods.any((m) => m.toLowerCase().contains('cash'))) ...[
-              Container(
+               Container(
                 width: double.infinity,
                 padding: EdgeInsets.all(ResponsiveUtils.getHorizontalPadding(context) * 0.6),
                 decoration: BoxDecoration(
@@ -9256,7 +9483,13 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           color: Colors.transparent,
           child: InkWell(
           borderRadius: BorderRadius.circular(12),
-          onTap: _isLoading ? null : _submitOrder,
+          onTap: _isLoading ? null : () {
+            print('🔴 DEBUG: BUTTON CLICKED!');
+            print('🔴 DEBUG: _selectedPaymentMethod: $_selectedPaymentMethod');
+            print('🔴 DEBUG: _isLoading: $_isLoading');
+            print('🔴 DEBUG: _orderCompleted: $_orderCompleted');
+            _submitOrder();
+          },
           child: Padding(
             padding: EdgeInsets.symmetric(
               vertical: ResponsiveUtils.getVerticalPadding(context) * 1.2,
@@ -9333,14 +9566,14 @@ class _AddressSearchScreenState extends State<AddressSearchScreen> {
   Future<void> _searchAddresses() async {
     final query = _searchController.text.trim();
     if (query.length < 3) {
-      setState(() {
+      if (mounted) setState(() {
         _suggestions = [];
         _isLoading = false;
       });
       return;
     }
     
-    setState(() {
+    if (mounted) setState(() {
       _isLoading = true;
     });
 
@@ -9365,19 +9598,19 @@ class _AddressSearchScreenState extends State<AddressSearchScreen> {
           }
         }
         
-        setState(() {
+        if (mounted) setState(() {
           _suggestions = placemarks;
           _isLoading = false;
         });
       } else {
-        setState(() {
+        if (mounted) setState(() {
           _suggestions = [];
           _isLoading = false;
         });
       }
   } catch (e) {
       print('Error searching addresses: $e');
-      setState(() {
+      if (mounted) setState(() {
         _suggestions = [];
         _isLoading = false;
       });

@@ -72,11 +72,11 @@ class PayFastService {
         'notify_url': notifyUrl,
         'amount': _formatAmount(amount),
         'item_name': itemName.length > 100 ? itemName.substring(0, 100) : itemName,
-        'item_description': itemDescription,
+        'item_description': itemDescription.isNotEmpty ? itemDescription : itemName,
         'email_address': customerEmail,
-        'name_first': customerFirstName,
-        'name_last': customerLastName,
-        'cell_number': customerPhone,
+        'name_first': customerFirstName.isNotEmpty ? customerFirstName : 'Mzansi',
+        'name_last': customerLastName.isNotEmpty ? customerLastName : 'Marketplace',
+        'cell_number': customerPhone.isNotEmpty ? customerPhone : '0606304683',
       };
 
       // Avoid sending non-standard fields to PayFast to prevent gateway errors
@@ -105,6 +105,7 @@ class PayFastService {
         'paymentUrl': formRedirectUrl,
         'paymentData': redirectParams,
         'signature': 'server_generated', // Indicate server will generate signature
+        'httpMethod': 'POST', // Indicate this should be a POST request
       };
     } catch (e) {
       return {

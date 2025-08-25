@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+import 'dart:typed_data';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:image_picker/image_picker.dart';
@@ -23,6 +25,25 @@ class ProductUploadScreen extends StatefulWidget {
 }
 
 class _ProductUploadScreenState extends State<ProductUploadScreen> {
+
+  Widget _buildWebCompatibleImage(File imageFile, {BoxFit? fit, double? width, double? height}) {
+    if (kIsWeb) {
+      return FutureBuilder<Uint8List>(
+        future: imageFile.readAsBytes(),
+        builder: (context, snapshot) {
+          if (snapshot.hasData) {
+            return Image.memory(snapshot.data!, fit: fit ?? BoxFit.cover, width: width, height: height);
+          } else if (snapshot.hasError) {
+            return Container(color: Colors.grey[200], child: const Icon(Icons.error, size: 32, color: Colors.red));
+          } else {
+            return Container(color: Colors.grey[100], child: const Center(child: CircularProgressIndicator()));
+          }
+        },
+      );
+    } else {
+      return Image.file(imageFile, fit: fit ?? BoxFit.cover, width: width, height: height);
+    }
+  }
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final _descriptionController = TextEditingController();
@@ -476,7 +497,7 @@ class _ProductUploadScreenState extends State<ProductUploadScreen> {
             child: selectedImage != null
                 ? ClipRRect(
                     borderRadius: BorderRadius.circular(10),
-                    child: Image.file(
+                    child: _buildWebCompatibleImage(
                       selectedImage!,
                       fit: BoxFit.cover,
       width: double.infinity,

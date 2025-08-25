@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:geolocator/geolocator.dart';
 
 import '../theme/app_theme.dart';
+import '../utils/time_utils.dart';
 import '../widgets/robust_image.dart';
 import 'product_browsing_screen.dart';
 import 'simple_store_profile_screen.dart';
@@ -663,7 +664,10 @@ class StunningStoreCard extends StatelessWidget {
                     ),
                     const SizedBox(width: 2),
                     Text(
-                      '${store['storeOpenHour']} - ${store['storeCloseHour']}',
+                      TimeUtils.formatTimeRangeToAmPm(
+                        store['storeOpenHour'] ?? '08:00',
+                        store['storeCloseHour'] ?? '18:00',
+                      ),
                       style: TextStyle(
                         color: AppTheme.deepTeal,
                         fontSize: 9,

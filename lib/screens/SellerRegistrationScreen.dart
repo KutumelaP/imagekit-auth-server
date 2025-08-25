@@ -1,6 +1,8 @@
 // import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../services/notification_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -101,6 +103,75 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
   dynamic _storeImage; // Can be File or XFile
   // String? _storeImageUrl;
   List<dynamic> _extraPhotos = []; // Can contain File or XFile
+
+  Widget _buildWebCompatibleImage(dynamic imageFile, {BoxFit? fit, double? width, double? height, Widget Function(BuildContext, Object, StackTrace?)? errorBuilder}) {
+    if (imageFile == null) {
+      return Container(
+        color: Colors.grey[200],
+        child: const Icon(Icons.error, size: 32, color: Colors.red),
+      );
+    }
+
+    if (kIsWeb) {
+      // On web, use Image.memory with file bytes
+      if (imageFile is XFile) {
+        return FutureBuilder<Uint8List>(
+          future: imageFile.readAsBytes(),
+          builder: (context, snapshot) {
+            if (snapshot.hasData) {
+              return Image.memory(
+                snapshot.data!,
+                fit: fit ?? BoxFit.cover,
+                width: width,
+                height: height,
+                errorBuilder: errorBuilder,
+              );
+            } else if (snapshot.hasError) {
+              return errorBuilder?.call(context, snapshot.error!, StackTrace.current) ??
+                  Container(
+                    color: Colors.grey[200],
+                    child: const Icon(Icons.error, size: 32, color: Colors.red),
+                  );
+            } else {
+              return Container(
+                color: Colors.grey[100],
+                child: const Center(
+                  child: CircularProgressIndicator(),
+                ),
+              );
+            }
+          },
+        );
+      } else {
+        // Fallback for unknown types on web
+        return Container(
+          color: Colors.grey[200],
+          child: const Icon(Icons.error, size: 32, color: Colors.red),
+        );
+      }
+    } else {
+      // On mobile, use Image.file
+      File file;
+      if (imageFile is XFile) {
+        file = File(imageFile.path);
+      } else if (imageFile is File) {
+        file = imageFile;
+      } else {
+        return Container(
+          color: Colors.grey[200],
+          child: const Icon(Icons.error, size: 32, color: Colors.red),
+        );
+      }
+
+      return Image.file(
+        file,
+        fit: fit ?? BoxFit.cover,
+        width: width,
+        height: height,
+        errorBuilder: errorBuilder,
+      );
+    }
+  }
   // List<String> _extraPhotoUrls = [];
   dynamic _introVideo; // Can be File or XFile
   // String? _introVideoUrl;
@@ -676,6 +747,14 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
     final hour = time.hour.toString().padLeft(2, '0');
     final minute = time.minute.toString().padLeft(2, '0');
     return '$hour:$minute';
+  }
+
+  // Helper function to format TimeOfDay to AM/PM for display
+  String _formatTimeOfDayAmPm(TimeOfDay time) {
+    final hour = time.hourOfPeriod == 0 ? 12 : time.hourOfPeriod;
+    final minute = time.minute.toString().padLeft(2, '0');
+    final period = time.period == DayPeriod.am ? 'AM' : 'PM';
+    return '$hour:$minute $period';
   }
 
   Future<String?> _uploadImageToImageKit(dynamic file) async {
@@ -1414,7 +1493,7 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
                               );
                             },
                           )
-                        : Image.file(
+                        : _buildWebCompatibleImage(
                             imageFile,
                             fit: BoxFit.cover,
                             errorBuilder: (context, error, stackTrace) {
@@ -3094,7 +3173,7 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
                                               ),
                                             ),
                                             Text(
-                                              _formatTimeOfDay(_deliveryStartTime),
+                                              _formatTimeOfDayAmPm(_deliveryStartTime),
                                               style: TextStyle(
                                                 fontSize: 16,
                                                 fontWeight: FontWeight.w600,
@@ -3148,7 +3227,7 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
                                               ),
                                             ),
                                             Text(
-                                              _formatTimeOfDay(_deliveryEndTime),
+                                              _formatTimeOfDayAmPm(_deliveryEndTime),
                                               style: TextStyle(
                                                 fontSize: 16,
                                                 fontWeight: FontWeight.w600,
@@ -3245,7 +3324,7 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
                                               ),
                                             ),
                                             Text(
-                                              _formatTimeOfDay(_storeOpenTime),
+                                              _formatTimeOfDayAmPm(_storeOpenTime),
                                               style: TextStyle(
                                                 fontSize: 16,
                                                 fontWeight: FontWeight.w600,
@@ -3299,7 +3378,7 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
                                               ),
                                             ),
                                             Text(
-                                              _formatTimeOfDay(_storeCloseTime),
+                                              _formatTimeOfDayAmPm(_storeCloseTime),
                                               style: TextStyle(
                                                 fontSize: 16,
                                                 fontWeight: FontWeight.w600,
@@ -3545,7 +3624,7 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
                                                 height: 100,
                                                 fit: BoxFit.cover,
                                               )
-                                            : Image.file(
+                                            : _buildWebCompatibleImage(
                                                 photo,
                                                 width: 100,
                                                 height: 100,

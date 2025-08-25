@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'OrderTrackingScreen.dart';
 import 'package:image_picker/image_picker.dart';
@@ -376,7 +377,13 @@ class _RequestReturnDialogState extends State<RequestReturnDialog> {
                             color: Colors.grey.shade300,
                             child: Icon(Icons.image, color: Colors.grey, size: 24),
                           )
-                        : Image.file(File(x.path), width: 48, height: 48, fit: BoxFit.cover),
+                        : kIsWeb 
+                          ? Image.network(x.path, width: 48, height: 48, fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) => Container(
+                                color: Colors.grey[200], 
+                                child: const Icon(Icons.error, size: 24, color: Colors.red)
+                              ))
+                          : Image.file(File(x.path), width: 48, height: 48, fit: BoxFit.cover),
                   ),
                 )),
                 if (_photos.length < 3)

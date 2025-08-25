@@ -29,8 +29,8 @@ const axios = require('axios');
 exports.payfastNotify = functions.https.onRequest(async (req, res) => {
   try {
     const data = req.method === 'POST' ? req.body : req.query;
-    const passphrase = process.env.PAYFAST_PASSPHRASE || 'PeterKutumela2025';
-    // Verify signature (PayFast requires signature even if dashboard toggle shows Off for some accounts)
+    const passphrase = (process.env.PAYFAST_PASSPHRASE || '').trim();
+    // Verify signature (PayFast requires signature when a passphrase is configured on the account)
     const entries = Object.keys(data)
       .filter((k) => k !== 'signature' && data[k] !== undefined && data[k] !== null)
       .sort()
@@ -251,6 +251,14 @@ exports.payfastCancel = functions.https.onRequest(async (req, res) => {
 // HTML bridge: convert query params to a POST form submission to PayFast
 exports.payfastFormRedirect = functions.https.onRequest(async (req, res) => {
   try {
+    // Allow browser POSTs from the web app
+    res.set('Access-Control-Allow-Origin', '*');
+    res.set('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+    res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    if (req.method === 'OPTIONS') {
+      res.status(204).send('');
+      return;
+    }
     const target = (req.query.sandbox === 'true')
       ? 'https://sandbox.payfast.co.za/eng/process'
       : 'https://www.payfast.co.za/eng/process';
@@ -293,12 +301,18 @@ exports.payfastFormRedirect = functions.https.onRequest(async (req, res) => {
     if (!postData.name_first) {
       postData.name_first = 'Customer'; // PayFast requires name_first
     }
+    if (!postData.item_description && postData.item_name) {
+      postData.item_description = postData.item_name; // PayFast requires item_description
+    }
+    if (!postData.cell_number) {
+      postData.cell_number = '0606304683'; // Use real contact number for Mzansi Marketplace
+    }
 
     try {
       // Compute signature server-side (override any client-provided value)
-      const passphrase = process.env.PAYFAST_PASSPHRASE || 'PeterKutumela2025';
+      const passphrase = (process.env.PAYFAST_PASSPHRASE || '').trim();
       const merchantId = String(postData.merchant_id || '');
-      const usePassphrase = merchantId !== '10000100' && !!passphrase; // Sandbox merchant uses no passphrase
+      const usePassphrase = merchantId !== '10000100' && passphrase.length > 0; // Sandbox merchant uses no passphrase
       const keys = Object.keys(postData).filter((k) => k !== 'signature').sort();
       const encoded = keys.map((k) => `${k}=${pfEncode(postData[k])}`).join('&');
       // Generate signature based on merchant type (production uses passphrase, sandbox doesn't)
@@ -311,6 +325,7 @@ exports.payfastFormRedirect = functions.https.onRequest(async (req, res) => {
       console.log('[payfastFormRedirect] encoded=', encoded);
       console.log('[payfastFormRedirect] toSign=', toSign);
       console.log('[payfastFormRedirect] computed_signature=', signature);
+      console.log('[payfastFormRedirect] signature_length=', signature.length);
     } catch (e) {
       console.warn('[payfastFormRedirect] sig_compute_failed', e?.message || e);
     }
@@ -328,13 +343,21 @@ exports.payfastFormRedirect = functions.https.onRequest(async (req, res) => {
 <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
   <h2>Redirecting to PayFast...</h2>
   <p>Please wait while we redirect you to complete your payment.</p>
-  <form id="payfastForm" method="post" action="${target}">
+  <form id="payfastForm" name="payfastForm" method="post" action="${target}">
     ${inputs}
-    <button type="submit" style="padding: 10px 20px; background: #007cba; color: white; border: none; border-radius: 5px; cursor: pointer;">Continue to PayFast</button>
+    <button id="pfSubmitButton" name="pfSubmitButton" type="submit" style="padding: 10px 20px; background: #007cba; color: white; border: none; border-radius: 5px; cursor: pointer;">Continue to PayFast</button>
   </form>
+  <noscript>
+    <p>JavaScript is required to continue. Please click the button above to proceed to PayFast.</p>
+  </noscript>
   <script>
     // Auto-submit after a short delay to ensure all inputs are loaded
-    setTimeout(function(){ var f = document.getElementById('payfastForm'); if (f) f.submit(); }, 150);
+    setTimeout(function(){
+      try {
+        var f = document.getElementById('payfastForm');
+        if (f && typeof f.submit === 'function') { f.submit(); }
+      } catch (e) { console.error('Auto-submit failed', e); }
+    }, 150);
   </script>
 </body></html>`;
 

@@ -1,0 +1,13 @@
+[33m8d4506f[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m Further PayFast signature fixes
+[33mf698a18[m Fix PayFast signature generation
+[33m34e279b[m Fix checkout screen functionality
+[33m49f2311[m Fix PayFast signature issues: disable signatures when Require signature is OFF
+[33m2f9a3f0[m Fix PayFast double signature generation by disabling client-side signature in createPayment
+[33md1ff0f5[m Fix PayFast signature mismatch by using Cloud Function for all payments
+[33m96d4e37[m UX: add COD explanation; enforce delivery gating in checkout; add seller detailed address fields and formattedAddress; show Open/Closed on store cards; make store card image open products; fix Nationwide visibility and rules; switch ImageKit to Firebase callable; lock product upload category to store; fix overflow in product upload; add GMV/fee cards in admin Overview
+[33med72b6f[m Complete documentation update: Modernize seller guides and admin docs to reflect current ledger-based payout system
+[33md27d230[m Add nationwide pickup filter and refine store visibility logic
+[33m8fdd2fd[m Admin dashboard + Firebase: rules, functions, callable/HTTP images, token refresh, UI fixes
+[33m1eb4b3e[m feat: seller approval email trigger and Gmail mailer switch
+[33me76350c[m Deploy: web hosting; Checkout store pickup; global hide PARGO/PAXI; EFT details from admin; snackbar offset; seller UI respects visibility; email functions live SMTP
+[33m69f85bc[m Fix: bottom safe areas, chat input padding; pickup search accuracy & UI; risk engine + step-up MFA; TTS announcements; app badge integration with flutter_app_badger (namespace + compileSdk fix); add biometric step-up abstraction; web deploy + functions deployed; Android debug/release build fixes

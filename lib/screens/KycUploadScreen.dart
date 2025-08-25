@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:io';
+import 'dart:typed_data';
 import '../theme/app_theme.dart';
 import '../services/imagekit_service.dart';
 
@@ -68,6 +70,53 @@ class _KycUploadScreenState extends State<KycUploadScreen> {
     if (x != null) setState(() => _selfie = x);
   }
 
+  Widget _buildWebCompatibleImage(XFile file, BoxFit fit, {double? width, double? height}) {
+    if (kIsWeb) {
+      // On web, use Image.network with the file path as a blob URL
+      return FutureBuilder<Uint8List>(
+        future: file.readAsBytes(),
+        builder: (context, snapshot) {
+          if (snapshot.hasData) {
+            return Image.memory(
+              snapshot.data!,
+              fit: fit,
+              width: width,
+              height: height,
+              errorBuilder: (context, error, stackTrace) => Container(
+                color: Colors.grey[200],
+                child: const Icon(Icons.error, size: 32, color: Colors.red),
+              ),
+            );
+          } else if (snapshot.hasError) {
+            return Container(
+              color: Colors.grey[200],
+              child: const Icon(Icons.error, size: 32, color: Colors.red),
+            );
+          } else {
+            return Container(
+              color: Colors.grey[100],
+              child: const Center(
+                child: CircularProgressIndicator(),
+              ),
+            );
+          }
+        },
+      );
+    } else {
+      // On mobile, use Image.file
+      return Image.file(
+        File(file.path),
+        fit: fit,
+        width: width,
+        height: height,
+        errorBuilder: (context, error, stackTrace) => Container(
+          color: Colors.grey[200],
+          child: const Icon(Icons.error, size: 32, color: Colors.red),
+        ),
+      );
+    }
+  }
+
   void _showImagePreview(String title, XFile? localFile, String? existingUrl) {
     if (localFile == null && existingUrl == null) return;
     
@@ -94,13 +143,7 @@ class _KycUploadScreenState extends State<KycUploadScreen> {
               child: Container(
                 constraints: const BoxConstraints(maxHeight: 400, maxWidth: 300),
                 child: localFile != null
-                    ? Image.file(
-                        File(localFile.path),
-                        fit: BoxFit.contain,
-                        errorBuilder: (context, error, stackTrace) => const Center(
-                          child: Icon(Icons.error, size: 48, color: Colors.red),
-                        ),
-                      )
+                    ? _buildWebCompatibleImage(localFile, BoxFit.contain)
                     : Image.network(
                         existingUrl!,
                         fit: BoxFit.contain,
@@ -273,15 +316,7 @@ class _KycUploadScreenState extends State<KycUploadScreen> {
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(8),
                 child: localFile != null
-                    ? Image.file(
-                        File(localFile.path),
-                        width: double.infinity,
-                        fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) => Container(
-                          color: Colors.grey[200],
-                          child: const Icon(Icons.error, size: 32, color: Colors.red),
-                        ),
-                      )
+                    ? _buildWebCompatibleImage(localFile, BoxFit.cover, width: double.infinity)
                     : Image.network(
                         existingUrl!,
                         width: double.infinity,

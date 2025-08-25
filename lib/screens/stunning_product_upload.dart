@@ -28,6 +28,61 @@ class StunningProductUpload extends StatefulWidget {
 
 class _StunningProductUploadState extends State<StunningProductUpload>
     with TickerProviderStateMixin {
+
+  Widget _buildWebCompatibleImage(File imageFile, {BoxFit? fit, double? width, double? height}) {
+    if (kIsWeb) {
+      // On web, read file bytes and use Image.memory
+      return FutureBuilder<Uint8List>(
+        future: imageFile.readAsBytes(),
+        builder: (context, snapshot) {
+          if (snapshot.hasData) {
+            return Image.memory(
+              snapshot.data!,
+              fit: fit ?? BoxFit.cover,
+              width: width,
+              height: height,
+              errorBuilder: (context, error, stackTrace) {
+                print('🔍 DEBUG: Error loading image memory: $error');
+                return Container(
+                  color: Colors.grey[200],
+                  child: const Icon(Icons.error, size: 32, color: Colors.red),
+                );
+              },
+            );
+          } else if (snapshot.hasError) {
+            print('🔍 DEBUG: Error reading image bytes: ${snapshot.error}');
+            return Container(
+              color: Colors.grey[200],
+              child: const Icon(Icons.error, size: 32, color: Colors.red),
+            );
+          } else {
+            return Container(
+              color: Colors.grey[100],
+              child: const Center(
+                child: CircularProgressIndicator(),
+              ),
+            );
+          }
+        },
+      );
+    } else {
+      // On mobile, use Image.file
+      return Image.file(
+        imageFile,
+        fit: fit ?? BoxFit.cover,
+        width: width,
+        height: height,
+        errorBuilder: (context, error, stackTrace) {
+          print('🔍 DEBUG: Error loading image file: $error');
+          return Container(
+            color: Colors.grey[200],
+            child: const Icon(Icons.error, size: 32, color: Colors.red),
+          );
+        },
+      );
+    }
+  }
+
   // Form Controllers
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
@@ -894,22 +949,11 @@ class _StunningProductUploadState extends State<StunningProductUpload>
                       ? ClipRRect(
                           borderRadius: BorderRadius.circular(14),
                           child: selectedImage != null
-                              ? Image.file(
+                              ? _buildWebCompatibleImage(
                                   selectedImage!,
                                   fit: BoxFit.cover,
                                   width: double.infinity,
                                   height: double.infinity,
-                                  errorBuilder: (context, error, stackTrace) {
-                                    print('🔍 DEBUG: Error loading image file: $error');
-                                    return Container(
-                                      color: AppTheme.cloud,
-                                      child: Icon(
-                                        Icons.error,
-                                        color: AppTheme.deepTeal,
-                                        size: 48,
-                                      ),
-                                    );
-                                  },
                                 )
                               : Image.memory(
                                   selectedImageBytes!,
@@ -1323,7 +1367,7 @@ class _StunningProductUploadState extends State<StunningProductUpload>
                ClipRRect(
                  borderRadius: BorderRadius.circular(12),
                  child: selectedImage != null
-                     ? Image.file(
+                     ? _buildWebCompatibleImage(
                          selectedImage!,
                          height: 120,
                          width: 120,
