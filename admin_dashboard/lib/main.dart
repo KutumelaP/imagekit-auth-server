@@ -11,6 +11,7 @@ import 'services/notification_service.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'dart:async';
 import 'theme/admin_theme.dart';
+import 'widgets/kyc_review_list.dart';
 
 final ValueNotifier<ThemeMode> themeModeNotifier = ValueNotifier(ThemeMode.system);
 
@@ -36,6 +37,9 @@ class MyApp extends StatelessWidget {
       builder: (context, mode, _) {
         return MaterialApp(
           title: 'Admin Dashboard',
+          routes: {
+            '/kyc': (_) => const KycReviewList(),
+          },
           builder: (context, child) {
             return child!;
           },

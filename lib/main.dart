@@ -24,6 +24,7 @@ import 'widgets/in_app_notification_widget.dart';
 import 'widgets/notification_badge.dart';
 import 'widgets/simple_splash_screen.dart';
 import 'widgets/chatbot_widget.dart';
+
 import 'screens/simple_home_screen.dart';
 import 'screens/product_search_screen.dart';
 import 'screens/login_screen.dart';
@@ -172,6 +173,7 @@ class MyApp extends StatelessWidget {
           '/kyc': (context) => const KycUploadScreen(),
           '/my-stores': (context) => const MyStoresScreen(),
           '/seller-payouts': (context) => const SellerPayoutsScreen(),
+
         },
         onGenerateRoute: (settings) {
           // Handle routes with parameters

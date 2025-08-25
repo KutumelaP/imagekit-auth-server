@@ -54,7 +54,8 @@ class _ModernSellerDashboardSectionState extends State<ModernSellerDashboardSect
   final TextEditingController _payoutBankNameController = TextEditingController();
   final TextEditingController _payoutAccountNumberController = TextEditingController();
   final TextEditingController _payoutBranchCodeController = TextEditingController();
-  String _payoutAccountType = 'Cheque/Current';
+  // Canonical account type keys used across app: 'cheque','savings','business'
+  String _payoutAccountType = 'cheque';
   bool _loadingPayout = false;
   bool _savingPayout = false;
   // Payout balance state
@@ -66,6 +67,10 @@ class _ModernSellerDashboardSectionState extends State<ModernSellerDashboardSect
   double _minPayoutAmount = 0.0;
   double _commissionPct = 0.0;
   List<Map<String, dynamic>> _payoutHistory = [];
+  // Compliance & COD
+  double _codOutstanding = 0.0;
+  String _kycStatus = 'none';
+  bool _codDisabled = false;
   
   // Subscription for auth changes
   late Stream<User?> _authStateChanges;
@@ -125,6 +130,7 @@ class _ModernSellerDashboardSectionState extends State<ModernSellerDashboardSect
         _loadPayoutDetails(),
         _loadAvailableBalance(),
         _loadPayoutHistory(),
+        _loadComplianceAndCOD(),
       ]);
     } catch (e) {
       print('Error loading dashboard data: $e');
@@ -532,7 +538,24 @@ class _ModernSellerDashboardSectionState extends State<ModernSellerDashboardSect
           _payoutBankNameController.text = (d['bankName'] ?? '').toString();
           _payoutAccountNumberController.text = (d['accountNumber'] ?? '').toString();
           _payoutBranchCodeController.text = (d['branchCode'] ?? '').toString();
-          _payoutAccountType = (d['accountType'] ?? _payoutAccountType).toString();
+          // Normalize stored/display values to canonical keys
+          final at = (d['accountType'] ?? _payoutAccountType).toString().toLowerCase();
+          switch (at) {
+            case 'cheque/current':
+            case 'cheque':
+            case 'current':
+              _payoutAccountType = 'cheque';
+              break;
+            case 'savings':
+              _payoutAccountType = 'savings';
+              break;
+            case 'business cheque':
+            case 'business':
+              _payoutAccountType = 'business';
+              break;
+            default:
+              _payoutAccountType = 'cheque';
+          }
         }
       }
     } catch (e) {
@@ -1128,6 +1151,8 @@ class _ModernSellerDashboardSectionState extends State<ModernSellerDashboardSect
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          _buildCodKycPanel(),
+          const SizedBox(height: 16),
           // COD receivables summary (dues)
           FutureBuilder<QuerySnapshot<Map<String, dynamic>>>(
             future: _sellerId == null
@@ -2088,13 +2113,13 @@ class _ModernSellerDashboardSectionState extends State<ModernSellerDashboardSect
                   const SizedBox(height: 12),
                   Row(children: [
                     Expanded(child: DropdownButtonFormField<String>(
-                      value: _payoutAccountType,
+                      value: const ['cheque','savings','business'].contains(_payoutAccountType) ? _payoutAccountType : 'cheque',
                       items: const [
-                        DropdownMenuItem(value: 'Cheque/Current', child: Text('Cheque/Current')),
-                        DropdownMenuItem(value: 'Savings', child: Text('Savings')),
-                        DropdownMenuItem(value: 'Business Cheque', child: Text('Business Cheque')),
+                        DropdownMenuItem(value: 'cheque', child: Text('Cheque/Current')),
+                        DropdownMenuItem(value: 'savings', child: Text('Savings')),
+                        DropdownMenuItem(value: 'business', child: Text('Business Cheque')),
                       ],
-                      onChanged: (v) => setState(() => _payoutAccountType = v ?? _payoutAccountType),
+                      onChanged: (v) => setState(() => _payoutAccountType = (const ['cheque','savings','business'].contains(v) ? v! : 'cheque')),
                       decoration: InputDecoration(
                         labelText: 'Account Type',
                         border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
@@ -3338,6 +3363,37 @@ class _ModernSellerDashboardSectionState extends State<ModernSellerDashboardSect
     }
   }
 
+  Future<void> _loadComplianceAndCOD() async {
+    if (_sellerId == null) return;
+    try {
+      // KYC status from user doc
+      final u = await FirebaseFirestore.instance.collection('users').doc(_sellerId).get();
+      if (u.exists) {
+        final d = u.data() ?? {};
+        _kycStatus = (d['kycStatus'] ?? 'none').toString();
+      }
+      // Sum platform receivables with status == 'due'
+      final qs = await FirebaseFirestore.instance
+          .collection('platform_receivables')
+          .doc(_sellerId)
+          .collection('entries')
+          .where('status', isEqualTo: 'due')
+          .get();
+      double totalDue = 0.0;
+      for (final doc in qs.docs) {
+        final d = doc.data();
+        final amt = (d['amount'] is num)
+            ? (d['amount'] as num).toDouble()
+            : ((d['net'] ?? 0) as num?)?.toDouble() ?? 0.0;
+        totalDue += amt;
+      }
+      setState(() {
+        _codOutstanding = totalDue;
+        _codDisabled = totalDue > 300.0 || _kycStatus.toLowerCase() != 'approved';
+      });
+    } catch (_) {}
+  }
+
   Future<void> _onRequestPayout() async {
     if (_sellerId == null) return;
     try {
@@ -3606,6 +3662,88 @@ class _ModernSellerDashboardSectionState extends State<ModernSellerDashboardSect
         );
       }
     }
+  }
+
+  Widget _buildCodKycPanel() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  _codDisabled ? Icons.block : Icons.check_circle,
+                  color: _codDisabled ? Colors.orange : Colors.green,
+                ),
+                const SizedBox(width: 8),
+                Text('COD & KYC', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
+                const Spacer(),
+                TextButton.icon(
+                  onPressed: _loadComplianceAndCOD,
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Refresh'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 12,
+              runSpacing: 8,
+              children: [
+                Chip(
+                  avatar: const Icon(Icons.verified_user, size: 16),
+                  label: Text('KYC: ${_kycStatus.toUpperCase()}'),
+                ),
+                Chip(
+                  avatar: const Icon(Icons.payments, size: 16),
+                  label: Text('Outstanding: R${_codOutstanding.toStringAsFixed(2)}'),
+                ),
+                Chip(
+                  avatar: const Icon(Icons.local_shipping, size: 16),
+                  label: Text(_codDisabled ? 'COD: DISABLED' : 'COD: ENABLED'),
+                  backgroundColor: _codDisabled ? Colors.orange.withOpacity(0.15) : Colors.green.withOpacity(0.15),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                ElevatedButton.icon(
+                  onPressed: (_codOutstanding > 0 && _sellerId != null) ? () async {
+                    final url = Uri.parse('https://functions-redirect'); // placeholder
+                    try {
+                      final ok = await launchUrl(url, mode: LaunchMode.externalApplication);
+                      if (!ok && mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Open payment link (stub).')));
+                      }
+                    } catch (_) {}
+                  } : null,
+                  icon: const Icon(Icons.link),
+                  label: const Text('Generate top-up link'),
+                ),
+                const SizedBox(width: 8),
+                OutlinedButton.icon(
+                  onPressed: (_codOutstanding > 0 && _sellerId != null) ? () async {
+                    // Admin manual mark-paid (stub): in real impl, write a settlement entry
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Marked as paid (stub).')));
+                  } : null,
+                  icon: const Icon(Icons.check),
+                  label: const Text('Mark as paid'),
+                ),
+                const SizedBox(width: 8),
+                TextButton.icon(
+                  onPressed: () => Navigator.pushNamed(context, '/kyc'),
+                  icon: const Icon(Icons.assignment_ind),
+                  label: const Text('Open KYC Review'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _buildMetricsGrid() {

@@ -112,6 +112,15 @@ service cloud.firestore {
         resource.data.sellerId == request.auth.uid
       );
       allow delete: if isAdmin();
+      // Order timeline subcollection - visible to buyer, seller, or admin
+      match /timeline/{eventId} {
+        allow read: if request.auth != null && (
+          get(/databases/$(database)/documents/orders/$(orderId)).data.buyerId == request.auth.uid ||
+          get(/databases/$(database)/documents/orders/$(orderId)).data.sellerId == request.auth.uid ||
+          isAdmin()
+        );
+        allow write: if isAdmin();
+      }
     }
 
     // CHATS - Require authentication for messaging
@@ -275,8 +284,9 @@ service cloud.firestore {
       }
     }
 
-    // MISSING ADMIN COLLECTIONS - Add permissions for admin dashboard
+    // DRIVERS - Allow driver to read their own doc; admin full control
     match /drivers/{driverId} {
+      allow read: if request.auth != null && request.auth.uid == driverId;
       allow read, write: if isAdmin();
     }
 
