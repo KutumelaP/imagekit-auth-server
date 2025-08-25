@@ -198,13 +198,11 @@ class _SellerPayoutsScreenState extends State<SellerPayoutsScreen> {
                           child: Text('R ${_net.toStringAsFixed(2)}', style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold)),
                         ),
                         const SizedBox(height: 4),
-                        Flexible(
-                          child: Text(
-                            'Gross R ${_gross.toStringAsFixed(2)} • Commission R ${_commission.toStringAsFixed(2)} (${(_commissionPct * 100).toStringAsFixed(0)}%)',
-                            style: TextStyle(color: Colors.grey[600]),
-                            overflow: TextOverflow.ellipsis,
-                            maxLines: 2,
-                          ),
+                        Text(
+                          'Gross R ${_gross.toStringAsFixed(2)} • Commission R ${_commission.toStringAsFixed(2)} (${(_commissionPct * 100).toStringAsFixed(0)}%)',
+                          style: TextStyle(color: Colors.grey[600]),
+                          overflow: TextOverflow.ellipsis,
+                          maxLines: 2,
                         ),
                         const SizedBox(height: 8),
                         Container(
