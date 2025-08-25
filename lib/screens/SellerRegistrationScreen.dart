@@ -3440,7 +3440,7 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
                         validator: (v) => (v == null || v.isEmpty) ? 'Enter branch code' : null,
                       ),
                       DropdownButtonFormField<String>(
-                        value: _accountType,
+                        value: const ['cheque','savings','business'].contains(_accountType) ? _accountType : 'cheque',
                         decoration: const InputDecoration(
                           labelText: 'Account Type',
                           border: OutlineInputBorder(),
@@ -3451,7 +3451,7 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
                           DropdownMenuItem(value: 'savings', child: Text('Savings')),
                           DropdownMenuItem(value: 'business', child: Text('Business')),
                         ],
-                        onChanged: (v) => setState(() => _accountType = v ?? 'cheque'),
+                        onChanged: (v) => setState(() => _accountType = (const ['cheque','savings','business'].contains(v) ? v : 'cheque') ?? 'cheque'),
                       ),
                     ],
                   ),
