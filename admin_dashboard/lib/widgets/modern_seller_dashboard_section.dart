@@ -3376,7 +3376,6 @@ class _ModernSellerDashboardSectionState extends State<ModernSellerDashboardSect
               const Text('My Products', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
               TextButton(
                 onPressed: () {
-                  // Navigate to product management
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(content: Text('Navigate to full product management')),
                   );
@@ -3386,45 +3385,59 @@ class _ModernSellerDashboardSectionState extends State<ModernSellerDashboardSect
             ],
           ),
           const SizedBox(height: 16),
-          if (_userProducts.isEmpty)
-            const Center(
-              child: Column(
-                children: [
-                  Icon(Icons.inventory_2_outlined, size: 48, color: Colors.grey),
-                  SizedBox(height: 8),
-                  Text('No products yet', style: TextStyle(color: Colors.grey)),
-                ],
-              ),
-            )
-          else
-            ListView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: _userProducts.length > 3 ? 3 : _userProducts.length,
-              itemBuilder: (context, index) {
-                final product = _userProducts[index];
-                return ListTile(
-                  leading: ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child: Image.network(
-                      product['imageUrl'] ?? '',
-                      width: 50,
-                      height: 50,
-                      fit: BoxFit.cover,
-                      errorBuilder: (context, error, stackTrace) => Container(
+          StreamBuilder<QuerySnapshot>(
+            stream: FirebaseFirestore.instance
+                .collection('products')
+                .where('ownerId', isEqualTo: FirebaseAuth.instance.currentUser?.uid)
+                .limit(3)
+                .snapshots(),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              
+              if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                return const Center(
+                  child: Column(
+                    children: [
+                      Icon(Icons.inventory_2_outlined, size: 48, color: Colors.grey),
+                      SizedBox(height: 8),
+                      Text('No products yet', style: TextStyle(color: Colors.grey)),
+                    ],
+                  ),
+                );
+              }
+              
+              return ListView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: snapshot.data!.docs.length,
+                itemBuilder: (context, index) {
+                  final product = snapshot.data!.docs[index].data() as Map<String, dynamic>;
+                  return ListTile(
+                    leading: ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: Image.network(
+                        product['imageUrl'] ?? '',
                         width: 50,
                         height: 50,
-                        color: Colors.grey[200],
-                        child: const Icon(Icons.image, color: Colors.grey),
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) => Container(
+                          width: 50,
+                          height: 50,
+                          color: Colors.grey[200],
+                          child: const Icon(Icons.image, color: Colors.grey),
+                        ),
                       ),
                     ),
-                  ),
-                  title: Text(product['name'] ?? 'Unknown Product'),
-                  subtitle: Text('R${(product['price'] ?? 0).toStringAsFixed(2)}'),
-                  trailing: Text(product['category'] ?? ''),
-                );
-              },
-            ),
+                    title: Text(product['name'] ?? 'Unknown Product'),
+                    subtitle: Text('R${(product['price'] ?? 0).toStringAsFixed(2)}'),
+                    trailing: Text(product['category'] ?? ''),
+                  );
+                },
+              );
+            },
+          ),
         ],
       ),
     );
@@ -3443,13 +3456,36 @@ class _ModernSellerDashboardSectionState extends State<ModernSellerDashboardSect
         children: [
           const Text('Inventory Summary', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
           const SizedBox(height: 16),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              _buildInventoryCard('Total Products', _userProducts.length.toString(), Icons.inventory),
-              _buildInventoryCard('Active', _userProducts.where((p) => p['status'] != 'inactive').length.toString(), Icons.check_circle, Colors.green),
-              _buildInventoryCard('Low Stock', _userProducts.where((p) => (p['stock'] ?? 0) < 5).length.toString(), Icons.warning, Colors.orange),
-            ],
+          StreamBuilder<QuerySnapshot>(
+            stream: FirebaseFirestore.instance
+                .collection('products')
+                .where('ownerId', isEqualTo: FirebaseAuth.instance.currentUser?.uid)
+                .snapshots(),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              
+              final products = snapshot.hasData ? snapshot.data!.docs : [];
+              final totalProducts = products.length;
+              final activeProducts = products.where((doc) {
+                final data = doc.data() as Map<String, dynamic>;
+                return data['status'] != 'inactive';
+              }).length;
+              final lowStockProducts = products.where((doc) {
+                final data = doc.data() as Map<String, dynamic>;
+                return (data['stock'] ?? 0) < 5;
+              }).length;
+              
+              return Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                children: [
+                  _buildInventoryCard('Total Products', totalProducts.toString(), Icons.inventory),
+                  _buildInventoryCard('Active', activeProducts.toString(), Icons.check_circle, Colors.green),
+                  _buildInventoryCard('Low Stock', lowStockProducts.toString(), Icons.warning, Colors.orange),
+                ],
+              );
+            },
           ),
         ],
       ),
