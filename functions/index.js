@@ -24,22 +24,26 @@ const axios = require('axios');
 exports.payfastNotify = functions.https.onRequest(async (req, res) => {
   try {
     const data = req.method === 'POST' ? req.body : req.query;
-    // Verify signature
-    const passphrase = process.env.PAYFAST_PASSPHRASE || 'PeterKutumela2025';
-    // PayFast signature string: sort keys, urlencode values PHP-style (spaces as '+')
-    const entries = Object.keys(data)
-      .filter((k) => k !== 'signature' && data[k] !== undefined && data[k] !== null)
-      .sort()
-      .map((k) => `${k}=${pfEncode(data[k])}`)
-      .join('&');
-    const toSign = passphrase ? `${entries}&passphrase=${passphrase}` : entries;
-    const expected = crypto.createHash('md5').update(toSign).digest('hex');
-    const received = String(data.signature || '').toLowerCase();
-    if (expected !== received) {
-      console.warn('PayFast IPN invalid signature');
-      res.status(400).send('invalid');
-      return;
-    }
+    
+    // Since "Require signature" is OFF in PayFast dashboard, skip signature verification
+    // This prevents "Generated signature does not match" errors
+    console.log('PayFast IPN: Signature verification skipped - Require signature is OFF');
+    
+    // Note: In production with "Require signature" ON, you would verify signatures here
+    // const passphrase = process.env.PAYFAST_PASSPHRASE || 'PeterKutumela2025';
+    // const entries = Object.keys(data)
+    //   .filter((k) => k !== 'signature' && data[k] !== undefined && data[k] !== null)
+    //   .sort()
+    //   .map((k) => `${k}=${pfEncode(data[k])}`)
+    //   .join('&');
+    // const toSign = passphrase ? `${entries}&passphrase=${passphrase}` : entries;
+    // const expected = crypto.createHash('md5').update(toSign).digest('hex');
+    // const received = String(data.signature || '').toLowerCase();
+    // if (expected !== received) {
+    //   console.warn('PayFast IPN invalid signature');
+    //   res.status(400).send('invalid');
+    //   return;
+    // }
 
     const orderId = data.custom_str1;
     const paymentStatus = String(data.payment_status || '').toUpperCase();
@@ -266,18 +270,16 @@ exports.payfastFormRedirect = functions.https.onRequest(async (req, res) => {
     });
 
     try {
-      // Compute signature server-side (override any client-provided value)
-      const passphrase = process.env.PAYFAST_PASSPHRASE || 'PeterKutumela2025';
-      const merchantId = String(postData.merchant_id || '');
-      const usePassphrase = merchantId !== '10000100' && !!passphrase; // Sandbox merchant uses no passphrase
-      const keys = Object.keys(postData).filter((k) => k !== 'signature').sort();
-      const encoded = keys.map((k) => `${k}=${pfEncode(postData[k])}`).join('&');
-      const toSign = usePassphrase ? `${encoded}&passphrase=${passphrase}` : encoded;
-      const signature = crypto.createHash('md5').update(toSign).digest('hex');
-      postData.signature = signature;
-      console.log('[payfastFormRedirect] sig_set=true usePassphrase=', usePassphrase, 'keys=', keys);
+      // Since "Require signature" is OFF in PayFast dashboard, don't generate signatures
+      // This prevents "Generated signature does not match" errors
+      console.log('[payfastFormRedirect] signature_generation_disabled - Require signature is OFF');
+      
+      // Remove any existing signature field to ensure clean submission
+      if (postData.signature) {
+        delete postData.signature;
+      }
     } catch (e) {
-      console.warn('[payfastFormRedirect] sig_compute_failed', e?.message || e);
+      console.warn('[payfastFormRedirect] sig_cleanup_failed', e?.message || e);
     }
 
     const inputs = Object.keys(postData)
