@@ -305,7 +305,7 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
                               final langs = rawLangs.toSet().toList()..sort();
                               final String? langValue = langs.contains(_selectedLanguage)
                                   ? _selectedLanguage
-                                  : (langs.isNotEmpty ? langs.first : null);
+                                  : (langs.isNotEmpty ? langs.first : 'en-US');
                               return DropdownButtonFormField<String>(
                                 value: langValue,
                                 isDense: true,
@@ -348,7 +348,7 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
                               final names = voices.map((e) => e['name']!).toList();
                               final String? voiceValue = names.contains(_selectedVoiceName)
                                   ? _selectedVoiceName
-                                  : (names.isNotEmpty ? names.first : null);
+                                  : (names.isNotEmpty ? names.first : 'default');
                               return DropdownButtonFormField<String>(
                                 value: voiceValue,
                                 isDense: true,
