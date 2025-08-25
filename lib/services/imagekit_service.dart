@@ -26,11 +26,11 @@ class ImageKitService {
     try {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) {
-        print('❌ User not authenticated for image upload');
+        if (kDebugMode) print('❌ User not authenticated for image upload');
         return null;
       }
 
-      print('🔍 Getting ImageKit auth parameters...');
+      if (kDebugMode) print('🔍 Getting ImageKit auth parameters...');
       
       // Preferred: Firebase callable function
       Map<String, dynamic>? authParams;
@@ -40,10 +40,10 @@ class ImageKitService {
         final data = result.data;
         if (data is Map) {
           authParams = Map<String, dynamic>.from(data as Map);
-          print('✅ Got ImageKit auth params via Firebase callable');
+          if (kDebugMode) print('✅ Got ImageKit auth params via Firebase callable');
         }
       } catch (e) {
-        print('⚠️ Firebase callable getImageKitUploadAuth failed: $e');
+        if (kDebugMode) print('⚠️ Firebase callable getImageKitUploadAuth failed: $e');
       }
 
       // Legacy fallback (disabled by default)
@@ -53,7 +53,7 @@ class ImageKitService {
             final response = await http.get(Uri.parse(serverUrl), headers: {'Content-Type': 'application/json'}).timeout(const Duration(seconds: 15));
             if (response.statusCode == 200) {
               authParams = Map<String, dynamic>.from(json.decode(response.body));
-              print('✅ Got ImageKit auth params from legacy: $serverUrl');
+              if (kDebugMode) print('✅ Got ImageKit auth params from legacy: $serverUrl');
               break;
             }
           } catch (_) {}
@@ -74,11 +74,11 @@ class ImageKitService {
       if (authParams['publicKey'] != null) {
         // Use public key from server response (recommended)
         publicKey = authParams['publicKey'];
-        print('🔑 Using public key from server: ${publicKey.substring(0, 20)}...');
+        if (kDebugMode) print('🔑 Using public key from server: ${publicKey.substring(0, 20)}...');
       } else {
         // Fallback to hardcoded key (for backward compatibility)
         publicKey = 'public_tAO0SkfLl/37FQN+23c/bkAyfYg=';
-        print('⚠️ Using fallback public key: ${publicKey.substring(0, 20)}...');
+        if (kDebugMode) print('⚠️ Using fallback public key: ${publicKey.substring(0, 20)}...');
       }
 
       // Determine filename and prepare multipart file
@@ -134,20 +134,20 @@ class ImageKitService {
 
       request.files.add(multipartFile);
 
-      print('🔍 Sending ImageKit upload request...');
+      if (kDebugMode) print('🔍 Sending ImageKit upload request...');
       final streamedResponse = await request.send().timeout(const Duration(seconds: 30));
       final uploadResponse = await http.Response.fromStream(streamedResponse);
 
-      print('🔍 ImageKit upload response status: ${uploadResponse.statusCode}');
+      if (kDebugMode) print('🔍 ImageKit upload response status: ${uploadResponse.statusCode}');
 
       if (uploadResponse.statusCode == 200) {
         final result = json.decode(uploadResponse.body);
         final imageUrl = result['url'];
-        print('✅ ImageKit upload successful: $imageUrl');
+        if (kDebugMode) print('✅ ImageKit upload successful: $imageUrl');
         return imageUrl;
       } else {
         final errorBody = uploadResponse.body;
-        print('❌ ImageKit upload failed: $errorBody');
+        if (kDebugMode) print('❌ ImageKit upload failed: $errorBody');
         
         // Check for specific error types
         if (errorBody.contains('authentication') || errorBody.contains('token')) {
@@ -159,7 +159,7 @@ class ImageKitService {
         }
       }
     } catch (e) {
-      print('❌ ImageKit upload error: $e');
+      if (kDebugMode) print('❌ ImageKit upload error: $e');
       rethrow;
     }
   }
@@ -174,11 +174,11 @@ class ImageKitService {
     try {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) {
-        print('❌ User not authenticated for image upload');
+        if (kDebugMode) print('❌ User not authenticated for image upload');
         return null;
       }
 
-      print('🔍 Starting ImageKit public upload...');
+      if (kDebugMode) print('🔍 Starting ImageKit public upload...');
 
       String fileName;
       http.MultipartFile multipartFile;
@@ -229,24 +229,24 @@ class ImageKitService {
 
       request.files.add(multipartFile);
 
-      print('🔍 Sending ImageKit upload request...');
+      if (kDebugMode) print('🔍 Sending ImageKit upload request...');
       final streamedResponse = await request.send().timeout(const Duration(seconds: 30));
       final uploadResponse = await http.Response.fromStream(streamedResponse);
 
-      print('🔍 ImageKit upload response status: ${uploadResponse.statusCode}');
+      if (kDebugMode) print('🔍 ImageKit upload response status: ${uploadResponse.statusCode}');
 
       if (uploadResponse.statusCode == 200) {
         final result = json.decode(uploadResponse.body);
         final imageUrl = result['url'];
-        print('✅ ImageKit upload successful: $imageUrl');
+        if (kDebugMode) print('✅ ImageKit upload successful: $imageUrl');
         return imageUrl;
       } else {
         final errorBody = uploadResponse.body;
-        print('❌ ImageKit upload failed: $errorBody');
+        if (kDebugMode) print('❌ ImageKit upload failed: $errorBody');
         throw Exception('Upload failed: ${uploadResponse.statusCode} - $errorBody');
       }
     } catch (e) {
-      print('❌ ImageKit upload error: $e');
+      if (kDebugMode) print('❌ ImageKit upload error: $e');
       rethrow;
     }
   }

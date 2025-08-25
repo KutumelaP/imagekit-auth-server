@@ -195,7 +195,7 @@ class MyApp extends StatelessWidget {
           if (settings.name == '/seller-order-detail') {
             final args = settings.arguments as Map<String, dynamic>?;
             final orderId = args?['orderId'] as String?;
-            print('🔔 Route /seller-order-detail called with orderId: "$orderId" (type: ${orderId.runtimeType})');
+            if (kDebugMode) print('🔔 Route /seller-order-detail called with orderId: "$orderId" (type: ${orderId.runtimeType})');
             
             // Remove automatic redirect - let the screen handle missing orderId
             return MaterialPageRoute(

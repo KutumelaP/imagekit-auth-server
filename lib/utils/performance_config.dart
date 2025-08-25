@@ -11,8 +11,7 @@ class PerformanceConfig {
       PaintingBinding.instance.imageCache.maximumSize = 150;
       PaintingBinding.instance.imageCache.maximumSizeBytes = 20 << 20; // 20MB
       
-      // Optimize platform channel performance
-      SystemChannels.platform.setMessageHandler(null);
+      // Platform channel optimizations are handled automatically in newer Flutter versions
       
       // Disable unnecessary debug checks in production
       if (kReleaseMode) {

@@ -288,7 +288,7 @@ class _UploadManagementSectionState extends State<UploadManagementSection> {
       
       await batch.commit();
     } catch (e) {
-      print('Error logging upload: $e');
+      if (kDebugMode) print('Error logging upload: $e');
     }
   }
 

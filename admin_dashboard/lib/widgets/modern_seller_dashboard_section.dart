@@ -133,7 +133,7 @@ class _ModernSellerDashboardSectionState extends State<ModernSellerDashboardSect
         _loadComplianceAndCOD(),
       ]);
     } catch (e) {
-      print('Error loading dashboard data: $e');
+      if (kDebugMode) print('Error loading dashboard data: $e');
     }
   }
 
@@ -150,7 +150,7 @@ class _ModernSellerDashboardSectionState extends State<ModernSellerDashboardSect
         });
       }
     } catch (e) {
-      print('Error loading seller data: $e');
+      if (kDebugMode) print('Error loading seller data: $e');
     }
   }
 
@@ -201,7 +201,7 @@ class _ModernSellerDashboardSectionState extends State<ModernSellerDashboardSect
         });
       }
     } catch (e) {
-      print('Error loading metrics: $e');
+      if (kDebugMode) print('Error loading metrics: $e');
     }
   }
 
@@ -246,7 +246,7 @@ class _ModernSellerDashboardSectionState extends State<ModernSellerDashboardSect
                               'Unknown Customer';
               }
             } catch (e) {
-              print('Error loading customer name: $e');
+              if (kDebugMode) print('Error loading customer name: $e');
             }
           }
         }
@@ -267,7 +267,7 @@ class _ModernSellerDashboardSectionState extends State<ModernSellerDashboardSect
         });
       }
     } catch (e) {
-      print('Error loading recent orders: $e');
+      if (kDebugMode) print('Error loading recent orders: $e');
       // Set empty list on error
       if (mounted) {
         setState(() {
@@ -307,7 +307,7 @@ class _ModernSellerDashboardSectionState extends State<ModernSellerDashboardSect
         });
       }
     } catch (e) {
-      print('Error loading top products: $e');
+      if (kDebugMode) print('Error loading top products: $e');
       // Set empty list on error
       if (mounted) {
         setState(() {
@@ -359,7 +359,7 @@ class _ModernSellerDashboardSectionState extends State<ModernSellerDashboardSect
         });
       }
     } catch (e) {
-      print('Error loading recent activity: $e');
+      if (kDebugMode) print('Error loading recent activity: $e');
     }
   }
 
@@ -402,7 +402,7 @@ class _ModernSellerDashboardSectionState extends State<ModernSellerDashboardSect
         });
       }
     } catch (e) {
-      print('Error loading sales chart data: $e');
+      if (kDebugMode) print('Error loading sales chart data: $e');
     }
   }
 
@@ -434,7 +434,7 @@ class _ModernSellerDashboardSectionState extends State<ModernSellerDashboardSect
         });
       }
     } catch (e) {
-      print('Error loading all products: $e');
+      if (kDebugMode) print('Error loading all products: $e');
     }
   }
 
