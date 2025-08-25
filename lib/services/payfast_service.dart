@@ -86,10 +86,8 @@ class PayFastService {
       if (customString4 != null) paymentData['custom_str4'] = _sanitizeRef(customString4);
       if (customString5 != null) paymentData['custom_str5'] = _sanitizeRef(customString5);
 
-      // Include merchant payment id for traceability
-      if (customString1 != null && customString1.isNotEmpty) {
-        paymentData['m_payment_id'] = _sanitizeRef(customString1);
-      }
+      // Note: m_payment_id removed as it can cause signature validation issues
+      // PayFast will generate their own payment ID
 
       // When using Cloud Function, don't generate signature - let server handle it
       // This prevents double signature generation issues

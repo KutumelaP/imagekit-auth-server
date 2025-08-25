@@ -7,7 +7,12 @@ const nodemailer = require('nodemailer');
 function pfEncode(value) {
   return encodeURIComponent(String(value))
     .replace(/%20/g, '+')
-    .replace(/%0D%0A/g, '%0A'); // normalize CRLF to LF as per PayFast notes
+    .replace(/%0D%0A/g, '%0A') // normalize CRLF to LF as per PayFast notes
+    .replace(/!/g, '%21')
+    .replace(/'/g, '%27')
+    .replace(/\(/g, '%28')
+    .replace(/\)/g, '%29')
+    .replace(/\*/g, '%2A');
 }
 // WebAuthn (Passkeys)
 const {
@@ -251,20 +256,43 @@ exports.payfastFormRedirect = functions.https.onRequest(async (req, res) => {
       : 'https://www.payfast.co.za/eng/process';
     const data = req.method === 'POST' ? req.body : req.query;
 
-    // Basic allowlist of expected fields to avoid echoing arbitrary input
+    // Basic allowlist of expected fields to avoid echoing arbitrary input  
     const allowed = new Set([
       'merchant_id','merchant_key','return_url','cancel_url','notify_url',
       'amount','item_name','item_description','email_address','name_first','name_last','cell_number',
-      'm_payment_id','custom_str1','custom_str2','custom_str3','custom_str4','custom_str5','signature'
+      'custom_str1','custom_str2','custom_str3','custom_str4','custom_str5','signature'
     ]);
 
+    // For debugging: try minimal required fields only
+    const minimalMode = String(data.minimal || '0') === '1';
+
     const postData = {};
-    Object.keys(data).forEach((k) => {
-      if (!allowed.has(k)) return;
-      const v = data[k];
-      if (v === undefined || v === null || v === '') return;
-      postData[k] = String(v);
-    });
+    
+    if (minimalMode) {
+      // Only include absolutely required fields for testing
+      const requiredFields = ['merchant_id', 'merchant_key', 'return_url', 'cancel_url', 'notify_url', 'amount', 'item_name', 'item_description', 'email_address', 'name_first', 'name_last'];
+      requiredFields.forEach((k) => {
+        if (data[k] !== undefined && data[k] !== null && data[k] !== '') {
+          postData[k] = String(data[k]);
+        }
+      });
+    } else {
+      // Include all allowed fields (original behavior)
+      Object.keys(data).forEach((k) => {
+        if (!allowed.has(k)) return;
+        const v = data[k];
+        if (v === undefined || v === null || v === '') return;
+        postData[k] = String(v);
+      });
+    }
+
+    // Ensure required fields are present with fallbacks
+    if (!postData.name_last && postData.name_first) {
+      postData.name_last = 'Customer'; // PayFast requires name_last
+    }
+    if (!postData.name_first) {
+      postData.name_first = 'Customer'; // PayFast requires name_first
+    }
 
     try {
       // Compute signature server-side (override any client-provided value)
@@ -279,6 +307,7 @@ exports.payfastFormRedirect = functions.https.onRequest(async (req, res) => {
       postData.signature = signature;
       const sigMode = usePassphrase ? 'with_passphrase' : 'no_passphrase';
       console.log('[payfastFormRedirect] sig_set=true mode=', sigMode, ' merchant_id=', merchantId);
+      console.log('[payfastFormRedirect] ALL_POST_DATA=', JSON.stringify(postData, null, 2));
       console.log('[payfastFormRedirect] encoded=', encoded);
       console.log('[payfastFormRedirect] toSign=', toSign);
       console.log('[payfastFormRedirect] computed_signature=', signature);
