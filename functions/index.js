@@ -3,6 +3,19 @@ const admin = require('firebase-admin');
 const crypto = require('crypto');
 const { create } = require('xmlbuilder2');
 const nodemailer = require('nodemailer');
+// Helper: PHP-style urlencode (spaces as '+') for PayFast signature
+function pfEncode(value) {
+  return encodeURIComponent(String(value))
+    .replace(/%20/g, '+')
+    .replace(/%0D%0A/g, '%0A'); // normalize CRLF to LF as per PayFast notes
+}
+// WebAuthn (Passkeys)
+const {
+  generateRegistrationOptions,
+  verifyRegistrationResponse,
+  generateAuthenticationOptions,
+  verifyAuthenticationResponse,
+} = require('@simplewebauthn/server');
 
 admin.initializeApp();
 const db = admin.firestore();
@@ -12,11 +25,12 @@ exports.payfastNotify = functions.https.onRequest(async (req, res) => {
   try {
     const data = req.method === 'POST' ? req.body : req.query;
     // Verify signature
-    const passphrase = process.env.PAYFAST_PASSPHRASE || 'test_passphrase';
+    const passphrase = process.env.PAYFAST_PASSPHRASE || 'PeterKutumela2025';
+    // PayFast signature string: sort keys, urlencode values PHP-style (spaces as '+')
     const entries = Object.keys(data)
       .filter((k) => k !== 'signature' && data[k] !== undefined && data[k] !== null)
       .sort()
-      .map((k) => `${k}=${encodeURIComponent(data[k])}`)
+      .map((k) => `${k}=${pfEncode(data[k])}`)
       .join('&');
     const toSign = passphrase ? `${entries}&passphrase=${passphrase}` : entries;
     const expected = crypto.createHash('md5').update(toSign).digest('hex');
@@ -228,6 +242,76 @@ exports.payfastCancel = functions.https.onRequest(async (req, res) => {
   }
 });
 
+// HTML bridge: convert query params to a POST form submission to PayFast
+exports.payfastFormRedirect = functions.https.onRequest(async (req, res) => {
+  try {
+    const target = (req.query.sandbox === 'true')
+      ? 'https://sandbox.payfast.co.za/eng/process'
+      : 'https://www.payfast.co.za/eng/process';
+    const data = req.method === 'POST' ? req.body : req.query;
+
+    // Basic allowlist of expected fields to avoid echoing arbitrary input
+    const allowed = new Set([
+      'merchant_id','merchant_key','return_url','cancel_url','notify_url',
+      'amount','item_name','item_description','email_address','name_first','name_last','cell_number',
+      'm_payment_id','custom_str1','custom_str2','custom_str3','custom_str4','custom_str5','signature'
+    ]);
+
+    const postData = {};
+    Object.keys(data).forEach((k) => {
+      if (!allowed.has(k)) return;
+      const v = data[k];
+      if (v === undefined || v === null || v === '') return;
+      postData[k] = String(v);
+    });
+
+    try {
+      // Compute signature server-side (override any client-provided value)
+      const passphrase = process.env.PAYFAST_PASSPHRASE || 'PeterKutumela2025';
+      const merchantId = String(postData.merchant_id || '');
+      const usePassphrase = merchantId !== '10000100' && !!passphrase; // Sandbox merchant uses no passphrase
+      const keys = Object.keys(postData).filter((k) => k !== 'signature').sort();
+      const encoded = keys.map((k) => `${k}=${pfEncode(postData[k])}`).join('&');
+      const toSign = usePassphrase ? `${encoded}&passphrase=${passphrase}` : encoded;
+      const signature = crypto.createHash('md5').update(toSign).digest('hex');
+      postData.signature = signature;
+      console.log('[payfastFormRedirect] sig_set=true usePassphrase=', usePassphrase, 'keys=', keys);
+    } catch (e) {
+      console.warn('[payfastFormRedirect] sig_compute_failed', e?.message || e);
+    }
+
+    const inputs = Object.keys(postData)
+      .map((k) => {
+        const v = postData[k];
+        return `<input type="hidden" name="${k}" value="${v.replace(/"/g,'&quot;')}">`;
+      })
+      .join('\n');
+
+    const html = `<!doctype html>
+<html><head><meta charset="utf-8"><title>Redirecting to PayFast...</title></head>
+<body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+  <h2>Redirecting to PayFast...</h2>
+  <p>Please wait while we redirect you to complete your payment.</p>
+  <form id="payfastForm" method="post" action="${target}">
+    ${inputs}
+    <button type="submit" style="padding: 10px 20px; background: #007cba; color: white; border: none; border-radius: 5px; cursor: pointer;">Continue to PayFast</button>
+  </form>
+  <script>
+    // Auto-submit after a short delay to ensure all inputs are loaded
+    setTimeout(function() {
+      document.getElementById('payfastForm').submit();
+    }, 100);
+  </script>
+</body></html>`;
+
+    res.set('Cache-Control', 'no-store');
+    res.status(200).send(html);
+  } catch (e) {
+    console.error('payfastFormRedirect error', e);
+    res.status(500).send('error');
+  }
+});
+
 // Dynamic OG meta for stores
 exports.storeMeta = functions.https.onRequest(async (req, res) => {
   try {
@@ -299,6 +383,124 @@ exports.sitemap = functions.https.onRequest(async (req, res) => {
     res.status(200).send(xml);
   } catch (e) {
     res.status(500).send('Error');
+  }
+});
+
+// === WebAuthn (Passkeys) minimal endpoints ===
+// Store per-user WebAuthn credentials in Firestore under users/{uid}/webauthn_credentials/{credId}
+function getRp() {
+  const rpID = process.env.WEBAUTHN_RPID || (process.env.PUBLIC_BASE_URL ? new URL(process.env.PUBLIC_BASE_URL).hostname : 'marketplace-8d6bd.web.app');
+  const rpName = process.env.WEBAUTHN_RPNAME || 'Mzansi Marketplace';
+  const origin = process.env.WEBAUTHN_ORIGIN || process.env.PUBLIC_BASE_URL || 'https://marketplace-8d6bd.web.app';
+  return { rpID, rpName, origin };
+}
+
+exports.webauthnRegistrationOptions = functions.https.onCall(async (data, context) => {
+  if (!context.auth) throw new functions.https.HttpsError('unauthenticated', 'Sign in required');
+  const uid = context.auth.uid;
+  const { rpID, rpName } = getRp();
+  const userDoc = await db.collection('users').doc(uid).get();
+  const user = userDoc.exists ? userDoc.data() : {};
+  const userName = user.displayName || user.storeName || user.email || uid;
+  // Pull existing credential IDs to exclude
+  const credsSnap = await db.collection('users').doc(uid).collection('webauthn_credentials').get();
+  const excludeCredentials = credsSnap.docs.map((d) => ({ id: Buffer.from(d.id, 'base64url'), type: 'public-key' }));
+  const options = generateRegistrationOptions({
+    rpID,
+    rpName,
+    userID: uid,
+    userName,
+    attestationType: 'none',
+    excludeCredentials,
+    authenticatorSelection: { userVerification: 'preferred', residentKey: 'preferred' },
+  });
+  await db.collection('users').doc(uid).collection('webauthn_challenges').doc('register').set({
+    challenge: options.challenge,
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+  }, { merge: true });
+  return options;
+});
+
+exports.webauthnVerifyRegistration = functions.https.onCall(async (data, context) => {
+  if (!context.auth) throw new functions.https.HttpsError('unauthenticated', 'Sign in required');
+  const uid = context.auth.uid;
+  const { origin, rpID } = getRp();
+  const expectedChallengeDoc = await db.collection('users').doc(uid).collection('webauthn_challenges').doc('register').get();
+  const expectedChallenge = expectedChallengeDoc.exists ? expectedChallengeDoc.data().challenge : undefined;
+  if (!expectedChallenge) throw new functions.https.HttpsError('failed-precondition', 'No registration challenge');
+  try {
+    const verification = await verifyRegistrationResponse({
+      expectedChallenge,
+      expectedOrigin: origin,
+      expectedRPID: rpID,
+      response: data,
+    });
+    if (!verification.verified) throw new Error('Verification failed');
+    const { credentialID, credentialPublicKey, counter } = verification.registrationInfo;
+    const credIdB64u = Buffer.from(credentialID).toString('base64url');
+    await db.collection('users').doc(uid).collection('webauthn_credentials').doc(credIdB64u).set({
+      publicKey: Buffer.from(credentialPublicKey).toString('base64url'),
+      counter: Number(counter || 0),
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      lastUsedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+    return { ok: true, credentialId: credIdB64u };
+  } catch (e) {
+    console.error('webauthnVerifyRegistration error', e);
+    throw new functions.https.HttpsError('invalid-argument', 'Passkey registration verification failed');
+  }
+});
+
+exports.webauthnAuthenticationOptions = functions.https.onCall(async (data, context) => {
+  if (!context.auth) throw new functions.https.HttpsError('unauthenticated', 'Sign in required');
+  const uid = context.auth.uid;
+  const { rpID } = getRp();
+  const credsSnap = await db.collection('users').doc(uid).collection('webauthn_credentials').get();
+  const allowCredentials = credsSnap.docs.map((d) => ({ id: Buffer.from(d.id, 'base64url'), type: 'public-key' }));
+  const options = generateAuthenticationOptions({ rpID, allowCredentials, userVerification: 'preferred' });
+  await db.collection('users').doc(uid).collection('webauthn_challenges').doc('auth').set({
+    challenge: options.challenge,
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+  }, { merge: true });
+  return options;
+});
+
+exports.webauthnVerifyAuthentication = functions.https.onCall(async (data, context) => {
+  if (!context.auth) throw new functions.https.HttpsError('unauthenticated', 'Sign in required');
+  const uid = context.auth.uid;
+  const { origin, rpID } = getRp();
+  const challengeDoc = await db.collection('users').doc(uid).collection('webauthn_challenges').doc('auth').get();
+  const expectedChallenge = challengeDoc.exists ? challengeDoc.data().challenge : undefined;
+  if (!expectedChallenge) throw new functions.https.HttpsError('failed-precondition', 'No authentication challenge');
+  try {
+    const verification = await verifyAuthenticationResponse({
+      expectedChallenge,
+      expectedOrigin: origin,
+      expectedRPID: rpID,
+      response: data,
+      authenticator: async (credIdB64u) => {
+        const credSnap = await db.collection('users').doc(uid).collection('webauthn_credentials').doc(credIdB64u).get();
+        if (!credSnap.exists) return null;
+        const c = credSnap.data();
+        return {
+          credentialID: Buffer.from(credIdB64u, 'base64url'),
+          credentialPublicKey: Buffer.from(c.publicKey, 'base64url'),
+          counter: Number(c.counter || 0),
+        };
+      },
+      // Update counter after successful verification
+      updateAuthenticatorCounter: async (credIdB64u, counter) => {
+        await db.collection('users').doc(uid).collection('webauthn_credentials').doc(credIdB64u).set({
+          counter: Number(counter || 0),
+          lastUsedAt: admin.firestore.FieldValue.serverTimestamp(),
+        }, { merge: true });
+      },
+    });
+    if (!verification.verified) throw new Error('Verification failed');
+    return { ok: true };
+  } catch (e) {
+    console.error('webauthnVerifyAuthentication error', e);
+    throw new functions.https.HttpsError('permission-denied', 'Passkey authentication failed');
   }
 });
 

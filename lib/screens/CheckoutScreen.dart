@@ -161,13 +161,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     }
   }
 
-  // PayFast configuration for production
-  static const String payfastMerchantId = '23918934';
-  static const String payfastMerchantKey = 'fxuj8ymlgqwra';
-  static const String payfastReturnUrl = 'https://us-central1-marketplace-8d6bd.cloudfunctions.net/payfastReturn';
-  static const String payfastCancelUrl = 'https://us-central1-marketplace-8d6bd.cloudfunctions.net/payfastCancel';
-  static const String payfastNotifyUrl = 'https://us-central1-marketplace-8d6bd.cloudfunctions.net/payfastNotify';
-  static const bool payfastSandbox = false; // Set to false for production
+  // PayFast configuration moved to PayFastService for consistency
 
   // System delivery model pricing (South African market rates)
   static const Map<String, Map<String, dynamic>> _systemDeliveryModel = {
@@ -2854,9 +2848,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       final seller = sellerDoc.data()!;
       _storeName = seller['storeName'] ?? 'Store';
       _storeOpen = seller['isStoreOpen'] ?? false;
-      final bool sellerDeliveryAvailable = seller['deliveryAvailable'] == true;
-      final bool sellerPlatformDeliveryEnabled = seller['platformDeliveryEnabled'] == true;
-      final bool sellerSellerDeliveryEnabled = seller['sellerDeliveryEnabled'] == true;
       final storeLat = seller['latitude'];
       final storeLng = seller['longitude'];
       // Check seller's delivery fee preference
@@ -2901,12 +2892,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
       _sellerPargoEnabled = (seller['pargoEnabled'] ?? false) && pargoVisible;
       _sellerPaxiEnabled = (seller['paxiEnabled'] ?? false) && paxiVisible;
-      // Enforce seller delivery gating
-      if (!sellerDeliveryAvailable || (!sellerPlatformDeliveryEnabled && !sellerSellerDeliveryEnabled)) {
-        if (_isDelivery) {
-          setState(() { _isDelivery = false; });
-        }
-      }
       // Store pickup available if seller has coordinates
       _storePickupAvailable = (storeLat != null && storeLng != null);
       
@@ -3175,32 +3160,36 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       }
       final double suggestedTopUp = totalDue > 0 ? totalDue : 300.0;
 
-      // Redirect to PayFast with a wallet_topup tag in custom_str4
-      final result = await PayFastService.createPayment(
-        amount: suggestedTopUp.toStringAsFixed(2),
-        itemName: 'Wallet Top-up',
-        itemDescription: 'Top-up to enable COD',
-        customerEmail: user.email ?? 'user@example.com',
-        customerFirstName: (user.displayName ?? 'User').split(' ').first,
-        customerLastName: (user.displayName ?? '').split(' ').skip(1).join(' '),
-        customerPhone: '',
-        customString1: 'WALLET_${user.uid}',
-        customString2: sellerId,
-        customString3: user.uid,
-        customString4: 'wallet_topup',
-      );
+      // Create payment data without signature (server will generate it)
+      final paymentData = {
+        'merchant_id': PayFastService.merchantId,
+        'merchant_key': PayFastService.merchantKey,
+        'return_url': PayFastService.returnUrl,
+        'cancel_url': PayFastService.cancelUrl,
+        'notify_url': PayFastService.notifyUrl,
+        'amount': suggestedTopUp.toStringAsFixed(2),
+        'item_name': 'Wallet Top-up',
+        'item_description': 'Top-up to enable COD',
+        'email_address': user.email ?? 'user@example.com',
+        'name_first': (user.displayName ?? 'User').split(' ').first,
+        'name_last': (user.displayName ?? '').split(' ').skip(1).join(' '),
+        'cell_number': '',
+        'm_payment_id': 'WALLET_${user.uid}',
+        'custom_str1': 'WALLET_${user.uid}',
+        'custom_str2': sellerId,
+        'custom_str3': user.uid,
+        'custom_str4': 'wallet_topup',
+        'sandbox': PayFastService.isProduction ? 'false' : 'true',
+      };
+      
       setState(() { _isLoading = false; });
-      if (result['success'] == true) {
-        final String url = PayFastService.buildRedirectUrl(result['paymentUrl'], Map<String,String>.from(result['paymentData']));
-        if (await canLaunchUrl(Uri.parse(url))) {
-          await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
-        } else {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Unable to open PayFast')));
-        }
+      
+      // Use the form redirect URL directly with payment data
+      final String formUrl = '${PayFastService.formRedirectUrl}?${Uri(queryParameters: paymentData).query}';
+      if (await canLaunchUrl(Uri.parse(formUrl))) {
+        await launchUrl(Uri.parse(formUrl), mode: LaunchMode.externalApplication);
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Top-up failed: ${result['error'] ?? 'unknown error'}')),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Unable to open PayFast')));
       }
     } catch (e) {
       setState(() { _isLoading = false; });
@@ -4544,12 +4533,13 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     required String buyerEmail,
     required String buyerName,
   }) {
+    // Use Cloud Function for consistent signature generation
     final params = {
-      'merchant_id': payfastMerchantId,
-      'merchant_key': payfastMerchantKey,
-      'return_url': payfastReturnUrl,
-      'cancel_url': payfastCancelUrl,
-      'notify_url': payfastNotifyUrl,
+      'merchant_id': PayFastService.merchantId,
+      'merchant_key': PayFastService.merchantKey,
+      'return_url': PayFastService.returnUrl,
+      'cancel_url': PayFastService.cancelUrl,
+      'notify_url': PayFastService.notifyUrl,
       'amount': amount.toStringAsFixed(2),
       'item_name': 'Food Order $orderId',
       'name_first': buyerName.split(' ').first,
@@ -4558,18 +4548,11 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       'm_payment_id': orderId,
       'custom_str1': orderId,
       'custom_str2': currentUser!.uid,
+      'sandbox': PayFastService.isProduction ? 'false' : 'true',
     };
     
-    final query = params.entries
-        .map((e) => '${Uri.encodeComponent(e.key)}=${Uri.encodeComponent(e.value)}')
-        .join('&');
-    
-    // Use sandbox for development
-    if (payfastSandbox) {
-      return 'https://sandbox.payfast.co.za/eng/process?$query';
-      } else {
-      return 'https://www.payfast.co.za/eng/process?$query';
-    }
+    // Return Cloud Function URL instead of direct PayFast URL
+    return '${PayFastService.formRedirectUrl}?${Uri(queryParameters: params).query}';
   }
 
   Future<bool> _showPaymentConfirmationDialog(double totalAmount) async {
@@ -5121,7 +5104,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         debugPrint('Error getting seller name: $e');
       }
 
-      // Notify logic: only immediate notifications for COD. For online payments, wait for IPN to confirm.
+      // Notify logic: Send appropriate notifications based on payment method
       final isCOD = (_selectedPaymentMethod?.toLowerCase().contains('cash') ?? false);
       if (isCOD) {
         print('🔔 Sending immediate COD notifications...');
@@ -5138,9 +5121,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           status: 'pending',
           sellerName: sellerName,
         );
-      } else {
-        print('🔔 Skipping notifications until payment confirmed by gateway (awaiting_payment).');
-      }
+                        } else {
+                    print('🔔 Skipping notifications until payment confirmed by gateway (awaiting_payment).');
+                  }
       
       print('✅ Order notifications sent successfully');
     } catch (e) {
@@ -8882,20 +8865,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                     foregroundColor: Colors.white,
                   ),
                 ),
-              ),
-              const SizedBox(height: 6),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Icon(Icons.info_outline, size: 14, color: Colors.grey),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      'Why top-up? It helps reduce no‑shows and covers courier costs for COD orders. If you pay online, no top‑up is needed.',
-                      style: TextStyle(color: Colors.grey[700], fontSize: 12, height: 1.3),
-                    ),
-                  ),
-                ],
               ),
               SizedBox(height: ResponsiveUtils.getVerticalPadding(context) * 0.5),
             ],

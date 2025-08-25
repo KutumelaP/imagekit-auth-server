@@ -138,7 +138,14 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
       // Load store settings for sellers
       if (_isSeller) {
         _isStoreOpen = data['isStoreOpen'] ?? true;
-        _isDeliveryAvailable = data['deliveryAvailable'] ?? false;
+        // Backward-compatible delivery toggle: support either deliveryAvailable or sellerDeliveryEnabled
+        final dynamic _deliveryAvailableRaw = data['deliveryAvailable'];
+        final dynamic _sellerDeliveryEnabledRaw = data['sellerDeliveryEnabled'];
+        _isDeliveryAvailable = (
+          _deliveryAvailableRaw is bool ? _deliveryAvailableRaw : null
+        ) ?? (
+          _sellerDeliveryEnabledRaw is bool ? _sellerDeliveryEnabledRaw : null
+        ) ?? false;
         
         // Load delivery range
         // _deliveryRange = (data['deliveryRange'] ?? 50.0).toDouble().clamp(0.0, 2000.0); // This line is now handled by the cap

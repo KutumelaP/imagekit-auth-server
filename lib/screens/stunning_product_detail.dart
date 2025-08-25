@@ -6,6 +6,7 @@ import '../providers/cart_provider.dart';
 import '../theme/app_theme.dart';
 import '../widgets/safe_network_image.dart';
 import '../widgets/bottom_action_bar.dart';
+import '../screens/ChatScreen.dart';
 // removed unused imports
 import 'package:flutter/services.dart';
 
@@ -876,9 +877,10 @@ class _StunningProductDetailState extends State<StunningProductDetail>
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (_) => Scaffold(
-              appBar: AppBar(title: const Text('Chat')),
-              body: Center(child: Text('Chat ID: $chatId')),
+            builder: (_) => ChatScreen(
+              chatId: chatId,
+              otherUserId: sellerId,
+              otherUserName: widget.product['sellerName'] ?? widget.product['storeName'] ?? 'Seller',
             ),
           ),
         );
