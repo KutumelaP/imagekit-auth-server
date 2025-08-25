@@ -1704,6 +1704,11 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                     ],
                     if (_isSeller) ...[
                       const SizedBox(height: 16),
+                      _buildSectionHeader('Store Settings'),
+                      const SizedBox(height: 8),
+                      _buildStoreSettingsSection(),
+                      const SizedBox(height: 16),
+                      const SizedBox(height: 16),
                       _buildSectionHeader('Pickup Services'),
                       const SizedBox(height: 8),
                       Container(

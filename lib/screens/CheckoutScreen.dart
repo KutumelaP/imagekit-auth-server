@@ -77,6 +77,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   int? _deliveryTimeMinutes;
   String? _selectedPaymentMethod;
   bool _isDelivery = true; // Default to delivery, user can change to pickup
+  bool _deliveryAllowed = true; // Whether delivery is allowed by seller/platform settings
+  String _storeAddress = ''; // Store address for pickup
   
   // Rural delivery variables
   bool _isRuralArea = false;
@@ -111,9 +113,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   List<PickupPoint> _allPickupPoints = []; // Store all pickup points
   bool _isLoadingPickupPoints = false;
   PickupPoint? _selectedPickupPoint;
-  String? _selectedServiceFilter; // 'pargo', 'paxi', or null for all
+  String? _selectedServiceFilter; // 'pargo', 'paxi', 'store', or null for all
   bool _storePickupAvailable = false;
-  bool _storePickupSelected = false;
   double? _selectedLat;
   double? _selectedLng;
   
@@ -2742,6 +2743,29 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         // Show all points
         _pickupPoints = _allPickupPoints;
         print('🔍 DEBUG: Showing all points: ${_pickupPoints.length}');
+      } else if (service == 'store') {
+        // Show only store pickup (synthetic local store points)
+        _pickupPoints = _allPickupPoints.where((point) => point.type == 'Local Store').toList();
+        print('🔍 DEBUG: Showing store pickup points: ${_pickupPoints.length}');
+        
+        // If no store pickup point exists, create one
+        if (_pickupPoints.isEmpty && _selectedLat != null && _selectedLng != null) {
+          final storePickupPoint = PickupPoint(
+            id: 'local_store',
+            name: _storeName ?? 'Store Pickup',
+            address: _storeAddress.isNotEmpty ? _storeAddress : 'Pickup at store',
+            latitude: _selectedLat!,
+            longitude: _selectedLng!,
+            type: 'Local Store',
+            distance: 0.0,
+            fee: 0.0,
+            operatingHours: '${_storeOpenHour ?? '08:00'} - ${_storeCloseHour ?? '18:00'}',
+          );
+          _pickupPoints = [storePickupPoint];
+          _allPickupPoints.add(storePickupPoint);
+          _deliveryFee = 0.0;
+          print('🔍 DEBUG: Created synthetic store pickup point');
+        }
       } else if (service == 'pargo') {
         // Show only Pargo points
         _pickupPoints = _allPickupPoints.where((point) => point.isPargoPoint).toList();
@@ -2848,6 +2872,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       final seller = sellerDoc.data()!;
       _storeName = seller['storeName'] ?? 'Store';
       _storeOpen = seller['isStoreOpen'] ?? false;
+      _storeAddress = seller['location'] ?? '';
       final storeLat = seller['latitude'];
       final storeLng = seller['longitude'];
       // Check seller's delivery fee preference
@@ -2875,20 +2900,45 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       print('  - seller storeOpenHour: ${seller['storeOpenHour']}');
       print('  - seller storeCloseHour: ${seller['storeCloseHour']}');
       _paymentMethods = List<String>.from(seller['paymentMethods'] ?? ['Cash on Delivery', 'PayFast']);
+      
+      // Respect seller's allowCOD flag
+      final bool sellerAllowsCOD = (seller['allowCOD'] != false);
+      if (!sellerAllowsCOD) {
+        _paymentMethods.removeWhere((m) => m.toLowerCase().contains('cash'));
+        if (_selectedPaymentMethod != null && _selectedPaymentMethod!.toLowerCase().contains('cash')) {
+          _selectedPaymentMethod = null;
+        }
+        _codDisabledReason = 'Cash on Delivery disabled by seller';
+      }
+      
       _excludedZones = List<String>.from(seller['excludedZones'] ?? []);
       
       // Get seller service availability
       // Global platform visibility overrides
       bool pargoVisible = true;
       bool paxiVisible = true;
+      bool platformDeliveryEnabled = true; // Default fallback
+      
       try {
         final platformCfg = await FirebaseFirestore.instance.collection('config').doc('platform').get();
         final cfg = platformCfg.data();
         if (cfg != null) {
           pargoVisible = (cfg['pargoVisible'] != false);
           paxiVisible = (cfg['paxiVisible'] != false);
+          platformDeliveryEnabled = (cfg['platformDeliveryEnabled'] != false);
         }
       } catch (_) {}
+      
+      // Calculate delivery availability (always set, regardless of platform config availability)
+      final deliveryAllowed = (seller['deliveryAvailable'] != false) &&
+          ((seller['sellerDeliveryEnabled'] == true) || platformDeliveryEnabled);
+      _deliveryAllowed = deliveryAllowed;
+      
+      print('🔍 DEBUG: Delivery availability calculation:');
+      print('  - seller deliveryAvailable: ${seller['deliveryAvailable']}');
+      print('  - seller sellerDeliveryEnabled: ${seller['sellerDeliveryEnabled']}');
+      print('  - platform platformDeliveryEnabled: $platformDeliveryEnabled');
+      print('  - Final _deliveryAllowed: $_deliveryAllowed');
 
       _sellerPargoEnabled = (seller['pargoEnabled'] ?? false) && pargoVisible;
       _sellerPaxiEnabled = (seller['paxiEnabled'] ?? false) && paxiVisible;
@@ -3457,6 +3507,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               } else if (choice == 'email') {
                 final okEmail = await _performEmailOtpStepUp();
                 if (!okEmail) return; // failed email verification
+              } else {
+                // User canceled the choice modal - block payment
+                return;
               }
             }
           } catch (e) {
@@ -5577,12 +5630,12 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             children: [
               Expanded(
                 child: GestureDetector(
-                  onTap: () {
+                  onTap: _deliveryAllowed ? () {
                     setState(() {
                       _isDelivery = true;
                       _calculateDeliveryFeeAndCheckStore();
                     });
-                  },
+                  } : null,
                   child: Container(
                     padding: EdgeInsets.all(ResponsiveUtils.getHorizontalPadding(context)),
                     decoration: BoxDecoration(
@@ -5612,9 +5665,11 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                       children: [
                         Icon(
                           Icons.delivery_dining,
-                          color: _isDelivery 
-                              ? AppTheme.angel
-                              : AppTheme.breeze,
+                          color: !_deliveryAllowed
+                              ? AppTheme.breeze.withOpacity(0.5)
+                              : (_isDelivery 
+                                  ? AppTheme.angel
+                                  : AppTheme.breeze),
                           size: ResponsiveUtils.getIconSize(context, baseSize: 20),
                         ),
                         SizedBox(width: ResponsiveUtils.getHorizontalPadding(context) * 0.5),
@@ -5624,9 +5679,11 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                             style: TextStyle(
                               fontSize: ResponsiveUtils.getTitleSize(context) - 2,
                               fontWeight: FontWeight.w600,
-                              color: _isDelivery 
-                                  ? AppTheme.angel
-                                  : AppTheme.breeze,
+                              color: !_deliveryAllowed
+                                  ? AppTheme.breeze.withOpacity(0.5)
+                                  : (_isDelivery 
+                                      ? AppTheme.angel
+                                      : AppTheme.breeze),
                             ),
                             maxLines: 1,
                           ),
@@ -5872,69 +5929,44 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                       if (_storePickupAvailable) Expanded(
                         child: Container(
                           decoration: BoxDecoration(
-                            gradient: _storePickupSelected 
+                            gradient: _selectedServiceFilter == 'store' 
                                 ? LinearGradient(colors: AppTheme.primaryGradient)
                                 : LinearGradient(colors: [AppTheme.angel, AppTheme.angel]),
                             borderRadius: BorderRadius.circular(12),
                             border: Border.all(
-                              color: _storePickupSelected 
+                              color: _selectedServiceFilter == 'store' 
                                   ? AppTheme.deepTeal.withOpacity(0.5)
                                   : AppTheme.breeze.withOpacity(0.3),
-                              width: _storePickupSelected ? 2 : 1,
+                              width: _selectedServiceFilter == 'store' ? 2 : 1,
                             ),
                           ),
                           child: Material(
                             color: Colors.transparent,
                             child: InkWell(
                               borderRadius: BorderRadius.circular(12),
-                              onTap: () {
-                                setState(() {
-                                  _storePickupSelected = true;
-                                  _selectedServiceFilter = null;
-                                  if (_pickupPoints.isEmpty && _selectedPickupPoint == null) {
-                                    // Create a local store pickup point synthetic if missing
-                                    if (_selectedLat != null && _selectedLng != null) {
-                                      _selectedPickupPoint = PickupPoint(
-                                        id: 'local_store',
-                                        name: _storeName ?? 'Store Pickup',
-                                        address: 'Pickup at store',
-                                        latitude: _selectedLat!,
-                                        longitude: _selectedLng!,
-                                        type: 'Local Store',
-                                        distance: 0.0,
-                                        fee: 0.0,
-                                        operatingHours: '${_storeOpenHour ?? '08:00'} - ${_storeCloseHour ?? '18:00'}',
-                                      );
-                                      _deliveryFee = 0.0;
-                                    }
-                                  } else {
-                                    // Prefer creating a synthetic pickup based on seller coords when known
-                                    _deliveryFee = 0.0;
-                                  }
-                                });
-                              },
+                              onTap: () => _filterPickupPointsByService('store'),
                               child: Container(
                                 padding: EdgeInsets.symmetric(vertical: 16, horizontal: 12),
                                 child: Column(
                                   children: [
                                     Icon(
                                       Icons.store,
-                                      color: _storePickupSelected ? AppTheme.angel : AppTheme.deepTeal,
+                                      color: _selectedServiceFilter == 'store' ? AppTheme.angel : AppTheme.deepTeal,
                                       size: 24,
                                     ),
                                     SizedBox(height: 8),
                                     Text(
                                       'Store Pickup',
                                       style: TextStyle(
-                                        color: _storePickupSelected ? AppTheme.angel : AppTheme.deepTeal,
+                                        color: _selectedServiceFilter == 'store' ? AppTheme.angel : AppTheme.deepTeal,
                                         fontSize: 14,
                                         fontWeight: FontWeight.w700,
                                       ),
                                     ),
                                     Text(
-                                      'Collect at seller',
+                                      _storeAddress.isNotEmpty ? _storeAddress : 'Collect at seller',
                                       style: TextStyle(
-                                        color: _storePickupSelected ? AppTheme.angel.withOpacity(0.85) : AppTheme.deepTeal.withOpacity(0.7),
+                                        color: _selectedServiceFilter == 'store' ? AppTheme.angel.withOpacity(0.85) : AppTheme.deepTeal.withOpacity(0.7),
                                         fontSize: 12,
                                         fontWeight: FontWeight.w500,
                                       ),
@@ -8826,7 +8858,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           // Payment method visual cues and security notes
           if (_selectedPaymentMethod != null) ...[
             SizedBox(height: ResponsiveUtils.getVerticalPadding(context) * 0.5),
-            if (_codDisabledReason != null && !_paymentMethods.any((m) => m.toLowerCase().contains('cash'))) ...[
+            if (_codDisabledReason != null && 
+                _selectedPaymentMethod!.toLowerCase().contains('cash') &&
+                !_paymentMethods.any((m) => m.toLowerCase().contains('cash'))) ...[
               Container(
                 width: double.infinity,
                 padding: EdgeInsets.all(ResponsiveUtils.getHorizontalPadding(context) * 0.6),

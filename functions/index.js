@@ -24,26 +24,23 @@ const axios = require('axios');
 exports.payfastNotify = functions.https.onRequest(async (req, res) => {
   try {
     const data = req.method === 'POST' ? req.body : req.query;
-    
-    // Since "Require signature" is OFF in PayFast dashboard, skip signature verification
-    // This prevents "Generated signature does not match" errors
-    console.log('PayFast IPN: Signature verification skipped - Require signature is OFF');
-    
-    // Note: In production with "Require signature" ON, you would verify signatures here
-    // const passphrase = process.env.PAYFAST_PASSPHRASE || 'PeterKutumela2025';
-    // const entries = Object.keys(data)
-    //   .filter((k) => k !== 'signature' && data[k] !== undefined && data[k] !== null)
-    //   .sort()
-    //   .map((k) => `${k}=${pfEncode(data[k])}`)
-    //   .join('&');
-    // const toSign = passphrase ? `${entries}&passphrase=${passphrase}` : entries;
-    // const expected = crypto.createHash('md5').update(toSign).digest('hex');
-    // const received = String(data.signature || '').toLowerCase();
-    // if (expected !== received) {
-    //   console.warn('PayFast IPN invalid signature');
-    //   res.status(400).send('invalid');
-    //   return;
-    // }
+    const passphrase = process.env.PAYFAST_PASSPHRASE || 'PeterKutumela2025';
+    // Verify signature (PayFast requires signature even if dashboard toggle shows Off for some accounts)
+    const entries = Object.keys(data)
+      .filter((k) => k !== 'signature' && data[k] !== undefined && data[k] !== null)
+      .sort()
+      .map((k) => `${k}=${pfEncode(data[k])}`)
+      .join('&');
+    const toSign = passphrase ? `${entries}&passphrase=${passphrase}` : entries;
+    const expected = crypto.createHash('md5').update(toSign).digest('hex');
+    const received = String(data.signature || '').toLowerCase();
+    console.log('[payfastNotify] entries=', entries);
+    console.log('[payfastNotify] expected_sig=', expected, 'received_sig=', received);
+    if (expected !== received) {
+      console.warn('PayFast IPN invalid signature');
+      res.status(400).send('invalid');
+      return;
+    }
 
     const orderId = data.custom_str1;
     const paymentStatus = String(data.payment_status || '').toUpperCase();
@@ -270,16 +267,24 @@ exports.payfastFormRedirect = functions.https.onRequest(async (req, res) => {
     });
 
     try {
-      // Since "Require signature" is OFF in PayFast dashboard, don't generate signatures
-      // This prevents "Generated signature does not match" errors
-      console.log('[payfastFormRedirect] signature_generation_disabled - Require signature is OFF');
-      
-      // Remove any existing signature field to ensure clean submission
-      if (postData.signature) {
-        delete postData.signature;
-      }
+      // Compute signature server-side (override any client-provided value)
+      const passphrase = process.env.PAYFAST_PASSPHRASE || 'PeterKutumela2025';
+      const merchantId = String(postData.merchant_id || '');
+      const usePassphrase = merchantId !== '10000100' && !!passphrase; // Sandbox merchant uses no passphrase
+      const keys = Object.keys(postData).filter((k) => k !== 'signature').sort();
+      const encoded = keys.map((k) => `${k}=${pfEncode(postData[k])}`).join('&');
+      const toSignWith = `${encoded}&passphrase=${passphrase}`;
+      const sigWith = crypto.createHash('md5').update(toSignWith).digest('hex');
+      const sigNo = crypto.createHash('md5').update(encoded).digest('hex');
+      // Choose signature mode: query param sig=with|none (default: with, matching dashboard setting)
+      const sigMode = String(data.sig || 'with');
+      postData.signature = sigMode === 'with' ? sigWith : sigNo;
+      console.log('[payfastFormRedirect] sig_set=true mode=', sigMode, ' merchant_id=', merchantId);
+      console.log('[payfastFormRedirect] encoded=', encoded);
+      console.log('[payfastFormRedirect] computed_signature_no_pass=', sigNo);
+      console.log('[payfastFormRedirect] computed_signature_with_pass=', sigWith);
     } catch (e) {
-      console.warn('[payfastFormRedirect] sig_cleanup_failed', e?.message || e);
+      console.warn('[payfastFormRedirect] sig_compute_failed', e?.message || e);
     }
 
     const inputs = Object.keys(postData)
@@ -289,6 +294,7 @@ exports.payfastFormRedirect = functions.https.onRequest(async (req, res) => {
       })
       .join('\n');
 
+    const debug = String(data.debug || '0') === '1';
     const html = `<!doctype html>
 <html><head><meta charset="utf-8"><title>Redirecting to PayFast...</title></head>
 <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
@@ -300,9 +306,7 @@ exports.payfastFormRedirect = functions.https.onRequest(async (req, res) => {
   </form>
   <script>
     // Auto-submit after a short delay to ensure all inputs are loaded
-    setTimeout(function() {
-      document.getElementById('payfastForm').submit();
-    }, 100);
+    setTimeout(function(){ var f = document.getElementById('payfastForm'); if (f) f.submit(); }, 150);
   </script>
 </body></html>`;
 
