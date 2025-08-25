@@ -35,7 +35,15 @@ service cloud.firestore {
       );
       
       allow update: if request.auth != null && (
-        request.auth.uid == userId ||
+        (request.auth.uid == userId && 
+         // Prevent users from modifying critical fields that should only be admin-controlled
+         !('kycStatus' in request.resource.data.diff(resource.data).affectedKeys()) &&
+         !('role' in request.resource.data.diff(resource.data).affectedKeys()) &&
+         !('status' in request.resource.data.diff(resource.data).affectedKeys()) &&
+         !('kycApprovedAt' in request.resource.data.diff(resource.data).affectedKeys()) &&
+         !('approvedAt' in request.resource.data.diff(resource.data).affectedKeys()) &&
+         !('approvedBy' in request.resource.data.diff(resource.data).affectedKeys())
+        ) ||
         isAdmin()
       );
       
@@ -55,11 +63,19 @@ service cloud.firestore {
         allow read, write: if request.auth != null && request.auth.uid == userId;
       }
 
-      // KYC subcollection - Allow users to manage their own KYC documents
+      // KYC subcollection - Allow users to upload documents but not approve status
       match /kyc/{kycId} {
-        allow read, write: if request.auth != null && request.auth.uid == userId;
-        // Allow admin to read for verification
-        allow read: if isAdmin();
+        // Users can read their own KYC documents
+        allow read: if request.auth != null && request.auth.uid == userId;
+        // Users can create/upload KYC documents but cannot change status to 'approved'
+        allow create: if request.auth != null && request.auth.uid == userId && 
+          (!('status' in request.resource.data) || request.resource.data.status == 'pending');
+        // Users can update documents but cannot change status from pending to approved
+        allow update: if request.auth != null && request.auth.uid == userId && 
+          (!('status' in request.resource.data.diff(resource.data).affectedKeys()) || 
+           (resource.data.status != 'approved' && request.resource.data.status != 'approved'));
+        // Only admins can read all and approve/reject KYC
+        allow read, write: if isAdmin();
       }
 
       // Payout subcollection - Allow users to manage their own payout settings
@@ -217,6 +233,17 @@ service cloud.firestore {
         resource.data.userId == request.auth.uid ||
         isAdmin()
       );
+    }
+
+    // KYC_SUBMISSIONS - Central collection for admin review
+    match /kyc_submissions/{submissionId} {
+      // Only admins can read all submissions for review
+      allow read, write: if isAdmin();
+      // Users can only create their own submissions with pending status
+      allow create: if request.auth != null && 
+        request.resource.data.userId == request.auth.uid && 
+        request.resource.data.status == 'pending';
+      // Users cannot update or delete submissions - admin only
     }
 
     // Admin-only collections

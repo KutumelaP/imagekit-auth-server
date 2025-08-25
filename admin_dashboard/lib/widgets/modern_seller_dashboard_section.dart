@@ -3680,10 +3680,10 @@ class _ModernSellerDashboardSectionState extends State<ModernSellerDashboardSect
                 const SizedBox(width: 8),
                 Text('COD & KYC', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
                 const Spacer(),
-                TextButton.icon(
+                IconButton(
                   onPressed: _loadComplianceAndCOD,
                   icon: const Icon(Icons.refresh),
-                  label: const Text('Refresh'),
+                  tooltip: 'Refresh',
                 ),
               ],
             ),

@@ -45,27 +45,26 @@ import 'screens/SellerPayoutsScreen.dart';
 import 'dart:async';
 import 'utils/safari_optimizer.dart';
 import 'utils/web_memory_guard.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'utils/performance_config.dart';
+import 'package:flutter/foundation.dart' show kIsWeb, kDebugMode;
 import 'utils/web_env.dart';
 
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   // You can add background handling logic here if needed
-  print('🔔 Background message: ${message.messageId} data=${message.data}');
+  if (kDebugMode) print('🔔 Background message: ${message.messageId} data=${message.data}');
 }
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
-  // Initialize Safari optimizations
+  // Initialize performance optimizations
+  PerformanceConfig.initialize();
   SafariOptimizer.initialize();
   
-  // Basic web optimizations
+  // Web-specific optimizations
   if (kIsWeb) {
-    // Basic memory management for web
-    // Lower limits to reduce iOS Safari evictions
-    PaintingBinding.instance.imageCache.maximumSize = 120;
-    PaintingBinding.instance.imageCache.maximumSizeBytes = 12 << 20; // ~12MB
+    PerformanceConfig.optimizeForWeb();
     // Initialize guard to clear caches when hidden/backgrounded
     WebMemoryGuard().initialize();
   }
@@ -97,15 +96,15 @@ void main() async {
       if (serviceEnabled) {
         LocationPermission permission = await Geolocator.checkPermission();
         if (permission == LocationPermission.denied) {
-          print('🔍 DEBUG: Requesting location permission on app start...');
+          if (kDebugMode) print('🔍 DEBUG: Requesting location permission on app start...');
           await Geolocator.requestPermission();
         }
       }
     } else {
-      print('🔍 DEBUG: Skipping location permission on iOS Safari tab');
+      if (kDebugMode) print('🔍 DEBUG: Skipping location permission on iOS Safari tab');
     }
   } catch (e) {
-    print('🔍 DEBUG: Error initializing location permissions: $e');
+    if (kDebugMode) print('🔍 DEBUG: Error initializing location permissions: $e');
   }
   
   // Initialize error tracking
@@ -134,7 +133,7 @@ class MyApp extends StatelessWidget {
         theme: AppTheme.lightTheme,
           navigatorKey: NavigationService.navigatorKey,
         navigatorObservers: [
-          _DebugNavigatorObserver(),
+          if (kDebugMode) _DebugNavigatorObserver(),
           RoutePersistenceObserver(),
         ],
         home: InAppNotificationWidget(
@@ -260,21 +259,21 @@ class _SplashWrapperState extends State<SplashWrapper> {
 class _DebugNavigatorObserver extends NavigatorObserver {
   @override
   void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
-    print("➡️ NAVIGATION: PUSH ${route.settings.name}");
+    if (kDebugMode) print("➡️ NAVIGATION: PUSH ${route.settings.name}");
   }
 
   @override
   void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
-    print("⬅️ NAVIGATION: POP ${route.settings.name}");
+    if (kDebugMode) print("⬅️ NAVIGATION: POP ${route.settings.name}");
   }
 
   @override
   void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) {
-    print("🔄 NAVIGATION: REPLACE ${newRoute?.settings.name}");
+    if (kDebugMode) print("🔄 NAVIGATION: REPLACE ${newRoute?.settings.name}");
   }
 
   @override
   void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) {
-    print("🗑️ NAVIGATION: REMOVE ${route.settings.name}");
+    if (kDebugMode) print("🗑️ NAVIGATION: REMOVE ${route.settings.name}");
   }
 }
