@@ -91,9 +91,10 @@ class PayFastService {
         paymentData['m_payment_id'] = _sanitizeRef(customString1);
       }
 
-      // Generate signature only if passphrase is configured (when "Require signature" is ON)
+      // When using Cloud Function, don't generate signature - let server handle it
+      // This prevents double signature generation issues
       String? signature;
-      if (_passphrase.isNotEmpty) {
+      if (_passphrase.isNotEmpty && false) { // Disabled for Cloud Function usage
         signature = _generateSignature(paymentData);
         paymentData['signature'] = signature;
       }
@@ -105,7 +106,7 @@ class PayFastService {
         'success': true,
         'paymentUrl': formRedirectUrl,
         'paymentData': redirectParams,
-        'signature': signature ?? 'none',
+        'signature': 'server_generated', // Indicate server will generate signature
       };
     } catch (e) {
       return {
