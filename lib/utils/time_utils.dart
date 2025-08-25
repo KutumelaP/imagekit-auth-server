@@ -35,3 +35,4 @@ class TimeUtils {
     return '$openAmPm - $closeAmPm';
   }
 }
+

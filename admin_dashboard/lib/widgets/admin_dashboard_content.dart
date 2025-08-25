@@ -28,6 +28,7 @@ import 'payment_settings_management.dart';
 import 'escrow_management.dart';
 import 'returns_management.dart';
 import 'driver_management_screen.dart';
+import 'financial_overview_section.dart';
 import 'reports_section.dart';
 import 'data_export_section.dart';
 import 'roles_permissions_section.dart';
@@ -38,6 +39,7 @@ import 'risk_review_screen.dart';
 import 'kyc_review_list.dart';
 import 'kyc_overview_widget.dart';
 import 'admin_payouts_section.dart';
+import 'customer_support_section.dart';
 
 class AdminDashboardContent extends StatefulWidget {
   final String adminEmail;
@@ -98,6 +100,7 @@ class _AdminDashboardContentState extends State<AdminDashboardContent> {
     'Roles/Permissions',
     'Audit Logs',
     'Payment Settings',
+    'Financial Overview',
     'Escrow Management',
     'Returns Management',
     'Developer Tools',
@@ -112,6 +115,7 @@ class _AdminDashboardContentState extends State<AdminDashboardContent> {
     'KYC Review',
     'KYC Overview',
     'Payouts',
+    'Customer Support',
   ];
 
   @override
@@ -425,20 +429,22 @@ class _AdminDashboardContentState extends State<AdminDashboardContent> {
       case 17: return RolesPermissionsSection(); // Roles/Permissions
       case 18: return AuditLogsSection(); // Audit Logs
       case 19: return PaymentSettingsManagement(); // Payment Settings
-      case 20: return EscrowManagement(); // Escrow Management
-      case 21: return ReturnsManagement(); // Returns Management
-      case 22: return DeveloperToolsSection(); // Developer Tools
-      case 23: return DataExportSection(); // Data Export
-      case 24: return const OrderMigrationScreen(); // Order Migration
-      case 25: return RuralDriverManagement(); // Rural Driver Management
-      case 26: return UrbanDeliveryManagement(); // Urban Delivery Management
-      case 27: return DriverManagementScreen(); // Driver Management
-              case 28: return SellerDeliveryManagement(); // Seller Delivery Management
-        case 29: return PaxiPricingManagement(); // PAXI Pricing Management
-        case 30: return const RiskReviewScreen(); // Risk Review
-        case 31: return const KycReviewList(); // KYC Review
-        case 32: return const KycOverviewWidget(); // KYC Overview
-        case 33: return const AdminPayoutsSection(); // Payouts
+      case 20: return const FinancialOverviewSection(); // Financial Overview
+      case 21: return EscrowManagement(); // Escrow Management
+      case 22: return ReturnsManagement(); // Returns Management
+      case 23: return DeveloperToolsSection(); // Developer Tools
+      case 24: return DataExportSection(); // Data Export
+      case 25: return const OrderMigrationScreen(); // Order Migration
+      case 26: return RuralDriverManagement(); // Rural Driver Management
+      case 27: return UrbanDeliveryManagement(); // Urban Delivery Management
+      case 28: return DriverManagementScreen(); // Driver Management
+      case 29: return SellerDeliveryManagement(); // Seller Delivery Management
+      case 30: return PaxiPricingManagement(); // PAXI Pricing Management
+      case 31: return const RiskReviewScreen(); // Risk Review
+      case 32: return const KycReviewList(); // KYC Review
+      case 33: return const KycOverviewWidget(); // KYC Overview
+      case 34: return const AdminPayoutsSection(); // Payouts
+      case 35: return const CustomerSupportSection(); // Customer Support
       default: return const SizedBox();
     }
   }
@@ -1120,6 +1126,12 @@ class _AdminDashboardContentState extends State<AdminDashboardContent> {
                   Icons.verified_user_outlined,
                   AdminTheme.primaryColor,
                   () => widget.onSectionChanged(32),
+                ),
+                _buildQuickActionCard(
+                  'Customer Support',
+                  Icons.support_agent,
+                  Colors.purple,
+                  () => widget.onSectionChanged(35),
                 ),
               ],
             );

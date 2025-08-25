@@ -23,6 +23,7 @@ import 'services/global_message_listener.dart';
 import 'widgets/in_app_notification_widget.dart';
 import 'widgets/notification_badge.dart';
 import 'widgets/simple_splash_screen.dart';
+import 'widgets/chatbot_widget.dart';
 import 'screens/simple_home_screen.dart';
 import 'screens/product_search_screen.dart';
 import 'screens/login_screen.dart';
@@ -137,7 +138,9 @@ class MyApp extends StatelessWidget {
         ],
         home: InAppNotificationWidget(
           child: NotificationBadge(
-            child: SplashWrapper(),
+            child: ChatbotWrapper(
+              child: SplashWrapper(),
+            ),
           ),
         ),
         builder: (context, child) {

@@ -20,6 +20,11 @@ class _SellerPayoutsScreenState extends State<SellerPayoutsScreen> {
   double _min = 0.0;
   double _commissionPct = 0.0;
   List<Map<String, dynamic>> _history = [];
+  
+  // Outstanding fees
+  double _outstandingAmount = 0.0;
+  String _outstandingType = '';
+  bool _codDisabled = false;
 
   @override
   void initState() {
@@ -31,6 +36,7 @@ class _SellerPayoutsScreenState extends State<SellerPayoutsScreen> {
     await Future.wait([
       _loadBalance(),
       _loadHistory(),
+      _loadOutstandingFees(),
     ]);
   }
 
@@ -68,8 +74,51 @@ class _SellerPayoutsScreenState extends State<SellerPayoutsScreen> {
           .orderBy('createdAt', descending: true)
           .limit(50)
           .get();
-      setState(() { _history = qs.docs.map((d) => { 'id': d.id, ...?d.data() }).toList().cast<Map<String, dynamic>>(); });
+      setState(() { _history = qs.docs.map((d) => { 'id': d.id, ...d.data() }).toList().cast<Map<String, dynamic>>(); });
     } catch (_) {}
+  }
+
+  Future<void> _loadOutstandingFees() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    try {
+      // Get outstanding fees
+      final receivableDoc = await FirebaseFirestore.instance
+          .collection('platform_receivables')
+          .doc(user.uid)
+          .get();
+
+      double outstandingAmount = 0.0;
+      String outstandingType = '';
+      
+      if (receivableDoc.exists) {
+        final data = receivableDoc.data()!;
+        outstandingAmount = (data['amount'] is num) 
+            ? (data['amount'] as num).toDouble() 
+            : double.tryParse('${data['amount']}') ?? 0.0;
+        outstandingType = data['type'] ?? '';
+      }
+
+      // Check COD status
+      final userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .get();
+      
+      bool codDisabled = false;
+      if (userDoc.exists) {
+        final userData = userDoc.data()!;
+        codDisabled = userData['codDisabled'] ?? false;
+      }
+
+      setState(() {
+        _outstandingAmount = outstandingAmount;
+        _outstandingType = outstandingType;
+        _codDisabled = codDisabled;
+      });
+    } catch (e) {
+      print('Error loading outstanding fees: $e');
+    }
   }
 
   Future<void> _requestPayout() async {
@@ -101,9 +150,19 @@ class _SellerPayoutsScreenState extends State<SellerPayoutsScreen> {
       ),
       body: RefreshIndicator(
         onRefresh: _refreshAll,
-        child: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            // Responsive padding based on screen width
+            final horizontalPadding = constraints.maxWidth > 600 
+                ? (constraints.maxWidth - 600) / 2 + 16 
+                : 16.0;
+            
+            return ListView(
+              padding: EdgeInsets.symmetric(
+                horizontal: horizontalPadding,
+                vertical: 16,
+              ),
+              children: [
             Container(
               decoration: BoxDecoration(
                 color: Colors.white,
@@ -121,6 +180,11 @@ class _SellerPayoutsScreenState extends State<SellerPayoutsScreen> {
                     const Spacer(),
                     IconButton(onPressed: _loadBalance, icon: const Icon(Icons.refresh)),
                   ]),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Money you\'ve earned from completed orders that can be withdrawn',
+                    style: TextStyle(fontSize: 12, color: Colors.grey[600], fontStyle: FontStyle.italic),
+                  ),
                   const SizedBox(height: 8),
                   if (_loading) const LinearProgressIndicator(minHeight: 2),
                   const SizedBox(height: 8),
@@ -129,11 +193,32 @@ class _SellerPayoutsScreenState extends State<SellerPayoutsScreen> {
                     final stats = Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('R ${_net.toStringAsFixed(2)}', style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold)),
+                        FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text('R ${_net.toStringAsFixed(2)}', style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold)),
+                        ),
                         const SizedBox(height: 4),
-                        Text(
-                          'Gross R ${_gross.toStringAsFixed(2)} • Commission R ${_commission.toStringAsFixed(2)} (${(_commissionPct * 100).toStringAsFixed(0)}%)',
-                          style: TextStyle(color: Colors.grey[600]),
+                        Flexible(
+                          child: Text(
+                            'Gross R ${_gross.toStringAsFixed(2)} • Commission R ${_commission.toStringAsFixed(2)} (${(_commissionPct * 100).toStringAsFixed(0)}%)',
+                            style: TextStyle(color: Colors.grey[600]),
+                            overflow: TextOverflow.ellipsis,
+                            maxLines: 2,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: Colors.blue.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            '💡 Minimum payout: R${_min.toStringAsFixed(2)}. Commission covers platform costs (payment processing, hosting, support).',
+                            style: TextStyle(fontSize: 11, color: Colors.blue[800]),
+                            overflow: TextOverflow.fade,
+                            softWrap: true,
+                          ),
                         ),
                       ],
                     );
@@ -171,6 +256,113 @@ class _SellerPayoutsScreenState extends State<SellerPayoutsScreen> {
               ),
             ),
             const SizedBox(height: 16),
+            
+            // Outstanding Fees Section
+            if (_outstandingAmount > 0 || _codDisabled) Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 2))],
+                border: Border.all(color: Colors.red.withOpacity(0.3), width: 1),
+              ),
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(children: [
+                    Icon(Icons.warning, color: Colors.red),
+                    const SizedBox(width: 8),
+                    const Text('Outstanding Fees', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.red)),
+                  ]),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Platform fees that need to be paid to maintain full access',
+                    style: TextStyle(fontSize: 12, color: Colors.grey[600], fontStyle: FontStyle.italic),
+                  ),
+                  const SizedBox(height: 8),
+                  if (_outstandingAmount > 0) ...[
+                                            FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text('R ${_outstandingAmount.toStringAsFixed(2)}', 
+                               style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.red)),
+                        ),
+                    const SizedBox(height: 4),
+                    Text('Type: $_outstandingType', style: TextStyle(color: Colors.grey[600])),
+                    const SizedBox(height: 8),
+                  ],
+                  if (_codDisabled) ...[
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: Colors.orange.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: Colors.orange.withOpacity(0.3)),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.block, color: Colors.orange, size: 16),
+                          const SizedBox(width: 6),
+                          const Text('Cash on Delivery Disabled', style: TextStyle(color: Colors.orange, fontWeight: FontWeight.w600)),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                  ],
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.amber.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.amber.withOpacity(0.3)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(Icons.info_outline, color: Colors.amber[700], size: 16),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text('Why are there outstanding fees?', style: TextStyle(fontWeight: FontWeight.w600, color: Colors.amber[700])),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Flexible(
+                          child: Text(
+                            _outstandingAmount > 0 
+                                ? '• Platform commission from recent sales\n• Payment processing fees\n• Service charges for marketplace features\n\nPaying these fees re-enables Cash on Delivery for your customers.'
+                                : '• Complete your identity verification in Profile settings\n• This ensures secure transactions for all users\n• Required by South African financial regulations',
+                            style: TextStyle(fontSize: 12, color: Colors.grey[700], height: 1.4),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (_outstandingAmount > 0) ...[
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        onPressed: () => _payOutstandingFees(),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.red,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        ),
+                        icon: const Icon(Icons.payment),
+                        label: const Text('Pay Outstanding Fees'),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            
+            if (_outstandingAmount > 0 || _codDisabled) const SizedBox(height: 16),
+            
             Container(
               decoration: BoxDecoration(
                 color: Colors.white,
@@ -188,6 +380,11 @@ class _SellerPayoutsScreenState extends State<SellerPayoutsScreen> {
                       const Text('Payout History', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
                     ],
                   ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Record of money withdrawn to your bank account',
+                    style: TextStyle(fontSize: 12, color: Colors.grey[600], fontStyle: FontStyle.italic),
+                  ),
                   const SizedBox(height: 8),
                   if (_history.isEmpty)
                     Text('No payouts yet', style: TextStyle(color: Colors.grey[600])),
@@ -204,16 +401,84 @@ class _SellerPayoutsScreenState extends State<SellerPayoutsScreen> {
                       dense: MediaQuery.of(context).size.width < 360,
                       contentPadding: EdgeInsets.zero,
                       leading: const Icon(Icons.payments_outlined),
-                      title: Text('R ${amount.toStringAsFixed(2)}  •  ${status.toUpperCase()}'),
-                      subtitle: Text([if (date.isNotEmpty) date, if (ref.isNotEmpty) 'Ref: $ref'].join('  \u2022  ')),
+                      title: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerLeft,
+                        child: Text('R ${amount.toStringAsFixed(2)}  •  ${status.toUpperCase()}'),
+                      ),
+                      subtitle: Text(
+                        [if (date.isNotEmpty) date, if (ref.isNotEmpty) 'Ref: $ref'].join('  \u2022  '),
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
+                      ),
                     );
                   }).toList(),
                 ],
               ),
             ),
+            
+            const SizedBox(height: 16),
+            
+            // Financial Tips Section
+            Container(
+              decoration: BoxDecoration(
+                color: Colors.green.withOpacity(0.05),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.green.withOpacity(0.2)),
+              ),
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(children: [
+                    Icon(Icons.lightbulb_outline, color: Colors.green),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: const Text('Financial Tips', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.green)),
+                    ),
+                  ]),
+                  const SizedBox(height: 12),
+                  _buildTipRow('💰', 'Request payouts regularly to maintain cash flow'),
+                  _buildTipRow('📊', 'Monitor your commission rate - it may decrease as you grow'),
+                  _buildTipRow('⚡', 'Keep outstanding fees low to maintain COD access'),
+                  _buildTipRow('🏦', 'Update your bank details in Profile > Payout Settings'),
+                  _buildTipRow('📱', 'Enable notifications to know when payments are processed'),
+                ],
+              ),
+            ),
           ],
+            );
+          },
         ),
       ),
     );
+  }
+
+  Widget _buildTipRow(String emoji, String tip) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(emoji, style: const TextStyle(fontSize: 16)),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              tip,
+              style: TextStyle(fontSize: 13, color: Colors.grey[700], height: 1.3),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _payOutstandingFees() {
+    // Navigate to payment screen for outstanding fees
+    Navigator.pushNamed(context, '/checkout', arguments: {
+      'isWalletTopUp': true,
+      'prefilledAmount': _outstandingAmount,
+      'paymentReason': 'outstanding_fees',
+    });
   }
 }

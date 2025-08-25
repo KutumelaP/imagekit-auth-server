@@ -25,18 +25,30 @@ const {
 admin.initializeApp();
 const db = admin.firestore();
 const axios = require('axios');
+
+// Import scheduled functions
+const { dailyPaymentAlerts, weeklyPaymentSummary } = require('./scheduled_payment_alerts');
+exports.dailyPaymentAlerts = dailyPaymentAlerts;
+exports.weeklyPaymentSummary = weeklyPaymentSummary;
+
 // --- PayFast IPN/Return handlers ---
 exports.payfastNotify = functions.https.onRequest(async (req, res) => {
   try {
     const data = req.method === 'POST' ? req.body : req.query;
-    const passphrase = (process.env.PAYFAST_PASSPHRASE || '').trim();
+    const passphrase = (process.env.PAYFAST_PASSPHRASE ?? 'PeterKutumela2025').trim();
     // Verify signature (PayFast requires signature when a passphrase is configured on the account)
-    const entries = Object.keys(data)
-      .filter((k) => k !== 'signature' && data[k] !== undefined && data[k] !== null)
-      .sort()
-      .map((k) => `${k}=${pfEncode(data[k])}`)
-      .join('&');
-    const toSign = passphrase ? `${entries}&passphrase=${passphrase}` : entries;
+    // Build parameter string in posted order per PayFast docs (do not sort)
+    // Iterate keys in insertion order and stop at 'signature'
+    const keysInOrder = [];
+    for (const k in data) {
+      if (k === 'signature') break;
+      const v = data[k];
+      if (v !== undefined && v !== null && v !== '') {
+        keysInOrder.push(k);
+      }
+    }
+    const entries = keysInOrder.map((k) => `${k}=${pfEncode(data[k])}`).join('&');
+    const toSign = passphrase ? `${entries}&passphrase=${pfEncode(passphrase)}` : entries;
     const expected = crypto.createHash('md5').update(toSign).digest('hex');
     const received = String(data.signature || '').toLowerCase();
     console.log('[payfastNotify] entries=', entries);
@@ -310,15 +322,51 @@ exports.payfastFormRedirect = functions.https.onRequest(async (req, res) => {
 
     try {
       // Compute signature server-side (override any client-provided value)
-      const passphrase = (process.env.PAYFAST_PASSPHRASE || '').trim();
+      const passphrase = (process.env.PAYFAST_PASSPHRASE ?? 'PeterKutumela2025').trim();
       const merchantId = String(postData.merchant_id || '');
-      const usePassphrase = merchantId !== '10000100' && passphrase.length > 0; // Sandbox merchant uses no passphrase
-      const keys = Object.keys(postData).filter((k) => k !== 'signature').sort();
-      const encoded = keys.map((k) => `${k}=${pfEncode(postData[k])}`).join('&');
-      // Generate signature based on merchant type (production uses passphrase, sandbox doesn't)
-      const toSign = usePassphrase ? `${encoded}&passphrase=${passphrase}` : encoded;
+      const usePassphrase = false; // Signature disabled in PayFast account settings
+      // Build signature in PayFast documented field order (not alphabetical).
+      // Define preferred order segments; include only non-empty fields in this order,
+      // then append any remaining allowed fields in their encountered order, excluding 'signature'.
+      const preferredOrder = [
+        // Merchant details
+        'merchant_id','merchant_key','return_url','cancel_url','notify_url',
+        // Customer details
+        'name_first','name_last','email_address','cell_number',
+        // Transaction details
+        'm_payment_id','amount','item_name','item_description',
+        'custom_int1','custom_int2','custom_int3','custom_int4','custom_int5',
+        'custom_str1','custom_str2','custom_str3','custom_str4','custom_str5',
+        // Transaction options
+        'email_confirmation','confirmation_address',
+        // Payment methods
+        'payment_method'
+      ];
+      const seen = new Set();
+      const orderedKeys = [];
+      for (const k of preferredOrder) {
+        if (k === 'signature') continue;
+        const v = postData[k];
+        if (v !== undefined && v !== null && String(v) !== '') {
+          orderedKeys.push(k); seen.add(k);
+        }
+      }
+      // Append any other allowed fields present, in their natural/insertion order
+      for (const k of Object.keys(postData)) {
+        if (k === 'signature') continue;
+        if (seen.has(k)) continue;
+        const v = postData[k];
+        if (v !== undefined && v !== null && String(v) !== '') {
+          orderedKeys.push(k); seen.add(k);
+        }
+      }
+      const encoded = orderedKeys.map((k) => `${k}=${pfEncode(postData[k])}`).join('&');
+      // Append URL-encoded passphrase when required (production)
+      const toSign = usePassphrase ? `${encoded}&passphrase=${pfEncode(passphrase)}` : encoded;
       const signature = crypto.createHash('md5').update(toSign).digest('hex');
-      postData.signature = signature;
+      if (usePassphrase) {
+        postData.signature = signature;
+      }
       const sigMode = usePassphrase ? 'with_passphrase' : 'no_passphrase';
       console.log('[payfastFormRedirect] sig_set=true mode=', sigMode, ' merchant_id=', merchantId);
       console.log('[payfastFormRedirect] ALL_POST_DATA=', JSON.stringify(postData, null, 2));

@@ -261,19 +261,54 @@ class NotificationService {
       if (_ttsLanguage == null || _ttsLanguage!.isEmpty) {
         await updateTtsPreferences(language: 'en-ZA');
       }
+      
+      // Set human-like default TTS settings for better naturalness
+      if (_ttsRate == 0.5) { // Default unchanged
+        await updateTtsPreferences(
+          rate: 0.6,  // Slightly faster than default for more natural flow
+          pitch: 0.9, // Slightly lower pitch sounds more natural
+          volume: 0.8 // Comfortable volume level
+        );
+      }
+      
       if ((_ttsVoiceName == null || _ttsVoiceName!.isEmpty) && _availableVoices.isNotEmpty) {
+        // Prioritize more natural-sounding voices
+        String? bestVoice;
+        String? bestLocale;
+        
         for (final v in _availableVoices) {
           if (v is Map) {
             final locale = (v['locale']?.toString() ?? '').toLowerCase();
+            final name = (v['name']?.toString() ?? '').toLowerCase();
+            
+            // Prioritize South African voices first
             if (locale.contains('en-za') || locale.contains('en_za')) {
-              final name = v['name']?.toString();
-              final loc = v['locale']?.toString();
-              if (name != null && name.isNotEmpty) {
-                await updateTtsPreferences(voiceName: name, voiceLocale: loc);
+              // Look for enhanced/premium/neural voices
+              if (name.contains('enhanced') || name.contains('premium') || 
+                  name.contains('neural') || name.contains('natural') ||
+                  name.contains('female') || name.contains('male')) {
+                bestVoice = v['name']?.toString();
+                bestLocale = v['locale']?.toString();
                 break;
+              } else if (bestVoice == null) {
+                // Fallback to any South African voice
+                bestVoice = v['name']?.toString();
+                bestLocale = v['locale']?.toString();
+              }
+            }
+            // Fallback to other English voices if no ZA available
+            else if (bestVoice == null && (locale.contains('en-') || locale.contains('en_'))) {
+              if (name.contains('enhanced') || name.contains('premium') || 
+                  name.contains('neural') || name.contains('natural')) {
+                bestVoice = v['name']?.toString();
+                bestLocale = v['locale']?.toString();
               }
             }
           }
+        }
+        
+        if (bestVoice != null && bestVoice.isNotEmpty) {
+          await updateTtsPreferences(voiceName: bestVoice, voiceLocale: bestLocale);
         }
       }
     } catch (_) {}
@@ -293,6 +328,143 @@ class NotificationService {
     } catch (e) {
       print('❌ Applying TTS settings failed: $e');
     }
+  }
+
+  // Convert order/product IDs to human-readable format
+  static String formatOrderNumber(String orderId) {
+    if (orderId.isEmpty) return orderId;
+    
+    // If it's already a formatted number (contains letters/spaces), leave it
+    if (orderId.contains(' ') || RegExp(r'[A-Za-z]').hasMatch(orderId)) {
+      return orderId;
+    }
+    
+    // Firebase document IDs are typically 20+ characters
+    if (orderId.length > 15) {
+      // Take first 3 and last 4 characters with hyphens for readability
+      return 'Order ${orderId.substring(0, 3)}-${orderId.substring(orderId.length - 4)}';
+    } else if (orderId.length > 8) {
+      // Medium length IDs - split in middle
+      final mid = orderId.length ~/ 2;
+      return 'Order ${orderId.substring(0, mid)}-${orderId.substring(mid)}';
+    } else {
+      // Short IDs - just add prefix
+      return 'Order $orderId';
+    }
+  }
+  
+  static String formatProductId(String productId) {
+    if (productId.isEmpty) return productId;
+    
+    // If it's already formatted, leave it
+    if (productId.contains(' ') || RegExp(r'[A-Za-z]').hasMatch(productId)) {
+      return productId;
+    }
+    
+    // Similar logic for product IDs
+    if (productId.length > 15) {
+      return 'Product ${productId.substring(0, 3)}-${productId.substring(productId.length - 4)}';
+    } else if (productId.length > 8) {
+      final mid = productId.length ~/ 2;
+      return 'Product ${productId.substring(0, mid)}-${productId.substring(mid)}';
+    } else {
+      return 'Product $productId';
+    }
+  }
+
+  // Preprocess text to sound more natural when spoken
+  String _makeTextMoreNatural(String text) {
+    String processedText = text;
+    
+    // Convert order and product IDs to human-readable format
+    processedText = processedText
+        .replaceAllMapped(RegExp(r'Order\s*[#:]?\s*([A-Za-z0-9]{8,})', caseSensitive: false), (match) {
+          final orderId = match.group(1)!;
+          return formatOrderNumber(orderId);
+        })
+        .replaceAllMapped(RegExp(r'order\s*(?:number|id|#)?\s*([A-Za-z0-9]{8,})', caseSensitive: false), (match) {
+          final orderId = match.group(1)!;
+          return formatOrderNumber(orderId);
+        })
+        .replaceAllMapped(RegExp(r'Product\s*[#:]?\s*([A-Za-z0-9]{8,})', caseSensitive: false), (match) {
+          final productId = match.group(1)!;
+          return formatProductId(productId);
+        })
+        .replaceAllMapped(RegExp(r'product\s*(?:id|#)?\s*([A-Za-z0-9]{8,})', caseSensitive: false), (match) {
+          final productId = match.group(1)!;
+          return formatProductId(productId);
+        });
+    
+    // Replace abbreviations with full words for better pronunciation
+    processedText = processedText
+        .replaceAll(RegExp(r'\bR(\d+)', caseSensitive: false), r'Rand \1') // R100 -> Rand 100
+        .replaceAll(RegExp(r'\bRS(\d+)', caseSensitive: false), r'Rand \1') // RS100 -> Rand 100
+        .replaceAll(RegExp(r'\bZAR(\d+)', caseSensitive: false), r'Rand \1') // ZAR100 -> Rand 100
+        .replaceAll('&', 'and') // & -> and
+        .replaceAll('@', 'at') // @ -> at
+        .replaceAll('vs', 'versus') // vs -> versus
+        .replaceAll('etc', 'etcetera') // etc -> etcetera
+        .replaceAll('kg', 'kilograms') // kg -> kilograms
+        .replaceAll('km', 'kilometers') // km -> kilometers
+        .replaceAll('m²', 'square meters') // m² -> square meters
+        .replaceAll('°C', 'degrees celsius') // °C -> degrees celsius
+        .replaceAll('%', 'percent') // % -> percent
+        .replaceAll('No.', 'Number') // No. -> Number
+        .replaceAll('Dr.', 'Doctor') // Dr. -> Doctor
+        .replaceAll('Mr.', 'Mister') // Mr. -> Mister
+        .replaceAll('Mrs.', 'Missus') // Mrs. -> Missus
+        .replaceAll('St.', 'Street') // St. -> Street
+        .replaceAll('Ave.', 'Avenue') // Ave. -> Avenue
+        .replaceAll('Rd.', 'Road') // Rd. -> Road
+        .replaceAll('CEO', 'Chief Executive Officer')
+        .replaceAll('SMS', 'text message')
+        .replaceAll('GPS', 'GPS navigation')
+        .replaceAll('ID', 'identification')
+        .replaceAll('FAQ', 'frequently asked questions')
+        .replaceAll('PDF', 'document')
+        .replaceAll('URL', 'web address')
+        .replaceAll('WiFi', 'Wi-Fi')
+        .replaceAll('COVID', 'Covid')
+        .replaceAll('USD', 'US Dollars')
+        .replaceAll('EUR', 'Euros')
+        .replaceAll('GBP', 'British Pounds');
+    
+    // Add natural pauses for better rhythm
+    processedText = processedText
+        .replaceAll(RegExp(r'([.!?])\s*'), r'\1 ... ') // Add pause after sentences
+        .replaceAll(RegExp(r'([,:;])\s*'), r'\1 .. ') // Add shorter pause after commas
+        .replaceAll(RegExp(r'(-{2,}|\s-\s)'), ' .. ') // Replace dashes with pauses
+        .replaceAll(RegExp(r'\s+'), ' '); // Clean up multiple spaces
+    
+    // South African specific pronunciations
+    processedText = processedText
+        .replaceAll('Gauteng', 'How-teng') // Better pronunciation
+        .replaceAll('Pretoria', 'Pre-tor-ia')
+        .replaceAll('Johannesburg', 'Joe-han-nis-burg')
+        .replaceAll('Stellenbosch', 'Stel-len-bosh')
+        .replaceAll('Durban', 'Der-ban')
+        .replaceAll('Cape Town', 'Cape Town')
+        .replaceAll('Sandton', 'Sand-ton')
+        .replaceAll('Rosebank', 'Rose-bank')
+        .replaceAll('braai', 'barbecue') // For international users
+        .replaceAll('biltong', 'bil-tong');
+    
+    // Add emotional context for notifications
+    if (processedText.toLowerCase().contains('order confirmed') || 
+        processedText.toLowerCase().contains('payment successful')) {
+      processedText = 'Great news! ' + processedText;
+    } else if (processedText.toLowerCase().contains('delivered') || 
+               processedText.toLowerCase().contains('completed')) {
+      processedText = 'Excellent! ' + processedText;
+    } else if (processedText.toLowerCase().contains('error') || 
+               processedText.toLowerCase().contains('failed')) {
+      processedText = 'Unfortunately, ' + processedText;
+    } else if (processedText.toLowerCase().contains('reminder') || 
+               processedText.toLowerCase().contains('due')) {
+      processedText = 'Just a friendly reminder: ' + processedText;
+    }
+    
+    return processedText.trim();
   }
 
   // Request notification permissions
@@ -549,8 +721,13 @@ class NotificationService {
       if (kIsWeb) {
         // Web: use SpeechSynthesis via JS
         try {
+          // Process text to sound more natural
+          final naturalText = _makeTextMoreNatural(text);
+          final jsText = naturalText.replaceAll("'", " ");
+          
           js.context.callMethod('eval', [
-            "(function(){try{var u=new SpeechSynthesisUtterance('" + text.replaceAll("'", " ") + "');" +
+            "(function(){try{window.speechSynthesis.cancel();var u=new SpeechSynthesisUtterance('" + jsText + "');" +
+            "u.rate=" + _ttsRate.toString() + ";u.pitch=" + _ttsPitch.toString() + ";u.volume=" + _ttsVolume.toString() + ";" +
             ( _ttsLanguage != null ? "u.lang='" + (_ttsLanguage ?? '') + "';" : "" ) +
             "window.speechSynthesis.speak(u);}catch(e){}})();"
           ]);
@@ -558,7 +735,9 @@ class NotificationService {
         return;
       }
       await _tts.stop();
-      await _tts.speak(text);
+      // Process text to sound more natural
+      final naturalText = _makeTextMoreNatural(text);
+      await _tts.speak(naturalText);
     } catch (e) {
       print('❌ TTS speak failed: $e');
     }
@@ -808,7 +987,7 @@ class NotificationService {
         final status = data['data']?['status']?.toString() ?? 'updated';
         final orderNumber = data['orderNumber']?.toString() ?? data['data']?['orderNumber']?.toString() ?? '';
         if (orderNumber.isNotEmpty) {
-          await _speakSafe('Order number $orderNumber. Status now $status.');
+          await _speakSafe('${formatOrderNumber(orderNumber)}. Status now $status.');
         } else {
           await _speakSafe('Your order status is now $status.');
         }
@@ -1316,7 +1495,7 @@ class NotificationService {
       await _storeNotificationInDatabase(
         userId: userId,
         title: 'Order Status Updated',
-        body: 'Order #$orderNumber status updated to $status',
+        body: '${formatOrderNumber(orderNumber)} status updated to $status',
         type: 'order_status',
         orderId: orderId,
         data: {
@@ -1334,7 +1513,7 @@ class NotificationService {
           try {
             _showWebNotification(
               title: 'Order Status: $status',
-              body: 'Order #$orderNumber status updated to $status',
+              body: '${formatOrderNumber(orderNumber)} status updated to $status',
               icon: '/icons/Icon-192.png',
               tag: 'order_$orderId',
               payload: {
@@ -1355,7 +1534,7 @@ class NotificationService {
         _notificationController.add({
           'type': 'order_status',
           'title': 'Order Status: $status',
-          'body': 'Order #$orderNumber status updated to $status',
+          'body': '${formatOrderNumber(orderNumber)} status updated to $status',
           'orderId': orderId,
           'orderNumber': orderNumber,
           'timestamp': DateTime.now().millisecondsSinceEpoch,
@@ -1375,7 +1554,7 @@ class NotificationService {
       // Voice announcement
       if (_voiceAnnouncementsEnabled) {
         try {
-          await _speakSafe('Order number $orderNumber. Status now $status.');
+          await _speakSafe('${formatOrderNumber(orderNumber)}. Status now $status.');
         } catch (_) {}
       }
       
@@ -1390,7 +1569,7 @@ class NotificationService {
         _notificationController.add({
           'type': 'order_status',
           'title': 'Order Update',
-          'body': 'Order #$orderNumber status updated to $status',
+          'body': '${formatOrderNumber(orderNumber)} status updated to $status',
           'orderId': orderId,
           'timestamp': DateTime.now().millisecondsSinceEpoch,
         });

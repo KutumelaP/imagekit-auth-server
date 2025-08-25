@@ -313,11 +313,12 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
       e164 = '+27$e164';
     }
     final orderNo = (data['orderNumber'] as String?) ?? (data['orderId'] as String?) ?? widget.orderId;
+    final formattedOrderNo = OrderUtils.formatOrderNumber(orderNo);
     final ok = await WhatsAppCloudService.instance.sendTemplate(
       toE164: e164,
       templateName: const String.fromEnvironment('WA_TMPL_ORDER_CONFIRMED', defaultValue: 'order_confirmed'),
       language: 'en',
-      parameters: [orderNo],
+      parameters: [formattedOrderNo],
     );
     if (ok) {
       _waNotified = true;

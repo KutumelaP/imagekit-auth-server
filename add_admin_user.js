@@ -3,7 +3,7 @@ const admin = require('firebase-admin');
 // Initialize Firebase Admin SDK
 // You'll need to download your service account key from Firebase Console
 // Go to Project Settings > Service Accounts > Generate New Private Key
-const serviceAccount = require('./path-to-your-service-account-key.json');
+const serviceAccount = require('./serviceAccountKey.json');
 
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount)

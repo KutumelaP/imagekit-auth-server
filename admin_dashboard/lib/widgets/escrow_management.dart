@@ -23,6 +23,8 @@ class _EscrowManagementState extends State<EscrowManagement> {
   }
 
   Future<void> _loadEscrowData() async {
+    if (!mounted) return;
+    
     setState(() {
       _isLoading = true;
     });
@@ -33,9 +35,11 @@ class _EscrowManagementState extends State<EscrowManagement> {
     } catch (e) {
       print('Error loading escrow data: $e');
     } finally {
-      setState(() {
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 
@@ -55,43 +59,64 @@ class _EscrowManagementState extends State<EscrowManagement> {
       double pendingPayoutsAmount = 0;
       int pendingPayoutsCount = 0;
 
-      // Sum over all sellers via collection group queries
-      final availableSnap = await _firestore.collectionGroup('entries').where('status', isEqualTo: 'available').get();
-      for (final d in availableSnap.docs) {
-        final m = d.data();
-        totalAvailable += _toDouble(m['net'] ?? m['amount']);
+      // Use simpler queries that work with existing rules and indexes
+      // Get data from platform_receivables collection which has proper subcollections
+      final receivablesSnap = await _firestore.collection('platform_receivables').get();
+      
+      for (final receivableDoc in receivablesSnap.docs) {
+        try {
+          // Get entries for this seller
+          final entriesSnap = await receivableDoc.reference.collection('entries').get();
+          for (final entryDoc in entriesSnap.docs) {
+            final entryData = entryDoc.data();
+            final status = entryData['status'] ?? '';
+            final amount = _toDouble(entryData['net'] ?? entryData['amount']);
+            
+            if (status == 'available') {
+              totalAvailable += amount;
+            } else if (status == 'locked') {
+              totalLocked += amount;
+            }
+          }
+          
+          // Get settlements for this seller
+          final settlementsSnap = await receivableDoc.reference.collection('settlements').get();
+          for (final settlementDoc in settlementsSnap.docs) {
+            final settlementData = settlementDoc.data();
+            final paid = _toDouble(settlementData['amountPaid']);
+            final collected = _toDouble(settlementData['amountCollected']);
+            totalSettled += paid > 0 ? paid : collected;
+          }
+        } catch (e) {
+          print('Error processing receivable ${receivableDoc.id}: $e');
+          continue;
+        }
       }
 
-      final lockedSnap = await _firestore.collectionGroup('entries').where('status', isEqualTo: 'locked').get();
-      for (final d in lockedSnap.docs) {
-        final m = d.data();
-        totalLocked += _toDouble(m['net'] ?? m['amount']);
+      // Get pending payouts
+      try {
+        final payoutsSnap = await _firestore.collection('payouts').where('status', whereIn: ['requested', 'processing']).get();
+        for (final d in payoutsSnap.docs) {
+          final m = d.data();
+          pendingPayoutsAmount += _toDouble(m['amount']);
+        }
+        pendingPayoutsCount = payoutsSnap.size;
+      } catch (e) {
+        print('Error loading payouts: $e');
+        // Continue without payout data if there's an error
       }
 
-      final settlementsSnap = await _firestore.collectionGroup('settlements').get();
-      for (final d in settlementsSnap.docs) {
-        final m = d.data();
-        final paid = _toDouble(m['amountPaid']);
-        final collected = _toDouble(m['amountCollected']);
-        totalSettled += paid > 0 ? paid : collected;
+      if (mounted) {
+        setState(() {
+          _stats = {
+            'totalAvailable': totalAvailable,
+            'totalLocked': totalLocked,
+            'totalSettled': totalSettled,
+            'pendingPayoutsAmount': pendingPayoutsAmount,
+            'pendingPayoutsCount': pendingPayoutsCount,
+          };
+        });
       }
-
-      final payoutsSnap = await _firestore.collection('payouts').where('status', whereIn: ['requested', 'processing']).get();
-      for (final d in payoutsSnap.docs) {
-        final m = d.data();
-        pendingPayoutsAmount += _toDouble(m['amount']);
-      }
-      pendingPayoutsCount = payoutsSnap.size;
-
-      setState(() {
-        _stats = {
-          'totalAvailable': totalAvailable,
-          'totalLocked': totalLocked,
-          'totalSettled': totalSettled,
-          'pendingPayoutsAmount': pendingPayoutsAmount,
-          'pendingPayoutsCount': pendingPayoutsCount,
-        };
-      });
     } catch (e) {
       print('Error loading ledger stats: $e');
     }

@@ -399,7 +399,23 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
                         },
                       ),
                       const SizedBox(height: 16),
-                      Text('Speed'),
+                      Row(
+                        children: [
+                          Text('Speed'),
+                          const Spacer(),
+                          TextButton(
+                            onPressed: () async {
+                              setState(() => _rate = 0.6);
+                              await _notificationService.updateTtsPreferences(rate: 0.6);
+                            },
+                            child: Text('Natural', style: TextStyle(fontSize: 12)),
+                          ),
+                        ],
+                      ),
+                      Text(
+                        'Natural speed (0.6) sounds more conversational than robotic',
+                        style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+                      ),
                       Slider(
                         value: _rate,
                         min: 0.1,
@@ -412,7 +428,23 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
                         },
                       ),
                       const SizedBox(height: 8),
-                      Text('Pitch'),
+                      Row(
+                        children: [
+                          Text('Pitch'),
+                          const Spacer(),
+                          TextButton(
+                            onPressed: () async {
+                              setState(() => _pitch = 0.9);
+                              await _notificationService.updateTtsPreferences(pitch: 0.9);
+                            },
+                            child: Text('Natural', style: TextStyle(fontSize: 12)),
+                          ),
+                        ],
+                      ),
+                      Text(
+                        'Lower pitch (0.9) sounds less robotic and more human',
+                        style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+                      ),
                       Slider(
                         value: _pitch,
                         min: 0.5,
@@ -438,11 +470,61 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
                         },
                       ),
                       const SizedBox(height: 12),
+                      
+                      // Quick preset for human-like settings
+                      Container(
+                        padding: EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.green.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.green.withOpacity(0.3)),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '🎭 Human-like Voice Settings',
+                              style: TextStyle(fontWeight: FontWeight.bold, color: Colors.green[700]),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Apply optimal settings for natural, conversational voice with automatic text enhancement',
+                              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                            ),
+                            const SizedBox(height: 8),
+                            ElevatedButton.icon(
+                              onPressed: () async {
+                                setState(() {
+                                  _rate = 0.6;  // Natural conversation speed
+                                  _pitch = 0.9; // Slightly lower, more human pitch
+                                  _volume = 0.8; // Comfortable volume
+                                });
+                                await _notificationService.updateTtsPreferences(
+                                  rate: 0.6,
+                                  pitch: 0.9,
+                                  volume: 0.8,
+                                );
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(content: Text('Applied human-like voice settings!')),
+                                );
+                              },
+                              icon: Icon(Icons.psychology, size: 18),
+                              label: Text('Make Voice Sound Human'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.green,
+                                foregroundColor: Colors.white,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      
+                      const SizedBox(height: 12),
                       Align(
                         alignment: Alignment.centerRight,
                         child: ElevatedButton.icon(
                           onPressed: () async {
-                            await _notificationService.speakPreview('Voice announcements enabled. This is a preview of your settings.');
+                            await _notificationService.speakPreview('Great news! Your order for R150 has been confirmed and will be delivered to Sandton in approximately 30 minutes.');
                           },
                           icon: const Icon(Icons.play_arrow),
                           label: const Text('Preview'),

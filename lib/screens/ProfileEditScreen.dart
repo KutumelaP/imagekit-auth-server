@@ -48,6 +48,11 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
   bool _paxiVisible = true;
   bool _allowCOD = true;
   double _minOrderForDelivery = 0.0;
+  
+  // Financial status
+  double _outstandingAmount = 0.0;
+  String _outstandingType = '';
+  bool _codDisabled = false;
   final TextEditingController _deliveryTimeEstimateController = TextEditingController();
   // Payout controllers
   final TextEditingController _payoutAccountHolderController = TextEditingController();
@@ -129,6 +134,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
       // Note: loaded below via config
       _allowCOD = data['allowCOD'] != false;
       _minOrderForDelivery = (data['minOrderForDelivery'] ?? 0.0).toDouble();
+      _codDisabled = data['codDisabled'] ?? false;
       _deliveryTimeEstimateController.text = data['deliveryTimeEstimate'] ?? '';
       // Apply capped default
       final cap = _getCategoryDeliveryCapFromData(data);

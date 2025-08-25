@@ -2985,6 +2985,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         print('🔍 DEBUG: Seller KYC status: $sellerKyc');
         if (sellerKyc.toLowerCase() != 'approved') {
           _paymentMethods.removeWhere((m) => m.toLowerCase().contains('cash'));
+          if (_selectedPaymentMethod != null && _selectedPaymentMethod!.toLowerCase().contains('cash')) {
+            _selectedPaymentMethod = null;
+          }
           _codDisabledReason = 'Cash on Delivery disabled: seller identity verification pending';
           print('🔍 DEBUG: COD disabled by seller KYC, payment methods: $_paymentMethods');
         }
@@ -3000,7 +3003,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           print('🔍 DEBUG: Buyer KYC status: $buyerKyc');
           if (buyerKyc.toLowerCase() != 'approved') {
             _paymentMethods.removeWhere((m) => m.toLowerCase().contains('cash'));
-            _codDisabledReason = 'Cash on Delivery disabled: identity verification required';
+            if (_selectedPaymentMethod != null && _selectedPaymentMethod!.toLowerCase().contains('cash')) {
+              _selectedPaymentMethod = null;
+            }
+            _codDisabledReason = 'Cash on Delivery disabled: complete your identity verification in Profile settings';
             print('🔍 DEBUG: COD disabled by buyer KYC, payment methods: $_paymentMethods');
           }
         }
@@ -3190,6 +3196,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       const double codThreshold = 300.0;
       if (totalDue > codThreshold) {
         _paymentMethods.removeWhere((m) => m.toLowerCase().contains('cash'));
+        if (_selectedPaymentMethod != null && _selectedPaymentMethod!.toLowerCase().contains('cash')) {
+          _selectedPaymentMethod = null;
+        }
         _codDisabledReason = 'Cash on Delivery disabled: outstanding fees R${totalDue.toStringAsFixed(2)}';
       } else {
         _codDisabledReason = null;
@@ -3240,7 +3249,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         final amt = (data['amount'] is num) ? (data['amount'] as num).toDouble() : double.tryParse('${data['amount']}') ?? 0.0;
         totalDue += amt;
       }
-      final double suggestedTopUp = totalDue > 0 ? totalDue : 300.0;
+      final double suggestedTopUp = totalDue > 0 ? totalDue : 50.0;
 
       // Create payment data without signature (server will generate it)
       final paymentData = {
@@ -3291,23 +3300,12 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         if (response.statusCode == 200) {
           final htmlContent = response.body;
           if (htmlContent.contains('form') && htmlContent.contains('payfast.co.za')) {
-            final formUrl = 'data:text/html;charset=utf-8,${Uri.encodeComponent(htmlContent)}';
-            if (kIsWeb) {
-              print('🔍 DEBUG: Launching PayFast form (web, _self) [top-up]');
-              final launched = await launchUrlString(formUrl, webOnlyWindowName: '_self');
-              if (!launched) {
-                // Fallback: navigate to bridge via GET (server will POST to PayFast)
-                final Map<String, dynamic> pd = Map<String, dynamic>.from(paymentResult['paymentData'] as Map);
-                final qp = pd.map((k, v) => MapEntry(k, v.toString()));
-                final url = Uri.parse(paymentResult['paymentUrl']).replace(queryParameters: qp).toString();
-                print('🔍 DEBUG: Fallback to bridge (GET, _self) [top-up]');
-                await launchUrlString(url, webOnlyWindowName: '_self');
-              }
-            } else {
-              final uri = Uri.parse(formUrl);
-              print('🔍 DEBUG: Launching PayFast form (mobile/external) [top-up]');
-              await launchUrl(uri, mode: LaunchMode.externalApplication);
-            }
+            // Browsers can block data: URL navigation in top frame; use bridge GET instead.
+            final Map<String, dynamic> pd = Map<String, dynamic>.from(paymentResult['paymentData'] as Map);
+            final qp = pd.map((k, v) => MapEntry(k, v.toString()));
+            final url = Uri.parse(paymentResult['paymentUrl']).replace(queryParameters: qp).toString();
+            print('🔍 DEBUG: Launching PayFast bridge (GET, _self) [top-up]');
+            await launchUrlString(url, webOnlyWindowName: '_self');
           } else if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(content: Text('Invalid response from payment server')),
@@ -4113,7 +4111,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 Row(
                   children: [
                     Expanded(
-                      child: _buildSimpleBankRow('Reference', orderNumber ?? 'Your Order Number'),
+                      child: _buildSimpleBankRow('Reference', orderNumber != null ? NotificationService.formatOrderNumber(orderNumber) : 'Your Order Number'),
                     ),
                     SizedBox(width: 8),
                     OutlinedButton(
@@ -4149,7 +4147,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
-                    '💡 Use your order number as reference when making the transfer. Payment confirmation takes 1-2 business days.',
+                    '💡 Use your order number as the payment reference. Payment confirmation takes 1-2 business days.',
                     style: TextStyle(
                       fontSize: 13,
                       color: AppTheme.deepTeal,
@@ -4166,7 +4164,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                     Expanded(
                       child: OutlinedButton.icon(
                         onPressed: () {
-                          final details = 'Ref: ${orderNumber ?? 'Order Number'}';
+                          final details = 'Ref: ${orderNumber != null ? NotificationService.formatOrderNumber(orderNumber) : 'Order Number'}';
                           Clipboard.setData(ClipboardData(text: details));
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
@@ -4807,25 +4805,14 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         if (response.statusCode == 200) {
           final htmlContent = response.body;
           if (htmlContent.contains('form') && htmlContent.contains('payfast.co.za')) {
-            final formUrl = 'data:text/html;charset=utf-8,${Uri.encodeComponent(htmlContent)}';
-            if (kIsWeb) {
-              print('🔍 DEBUG: Launching PayFast form (web, _self) [order]');
-              final launched = await launchUrlString(formUrl, webOnlyWindowName: '_self');
-              if (!launched) {
-                // Fallback: navigate to bridge via GET (server will POST to PayFast)
-                final Map<String, dynamic> pd = Map<String, dynamic>.from(paymentResult['paymentData'] as Map);
-                final qp = pd.map((k, v) => MapEntry(k, v.toString()));
-                final url = Uri.parse(paymentResult['paymentUrl']).replace(queryParameters: qp).toString();
-                print('🔍 DEBUG: Fallback to bridge (GET, _self) [order]');
-                await launchUrlString(url, webOnlyWindowName: '_self');
-              } else {
-                if (mounted) _showPaymentReturnDialog(orderNumber);
-              }
-            } else {
-              final uri = Uri.parse(formUrl);
-              print('🔍 DEBUG: Launching PayFast form (mobile/external) [order]');
-              await launchUrl(uri, mode: LaunchMode.externalApplication);
-              if (mounted) _showPaymentReturnDialog(orderNumber);
+            // Use bridge GET to avoid top-frame data: URL restrictions
+            final Map<String, dynamic> pd = Map<String, dynamic>.from(paymentResult['paymentData'] as Map);
+            final qp = pd.map((k, v) => MapEntry(k, v.toString()));
+            final url = Uri.parse(paymentResult['paymentUrl']).replace(queryParameters: qp).toString();
+            print('🔍 DEBUG: Launching PayFast bridge (GET, _self) [order]');
+            final launched = await launchUrlString(url, webOnlyWindowName: '_self');
+            if (launched && mounted) {
+              _showPaymentReturnDialog(orderNumber);
             }
           } else if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
@@ -5993,8 +5980,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           
           SizedBox(height: ResponsiveUtils.getVerticalPadding(context)),
           
-          // Pargo/PAXI Pickup Points Section (always visible in pickup mode)
-          if (!_isDelivery && (_productCategory.toLowerCase() != 'food' || _hasNonFoodItems)) ...[
+          // Pargo/PAXI Pickup Points Section (visible in pickup mode, but not for store pickup)
+          if (!_isDelivery && (_productCategory.toLowerCase() != 'food' || _hasNonFoodItems) && _selectedServiceFilter != 'store') ...[
             Container(
               margin: EdgeInsets.symmetric(vertical: ResponsiveUtils.getVerticalPadding(context) * 0.5),
               padding: EdgeInsets.all(ResponsiveUtils.getHorizontalPadding(context)),
@@ -7392,8 +7379,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 ),
               ),
             ],
-            // Pargo Pickup Points (for non-food pickup orders only)
-            if (!_isDelivery && (_productCategory.toLowerCase() != 'food' || _hasNonFoodItems)) ...[
+            // Pargo Pickup Points (for non-food pickup orders only, excluding store pickup)
+            if (!_isDelivery && (_productCategory.toLowerCase() != 'food' || _hasNonFoodItems) && _selectedServiceFilter != 'store') ...[
               SafeUI.safeText(
                 'Pargo Pickup Points',
                 style: TextStyle(
@@ -8389,8 +8376,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                       ],
                   ),
               // Pickup points (Pargo) selector when in Pickup mode  
-              // Show Pargo for non-food only carts OR mixed carts (non-food items can use Pargo)
-              if (!_isDelivery && (_productCategory.toLowerCase() != 'food' || _hasNonFoodItems)) ...[
+              // Show Pargo for non-food only carts OR mixed carts (non-food items can use Pargo), but not for store pickup
+              if (!_isDelivery && (_productCategory.toLowerCase() != 'food' || _hasNonFoodItems) && _selectedServiceFilter != 'store') ...[
                 SizedBox(height: ResponsiveUtils.getVerticalPadding(context) * 1.5),
                 // SUPER PROMINENT PARGO SECTION - ELEVATED ABOVE OTHER CONTENT
                 Container(
@@ -9115,18 +9102,21 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 ),
               ),
               SizedBox(height: ResponsiveUtils.getVerticalPadding(context) * 0.4),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: ElevatedButton.icon(
-                  onPressed: _isLoading ? null : _startWalletTopUp,
-                  icon: const Icon(Icons.account_balance_wallet),
-                  label: const Text('Top up wallet to enable COD'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppTheme.deepTeal,
-                    foregroundColor: Colors.white,
+              // Only show wallet top-up button for outstanding fees (seller financial issue)
+              // Don't show for identity verification issues (buyer or seller KYC)
+              if (_codDisabledReason != null && _codDisabledReason!.contains('outstanding fees'))
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: ElevatedButton.icon(
+                    onPressed: _isLoading ? null : _startWalletTopUp,
+                    icon: const Icon(Icons.account_balance_wallet),
+                    label: const Text('Top up wallet to enable COD'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppTheme.deepTeal,
+                      foregroundColor: Colors.white,
+                    ),
                   ),
                 ),
-              ),
               SizedBox(height: ResponsiveUtils.getVerticalPadding(context) * 0.5),
             ],
             Container(
@@ -9483,7 +9473,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           color: Colors.transparent,
           child: InkWell(
           borderRadius: BorderRadius.circular(12),
-          onTap: _isLoading ? null : () {
+          onTap: _isLoading || _selectedPaymentMethod == null || 
+                 (_selectedPaymentMethod!.toLowerCase().contains('cash') && 
+                  !_paymentMethods.any((m) => m.toLowerCase().contains('cash'))) ? null : () {
             print('🔴 DEBUG: BUTTON CLICKED!');
             print('🔴 DEBUG: _selectedPaymentMethod: $_selectedPaymentMethod');
             print('🔴 DEBUG: _isLoading: $_isLoading');

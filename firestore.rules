@@ -260,5 +260,227 @@ service cloud.firestore {
         allow write: if isAdmin();
       }
     }
+
+    // MISSING ADMIN COLLECTIONS - Add permissions for admin dashboard
+    match /drivers/{driverId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /rural_drivers/{driverId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /payment_settings/{settingId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /ledger_stats/{statId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /paxi_pricing/{pricingId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /storage_stats/{statId} {
+      allow read, write: if isAdmin();
+    }
+
+    // CHATBOT COLLECTIONS - For customer support automation
+    match /chatbot_conversations/{conversationId} {
+      // Users can read/write their own conversations
+      allow read, write: if request.auth != null && resource.data.userId == request.auth.uid;
+      // Allow creating new conversations for authenticated users
+      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
+      // Admins can read all conversations for support
+      allow read, write: if isAdmin();
+      
+      // Messages subcollection
+      match /messages/{messageId} {
+        allow read, write: if request.auth != null && (
+          get(/databases/$(database)/documents/chatbot_conversations/$(conversationId)).data.userId == request.auth.uid ||
+          isAdmin()
+        );
+      }
+    }
+
+    match /chatbot_knowledge/{docId} {
+      // Public read for chatbot responses
+      allow read: if true;
+      // Only admins can update knowledge base
+      allow write: if isAdmin();
+    }
+
+    match /chatbot_analytics/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    // ADDITIONAL ADMIN COLLECTIONS - Complete coverage for admin dashboard
+    match /statistics/{statId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /reports/{reportId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /advanced_analytics/{analyticsId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /moderation/{moderationId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /platform_config/{configId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /admin_roles/{roleId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /escrow/{escrowId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /return_requests/{returnId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /developer_tools/{toolId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /data_exports/{exportId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /order_migrations/{migrationId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /system_logs/{logId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /admin_settings/{settingId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /delivery_zones/{zoneId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /courier_settings/{settingId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /pricing_models/{modelId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /risk_assessments/{assessmentId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /admin_cache/{cacheId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /system_metrics/{metricId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /performance_logs/{logId} {
+      allow read, write: if isAdmin();
+    }
+
+    // Additional specific collections based on error logs
+    match /ledger_analytics/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /storage_analytics/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /delivery_analytics/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    // Specific collections causing permission errors
+    match /ledger_stats/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /storage_stats/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    // Additional admin collections for complete coverage
+    match /admin_storage_stats/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /dashboard_stats/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /admin_metrics/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /system_performance/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    // Catch remaining admin collections with simple pattern matching
+    match /admin_dashboard_stats/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /firestore_stats/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /collection_stats/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    // IMAGE_ASSETS - For ImageKit image management and storage stats
+    match /image_assets/{assetId} {
+      allow read, write: if isAdmin();
+      // Allow authenticated users to read their own image assets
+      allow read: if request.auth != null && resource.data.ownerId == request.auth.uid;
+      // Allow authenticated users to create/update their own image assets
+      allow create, update: if request.auth != null && request.resource.data.ownerId == request.auth.uid;
+    }
+
+    // PAYOUTS - For seller payout management
+    match /payouts/{payoutId} {
+      allow read, write: if isAdmin();
+      // Allow sellers to read their own payouts
+      allow read: if request.auth != null && resource.data.sellerId == request.auth.uid;
+      // Allow sellers to create payout requests
+      allow create: if request.auth != null && request.resource.data.sellerId == request.auth.uid;
+    }
+
+    // SETTLEMENTS - For transaction settlement tracking (top-level collection)
+    match /settlements/{settlementId} {
+      allow read, write: if isAdmin();
+      // Allow users to read settlements they're involved in
+      allow read: if request.auth != null && (
+        resource.data.sellerId == request.auth.uid ||
+        resource.data.buyerId == request.auth.uid
+      );
+    }
+
+    // ENTRIES - For ledger entries (top-level collection for collectionGroup queries)
+    match /entries/{entryId} {
+      allow read, write: if isAdmin();
+      // Allow users to read their own entries
+      allow read: if request.auth != null && resource.data.ownerId == request.auth.uid;
+    }
   }
 } 
