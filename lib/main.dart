@@ -144,8 +144,8 @@ class MyApp extends StatelessWidget {
             showChatbot: showBot,
             // Position above the Add Product FAB (FAB is bottom-right)
             // Slightly higher so it doesn't overlap
-            initialDx: 0.88, // near right edge
-            initialDy: 0.72, // above typical FAB area
+            initialDx: 0.75,
+            initialDy: 0.30,
           );
 
           final wrapped = SafeArea(

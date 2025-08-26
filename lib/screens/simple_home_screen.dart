@@ -23,7 +23,6 @@ import '../services/global_message_listener.dart';
 import '../widgets/notification_badge.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:flutter/services.dart'; // Added import for SystemUiOverlayStyle
-import 'package:flutter/foundation.dart' show kIsWeb;
 import '../widgets/chatbot_widget.dart';
 
 class SimpleHomeScreen extends StatefulWidget {
@@ -376,10 +375,9 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
 
   @override
   Widget build(BuildContext context) {
-    // Position chatbot differently on Web vs Android/iOS
-    final double chatDx = kIsWeb ? 0.95 : 0.75; // web: near right edge, mobile: balanced spacing (leaves room for another icon)
-    // On web place near categories header (higher), on mobile keep above FAB
-    final double chatDy = kIsWeb ? 0.20 : 0.72;
+    // Unified chatbot position across platforms
+    final double chatDx = 0.75;
+    final double chatDy = 0.30;
     return Consumer<UserProvider>(
       builder: (context, userProvider, child) {
     return Scaffold(
@@ -1725,7 +1723,7 @@ class _AccountUnreadCounterState extends State<_AccountUnreadCounter> {
         .listen((snapshot) {
       int unread = 0;
       for (final chat in snapshot.docs) {
-        final data = chat.data() as Map<String, dynamic>;
+        final data = chat.data();
         final chatUnreadCount = data['unreadCount'] as int? ?? 0;
         final lastMessageBy = data['lastMessageBy'] as String?;
         final lastMessageTime = data['timestamp'] as Timestamp? ?? data['lastMessageTime'] as Timestamp?;
