@@ -3736,7 +3736,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       print('🔍 DEBUG: Store is closed - blocking payment');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Sorry, ${widget.storeName ?? 'this store'} is currently closed. ${_getStoreStatusText()}'),
+          content: Text('Sorry, ${_storeName ?? 'this store'} is currently closed. ${_getStoreStatusText()}'),
           backgroundColor: Colors.red,
           duration: const Duration(seconds: 4),
         ),
@@ -9720,7 +9720,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             if (!_isStoreCurrentlyOpen()) {
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
-                  content: Text('Sorry, ${widget.storeName ?? 'this store'} is currently closed. ${_getStoreStatusText()}'),
+                  content: Text('Sorry, ${_storeName ?? 'this store'} is currently closed. ${_getStoreStatusText()}'),
                   backgroundColor: Colors.red,
                   duration: const Duration(seconds: 4),
                 ),
