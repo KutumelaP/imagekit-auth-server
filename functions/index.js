@@ -2076,6 +2076,62 @@ exports.setUserCustomClaims = functions.https.onCall(async (data, context) => {
   }
 });
 
+// === Seller Registration Function ===
+exports.registerAsSeller = functions.https.onCall(async (data, context) => {
+  try {
+    // Check if user is authenticated
+    if (!context.auth) {
+      throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
+    }
+
+    const userId = context.auth.uid;
+    
+    // Get user document to verify they exist
+    const userDoc = await admin.firestore().collection('users').doc(userId).get();
+    if (!userDoc.exists) {
+      throw new functions.https.HttpsError('not-found', 'User document not found');
+    }
+
+    const userData = userDoc.data();
+    
+    // Check if user is already a seller
+    if (userData.role === 'seller') {
+      throw new functions.https.HttpsError('already-exists', 'User is already registered as a seller');
+    }
+
+    // Update user role to seller
+    await admin.firestore().collection('users').doc(userId).update({
+      role: 'seller',
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+
+    // Set custom claims for the user
+    const customClaims = {
+      role: 'seller',
+      admin: false,
+      seller: true,
+      customer: false
+    };
+
+    await admin.auth().setCustomUserClaims(userId, customClaims);
+
+    console.log(`User ${userId} successfully registered as seller`);
+
+    return {
+      success: true,
+      message: 'Successfully registered as seller',
+      role: 'seller'
+    };
+
+  } catch (e) {
+    console.error('registerAsSeller error:', e);
+    if (e instanceof functions.https.HttpsError) {
+      throw e;
+    }
+    throw new functions.https.HttpsError('internal', `Failed to register as seller: ${e.message}`);
+  }
+});
+
 // ===== Seller payouts (bank details already stored under users/{uid}/payout/bank) =====
 async function getCommissionPct() {
   let pct = Number(process.env.PLATFORM_COMMISSION_PCT || 0.1);

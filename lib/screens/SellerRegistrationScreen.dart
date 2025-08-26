@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../services/notification_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 // import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
 // import 'package:http/http.dart' as http;
@@ -1099,9 +1100,15 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
         } catch (_) {}
       }
 
-      await FirebaseFirestore.instance.collection('users').doc(user.uid).update({
-        'role': 'seller',
-      });
+      // Call Cloud Function to update role (handles security rules properly)
+      try {
+        final callable = FirebaseFunctions.instance.httpsCallable('registerAsSeller');
+        final result = await callable.call();
+        print('✅ Seller role updated via Cloud Function: ${result.data}');
+      } catch (e) {
+        print('❌ Failed to update seller role via Cloud Function: $e');
+        throw Exception('Failed to register as seller. Please try again.');
+      }
 
       // TTS welcome (seller)
       try {
