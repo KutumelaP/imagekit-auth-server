@@ -175,6 +175,9 @@ class _ChatbotWidgetState extends State<ChatbotWidget> with TickerProviderStateM
     try {
       await _chatbotService.sendMessage(text);
       
+      // Scroll to bottom after sending message
+      _scrollToBottom();
+      
       // Provide haptic feedback
       HapticFeedback.lightImpact();
     } catch (e) {
@@ -279,11 +282,20 @@ class _ChatbotWidgetState extends State<ChatbotWidget> with TickerProviderStateM
   }
 
   Widget _buildChatWindow() {
+    final keyboardInset = MediaQuery.of(context).viewInsets.bottom;
+    final maxHeight = MediaQuery.of(context).size.height * 0.6; // Max 60% of screen height
+    final minHeight = 280.0; // Minimum height to keep chat usable
+    
+    // Reduce height when keyboard is visible
+    final availableHeight = keyboardInset > 0 
+        ? (maxHeight - keyboardInset * 0.3).clamp(minHeight, maxHeight)
+        : 400.0;
+    
     return SlideTransition(
       position: _slideAnimation,
       child: Container(
         width: 280,
-        height: 400,
+        height: availableHeight,
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(20),
@@ -544,55 +556,65 @@ class _ChatbotWidgetState extends State<ChatbotWidget> with TickerProviderStateM
           bottomRight: Radius.circular(20),
         ),
       ),
-      child: Row(
-        children: [
-          Expanded(
-            child: TextField(
-              controller: _messageController,
-              keyboardType: TextInputType.multiline,
-              textCapitalization: TextCapitalization.sentences,
-              autocorrect: false,
-              enableSuggestions: false,
-              smartDashesType: SmartDashesType.disabled,
-              smartQuotesType: SmartQuotesType.disabled,
-              decoration: InputDecoration(
-                hintText: 'Type your message...',
-                hintStyle: TextStyle(color: Colors.grey[500]),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(25),
-                  borderSide: BorderSide.none,
+      child: SafeArea(
+        top: false,
+        child: Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: _messageController,
+                keyboardType: TextInputType.multiline,
+                textCapitalization: TextCapitalization.sentences,
+                autocorrect: false,
+                enableSuggestions: false,
+                smartDashesType: SmartDashesType.disabled,
+                smartQuotesType: SmartQuotesType.disabled,
+                maxLines: 3,
+                minLines: 1,
+                decoration: InputDecoration(
+                  hintText: 'Type your message...',
+                  hintStyle: TextStyle(color: Colors.grey[500]),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(25),
+                    borderSide: BorderSide.none,
+                  ),
+                  filled: true,
+                  fillColor: Colors.white,
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 10,
+                  ),
                 ),
-                filled: true,
-                fillColor: Colors.white,
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 8,
-                ),
-              ),
-              textInputAction: TextInputAction.send,
-              onSubmitted: (_) => _sendMessage(),
-              maxLines: null,
-            ),
-          ),
-          const SizedBox(width: 8),
-          GestureDetector(
-            onTap: _sendMessage,
-            child: Container(
-              padding: const EdgeInsets.all(12),
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [Color(0xFF2E7D5A), Color(0xFF4CAF50)],
-                ),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.send,
-                color: Colors.white,
-                size: 20,
+                textInputAction: TextInputAction.send,
+                onSubmitted: (_) => _sendMessage(),
+                onTap: () {
+                  // Scroll to bottom when input is focused
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    _scrollToBottom();
+                  });
+                },
               ),
             ),
-          ),
-        ],
+            const SizedBox(width: 8),
+            GestureDetector(
+              onTap: _sendMessage,
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [Color(0xFF2E7D5A), Color(0xFF4CAF50)],
+                  ),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.send,
+                  color: Colors.white,
+                  size: 20,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

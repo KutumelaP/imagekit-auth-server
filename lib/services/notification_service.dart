@@ -44,6 +44,7 @@ class NotificationService {
 
   // Firebase services
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseAuth _auth = FirebaseAuth.instance;
   StreamSubscription<QuerySnapshot>? _notifSub;
   StreamSubscription<RemoteMessage>? _fcmSub;
   bool _notifListenerInitialized = false;
@@ -962,10 +963,27 @@ class NotificationService {
       _fcmSub?.cancel();
       _fcmSub = FirebaseMessaging.onMessage.listen((RemoteMessage message) async {
         if (!_voiceAnnouncementsEnabled) return;
+        
+        // Check if this is from the current user (sender) - don't announce
+        final currentUserId = _auth.currentUser?.uid;
+        final senderId = message.data['senderId']?.toString();
+        if (currentUserId != null && senderId == currentUserId) {
+          return;
+        }
+        
+        // Use simplified announcements based on message type
+        final type = message.data['type']?.toString().toLowerCase() ?? '';
         final title = message.notification?.title ?? message.data['title']?.toString() ?? '';
         final body = message.notification?.body ?? message.data['body']?.toString() ?? '';
-        if (title.isEmpty && body.isEmpty) return;
-        await _speakSafe('${title.isNotEmpty ? '$title. ' : ''}$body');
+        
+        // Use same simplified logic as _speakForNotificationData
+        await _speakForNotificationData({
+          'type': type,
+          'title': title,
+          'body': body,
+          'senderId': senderId,
+          ...message.data,
+        });
       }, onError: (e) {
         print('❌ FCM onMessage listener error: $e');
       });
@@ -977,26 +995,48 @@ class NotificationService {
   Future<void> _speakForNotificationData(Map<String, dynamic> data) async {
     try {
       final type = (data['type'] as String?)?.toLowerCase() ?? '';
-      if (type == 'new_order_seller') {
-        final buyerName = data['data']?['buyerName']?.toString() ?? 'a customer';
-        final total = double.tryParse(data['data']?['orderTotal']?.toString() ?? '') ?? 0;
-        await _speakSafe('New order received. Buyer $buyerName. Total R${total.toStringAsFixed(2)}.');
+      
+      // Check if this is a message from the current user (sender) - don't announce
+      final currentUserId = _auth.currentUser?.uid;
+      final senderId = data['senderId']?.toString();
+      if (currentUserId != null && senderId == currentUserId) {
+        // Don't announce messages sent by the current user
         return;
       }
-      if (type == 'order_status') {
-        final status = data['data']?['status']?.toString() ?? 'updated';
-        final orderNumber = data['orderNumber']?.toString() ?? data['data']?['orderNumber']?.toString() ?? '';
-        if (orderNumber.isNotEmpty) {
-          await _speakSafe('${formatOrderNumber(orderNumber)}. Status now $status.');
-        } else {
-          await _speakSafe('Your order status is now $status.');
-        }
-        return;
-      }
-      final title = data['title']?.toString() ?? '';
-      final body = data['body']?.toString() ?? '';
-      if (title.isNotEmpty || body.isNotEmpty) {
-        await _speakSafe('${title.isNotEmpty ? '$title. ' : ''}$body');
+      
+      // Simplified announcements based on notification type
+      switch (type) {
+        case 'new_order_seller':
+          await _speakSafe('You have a new order.');
+          return;
+        case 'order_status':
+          await _speakSafe('Order status updated.');
+          return;
+        case 'chat_message':
+          await _speakSafe('New message.');
+          return;
+        case 'payment_received':
+          await _speakSafe('Payment received.');
+          return;
+        case 'payout_processed':
+          await _speakSafe('Payout processed.');
+          return;
+        case 'product_approved':
+          await _speakSafe('Product approved.');
+          return;
+        case 'product_rejected':
+          await _speakSafe('Product rejected.');
+          return;
+        case 'delivery_update':
+          await _speakSafe('Delivery update.');
+          return;
+        case 'review_received':
+          await _speakSafe('New review received.');
+          return;
+        default:
+          // For unknown types, just announce generic notification
+          await _speakSafe('New notification.');
+          return;
       }
     } catch (e) {
       print('❌ speakForNotificationData failed: $e');
