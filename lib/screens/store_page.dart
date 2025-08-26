@@ -5,6 +5,7 @@ import 'stunning_product_browser.dart';
 import 'ChatScreen.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:geolocator/geolocator.dart';
+import '../services/optimized_location_service.dart';
 // Unused heavy imports removed to reduce bundle size
 import 'stunning_store_cards.dart';
 import '../theme/app_theme.dart';
@@ -187,39 +188,14 @@ class _StoreSelectionScreenState extends State<StoreSelectionScreen> {
       print('🔍 DEBUG: Seller ${data['storeName'] ?? 'Unnamed'} - Status: ${data['status'] ?? 'no status'}, Verified: ${data['verified'] ?? false}');
     }
 
-    // Get user location with proper permission handling
+    // Get user location with optimized performance
     Position? userPos;
     try {
-      // Check if location services are enabled
-      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
-      if (!serviceEnabled) {
-        print('🔍 DEBUG: Location services are disabled');
-        userPos = null;
+      userPos = await OptimizedLocationService.getCurrentPosition();
+      if (userPos != null) {
+        print('🔍 DEBUG: Got user position: ${userPos.latitude}, ${userPos.longitude}');
       } else {
-        // Check location permission
-        LocationPermission permission = await Geolocator.checkPermission();
-        if (permission == LocationPermission.denied) {
-          print('🔍 DEBUG: Requesting location permission...');
-          permission = await Geolocator.requestPermission();
-          if (permission == LocationPermission.denied) {
-            print('🔍 DEBUG: Location permission denied');
-            userPos = null;
-          } else if (permission == LocationPermission.deniedForever) {
-            print('🔍 DEBUG: Location permission denied forever');
-            userPos = null;
-          } else {
-            print('🔍 DEBUG: Location permission granted, getting position...');
-            userPos = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
-            print('🔍 DEBUG: Got user position: ${userPos.latitude}, ${userPos.longitude}');
-          }
-        } else if (permission == LocationPermission.deniedForever) {
-          print('🔍 DEBUG: Location permission denied forever');
-          userPos = null;
-        } else {
-          print('🔍 DEBUG: Location permission already granted, getting position...');
-          userPos = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
-          print('🔍 DEBUG: Got user position: ${userPos.latitude}, ${userPos.longitude}');
-        }
+        print('🔍 DEBUG: Could not get user location');
       }
     } catch (e) {
       print('🔍 DEBUG: Error getting location: $e');

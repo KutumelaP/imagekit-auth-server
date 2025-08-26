@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
 import '../screens/CheckoutScreen.dart';
 import '../providers/cart_provider.dart';
+import '../services/optimized_checkout_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/safe_network_image.dart';
 import '../widgets/home_navigation_button.dart';
@@ -19,6 +20,13 @@ class CartScreen extends StatefulWidget {
 
 class _CartScreenState extends State<CartScreen> {
   User? get currentUser => FirebaseAuth.instance.currentUser;
+
+  @override
+  void initState() {
+    super.initState();
+    // Pre-warm checkout cache for faster navigation
+    OptimizedCheckoutService.prewarmCache();
+  }
 
   @override
   Widget build(BuildContext context) {

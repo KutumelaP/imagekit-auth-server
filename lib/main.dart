@@ -46,6 +46,7 @@ import 'dart:async';
 import 'utils/safari_optimizer.dart';
 import 'utils/web_memory_guard.dart';
 import 'utils/performance_config.dart';
+import 'services/optimized_location_service.dart';
 import 'package:flutter/foundation.dart' show kIsWeb, kDebugMode;
 import 'utils/web_env.dart';
 
@@ -88,23 +89,17 @@ void main() async {
   // Initialize Awesome Notifications for local banners (mobile)
   await AwesomeNotificationService().initialize();
   
-  // Initialize location permissions (skip on iOS Safari web to avoid reloads)
+  // Initialize optimized location services (skip on iOS Safari web to avoid reloads)
   try {
     final skipLocationOnIOSWeb = WebEnv.isIOSWeb && !WebEnv.isStandalonePWA;
     if (!skipLocationOnIOSWeb) {
-      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
-      if (serviceEnabled) {
-        LocationPermission permission = await Geolocator.checkPermission();
-        if (permission == LocationPermission.denied) {
-          if (kDebugMode) print('🔍 DEBUG: Requesting location permission on app start...');
-          await Geolocator.requestPermission();
-        }
-      }
+      // Warm up optimized location services for faster subsequent calls
+      await OptimizedLocationService.warmUpLocationServices();
     } else {
-      if (kDebugMode) print('🔍 DEBUG: Skipping location permission on iOS Safari tab');
+      if (kDebugMode) print('🔍 DEBUG: Skipping location services on iOS Safari tab');
     }
   } catch (e) {
-    if (kDebugMode) print('🔍 DEBUG: Error initializing location permissions: $e');
+    if (kDebugMode) print('🔍 DEBUG: Error initializing location services: $e');
   }
   
   // Initialize error tracking

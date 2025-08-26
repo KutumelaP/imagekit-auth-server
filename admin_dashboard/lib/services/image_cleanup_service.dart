@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'package:flutter/foundation.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -45,13 +48,27 @@ class ImageCleanupService {
 	
 	static Future<bool> deleteImage(String fileId) async {
 		try {
-			// Ensure fresh token with latest admin claims
-			await FirebaseAuth.instance.currentUser?.getIdToken(true);
-			final functions = FirebaseFunctions.instanceFor(region: 'us-central1');
-			final callable = functions.httpsCallable('batchDeleteImages');
+			// Get auth token for the HTTP request
+			final idToken = await FirebaseAuth.instance.currentUser?.getIdToken(true);
+			if (idToken == null) {
+				throw Exception('Failed to get authentication token');
+			}
 			
-			final result = await callable.call({'fileIds': [fileId]});
-			final response = result.data as Map<String, dynamic>;
+			// Use HTTP request instead of callable to handle CORS
+			final httpResponse = await http.post(
+				Uri.parse('https://us-central1-marketplace-8d6bd.cloudfunctions.net/batchDeleteImagesHttp'),
+				headers: {
+					'Content-Type': 'application/json',
+					'Authorization': 'Bearer $idToken',
+				},
+				body: json.encode({'fileIds': [fileId]}),
+			);
+			
+			if (httpResponse.statusCode != 200) {
+				throw Exception('HTTP ${httpResponse.statusCode}: ${httpResponse.body}');
+			}
+			
+			final response = json.decode(httpResponse.body) as Map<String, dynamic>;
 			return response['success'] == true;
 		} catch (e) {
 			print('❌ Error deleting image $fileId: $e');
@@ -87,10 +104,31 @@ class ImageCleanupService {
 				
 				try {
 					print('📞 Calling batchDeleteImages with batch: $currentBatch');
-					final result = await callable.call({'fileIds': currentBatch});
-					print('📥 Raw response from Cloud Function: ${result.data}');
 					
-					final response = result.data as Map<String, dynamic>;
+					// Get auth token for the HTTP request
+					final idToken = await FirebaseAuth.instance.currentUser?.getIdToken(true);
+					if (idToken == null) {
+						throw Exception('Failed to get authentication token');
+					}
+					
+					// Use HTTP request instead of callable to handle CORS
+					final httpResponse = await http.post(
+						Uri.parse('https://us-central1-marketplace-8d6bd.cloudfunctions.net/batchDeleteImagesHttp'),
+						headers: {
+							'Content-Type': 'application/json',
+							'Authorization': 'Bearer $idToken',
+						},
+						body: json.encode({'fileIds': currentBatch}),
+					);
+					
+					print('📥 HTTP Response status: ${httpResponse.statusCode}');
+					print('📥 HTTP Response body: ${httpResponse.body}');
+					
+					if (httpResponse.statusCode != 200) {
+						throw Exception('HTTP ${httpResponse.statusCode}: ${httpResponse.body}');
+					}
+					
+					final response = json.decode(httpResponse.body) as Map<String, dynamic>;
 					print('🔍 Parsed response: $response');
 					
 					if (response['success'] == true && response['results'] is Map) {

@@ -89,13 +89,17 @@ class _ImageManagementSectionState extends State<ImageManagementSection> {
       allOrphaned.addAll(storeOrphans);
       allOrphaned.addAll(chatOrphans);
       
-      setState(() {
-        _orphanedImages = allOrphaned;
-        _updateFilteredImages();
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _orphanedImages = allOrphaned;
+          _updateFilteredImages();
+          _isLoading = false;
+        });
+      }
     } catch (e) {
-      setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Error finding orphaned images: $e')),

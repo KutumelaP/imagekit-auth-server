@@ -1290,18 +1290,41 @@ exports.syncImageAssetsScheduled = functions.pubsub.schedule('every 24 hours').o
   return null;
 });
 
-// Batch delete images from ImageKit and mirror collection
-exports.batchDeleteImages = functions.runWith({
+// Batch delete images from ImageKit and mirror collection (HTTP endpoint)
+exports.batchDeleteImagesHttp = functions.runWith({
   timeoutSeconds: 540,  // 9 minutes max
   memory: '1GB'
-}).https.onCall(async (data, context) => {
+}).https.onRequest(async (req, res) => {
+  // Handle CORS preflight requests
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  
+  if (req.method === 'OPTIONS') {
+    res.status(204).send('');
+    return;
+  }
+
+  // Convert from onRequest to handle auth manually
+  const auth = req.get('Authorization');
+  if (!auth || !auth.startsWith('Bearer ')) {
+    res.status(401).json({ success: false, error: 'Unauthorized' });
+    return;
+  }
+  
+  try {
+    const idToken = auth.split('Bearer ')[1];
+    const decodedToken = await admin.auth().verifyIdToken(idToken);
+    const context = { auth: { uid: decodedToken.uid } };
+    const data = req.body;
   console.log('🚀 batchDeleteImages: Function started');
   
   try {
     // Authentication check
     if (!context.auth) {
       console.error('❌ No authentication context');
-      throw new functions.https.HttpsError('unauthenticated', 'Sign in required');
+      res.status(401).json({ success: false, error: 'Sign in required' });
+      return;
     }
     console.log('✅ User authenticated:', context.auth.uid);
 
@@ -1309,7 +1332,8 @@ exports.batchDeleteImages = functions.runWith({
     const adminCheck = await isAdmin(context);
     if (!adminCheck) {
       console.error('❌ User is not admin');
-      throw new functions.https.HttpsError('permission-denied', 'Admin access required');
+      res.status(403).json({ success: false, error: 'Admin access required' });
+      return;
     }
     console.log('✅ Admin verified');
 
@@ -1317,7 +1341,8 @@ exports.batchDeleteImages = functions.runWith({
     const fileIds = Array.isArray(data?.fileIds) ? data.fileIds.map(String) : [];
     if (fileIds.length === 0) {
       console.error('❌ No fileIds provided');
-      throw new functions.https.HttpsError('invalid-argument', 'fileIds required');
+      res.status(400).json({ success: false, error: 'fileIds required' });
+      return;
     }
     console.log('✅ Input validated:', fileIds.length, 'files');
     
@@ -1325,19 +1350,21 @@ exports.batchDeleteImages = functions.runWith({
     const MAX_BATCH_SIZE = 50;
     if (fileIds.length > MAX_BATCH_SIZE) {
       console.log('⚠️ Batch size too large:', fileIds.length);
-      return {
+      res.status(400).json({
         success: false,
         error: `Batch size too large. Maximum ${MAX_BATCH_SIZE} images per batch. Please split into smaller batches.`,
         maxBatchSize: MAX_BATCH_SIZE,
         providedCount: fileIds.length
-      };
+      });
+      return;
     }
 
     // ImageKit credentials check
     const { privateKey } = getImageKitCredentials();
     if (!privateKey) {
       console.error('❌ ImageKit credentials not found');
-      throw new functions.https.HttpsError('failed-precondition', 'ImageKit not configured');
+      res.status(500).json({ success: false, error: 'ImageKit not configured' });
+      return;
     }
     console.log('✅ ImageKit credentials found');
 
@@ -1443,22 +1470,26 @@ exports.batchDeleteImages = functions.runWith({
     
     console.log('📊 Final summary:', summary);
     
-    return { 
+    res.status(200).json({ 
       success: allOk, 
       results, 
       errors: Object.keys(errors).length ? errors : null,
       summary
-    };
+    });
   } catch (e) {
     console.error('💥 batchDeleteImages critical error:', e?.message || e);
     console.error('Stack trace:', e?.stack);
     // Return structured error instead of throwing to avoid client [internal]
-    return { 
+    res.status(500).json({ 
       success: false, 
       error: e?.message || String(e),
       errorType: e?.constructor?.name || 'Unknown',
       stack: e?.stack || 'No stack trace available'
-    };
+    });
+  }
+  } catch (authError) {
+    console.error('❌ Auth verification failed:', authError);
+    res.status(401).json({ success: false, error: 'Invalid token' });
   }
 });
 

@@ -9,6 +9,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_firestore/cloud_firestore.dart' show Timestamp;
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
+import '../services/optimized_location_service.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:url_launcher/url_launcher_string.dart';
@@ -35,6 +36,7 @@ import '../config/paxi_config.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 
 import '../providers/cart_provider.dart';
+import '../services/optimized_checkout_service.dart';
 import 'login_screen.dart';
 import 'OrderTrackingScreen.dart';
 
@@ -224,12 +226,16 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   void initState() {
     super.initState();
     _orderCompleted = false; // Reset order completion flag
-    if (currentUser != null) {
-      _detectProductCategory();
-      _calculateDeliveryFeeAndCheckStore();
-    }
-    // Restore any saved draft and set up autosave listeners
-    _restoreCheckoutDraft();
+    
+    // Show loading immediately and start optimized initialization
+    setState(() {
+      _isLoading = true;
+    });
+    
+    // Initialize with optimized service in background
+    _initializeOptimized();
+    
+    // Set up autosave listeners (these are lightweight)
     _nameController.addListener(_saveCheckoutDraft);
     _addressController.addListener(_saveCheckoutDraft);
     _phoneController.addListener(_saveCheckoutDraft);
@@ -254,6 +260,185 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     // Final save (just in case) before disposing
     _saveCheckoutDraft();
     super.dispose();
+  }
+
+  /// Optimized initialization using preloaded data
+  Future<void> _initializeOptimized() async {
+    try {
+      final startTime = DateTime.now();
+      
+      // Check if user is logged in
+      if (currentUser == null) {
+        if (mounted) {
+          setState(() {
+            _paymentMethods = ['Cash on Delivery', 'PayFast (Card)', 'Bank Transfer (EFT)'];
+            _paymentMethodsLoaded = true;
+            _deliveryFee = 15.0;
+            _deliveryDistance = 5.0;
+            _isLoading = false;
+          });
+        }
+        return;
+      }
+
+      // Use optimized service to preload data
+      final checkoutData = await OptimizedCheckoutService.preloadCheckoutData();
+      
+      if (!mounted) return;
+      
+      // Apply preloaded data to state
+      _applyPreloadedData(checkoutData);
+      
+      // Start background operations that don't block UI
+      _finishInitializationInBackground(checkoutData);
+      
+      final endTime = DateTime.now();
+      final totalTime = endTime.difference(startTime).inMilliseconds;
+      
+      if (kDebugMode) {
+        print('⚡ Optimized checkout initialization completed in ${totalTime}ms');
+        print('📊 Preload time: ${checkoutData.loadTimeMs}ms, UI update time: ${totalTime - checkoutData.loadTimeMs}ms');
+      }
+      
+    } catch (e) {
+      if (kDebugMode) print('❌ Error in optimized initialization: $e');
+      // Fallback to original method
+      _fallbackInitialization();
+    }
+  }
+
+  /// Apply preloaded data to UI state
+  void _applyPreloadedData(CheckoutData data) {
+    if (!mounted) return;
+    
+    setState(() {
+      // Apply user draft data if available
+      if (data.userDraft != null) {
+        final draft = data.userDraft!;
+        if (draft['name'] != null && draft['name'].isNotEmpty) {
+          _nameController.text = draft['name'];
+        }
+        if (draft['address'] != null && draft['address'].isNotEmpty) {
+          _addressController.text = draft['address'];
+        }
+        if (draft['phone'] != null && draft['phone'].isNotEmpty) {
+          _phoneController.text = draft['phone'];
+        }
+        if (draft['instructions'] != null && draft['instructions'].isNotEmpty) {
+          _deliveryInstructionsController.text = draft['instructions'];
+        }
+        if (draft['isDelivery'] != null) {
+          _isDelivery = draft['isDelivery'];
+        }
+        if (draft['paymentMethod'] != null && draft['paymentMethod'].isNotEmpty) {
+          _selectedPaymentMethod = draft['paymentMethod'];
+        }
+      }
+      
+      // Apply product category
+      _productCategory = data.productCategory;
+      
+      // Set basic payment methods immediately for faster UI
+      _paymentMethods = ['Cash on Delivery', 'PayFast (Card)', 'Bank Transfer (EFT)'];
+      _paymentMethodsLoaded = true;
+      
+      // Set default delivery values (will be refined in background)
+      _deliveryFee = 15.0;
+      _deliveryDistance = 5.0;
+      
+      // Remove loading state
+      _isLoading = false;
+    });
+  }
+
+  /// Finish initialization in background without blocking UI
+  Future<void> _finishInitializationInBackground(CheckoutData data) async {
+    // These operations run in background and update UI when complete
+    Future.microtask(() async {
+      try {
+        // Calculate delivery fees and store details if we have seller data
+        if (data.sellerData != null) {
+          await _calculateDeliveryWithSellerData(data.sellerData!);
+        }
+        
+        // Update platform configuration
+        if (data.platformConfig != null) {
+          _applyPlatformConfig(data.platformConfig!);
+        }
+        
+      } catch (e) {
+        if (kDebugMode) print('⚠️ Background initialization error: $e');
+      }
+    });
+  }
+
+  /// Calculate delivery fees using preloaded seller data
+  Future<void> _calculateDeliveryWithSellerData(Map<String, dynamic> seller) async {
+    try {
+      if (!mounted) return;
+      
+      final storeName = seller['storeName'] ?? 'Store';
+      final storeOpen = seller['isStoreOpen'] ?? false;
+      final storeAddress = seller['location'] ?? '';
+      final deliveryFeePerKm = (seller['deliveryFeePerKm'] ?? 5.0).toDouble();
+      final minOrderForDelivery = (seller['minOrderForDelivery'] ?? 0.0).toDouble();
+      
+      // Update state with seller information
+      if (mounted) {
+        setState(() {
+          _storeName = storeName;
+          _storeOpen = storeOpen;
+          _storeAddress = storeAddress;
+          _minOrderForDelivery = minOrderForDelivery;
+          
+          // Calculate approximate delivery fee (refined calculation can happen later)
+          _deliveryFee = _deliveryDistance * deliveryFeePerKm;
+          if (_deliveryFee! < 15.0) _deliveryFee = 15.0; // Minimum fee
+        });
+      }
+      
+    } catch (e) {
+      if (kDebugMode) print('❌ Error calculating delivery with seller data: $e');
+    }
+  }
+
+  /// Apply platform configuration
+  void _applyPlatformConfig(Map<String, dynamic> config) {
+    if (!mounted) return;
+    
+    setState(() {
+      // Apply platform-specific settings
+      final platformFeePercent = config['platformFeePercent'];
+      if (platformFeePercent != null) {
+        _platformFeePercent = (platformFeePercent as num).toDouble();
+        _platformFee = widget.totalPrice * (_platformFeePercent! / 100);
+      }
+    });
+  }
+
+  /// Fallback to original initialization if optimized version fails
+  Future<void> _fallbackInitialization() async {
+    try {
+      if (currentUser != null) {
+        await _detectProductCategory();
+        await _calculateDeliveryFeeAndCheckStore();
+      }
+      await _restoreCheckoutDraft();
+      
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+      
+    } catch (e) {
+      if (kDebugMode) print('❌ Fallback initialization error: $e');
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
   }
 
   // ===== Checkout draft persistence =====
@@ -2622,19 +2807,20 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       print('🚚 DEBUG: Loading pickup points for current location...');
       if (mounted) setState(() => _isLoadingPickupPoints = true);
       
-      // Try to get current position
-      final position = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
-        timeLimit: Duration(seconds: 10),
-      );
+      // Try to get current position with optimized service
+      final position = await OptimizedLocationService.getCurrentPosition();
       
-      print('🚚 DEBUG: Got current position: ${position.latitude}, ${position.longitude}');
-      
-      // Set coordinates and load pickup points
-      _selectedLat = position.latitude;
-      _selectedLng = position.longitude;
-      
-      await _loadPickupPointsForCoordinates(position.latitude, position.longitude);
+      if (position != null) {
+        print('🚚 DEBUG: Got current position: ${position.latitude}, ${position.longitude}');
+        
+        // Set coordinates and load pickup points
+        _selectedLat = position.latitude;
+        _selectedLng = position.longitude;
+        
+        await _loadPickupPointsForCoordinates(position.latitude, position.longitude);
+      } else {
+        throw Exception('Could not get current location');
+      }
       
     } catch (e) {
       print('❌ DEBUG: Could not get current location: $e');
