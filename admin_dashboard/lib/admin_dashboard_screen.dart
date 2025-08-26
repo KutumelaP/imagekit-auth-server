@@ -240,40 +240,43 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   // Helper method to get appropriate icons for each section
   IconData _getIconForSection(int index) {
     switch (index) {
-      case 0: return Icons.dashboard; // Overview
-      case 1: return Icons.flash_on; // Quick Actions
-      case 2: return Icons.timeline; // Recent Activity
-      case 3: return Icons.people; // Users
-      case 4: return Icons.store; // Sellers
-      case 5: return Icons.shopping_cart; // Orders
-      case 6: return Icons.category; // Categories
-      case 7: return Icons.analytics; // Statistics
-      case 8: return Icons.assessment; // Reports
-      case 9: return Icons.trending_up; // Advanced Analytics
-      case 10: return Icons.shield; // Moderation
-      case 11: return Icons.rate_review; // Reviews
-      case 12: return Icons.assignment_return; // Returns/Refunds
-      case 13: return Icons.storage; // Storage Stats
-      case 14: return Icons.image_not_supported; // Orphaned Images
-      case 15: return Icons.cleaning_services; // Cleanup Tools
-      case 16: return Icons.settings; // Platform Settings
-      case 17: return Icons.security; // Roles/Permissions
-      case 18: return Icons.history; // Audit Logs
-      case 19: return Icons.payment; // Payment Settings
-      case 20: return Icons.account_balance; // Escrow Management
-      case 21: return Icons.assignment_returned; // Returns Management
-      case 22: return Icons.code; // Developer Tools
-      case 23: return Icons.download; // Data Export
-      case 24: return Icons.swap_horiz; // Order Migration
-      case 25: return Icons.directions_car; // Rural Driver Management
-      case 26: return Icons.local_shipping; // Urban Delivery Management
-      case 27: return Icons.person; // Driver Management
-      case 28: return Icons.delivery_dining; // Seller Delivery Management
-      case 29: return Icons.price_check; // PAXI Pricing Management
-      case 30: return Icons.warning; // Risk Review
-      case 31: return Icons.verified_user; // KYC Review
-      case 32: return Icons.people_outline; // KYC Overview
-      case 33: return Icons.account_balance_wallet; // Payouts
+      case 0: return Icons.trending_up; // Advanced Analytics
+      case 1: return Icons.history; // Audit Logs
+      case 2: return Icons.category; // Categories
+      case 3: return Icons.cleaning_services; // Cleanup Tools
+      case 4: return Icons.support_agent; // Customer Support
+      case 5: return Icons.download; // Data Export
+      case 6: return Icons.code; // Developer Tools
+      case 7: return Icons.person; // Driver Management
+      case 8: return Icons.account_balance; // Escrow Management
+      case 9: return Icons.analytics; // Financial Overview
+      case 10: return Icons.people_outline; // KYC Overview
+      case 11: return Icons.verified_user; // KYC Review
+      case 12: return Icons.shield; // Moderation
+      case 13: return Icons.swap_horiz; // Order Migration
+      case 14: return Icons.shopping_cart; // Orders
+      case 15: return Icons.image_not_supported; // Orphaned Images
+      case 16: return Icons.dashboard; // Overview
+      case 17: return Icons.price_check; // PAXI Pricing Management
+      case 18: return Icons.payment; // Payment Settings
+      case 19: return Icons.account_balance_wallet; // Payouts
+      case 20: return Icons.settings; // Platform Settings
+      case 21: return Icons.flash_on; // Quick Actions
+      case 22: return Icons.timeline; // Recent Activity
+      case 23: return Icons.assessment; // Reports
+      case 24: return Icons.assignment_returned; // Returns Management
+      case 25: return Icons.assignment_return; // Returns/Refunds
+      case 26: return Icons.rate_review; // Reviews
+      case 27: return Icons.warning; // Risk Review
+      case 28: return Icons.security; // Roles/Permissions
+      case 29: return Icons.directions_car; // Rural Driver Management
+      case 30: return Icons.delivery_dining; // Seller Delivery Management
+      case 31: return Icons.store; // Sellers
+      case 32: return Icons.analytics; // Statistics
+      case 33: return Icons.storage; // Storage Stats
+      case 34: return Icons.local_shipping; // Urban Delivery Management
+      case 35: return Icons.people; // Users
+      case 36: return Icons.upload_file; // Upload Management
       default: return Icons.dashboard;
     }
   }
@@ -997,39 +1000,42 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
   // Add the sections list to match AdminDashboardContent
   final List<String> _sections = [
-    'Overview',
-    'Quick Actions', 
-    'Recent Activity',
-    'Users',
-    'Sellers', 
-    'Orders',
-    'Categories',
-    'Statistics',
-    'Reports',
     'Advanced Analytics',
-    'Moderation',
-    'Reviews',
-    'Returns/Refunds',
-    'Storage Stats',
-    'Orphaned Images',
-    'Cleanup Tools',
-    'Platform Settings',
-    'Roles/Permissions',
     'Audit Logs',
-    'Payment Settings',
-    'Escrow Management',
-    'Returns Management',
-    'Developer Tools',
+    'Categories',
+    'Cleanup Tools',
+    'Customer Support',
     'Data Export',
-    'Order Migration',
-    'Rural Driver Management',
-    'Urban Delivery Management',
+    'Developer Tools',
     'Driver Management',
-    'Seller Delivery Management',
-    'PAXI Pricing Management',
-    'Risk Review',
-    'KYC Review',
+    'Escrow Management',
+    'Financial Overview',
     'KYC Overview',
+    'KYC Review',
+    'Moderation',
+    'Order Migration',
+    'Orders',
+    'Orphaned Images',
+    'Overview',
+    'PAXI Pricing Management',
+    'Payment Settings',
     'Payouts',
+    'Platform Settings',
+    'Quick Actions',
+    'Recent Activity',
+    'Reports',
+    'Returns Management',
+    'Returns/Refunds',
+    'Reviews',
+    'Risk Review',
+    'Roles/Permissions',
+    'Rural Driver Management',
+    'Seller Delivery Management',
+    'Sellers',
+    'Statistics',
+    'Storage Stats',
+    'Urban Delivery Management',
+    'Users',
+    'Upload Management',
   ];
 } 

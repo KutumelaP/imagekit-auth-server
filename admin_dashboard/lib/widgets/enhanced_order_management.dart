@@ -692,7 +692,7 @@ class _EnhancedOrderManagementState extends State<EnhancedOrderManagement>
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Order #${orderId.substring(0, 8)}',
+                    'Order #${orderId.length > 8 ? orderId.substring(0, 8) + '...' : orderId}',
                     style: AdminTheme.titleMedium.copyWith(
                       fontWeight: FontWeight.bold,
                     ),

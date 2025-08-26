@@ -330,6 +330,11 @@ service cloud.firestore {
       }
     }
 
+    // RECEIVABLES - General receivables collection for admin dashboard
+    match /receivables/{receivableId} {
+      allow read, write: if isAdmin();
+    }
+
     // DRIVERS - Allow driver to read their own doc; admin full control
     match /drivers/{driverId} {
       allow read: if request.auth != null && request.auth.uid == driverId;

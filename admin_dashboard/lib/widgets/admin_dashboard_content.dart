@@ -81,42 +81,42 @@ class _AdminDashboardContentState extends State<AdminDashboardContent> {
   }
   
   final List<String> _sections = [
-    'Overview',
-    'Quick Actions', 
-    'Recent Activity',
-    'Users',
-    'Sellers', 
-    'Orders',
-    'Categories',
-    'Statistics',
-    'Reports',
     'Advanced Analytics',
-    'Moderation',
-    'Reviews',
-    'Returns/Refunds',
-    'Storage Stats',
-    'Orphaned Images',
-    'Cleanup Tools',
-    'Platform Settings',
-    'Roles/Permissions',
     'Audit Logs',
-    'Payment Settings',
-    'Financial Overview',
-    'Escrow Management',
-    'Returns Management',
-    'Developer Tools',
-    'Data Export',
-    'Order Migration',
-    'Rural Driver Management',
-    'Urban Delivery Management',
-    'Driver Management',
-    'Seller Delivery Management',
-    'PAXI Pricing Management',
-    'Risk Review',
-    'KYC Review',
-    'KYC Overview',
-    'Payouts',
+    'Categories',
+    'Cleanup Tools',
     'Customer Support',
+    'Data Export',
+    'Developer Tools',
+    'Driver Management',
+    'Escrow Management',
+    'Financial Overview',
+    'KYC Overview',
+    'KYC Review',
+    'Moderation',
+    'Order Migration',
+    'Orders',
+    'Orphaned Images',
+    'Overview',
+    'PAXI Pricing Management',
+    'Payment Settings',
+    'Payouts',
+    'Platform Settings',
+    'Quick Actions',
+    'Recent Activity',
+    'Reports',
+    'Returns Management',
+    'Returns/Refunds',
+    'Reviews',
+    'Risk Review',
+    'Roles/Permissions',
+    'Rural Driver Management',
+    'Seller Delivery Management',
+    'Sellers',
+    'Statistics',
+    'Storage Stats',
+    'Urban Delivery Management',
+    'Users',
     'Upload Management',
   ];
 
@@ -378,34 +378,21 @@ class _AdminDashboardContentState extends State<AdminDashboardContent> {
 
   Widget _sectionWidget(int i) {
     switch (i) {
-      case 0: return _buildDashboardOverview(); // Dashboard
-      case 1: return _buildQuickActions(); // Quick Actions
-      case 2: return _buildRecentActivity(); // Recent Activity
-      case 3: // Users
-        return SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              SectionHeader('User Management'),
-              const SizedBox(height: 8),
-              SizedBox(height: 500, child: UserManagementTable(auth: widget.auth, firestore: widget.firestore)),
-            ],
-          ),
-        );
-      case 4: // Sellers
-        return SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              SectionHeader('Seller Management'),
-              const SizedBox(height: 8),
-              SizedBox(height: 500, child: SellerManagementTable(auth: widget.auth, firestore: widget.firestore)),
-            ],
-          ),
-        );
-      case 5: // Orders
+      case 0: return SingleChildScrollView(child: AdvancedAnalyticsDashboard(firestore: widget.firestore)); // Advanced Analytics
+      case 1: return AuditLogsSection(); // Audit Logs
+      case 2: return CategoriesSection(firestore: FirebaseFirestore.instance); // Categories
+      case 3: return ImageManagementSection(); // Cleanup Tools
+      case 4: return const CustomerSupportSection(); // Customer Support
+      case 5: return DataExportSection(); // Data Export
+      case 6: return DeveloperToolsSection(); // Developer Tools
+      case 7: return DriverManagementScreen(); // Driver Management
+      case 8: return EscrowManagement(); // Escrow Management
+      case 9: return const FinancialOverviewSection(); // Financial Overview
+      case 10: return const KycOverviewWidget(); // KYC Overview
+      case 11: return const KycReviewList(); // KYC Review
+      case 12: return SingleChildScrollView(child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [SectionHeader('Moderation Center'), const SizedBox(height: 8), ModerationCenter(auth: widget.auth, firestore: widget.firestore)])); // Moderation
+      case 13: return const OrderMigrationScreen(); // Order Migration
+      case 14: // Orders
         return SingleChildScrollView(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -417,36 +404,49 @@ class _AdminDashboardContentState extends State<AdminDashboardContent> {
             ],
           ),
         );
-      case 6: return CategoriesSection(firestore: FirebaseFirestore.instance); // Categories
-      case 7: return SingleChildScrollView(child: StatisticsSection()); // Statistics
-      case 8: return ReportsSection(); // Reports
-      case 9: return SingleChildScrollView(child: AdvancedAnalyticsDashboard(firestore: widget.firestore)); // Advanced Analytics
-      case 10: return SingleChildScrollView(child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [SectionHeader('Moderation Center'), const SizedBox(height: 8), ModerationCenter(auth: widget.auth, firestore: widget.firestore)])); // Moderation
-      case 11: return SingleChildScrollView(child: ReviewsSection()); // Reviews
-              case 12: return ReturnsManagement(); // Returns/Refunds
-      case 13: return ImageManagementSection(); // Storage Stats
-      case 14: return ImageManagementSection(); // Orphaned Images
-      case 15: return ImageManagementSection(); // Cleanup Tools
-      case 16: return SingleChildScrollView(child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [SectionHeader('Platform Settings'), const SizedBox(height: 8), PlatformSettingsSection(auth: widget.auth, firestore: widget.firestore)])); // Platform Settings
-      case 17: return RolesPermissionsSection(); // Roles/Permissions
-      case 18: return AuditLogsSection(); // Audit Logs
-      case 19: return PaymentSettingsManagement(); // Payment Settings
-      case 20: return const FinancialOverviewSection(); // Financial Overview
-      case 21: return EscrowManagement(); // Escrow Management
-      case 22: return ReturnsManagement(); // Returns Management
-      case 23: return DeveloperToolsSection(); // Developer Tools
-      case 24: return DataExportSection(); // Data Export
-      case 25: return const OrderMigrationScreen(); // Order Migration
-      case 26: return RuralDriverManagement(); // Rural Driver Management
-      case 27: return UrbanDeliveryManagement(); // Urban Delivery Management
-      case 28: return DriverManagementScreen(); // Driver Management
-      case 29: return SellerDeliveryManagement(); // Seller Delivery Management
-      case 30: return PaxiPricingManagement(); // PAXI Pricing Management
-      case 31: return const RiskReviewScreen(); // Risk Review
-      case 32: return const KycReviewList(); // KYC Review
-      case 33: return const KycOverviewWidget(); // KYC Overview
-      case 34: return const AdminPayoutsSection(); // Payouts
-      case 35: return const CustomerSupportSection(); // Customer Support
+      case 15: return ImageManagementSection(); // Orphaned Images
+      case 16: return _buildDashboardOverview(); // Overview
+      case 17: return PaxiPricingManagement(); // PAXI Pricing Management
+      case 18: return PaymentSettingsManagement(); // Payment Settings
+      case 19: return const AdminPayoutsSection(); // Payouts
+      case 20: return SingleChildScrollView(child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [SectionHeader('Platform Settings'), const SizedBox(height: 8), PlatformSettingsSection(auth: widget.auth, firestore: widget.firestore)])); // Platform Settings
+      case 21: return _buildQuickActions(); // Quick Actions
+      case 22: return _buildRecentActivity(); // Recent Activity
+      case 23: return ReportsSection(); // Reports
+      case 24: return ReturnsManagement(); // Returns Management
+      case 25: return ReturnsManagement(); // Returns/Refunds
+      case 26: return SingleChildScrollView(child: ReviewsSection()); // Reviews
+      case 27: return const RiskReviewScreen(); // Risk Review
+      case 28: return RolesPermissionsSection(); // Roles/Permissions
+      case 29: return RuralDriverManagement(); // Rural Driver Management
+      case 30: return SellerDeliveryManagement(); // Seller Delivery Management
+      case 31: // Sellers
+        return SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SectionHeader('Seller Management'),
+              const SizedBox(height: 8),
+              SizedBox(height: 500, child: SellerManagementTable(auth: widget.auth, firestore: widget.firestore)),
+            ],
+          ),
+        );
+      case 32: return SingleChildScrollView(child: StatisticsSection()); // Statistics
+      case 33: return ImageManagementSection(); // Storage Stats
+      case 34: return UrbanDeliveryManagement(); // Urban Delivery Management
+      case 35: // Users
+        return SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SectionHeader('User Management'),
+              const SizedBox(height: 8),
+              SizedBox(height: 500, child: UserManagementTable(auth: widget.auth, firestore: widget.firestore)),
+            ],
+          ),
+        );
       case 36: return const UploadManagementSection(); // Upload Management
       default: return const SizedBox();
     }

@@ -71,9 +71,12 @@ class _FinancialOverviewSectionState extends State<FinancialOverviewSection> {
         }
       }
 
-      // Sort debtors by amount desc and take top 10
-      debtors.sort((a, b) => (b['amount'] as double).compareTo(a['amount'] as double));
-      final topDebtors = debtors.take(10).toList();
+      // Sort debtors by amount desc and take top 10 (safely handle empty lists)
+      List<Map<String, dynamic>> topDebtors = [];
+      if (debtors.isNotEmpty) {
+        debtors.sort((a, b) => (b['amount'] as double).compareTo(a['amount'] as double));
+        topDebtors = debtors.take(debtors.length > 10 ? 10 : debtors.length).toList();
+      }
 
       // Calculate collection rate (simplified - you might want more complex logic)
       final collectionRate = sellersWithDebt > 0 ? (1 - (sellersWithDebt / receivablesSnap.docs.length)) : 1.0;
