@@ -78,6 +78,20 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   double? _platformFeePercent;
   double _platformFee = 0.0;
   bool _isStoreFeeExempt = false;
+  // Commission configuration (admin-configurable)
+  double? _pickupCommissionPct; // percent e.g., 6.0
+  double? _merchantDeliveryCommissionPct; // percent e.g., 9.0
+  double? _platformDeliveryCommissionPct; // percent e.g., 11.0
+  double? _commissionMin; // absolute R value minimum
+  double? _commissionCapPickup; // absolute R value cap for pickup
+  double? _commissionCapDeliveryMerchant; // cap for merchant delivery
+  double? _commissionCapDeliveryPlatform; // cap for platform-arranged delivery
+
+  // Buyer fee configuration (admin-configurable)
+  double? _buyerServiceFeePct; // e.g., 1.0 => 1%
+  double? _buyerServiceFeeFixed; // e.g., R3.00
+  double? _smallOrderFeeConfigured; // e.g., R7.00
+  double? _smallOrderThreshold; // e.g., R100.00
   int? _deliveryTimeMinutes;
   String? _selectedPaymentMethod;
   bool _isDelivery = true; // Default to delivery, user can change to pickup
@@ -164,6 +178,55 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     } catch (e) {
       debugPrint('HERE autocomplete error: $e');
     }
+  }
+
+  double _computeBuyerServiceFeeAmount({required double subtotal}) {
+    double amount = 0.0;
+    if (_buyerServiceFeePct != null && _buyerServiceFeePct! > 0) {
+      amount += subtotal * (_buyerServiceFeePct! / 100);
+    }
+    if (_buyerServiceFeeFixed != null && _buyerServiceFeeFixed! > 0) {
+      amount += _buyerServiceFeeFixed!;
+    }
+    return double.parse(amount.toStringAsFixed(2));
+  }
+
+  double _computeSmallOrderFeeAmount({required double subtotal}) {
+    final threshold = _smallOrderThreshold ?? 0.0;
+    final fee = _smallOrderFeeConfigured ?? 0.0;
+    if (threshold > 0 && fee > 0 && subtotal < threshold) {
+      return double.parse(fee.toStringAsFixed(2));
+    }
+    return 0.0;
+  }
+
+  double _selectCommissionPercentForCurrentMode() {
+    if (_isDelivery) {
+      final isPlatformDelivery = (_sellerDeliveryPreference == 'system');
+      final pct = isPlatformDelivery ? _platformDeliveryCommissionPct : _merchantDeliveryCommissionPct;
+      if (pct != null) return pct;
+    } else {
+      if (_pickupCommissionPct != null) return _pickupCommissionPct!;
+    }
+    return (_platformFeePercent ?? 0.0);
+  }
+
+  double _applyCommissionMinCap(double rawCommission) {
+    double result = rawCommission;
+    if (_commissionMin != null && _commissionMin! > 0) {
+      result = result < _commissionMin! ? _commissionMin! : result;
+    }
+    double? cap;
+    if (_isDelivery) {
+      final isPlatform = (_sellerDeliveryPreference == 'system');
+      cap = isPlatform ? _commissionCapDeliveryPlatform : _commissionCapDeliveryMerchant;
+    } else {
+      cap = _commissionCapPickup;
+    }
+    if (cap != null && cap > 0) {
+      result = result > cap ? cap : result;
+    }
+    return double.parse(result.toStringAsFixed(2));
   }
 
   // PayFast configuration moved to PayFastService for consistency
@@ -3586,16 +3649,62 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
   Future<void> _fetchPlatformFeeConfigAndExemption(String sellerId) async {
     try {
-      final configDoc = await FirebaseFirestore.instance
-          .collection('config')
-          .doc('platform')
-          .get();
-      final configData = configDoc.data();
-      if (configData != null && configData['platformFee'] != null) {
-        _platformFeePercent = (configData['platformFee'] as num).toDouble();
-      } else {
-        _platformFeePercent = 5.0;
+      // New: read from admin_settings/payment_settings first
+      try {
+        final settingsDoc = await FirebaseFirestore.instance
+            .collection('admin_settings')
+            .doc('payment_settings')
+            .get();
+        final s = settingsDoc.data();
+        if (s != null) {
+          // Legacy single percent fallback
+          final pf = s['platformFeePercentage'];
+          if (pf is num) _platformFeePercent = pf.toDouble();
+
+          // Per-mode commission pct
+          final pku = s['pickupPct'];
+          if (pku is num) _pickupCommissionPct = pku.toDouble();
+          final mdp = s['merchantDeliveryPct'];
+          if (mdp is num) _merchantDeliveryCommissionPct = mdp.toDouble();
+          final pld = s['platformDeliveryPct'];
+          if (pld is num) _platformDeliveryCommissionPct = pld.toDouble();
+
+          // Commission min/caps
+          final cmin = s['commissionMin'];
+          if (cmin is num) _commissionMin = cmin.toDouble();
+          final cpk = s['commissionCapPickup'];
+          if (cpk is num) _commissionCapPickup = cpk.toDouble();
+          final cmd = s['commissionCapDeliveryMerchant'];
+          if (cmd is num) _commissionCapDeliveryMerchant = cmd.toDouble();
+          final cpd = s['commissionCapDeliveryPlatform'];
+          if (cpd is num) _commissionCapDeliveryPlatform = cpd.toDouble();
+
+          // Buyer fees
+          final bfp = s['buyerServiceFeePct'];
+          if (bfp is num) _buyerServiceFeePct = bfp.toDouble();
+          final bff = s['buyerServiceFeeFixed'];
+          if (bff is num) _buyerServiceFeeFixed = bff.toDouble();
+          final sof = s['smallOrderFee'];
+          if (sof is num) _smallOrderFeeConfigured = sof.toDouble();
+          final sot = s['smallOrderThreshold'];
+          if (sot is num) _smallOrderThreshold = sot.toDouble();
+        }
+      } catch (_) {}
+
+      // Secondary legacy fallback: config/platform.platformFee
+      if (_platformFeePercent == null) {
+        try {
+          final configDoc = await FirebaseFirestore.instance
+              .collection('config')
+              .doc('platform')
+              .get();
+          final configData = configDoc.data();
+          if (configData != null && configData['platformFee'] is num) {
+            _platformFeePercent = (configData['platformFee'] as num).toDouble();
+          }
+        } catch (_) {}
       }
+      _platformFeePercent ??= 5.0;
     } catch (_) {
       _platformFeePercent = 5.0;
     }
@@ -4972,7 +5081,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       // Generate order info
       final now = DateTime.now();
       final orderNumber = 'ORD-${now.day.toString().padLeft(2, '0')}${now.month.toString().padLeft(2, '0')}${now.year}-${now.hour.toString().padLeft(2, '0')}${now.minute.toString().padLeft(2, '0')}-${currentUser!.uid.substring(0, 3).toUpperCase()}';
-      final totalAmount = widget.totalPrice + (_isDelivery ? (_deliveryFee ?? 0.0) : 0.0);
+      final appliedFee = _isDelivery ? (_deliveryFee ?? 0.0) : 0.0;
+      final buyerServiceFeeAmount = _computeBuyerServiceFeeAmount(subtotal: widget.totalPrice);
+      final smallOrderFeeAmount = _computeSmallOrderFeeAmount(subtotal: widget.totalPrice);
+      final totalAmount = widget.totalPrice + appliedFee + buyerServiceFeeAmount + smallOrderFeeAmount;
 
       // Create 'awaiting_payment' order record before redirecting
       await _completeOrder(paymentStatusOverride: 'awaiting_payment');
@@ -5300,7 +5412,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       
       print('🔍 DEBUG: Order number: $orderNumber');
 
-      final pf = _platformFeePercent ?? 0.0;
+      final pf = _selectCommissionPercentForCurrentMode();
 
       print('🔍 DEBUG: Creating order in Firestore...');
       
@@ -5346,10 +5458,18 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         'status': resolvedOrderStatus,
         'paymentMethod': _selectedPaymentMethod,
         'paymentStatus': resolvedPaymentStatus,
-        'platformFee': (!_isStoreFeeExempt) ? (widget.totalPrice * pf / 100) : 0.0,
+        'platformFee': (!_isStoreFeeExempt)
+            ? _applyCommissionMinCap(widget.totalPrice * (pf / 100))
+            : 0.0,
         'platformFeePercent': pf,
         'platformFeeExempt': _isStoreFeeExempt,
-        'sellerPayout': widget.totalPrice - ((!_isStoreFeeExempt) ? (widget.totalPrice * pf / 100) : 0.0),
+        'sellerPayout': widget.totalPrice - ((!_isStoreFeeExempt)
+            ? _applyCommissionMinCap(widget.totalPrice * (pf / 100))
+            : 0.0),
+
+        // Buyer-facing fees
+        'buyerServiceFee': _computeBuyerServiceFeeAmount(subtotal: widget.totalPrice),
+        'smallOrderFee': _computeSmallOrderFeeAmount(subtotal: widget.totalPrice),
         
         // 🚚 PAXI DELIVERY SPEED INFORMATION (for all orders)
         'paxiDeliverySpeed': _selectedPaxiDeliverySpeed,
@@ -5701,7 +5821,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     }
     final double deliveryFeeFinal = _isDelivery ? (_deliveryFee ?? 15.0) : 0.0;
     final double appliedFee = _isDelivery ? deliveryFeeFinal : pickupFee;
-    final grandTotal = widget.totalPrice + appliedFee;
+    final double buyerServiceFeeAmount = _computeBuyerServiceFeeAmount(subtotal: widget.totalPrice);
+    final double smallOrderFeeAmount = _computeSmallOrderFeeAmount(subtotal: widget.totalPrice);
+    final grandTotal = widget.totalPrice + appliedFee + buyerServiceFeeAmount + smallOrderFeeAmount;
 
     // Debug logging for total calculation
     print('🔍 DEBUG: Total calculation:');
@@ -5710,6 +5832,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     print('  - Raw _deliveryFee state: R${(_deliveryFee ?? 0.0).toStringAsFixed(2)}');
     print('  - Computed pickup fee: R${pickupFee.toStringAsFixed(2)}');
     print('  - Applied fee: R${appliedFee.toStringAsFixed(2)}');
+    print('  - Buyer service fee: R${buyerServiceFeeAmount.toStringAsFixed(2)}');
+    print('  - Small order fee: R${smallOrderFeeAmount.toStringAsFixed(2)}');
     print('  - Grand total: R${grandTotal.toStringAsFixed(2)}');
 
     return Scaffold(

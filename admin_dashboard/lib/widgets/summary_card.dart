@@ -11,10 +11,9 @@ class SummaryCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        double cardWidth = (constraints.maxWidth / 3).clamp(180.0, 320.0);
+        double cardWidth = constraints.maxWidth;
         return ConstrainedBox(
           constraints: BoxConstraints(
-            minWidth: 180,
             maxWidth: 320,
           ),
           child: SizedBox(
@@ -38,14 +37,31 @@ class SummaryCard extends StatelessWidget {
                           backgroundColor: Theme.of(context).colorScheme.primary.withOpacity(0.1),
                           child: Icon(icon, color: Theme.of(context).colorScheme.onSurface),
                         ),
-                        const SizedBox(width: 18),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(value, style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold, color: Theme.of(context).colorScheme.onSurface)),
-                            const SizedBox(height: 6),
-                            Text(label, style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Theme.of(context).colorScheme.onSurface)),
-                          ],
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                value,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                                      fontWeight: FontWeight.bold,
+                                      color: Theme.of(context).colorScheme.onSurface,
+                                    ),
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                label,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                      color: Theme.of(context).colorScheme.onSurface,
+                                    ),
+                              ),
+                            ],
+                          ),
                         ),
                       ],
                     ),

@@ -1,5 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'collection_settings_screen.dart';
+import 'package:flutter/services.dart';
 import '../theme/admin_theme.dart';
 import 'summary_card.dart';
 
@@ -92,22 +98,23 @@ class _FinancialOverviewSectionState extends State<FinancialOverviewSection> {
           .collection('orders')
           .where('status', isEqualTo: 'completed')
           .get();
-
-      final commission_pct = 0.1; // 10% commission
+      // Deprecated: fixed commission percentage. We now use per-order stored values and buyer fees.
 
       for (final orderDoc in ordersSnap.docs) {
         final orderData = orderDoc.data();
-        final total = (orderData['totalPrice'] ?? orderData['total'] ?? 0.0).toDouble();
         final paymentMethod = (orderData['paymentMethod'] ?? '').toString().toLowerCase();
-        final commission = total * commission_pct;
+        final commission = (orderData['platformFee'] as num?)?.toDouble() ?? 0.0;
+        final buyerServiceFee = (orderData['buyerServiceFee'] as num?)?.toDouble() ?? 0.0;
+        final smallOrderFee = (orderData['smallOrderFee'] as num?)?.toDouble() ?? 0.0;
+        final platformTake = commission + buyerServiceFee + smallOrderFee;
 
         totalOrders++;
-        totalCollected += commission;
+        totalCollected += platformTake;
 
         if (paymentMethod.contains('cash')) {
-          totalCodCommission += commission;
+          totalCodCommission += platformTake;
         } else {
-          totalOnlineCommission += commission;
+          totalOnlineCommission += platformTake;
         }
       }
 
@@ -133,7 +140,7 @@ class _FinancialOverviewSectionState extends State<FinancialOverviewSection> {
   Widget build(BuildContext context) {
     return Card(
       margin: const EdgeInsets.all(16),
-      child: Padding(
+      child: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -306,12 +313,14 @@ class _FinancialOverviewSectionState extends State<FinancialOverviewSection> {
               ),
               const SizedBox(height: 16),
               
-              Container(
-                decoration: BoxDecoration(
-                  border: Border.all(color: Colors.grey[300]!),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: DataTable(
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Container(
+                  decoration: BoxDecoration(
+                    border: Border.all(color: Colors.grey[300]!),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: DataTable(
                   headingRowColor: MaterialStateProperty.all(Colors.grey[100]),
                   columns: const [
                     DataColumn(label: Text('Store Name', style: TextStyle(fontWeight: FontWeight.bold))),
@@ -358,13 +367,16 @@ class _FinancialOverviewSectionState extends State<FinancialOverviewSection> {
                       ],
                     );
                   }).toList(),
+                  ),
                 ),
               ),
               
               const SizedBox(height: 24),
               
               // Quick Actions
-              Row(
+              Wrap(
+                spacing: 16,
+                runSpacing: 12,
                 children: [
                   ElevatedButton.icon(
                     onPressed: _exportDebtReport,
@@ -375,7 +387,50 @@ class _FinancialOverviewSectionState extends State<FinancialOverviewSection> {
                       foregroundColor: Colors.white,
                     ),
                   ),
-                  const SizedBox(width: 16),
+                  ElevatedButton.icon(
+                    onPressed: () async {
+                      try {
+                        final now = DateTime.now();
+                        final start = DateTime(now.year, now.month, 1);
+                        final res = await FirebaseFunctions.instance.httpsCallable('exportAccountingCsv').call({
+                          'start': start.toIso8601String(),
+                          'end': now.toIso8601String(),
+                        });
+                        final data = res.data ?? {};
+                        final csv = (data['csv'] ?? '') as String;
+                        if (csv.isEmpty) {
+                          if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No data for the selected period')));
+                          return;
+                        }
+                        if (!mounted) return;
+                        await showDialog(
+                          context: context,
+                          builder: (ctx) => AlertDialog(
+                            title: const Text('Accounting CSV (This month)'),
+                            content: SizedBox(width: 700, child: SelectableText(csv)),
+                            actions: [
+                              TextButton(
+                                onPressed: () async {
+                                  await Clipboard.setData(ClipboardData(text: csv));
+                                  if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('CSV copied')));
+                                },
+                                child: const Text('Copy'),
+                              ),
+                              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Close')),
+                            ],
+                          ),
+                        );
+                      } catch (e) {
+                        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Export failed: $e')));
+                      }
+                    },
+                    icon: const Icon(Icons.receipt_long),
+                    label: const Text('Export Accounting CSV'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.teal,
+                      foregroundColor: Colors.white,
+                    ),
+                  ),
                   ElevatedButton.icon(
                     onPressed: _sendBulkReminders,
                     icon: const Icon(Icons.mail_outline),
@@ -385,13 +440,30 @@ class _FinancialOverviewSectionState extends State<FinancialOverviewSection> {
                       foregroundColor: Colors.white,
                     ),
                   ),
-                  const SizedBox(width: 16),
                   ElevatedButton.icon(
                     onPressed: _manageCollectionSettings,
                     icon: const Icon(Icons.settings),
                     label: const Text('Collection Settings'),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.grey[700],
+                      foregroundColor: Colors.white,
+                    ),
+                  ),
+                  ElevatedButton.icon(
+                    onPressed: _emailFeesPolicyToSellers,
+                    icon: const Icon(Icons.mark_email_read_outlined),
+                    label: const Text('Email Fees to Sellers'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.green,
+                      foregroundColor: Colors.white,
+                    ),
+                  ),
+                  ElevatedButton.icon(
+                    onPressed: _generateFeesPolicyPdf,
+                    icon: const Icon(Icons.picture_as_pdf_outlined),
+                    label: const Text('Generate Fees PDF'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.redAccent,
                       foregroundColor: Colors.white,
                     ),
                   ),
@@ -435,6 +507,89 @@ class _FinancialOverviewSectionState extends State<FinancialOverviewSection> {
         ],
       ),
     );
+  }
+
+  Future<void> _emailFeesPolicyToSellers() async {
+    try {
+      final callable = FirebaseFunctions.instance.httpsCallable('emailFeesPolicyToSellers');
+      final res = await callable.call(<String, dynamic>{});
+      final data = res.data as Map? ?? {};
+      final sent = data['sent'] ?? 0;
+      final skipped = data['skipped'] ?? 0;
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Email sent to $sent sellers (skipped $skipped without email)')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to send emails: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _generateFeesPolicyPdf() async {
+    try {
+      // Try callable first
+      try {
+        final callable = FirebaseFunctions.instance.httpsCallable('generateFeesPolicyPdf');
+        final res = await callable.call(<String, dynamic>{});
+        final data = res.data as Map? ?? {};
+        final url = data['url'] as String?;
+        if (url != null && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('PDF ready. Opening…')),
+          );
+          await showDialog(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              title: const Text('Fees & Payouts PDF'),
+              content: SelectableText(url),
+              actions: [TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Close'))],
+            ),
+          );
+          return;
+        }
+      } catch (_) {}
+
+      // Fallback: HTTP endpoint with ID token (works around CORS issues)
+      final user = FirebaseAuth.instance.currentUser;
+      final token = await user?.getIdToken();
+      final httpRes = await http.post(
+        Uri.parse('https://us-central1-marketplace-8d6bd.cloudfunctions.net/generateFeesPolicyPdfHttp'),
+        headers: {
+          'Authorization': 'Bearer ${token ?? ''}',
+          'Content-Type': 'application/json',
+        },
+      );
+      final Map data = json.decode(httpRes.body);
+      final String? url = data['url'] as String?;
+      if (url != null && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('PDF ready. Opening…')),
+        );
+        // Open in a new tab (web) or overlay
+        // ignore: use_build_context_synchronously
+        await showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Fees & Payouts PDF'),
+            content: SelectableText(url),
+            actions: [
+              TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Close')),
+            ],
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to generate PDF: $e')),
+        );
+      }
+    }
   }
 
   void _viewSellerDetails(String sellerId) {
@@ -508,11 +663,16 @@ class _FinancialOverviewSectionState extends State<FinancialOverviewSection> {
   }
 
   void _manageCollectionSettings() {
-    // TODO: Navigate to collection settings screen
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Collection settings coming soon')),
+    showDialog(
+      context: context,
+      builder: (ctx) => Dialog(
+        insetPadding: const EdgeInsets.all(24),
+        child: SizedBox(width: 900, height: 600, child: CollectionSettingsScreen()),
+      ),
     );
   }
+
+  
 }
 
 class SellerDebtDetailDialog extends StatelessWidget {

@@ -49,6 +49,7 @@ class _UniversalUploadWidgetState extends State<UniversalUploadWidget> {
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(24),
+        child: SingleChildScrollView(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -126,6 +127,7 @@ class _UniversalUploadWidgetState extends State<UniversalUploadWidget> {
             ],
           ],
         ),
+      ),
       ),
     );
   }

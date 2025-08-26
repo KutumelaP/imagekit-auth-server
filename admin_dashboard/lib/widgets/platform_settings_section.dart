@@ -184,6 +184,8 @@ class _PlatformSettingsSectionState extends State<PlatformSettingsSection> {
                     ],
                   ),
                   const SizedBox(height: 16),
+                  _buildLogoUrlRow(context),
+                  const SizedBox(height: 16),
                   Container(
                     width: double.infinity,
                     child: Theme(
@@ -381,3 +383,70 @@ class _PlatformSettingsSectionState extends State<PlatformSettingsSection> {
     );
   }
 } 
+
+Widget _buildLogoUrlRow(BuildContext context) => _LogoUrlRow();
+
+class _LogoUrlRow extends StatefulWidget {
+  @override
+  State<_LogoUrlRow> createState() => _LogoUrlRowState();
+}
+
+class _LogoUrlRowState extends State<_LogoUrlRow> {
+  final TextEditingController _logoCtrl = TextEditingController();
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final snap = await FirebaseFirestore.instance.collection('admin_settings').doc('branding').get();
+      _logoCtrl.text = (snap.data()?['logoUrl'] as String? ?? '').trim();
+    } catch (_) {}
+    if (mounted) setState(() => _loading = false);
+  }
+
+  @override
+  void dispose() {
+    _logoCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) return const SizedBox.shrink();
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        Expanded(
+          child: TextField(
+            controller: _logoCtrl,
+            decoration: InputDecoration(
+              labelText: 'Brand Logo URL (used in PDFs/emails)',
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        ElevatedButton.icon(
+          onPressed: () async {
+            await FirebaseFirestore.instance.collection('admin_settings').doc('branding').set({
+              'logoUrl': _logoCtrl.text.trim(),
+              'updatedAt': FieldValue.serverTimestamp(),
+            }, SetOptions(merge: true));
+            if (!mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Logo URL saved.')));
+          },
+          icon: const Icon(Icons.save),
+          label: const Text('Save Logo'),
+        ),
+        const SizedBox(width: 12),
+        if ((_logoCtrl.text).trim().isNotEmpty)
+          SizedBox(height: 40, width: 120, child: Image.network(_logoCtrl.text.trim(), fit: BoxFit.contain)),
+      ],
+    );
+  }
+}

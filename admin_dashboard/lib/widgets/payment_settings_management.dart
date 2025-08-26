@@ -22,6 +22,18 @@ class _PaymentSettingsManagementState extends State<PaymentSettingsManagement> {
   final TextEditingController _payfastFixedFeeController = TextEditingController();
   final TextEditingController _returnWindowController = TextEditingController();
   final TextEditingController _holdbackPeriodController = TextEditingController();
+  // New: commission per mode and buyer fees
+  final TextEditingController _pickupPctController = TextEditingController();
+  final TextEditingController _merchantDeliveryPctController = TextEditingController();
+  final TextEditingController _platformDeliveryPctController = TextEditingController();
+  final TextEditingController _commissionMinController = TextEditingController();
+  final TextEditingController _capPickupController = TextEditingController();
+  final TextEditingController _capMerchantController = TextEditingController();
+  final TextEditingController _capPlatformController = TextEditingController();
+  final TextEditingController _buyerServiceFeePctController = TextEditingController();
+  final TextEditingController _buyerServiceFeeFixedController = TextEditingController();
+  final TextEditingController _smallOrderFeeController = TextEditingController();
+  final TextEditingController _smallOrderThresholdController = TextEditingController();
 
   @override
   void initState() {
@@ -37,6 +49,17 @@ class _PaymentSettingsManagementState extends State<PaymentSettingsManagement> {
     _payfastFixedFeeController.dispose();
     _returnWindowController.dispose();
     _holdbackPeriodController.dispose();
+    _pickupPctController.dispose();
+    _merchantDeliveryPctController.dispose();
+    _platformDeliveryPctController.dispose();
+    _commissionMinController.dispose();
+    _capPickupController.dispose();
+    _capMerchantController.dispose();
+    _capPlatformController.dispose();
+    _buyerServiceFeePctController.dispose();
+    _buyerServiceFeeFixedController.dispose();
+    _smallOrderFeeController.dispose();
+    _smallOrderThresholdController.dispose();
     super.dispose();
   }
 
@@ -61,6 +84,19 @@ class _PaymentSettingsManagementState extends State<PaymentSettingsManagement> {
         _payfastFixedFeeController.text = (_paymentSettings['payfastFixedFee'] ?? 2.0).toString();
         _returnWindowController.text = (_paymentSettings['returnWindowDays'] ?? 7).toString();
         _holdbackPeriodController.text = (_paymentSettings['holdbackPeriodDays'] ?? 30).toString();
+
+        // New fields
+        _pickupPctController.text = (_paymentSettings['pickupPct'] ?? _paymentSettings['platformFeePercentage'] ?? 5.0).toString();
+        _merchantDeliveryPctController.text = (_paymentSettings['merchantDeliveryPct'] ?? _paymentSettings['platformFeePercentage'] ?? 5.0).toString();
+        _platformDeliveryPctController.text = (_paymentSettings['platformDeliveryPct'] ?? _paymentSettings['platformFeePercentage'] ?? 5.0).toString();
+        _commissionMinController.text = (_paymentSettings['commissionMin'] ?? 0.0).toString();
+        _capPickupController.text = (_paymentSettings['commissionCapPickup'] ?? 0.0).toString();
+        _capMerchantController.text = (_paymentSettings['commissionCapDeliveryMerchant'] ?? 0.0).toString();
+        _capPlatformController.text = (_paymentSettings['commissionCapDeliveryPlatform'] ?? 0.0).toString();
+        _buyerServiceFeePctController.text = (_paymentSettings['buyerServiceFeePct'] ?? 0.0).toString();
+        _buyerServiceFeeFixedController.text = (_paymentSettings['buyerServiceFeeFixed'] ?? 0.0).toString();
+        _smallOrderFeeController.text = (_paymentSettings['smallOrderFee'] ?? 0.0).toString();
+        _smallOrderThresholdController.text = (_paymentSettings['smallOrderThreshold'] ?? 0.0).toString();
       } else {
         // Set default values
         _platformFeeController.text = '5.0';
@@ -69,6 +105,19 @@ class _PaymentSettingsManagementState extends State<PaymentSettingsManagement> {
         _payfastFixedFeeController.text = '2.0';
         _returnWindowController.text = '7';
         _holdbackPeriodController.text = '30';
+
+        // New defaults
+        _pickupPctController.text = '6.0';
+        _merchantDeliveryPctController.text = '9.0';
+        _platformDeliveryPctController.text = '11.0';
+        _commissionMinController.text = '5.0';
+        _capPickupController.text = '30.0';
+        _capMerchantController.text = '40.0';
+        _capPlatformController.text = '50.0';
+        _buyerServiceFeePctController.text = '1.0';
+        _buyerServiceFeeFixedController.text = '3.0';
+        _smallOrderFeeController.text = '7.0';
+        _smallOrderThresholdController.text = '100.0';
       }
     } catch (e) {
       print('Error loading payment settings: $e');
@@ -96,6 +145,18 @@ class _PaymentSettingsManagementState extends State<PaymentSettingsManagement> {
         'payfastFixedFee': double.parse(_payfastFixedFeeController.text),
         'returnWindowDays': int.parse(_returnWindowController.text),
         'holdbackPeriodDays': int.parse(_holdbackPeriodController.text),
+        // New fields persisted
+        'pickupPct': double.parse(_pickupPctController.text),
+        'merchantDeliveryPct': double.parse(_merchantDeliveryPctController.text),
+        'platformDeliveryPct': double.parse(_platformDeliveryPctController.text),
+        'commissionMin': double.parse(_commissionMinController.text),
+        'commissionCapPickup': double.parse(_capPickupController.text),
+        'commissionCapDeliveryMerchant': double.parse(_capMerchantController.text),
+        'commissionCapDeliveryPlatform': double.parse(_capPlatformController.text),
+        'buyerServiceFeePct': double.parse(_buyerServiceFeePctController.text),
+        'buyerServiceFeeFixed': double.parse(_buyerServiceFeeFixedController.text),
+        'smallOrderFee': double.parse(_smallOrderFeeController.text),
+        'smallOrderThreshold': double.parse(_smallOrderThresholdController.text),
         'updatedAt': FieldValue.serverTimestamp(),
         'updatedBy': 'admin', // In real app, get from auth
       };
@@ -139,6 +200,10 @@ class _PaymentSettingsManagementState extends State<PaymentSettingsManagement> {
                 _buildHeader(),
                 const SizedBox(height: 24),
                 _buildFeeStructureSection(),
+                const SizedBox(height: 24),
+                _buildCommissionSettingsSection(),
+                const SizedBox(height: 24),
+                _buildBuyerFeesSection(),
                 const SizedBox(height: 24),
                 _buildHoldbackSettingsSection(),
                 const SizedBox(height: 24),
@@ -385,6 +450,204 @@ class _PaymentSettingsManagementState extends State<PaymentSettingsManagement> {
         ],
       ),
     );
+  }
+
+  Widget _buildCommissionSettingsSection() {
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: AdminTheme.angel,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AdminTheme.cloud.withOpacity(0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.percent, color: AdminTheme.deepTeal),
+              const SizedBox(width: 8),
+              Text(
+                'Commission Settings',
+                style: AdminTheme.headlineMedium.copyWith(
+                  color: AdminTheme.deepTeal,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: _buildTextField(
+                  controller: _pickupPctController,
+                  label: 'Pickup Commission (%)',
+                  hint: '6.0',
+                  icon: Icons.store,
+                  validator: _validatePct,
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: _buildTextField(
+                  controller: _merchantDeliveryPctController,
+                  label: 'You Deliver Commission (%)',
+                  hint: '9.0',
+                  icon: Icons.delivery_dining,
+                  validator: _validatePct,
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: _buildTextField(
+                  controller: _platformDeliveryPctController,
+                  label: 'We Arrange Courier (%)',
+                  hint: '11.0',
+                  icon: Icons.local_shipping,
+                  validator: _validatePct,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: _buildTextField(
+                  controller: _commissionMinController,
+                  label: 'Commission Minimum (R)',
+                  hint: '5.00',
+                  icon: Icons.price_change,
+                  validator: _validateMoney,
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: _buildTextField(
+                  controller: _capPickupController,
+                  label: 'Pickup Cap (R)',
+                  hint: '30.00',
+                  icon: Icons.price_check,
+                  validator: _validateMoney,
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: _buildTextField(
+                  controller: _capMerchantController,
+                  label: 'You Deliver Cap (R)',
+                  hint: '40.00',
+                  icon: Icons.price_check,
+                  validator: _validateMoney,
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: _buildTextField(
+                  controller: _capPlatformController,
+                  label: 'We Arrange Courier Cap (R)',
+                  hint: '50.00',
+                  icon: Icons.price_check,
+                  validator: _validateMoney,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBuyerFeesSection() {
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: AdminTheme.angel,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AdminTheme.cloud.withOpacity(0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.receipt_long, color: AdminTheme.deepTeal),
+              const SizedBox(width: 8),
+              Text(
+                'Buyer Fees',
+                style: AdminTheme.headlineMedium.copyWith(
+                  color: AdminTheme.deepTeal,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: _buildTextField(
+                  controller: _buyerServiceFeePctController,
+                  label: 'Service Fee (%)',
+                  hint: '1.0',
+                  icon: Icons.percent,
+                  validator: _validatePct,
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: _buildTextField(
+                  controller: _buyerServiceFeeFixedController,
+                  label: 'Service Fee Fixed (R)',
+                  hint: '3.00',
+                  icon: Icons.attach_money,
+                  validator: _validateMoney,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: _buildTextField(
+                  controller: _smallOrderFeeController,
+                  label: 'Small-Order Fee (R)',
+                  hint: '7.00',
+                  icon: Icons.price_change,
+                  validator: _validateMoney,
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: _buildTextField(
+                  controller: _smallOrderThresholdController,
+                  label: 'Small-Order Threshold (R)',
+                  hint: '100.00',
+                  icon: Icons.stacked_bar_chart,
+                  validator: _validateMoney,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  String? _validatePct(String? value) {
+    if (value == null || value.isEmpty) return 'Required';
+    final n = double.tryParse(value);
+    if (n == null || n < 0 || n > 50) return 'Must be 0–50%';
+    return null;
+  }
+
+  String? _validateMoney(String? value) {
+    if (value == null || value.isEmpty) return 'Required';
+    final n = double.tryParse(value);
+    if (n == null || n < 0) return 'Must be ≥ 0';
+    return null;
   }
 
   Widget _buildReturnSettingsSection() {

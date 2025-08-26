@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 class AdminPayoutsSection extends StatefulWidget {
   const AdminPayoutsSection({super.key});
@@ -151,6 +152,68 @@ class _AdminPayoutsSectionState extends State<AdminPayoutsSection> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        FutureBuilder<HttpsCallableResult?>(
+          future: (() async {
+            try {
+              return await _functions.httpsCallable('getPayoutProviderStatus').call(<String, dynamic>{});
+            } catch (_) {
+              return null;
+            }
+          })(),
+          builder: (context, snap) {
+            final Map<String, dynamic> data = (snap.data?.data is Map) ? (snap.data!.data as Map).cast<String, dynamic>() : {};
+            final provider = (data['provider'] ?? 'payfast').toString();
+            final live = data['live'] == true;
+            final hasKeys = (data['effective']?['hasMerchantId'] == true) && (data['effective']?['hasMerchantKey'] == true);
+            return Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.green.withOpacity(0.05),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.green.withOpacity(0.3)),
+              ),
+              child: Row(children: [
+                const Icon(Icons.account_balance, color: Colors.green),
+                const SizedBox(width: 8),
+                Text('Payout Provider: ${provider.toUpperCase()} • ${live ? 'LIVE' : 'SANDBOX'} • ${hasKeys ? 'Configured' : 'Missing keys'}'),
+              ]),
+            );
+          },
+        ),
+        const SizedBox(height: 16),
+        // Webhook URL helper
+        Builder(builder: (context) {
+          const webhookUrl = 'https://us-central1-marketplace-8d6bd.cloudfunctions.net/payfastPayoutWebhook';
+          return Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.indigo.withOpacity(0.04),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.indigo.withOpacity(0.3)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.link, color: Colors.indigo),
+                const SizedBox(width: 8),
+                const Text('PayFast Payout Webhook:'),
+                const SizedBox(width: 8),
+                Expanded(child: SelectableText(webhookUrl, style: const TextStyle(fontWeight: FontWeight.w600))),
+                const SizedBox(width: 8),
+                OutlinedButton.icon(
+                  onPressed: () async {
+                    await Clipboard.setData(const ClipboardData(text: webhookUrl));
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Webhook URL copied')));
+                    }
+                  },
+                  icon: const Icon(Icons.copy),
+                  label: const Text('Copy'),
+                ),
+              ],
+            ),
+          );
+        }),
+        const SizedBox(height: 16),
         // Financial Flow Overview
         _buildFinancialFlowHeader(),
         const SizedBox(height: 24),
@@ -158,6 +221,48 @@ class _AdminPayoutsSectionState extends State<AdminPayoutsSection> {
           children: [
             Text('Payouts', style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold)),
             const Spacer(),
+            OutlinedButton.icon(
+              onPressed: () async {
+                try {
+                  final res = await _functions.httpsCallable('exportNedbankCsv').call(<String, dynamic>{});
+                  final data = res.data ?? {};
+                  final csv = (data['csv'] ?? '') as String;
+                  if (csv.isEmpty) {
+                    if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No payouts to export')));
+                    return;
+                  }
+                  // Show dialog with CSV and copy button
+                  if (!mounted) return;
+                  await showDialog(
+                    context: context,
+                    builder: (ctx) => AlertDialog(
+                      title: const Text('Nedbank CSV Export'),
+                      content: SizedBox(
+                        width: 700,
+                        child: SelectableText(csv),
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () async {
+                            await Clipboard.setData(ClipboardData(text: csv));
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('CSV copied to clipboard')));
+                            }
+                          },
+                          child: const Text('Copy'),
+                        ),
+                        TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Close')),
+                      ],
+                    ),
+                  );
+                } catch (e) {
+                  if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Export failed: $e')));
+                }
+              },
+              icon: const Icon(Icons.file_download_outlined),
+              label: const Text('Export Nedbank CSV'),
+            ),
+            const SizedBox(width: 8),
             FilledButton.icon(
               onPressed: () async {
                 try {
@@ -224,26 +329,39 @@ class _AdminPayoutsSectionState extends State<AdminPayoutsSection> {
         ),
         const SizedBox(height: 12),
         Expanded(
-          child: Container(
-            decoration: BoxDecoration(
-              color: Theme.of(context).cardColor,
-              borderRadius: BorderRadius.circular(12),
-              boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 12, offset: const Offset(0, 4))],
-            ),
-            child: _buildTable(),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final bool showFooter = constraints.maxHeight > 120;
+              return Column(
+                children: [
+                  Expanded(
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).cardColor,
+                        borderRadius: BorderRadius.circular(12),
+                        boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 12, offset: const Offset(0, 4))],
+                      ),
+                      child: _buildTable(),
+                    ),
+                  ),
+                  if (showFooter) ...[
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Text(_loading ? 'Loading…' : _hasMore ? 'More available' : 'End of list', style: Theme.of(context).textTheme.bodySmall),
+                        const Spacer(),
+                        FilledButton.icon(
+                          onPressed: _hasMore && !_loading ? _loadNextPage : null,
+                          icon: const Icon(Icons.expand_more),
+                          label: const Text('Load more'),
+                        ),
+                      ],
+                    ),
+                  ],
+                ],
+              );
+            },
           ),
-        ),
-        const SizedBox(height: 8),
-        Row(
-          children: [
-            Text(_loading ? 'Loading…' : _hasMore ? 'More available' : 'End of list', style: Theme.of(context).textTheme.bodySmall),
-            const Spacer(),
-            FilledButton.icon(
-              onPressed: _hasMore && !_loading ? _loadNextPage : null,
-              icon: const Icon(Icons.expand_more),
-              label: const Text('Load more'),
-            ),
-          ],
         ),
       ],
     );
@@ -301,6 +419,24 @@ class _AdminPayoutsSectionState extends State<AdminPayoutsSection> {
                 tooltip: 'Update status',
                 onPressed: () => _updateStatusDialog(d),
                 icon: const Icon(Icons.edit),
+              ),
+              const SizedBox(width: 8),
+              IconButton(
+                tooltip: 'Send to PayFast',
+                onPressed: () async {
+                  try {
+                    await _functions.httpsCallable('sendPayoutViaPayfast').call({'payoutId': d.id});
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Sent to PayFast')));
+                      _refresh();
+                    }
+                  } catch (e) {
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Send failed: $e')));
+                    }
+                  }
+                },
+                icon: const Icon(Icons.flash_on),
               ),
             ],
           ),

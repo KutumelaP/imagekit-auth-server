@@ -1,0 +1,818 @@
+import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'dart:ui';
+// import 'package:universal_html/html.dart' as html; // Not needed for current functionality
+import 'package:flutter/foundation.dart';
+import 'user_management_table.dart';
+import 'seller_management_table.dart';
+import 'order_management_table.dart';
+import 'moderation_center.dart';
+import 'platform_settings_section.dart';
+import '../../main.dart';
+import 'package:admin_dashboard/widgets/section_header.dart';
+
+import 'statistics_section.dart';
+import 'reviews_section.dart';
+import 'categories_section.dart';
+import 'audit_logs_section.dart';
+import 'developer_tools_section.dart';
+import '../services/dashboard_cache_service.dart';
+import 'skeleton_loading.dart';
+import 'advanced_analytics_dashboard.dart';
+import '../theme/admin_theme.dart';
+import 'order_migration_screen.dart';
+import 'rural_driver_management.dart';
+import 'urban_delivery_management.dart';
+import 'payment_settings_management.dart';
+import 'escrow_management.dart';
+import 'returns_management.dart';
+import 'driver_management_screen.dart';
+import 'financial_overview_section.dart';
+import 'reports_section.dart';
+import 'data_export_section.dart';
+import 'roles_permissions_section.dart';
+import 'seller_delivery_management.dart';
+import 'image_management_section.dart';
+import 'paxi_pricing_management.dart';
+import 'risk_review_screen.dart';
+import 'kyc_review_list.dart';
+import 'kyc_overview_widget.dart';
+import 'admin_payouts_section.dart';
+import 'customer_support_section.dart';
+import 'upload_management_section.dart';
+
+class AdminDashboardContent extends StatefulWidget {
+  final String adminEmail;
+  final String adminUid;
+  final FirebaseAuth auth;
+  final FirebaseFirestore firestore;
+  final int selectedSection;
+  final ValueChanged<int> onSectionChanged;
+  final bool embedded;
+  
+  const AdminDashboardContent({
+    required this.adminEmail, 
+    required this.adminUid, 
+    required this.auth,
+    required this.firestore,
+    required this.selectedSection,
+    required this.onSectionChanged,
+    this.embedded = false,
+  });
+
+  @override
+  State<AdminDashboardContent> createState() => _AdminDashboardContentState();
+}
+
+class _AdminDashboardContentState extends State<AdminDashboardContent> {
+  final DashboardCacheService _cacheService = DashboardCacheService();
+  final PageStorageBucket _pageStorageBucket = PageStorageBucket();
+  final Map<int, Widget> _cachedSectionWidgets = {};
+
+  Widget _getCachedSection(int index) {
+    if (_cachedSectionWidgets[index] == null) {
+      _cachedSectionWidgets[index] = KeyedSubtree(
+        key: ValueKey('section_' + index.toString()),
+        child: _sectionWidget(index),
+      );
+    }
+    return _cachedSectionWidgets[index]!;
+  }
+  
+  final List<String> _sections = [
+    'Advanced Analytics',
+    'Audit Logs',
+    'Categories',
+    'Cleanup Tools',
+    'Customer Support',
+    'Data Export',
+    'Developer Tools',
+    'Driver Management',
+    'Escrow Management',
+    'Financial Overview',
+    'KYC Overview',
+    'KYC Review',
+    'Moderation',
+    'Order Migration',
+    'Orders',
+    'Orphaned Images',
+    'Overview',
+    'PAXI Pricing Management',
+    'Payment Settings',
+    'Payouts',
+    'Platform Settings',
+    'Quick Actions',
+    'Recent Activity',
+    'Reports',
+    'Returns Management',
+    'Returns/Refunds',
+    'Reviews',
+    'Risk Review',
+    'Roles/Permissions',
+    'Rural Driver Management',
+    'Seller Delivery Management',
+    'Sellers',
+    'Statistics',
+    'Storage Stats',
+    'Urban Delivery Management',
+    'Users',
+    'Upload Management',
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    // Pre-load dashboard data
+    _preloadDashboardData();
+  }
+
+  Future<void> _preloadDashboardData() async {
+    try {
+      await Future.wait([
+        _cacheService.getDashboardStats(widget.firestore),
+        _cacheService.getRecentActivity(widget.firestore),
+      ]);
+    } catch (error) {
+      debugPrint('Error preloading dashboard data: $error');
+    }
+  }
+
+  void _onSidebarTap(int index) {
+    widget.onSectionChanged(index);
+  }
+
+  // Summary count helpers no longer used in IndexedStack approach
+
+  @override
+  Widget build(BuildContext context) {
+    final allowedSections = <int>{...List.generate(_sections.length, (i) => i)};
+
+    // Embedded mode: render only the main content area without internal Scaffold/sidebar
+    if (widget.embedded) {
+      return PageStorage(
+        bucket: _pageStorageBucket,
+        child: IndexedStack(
+          index: widget.selectedSection,
+          children: List.generate(_sections.length, (i) {
+            return allowedSections.contains(i)
+              ? _getCachedSection(i)
+              : const SizedBox.shrink();
+          }),
+        ),
+      );
+    }
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isMobile = constraints.maxWidth < 600;
+        final isTablet = constraints.maxWidth < 900 && constraints.maxWidth >= 600;
+        final sidebarWidth = 0.0;
+        final contentPadding = isMobile ? 4.0 : isTablet ? 8.0 : 24.0;
+        if (isMobile) {
+          // Mobile: Use Drawer for navigation, AppBar for top actions
+    return Scaffold(
+            appBar: AppBar(
+              backgroundColor: Theme.of(context).colorScheme.primary,
+              title: Text('Dashboard', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
+              actions: [
+                Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: _NotificationBell(),
+                ),
+              ],
+              leading: Builder(
+                builder: (context) => IconButton(
+                  icon: const Icon(Icons.menu),
+                  onPressed: () => Scaffold.of(context).openDrawer(),
+                ),
+              ),
+            ),
+            drawer: Drawer(
+              child: Container(
+                color: Theme.of(context).colorScheme.surface,
+                child: ListView(
+                  padding: EdgeInsets.zero,
+                  children: [
+                    DrawerHeader(
+                      decoration: BoxDecoration(color: Theme.of(context).colorScheme.primary),
+            child: Column(
+                        children: [
+                          CircleAvatar(radius: 32, backgroundColor: Theme.of(context).colorScheme.surface, child: Icon(Icons.person, color: Theme.of(context).colorScheme.primary, size: 36)),
+                          const SizedBox(height: 12),
+                          Text(widget.adminEmail, style: Theme.of(context).textTheme.bodyLarge?.copyWith(color: Theme.of(context).colorScheme.onPrimary, fontWeight: FontWeight.bold, fontSize: 15)),
+                        ],
+                      ),
+                    ),
+                    ...List.generate(_sections.length, (i) =>
+                      allowedSections.contains(i)
+                        ? ListTile(
+                            leading: _sidebarIconForIndex(i),
+                            title: Text(_sections[i], style: Theme.of(context).textTheme.bodyLarge?.copyWith(color: widget.selectedSection == i ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.onSurface)),
+                            selected: widget.selectedSection == i,
+                            selectedTileColor: Theme.of(context).colorScheme.primaryContainer.withOpacity(0.18),
+                            hoverColor: Theme.of(context).colorScheme.primaryContainer.withOpacity(0.12),
+                            onTap: () {
+                              Navigator.pop(context);
+                              _onSidebarTap(i);
+                            },
+                          )
+                        : const SizedBox.shrink(),
+                    ),
+                    const Divider(),
+                    ListTile(
+                      leading: const Icon(Icons.logout),
+                      title: const Text('Logout'),
+                      onTap: () async {
+                        await widget.auth.signOut();
+                        Navigator.of(context).pushAndRemoveUntil(
+                          MaterialPageRoute(builder: (_) => const PlatformLoginScreen()),
+                          (route) => false,
+                        );
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            body: Padding(
+              padding: EdgeInsets.all(contentPadding),
+              child: PageStorage(
+                bucket: _pageStorageBucket,
+                child: IndexedStack(
+                  index: widget.selectedSection,
+                  children: List.generate(_sections.length, (i) {
+                    final isActive = i == widget.selectedSection;
+                    if (isActive || _cachedSectionWidgets.containsKey(i)) {
+                      return _getCachedSection(i);
+                    }
+                    return const SizedBox.shrink();
+                  }),
+                ),
+              ),
+            ),
+          );
+        } else {
+          // Desktop/Tablet: Always use a Scaffold to apply background color
+          return Scaffold(
+            backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+            body: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Sidebar
+                Container(
+                  width: sidebarWidth,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Theme.of(context).colorScheme.primary,
+                        Theme.of(context).colorScheme.background,
+                      ],
+                    ),
+                    boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 8)],
+                  ),
+                  child: Material(
+                    color: Colors.transparent,
+                    child: SingleChildScrollView(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const SizedBox(height: 32),
+                          // Avatar/logo
+                          CircleAvatar(
+                            radius: 36,
+                            backgroundColor: Theme.of(context).colorScheme.surface,
+                            backgroundImage: AssetImage('assets/logo.png'),
+                          ),
+                          const SizedBox(height: 12),
+                          // Admin email
+                          Text(
+                            widget.adminEmail,
+                            style: Theme.of(context).textTheme.titleLarge?.copyWith(color: Theme.of(context).colorScheme.onPrimary, fontWeight: FontWeight.bold, fontSize: 15),
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: 12),
+                          _NotificationBell(),
+                          const SizedBox(height: 24),
+                          // Navigation
+                          ...List.generate(_sections.length, (i) =>
+                            allowedSections.contains(i)
+                              ? Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                  child: MouseRegion(
+                                    cursor: SystemMouseCursors.click,
+                                    child: GestureDetector(
+                                      onTap: () => _onSidebarTap(i),
+                                      child: AnimatedContainer(
+                                        duration: Duration(milliseconds: 200),
+                                        curve: Curves.easeInOut,
+                                        decoration: BoxDecoration(
+                                          color: widget.selectedSection == i ? Theme.of(context).colorScheme.onPrimary.withOpacity(0.12) : Colors.transparent,
+                                          borderRadius: BorderRadius.circular(14),
+                                        ),
+                                        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+                  child: Row(
+                    children: [
+                                            _sidebarIconForIndex(i),
+                                            const SizedBox(width: 14),
+                                            Flexible(
+                                              child: Text(
+                                                _sections[i],
+                                                style: Theme.of(context).textTheme.bodyLarge?.copyWith(color: Theme.of(context).colorScheme.onPrimary, fontSize: 15, fontWeight: widget.selectedSection == i ? FontWeight.bold : FontWeight.normal),
+                                                overflow: TextOverflow.ellipsis,
+                                                maxLines: 1,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                )
+                              : const SizedBox.shrink(),
+                          ),
+                          const SizedBox(height: 24),
+                          IconButton(
+                            icon: Icon(Icons.logout, color: AdminTheme.angel),
+                            tooltip: 'Logout',
+                            onPressed: () async {
+                              await widget.auth.signOut();
+                              Navigator.of(context).pushAndRemoveUntil(
+                                MaterialPageRoute(builder: (_) => const PlatformLoginScreen()),
+                                (route) => false,
+                              );
+                            },
+                          ),
+                          const SizedBox(height: 24),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                // Main content
+                Expanded(
+                  child: Padding(
+                    padding: EdgeInsets.all(contentPadding),
+                    child: PageStorage(
+                      bucket: _pageStorageBucket,
+                      child: IndexedStack(
+                        index: widget.selectedSection,
+                        children: List.generate(_sections.length, (i) {
+                          return allowedSections.contains(i)
+                            ? _getCachedSection(i)
+                            : const SizedBox.shrink();
+                        }),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+      },
+    );
+  }
+
+  Widget _sectionWidget(int i) {
+    switch (i) {
+      case 0: return SingleChildScrollView(child: AdvancedAnalyticsDashboard(firestore: widget.firestore)); // Advanced Analytics
+      case 1: return AuditLogsSection(); // Audit Logs
+      case 2: return CategoriesSection(firestore: FirebaseFirestore.instance); // Categories
+      case 3: return ImageManagementSection(); // Cleanup Tools
+      case 4: return const CustomerSupportSection(); // Customer Support
+      case 5: return DataExportSection(); // Data Export
+      case 6: return DeveloperToolsSection(); // Developer Tools
+      case 7: return DriverManagementScreen(); // Driver Management
+      case 8: return EscrowManagement(); // Escrow Management
+      case 9: return const FinancialOverviewSection(); // Financial Overview
+      case 10: return const KycOverviewWidget(); // KYC Overview
+      case 11: return const KycReviewList(); // KYC Review
+      case 12: return SingleChildScrollView(child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [SectionHeader('Moderation Center'), const SizedBox(height: 8), ModerationCenter(auth: widget.auth, firestore: widget.firestore)])); // Moderation
+      case 13: return const OrderMigrationScreen(); // Order Migration
+      case 14: // Orders
+        return SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SectionHeader('Order Management'),
+              const SizedBox(height: 8),
+              SizedBox(height: 500, child: OrderManagementTable()),
+            ],
+          ),
+        );
+      case 15: return ImageManagementSection(); // Orphaned Images
+      case 16: return _buildDashboardOverview(); // Overview
+      case 17: return PaxiPricingManagement(); // PAXI Pricing Management
+      case 18: return PaymentSettingsManagement(); // Payment Settings
+      case 19: return const AdminPayoutsSection(); // Payouts
+      case 20: return SingleChildScrollView(child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [SectionHeader('Platform Settings'), const SizedBox(height: 8), PlatformSettingsSection(auth: widget.auth, firestore: widget.firestore)])); // Platform Settings
+      case 21: return _buildQuickActions(); // Quick Actions
+      case 22: return _buildRecentActivity(); // Recent Activity
+      case 23: return ReportsSection(); // Reports
+      case 24: return ReturnsManagement(); // Returns Management
+      case 25: return ReturnsManagement(); // Returns/Refunds
+      case 26: return SingleChildScrollView(child: ReviewsSection()); // Reviews
+      case 27: return const RiskReviewScreen(); // Risk Review
+      case 28: return RolesPermissionsSection(); // Roles/Permissions
+      case 29: return RuralDriverManagement(); // Rural Driver Management
+      case 30: return SellerDeliveryManagement(); // Seller Delivery Management
+      case 31: // Sellers
+        return SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SectionHeader('Seller Management'),
+              const SizedBox(height: 8),
+              SizedBox(height: 500, child: SellerManagementTable(auth: widget.auth, firestore: widget.firestore)),
+            ],
+          ),
+        );
+      case 32: return SingleChildScrollView(child: StatisticsSection()); // Statistics
+      case 33: return ImageManagementSection(); // Storage Stats
+      case 34: return UrbanDeliveryManagement(); // Urban Delivery Management
+      case 35: // Users
+        return SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SectionHeader('User Management'),
+              const SizedBox(height: 8),
+              SizedBox(height: 500, child: UserManagementTable(auth: widget.auth, firestore: widget.firestore)),
+            ],
+          ),
+        );
+      case 36: return const UploadManagementSection(); // Upload Management
+      default: return const SizedBox();
+    }
+  }
+
+  Widget _buildQuickActions() {
+    return SingleChildScrollView(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Quick Actions',
+              style: TextStyle(
+                fontSize: 28,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Perform common administrative tasks with one click',
+              style: TextStyle(
+                color: AdminTheme.mediumGrey,
+                fontSize: 16,
+              ),
+            ),
+            const SizedBox(height: 32),
+            _buildQuickActionsGrid(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRecentActivity() {
+    return Padding(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Recent Platform Activity',
+            style: TextStyle(
+              fontSize: 28,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Real-time updates from your marketplace',
+            style: TextStyle(
+              color: AdminTheme.mediumGrey,
+              fontSize: 16,
+            ),
+          ),
+          const SizedBox(height: 32),
+          Expanded(
+            child: Row(
+              children: [
+                Expanded(
+                  flex: 2,
+                  child: _buildActivityFeed(),
+                ),
+                const SizedBox(width: 24),
+                Expanded(
+                  child: Column(
+                    children: [
+                      Expanded(child: _buildStatsGrid()),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDashboardOverview() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Welcome Header
+          Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [Color(0xFF1F4654), Color(0xFF7FB2BF)],
+              ),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Welcome to Admin Dashboard',
+                        style: TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                          color: AdminTheme.angel,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Monitor and manage your marketplace platform',
+                        style: TextStyle(
+                          color: AdminTheme.angel.withOpacity(0.8),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Icon(
+                  Icons.dashboard,
+                  size: 48,
+                                          color: AdminTheme.angel.withOpacity(0.8),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 24),
+          
+          // Stats Grid
+          _buildStatsGrid(),
+          const SizedBox(height: 24),
+          
+          // Charts and Activity Row
+          LayoutBuilder(
+            builder: (context, constraints) {
+              if (constraints.maxWidth > 1000) {
+                // Desktop: Side by side
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      flex: 2,
+                      child: _buildRevenueChart(),
+                    ),
+                    const SizedBox(width: 16),
+                Expanded(
+                      child: _buildActivityFeed(),
+                    ),
+                  ],
+                );
+              } else {
+                // Mobile/Tablet: Stacked
+                return Column(
+                  children: [
+                    _buildRevenueChart(),
+                    const SizedBox(height: 16),
+                    _buildActivityFeed(),
+                  ],
+                );
+              }
+            },
+          ),
+          const SizedBox(height: 24),
+          
+          // Quick Actions
+          _buildQuickActionsGrid(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatsGrid() {
+    return FutureBuilder<Map<String, int>>(
+      future: _cacheService.getQuickCounts(widget.firestore),
+      builder: (context, quickSnap) {
+        final quick = quickSnap.data ?? _cacheService.cachedQuickCounts;
+        if (quick == null && quickSnap.connectionState == ConnectionState.waiting) {
+          return LayoutBuilder(
+            builder: (context, constraints) {
+              int crossAxisCount;
+              double childAspectRatio;
+              if (constraints.maxWidth > 1200) {
+                crossAxisCount = 5;
+                childAspectRatio = 1.6;
+              } else if (constraints.maxWidth > 800) {
+                crossAxisCount = 3;
+                childAspectRatio = 1.8;
+              } else if (constraints.maxWidth > 600) {
+                crossAxisCount = 2;
+                childAspectRatio = 1.6;
+              } else {
+                crossAxisCount = 1;
+                childAspectRatio = 1.4;
+              }
+              return GridView.count(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                crossAxisCount: crossAxisCount,
+                childAspectRatio: childAspectRatio,
+                crossAxisSpacing: 16,
+                mainAxisSpacing: 16,
+                children: List.generate(5, (index) => SkeletonLoading(isLoading: true, child: SkeletonStatCard())),
+              );
+            },
+          );
+        }
+        return FutureBuilder<DashboardStats>(
+          future: _cacheService.getDashboardStats(widget.firestore),
+          builder: (context, snapshot) {
+            final stats = snapshot.data ?? _cacheService.cachedStats;
+            return LayoutBuilder(
+              builder: (context, constraints) {
+                int crossAxisCount;
+                double childAspectRatio;
+                if (constraints.maxWidth > 1200) {
+                  crossAxisCount = 5;
+                  childAspectRatio = 1.6;
+                } else if (constraints.maxWidth > 800) {
+                  crossAxisCount = 3;
+                  childAspectRatio = 1.8;
+                } else if (constraints.maxWidth > 600) {
+                  crossAxisCount = 2;
+                  childAspectRatio = 1.6;
+                } else {
+                  crossAxisCount = 1;
+                  childAspectRatio = 1.4;
+                }
+                return GridView.count(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  crossAxisCount: crossAxisCount,
+                  childAspectRatio: childAspectRatio,
+                  crossAxisSpacing: 16,
+                  mainAxisSpacing: 16,
+                  children: [
+                    _buildStatCard(
+                      'Total Users',
+                      (stats?.totalUsers ?? quick?['totalUsers'] ?? 0).toString(),
+                      Icons.people,
+                      AdminTheme.info,
+                      isLoading: stats == null && _cacheService.isLoadingStats,
+                      growth: stats?.userGrowth,
+                    ),
+                    _buildStatCard(
+                      'Today\'s Orders',
+                      (stats?.todayOrders ?? quick?['todayOrders'] ?? 0).toString(),
+                      Icons.shopping_cart,
+                      AdminTheme.success,
+                      isLoading: stats == null && _cacheService.isLoadingStats,
+                      growth: stats?.orderGrowth,
+                    ),
+                    _buildStatCard(
+                      'Platform Revenue (All Time)',
+                      stats != null ? 'R${stats.totalRevenue.toStringAsFixed(2)}' : '—',
+                      Icons.receipt,
+                      AdminTheme.indigo,
+                      isLoading: stats == null && _cacheService.isLoadingStats,
+                      growth: stats?.revenueGrowth,
+                    ),
+                    if (stats != null)
+                      _buildStatCard(
+                        'GMV (Last 30 Days)',
+                        'R${stats.last30Gmv.toStringAsFixed(2)}',
+                        Icons.stacked_line_chart,
+                        AdminTheme.deepTeal,
+                        isLoading: false,
+                        growth: null,
+                      ),
+                    if (stats != null)
+                      _buildStatCard(
+                        'Platform Fee (Last 30 Days)',
+                        'R${stats.last30PlatformFee.toStringAsFixed(2)}',
+                        Icons.savings,
+                        AdminTheme.indigo,
+                        isLoading: false,
+                        growth: null,
+                      ),
+                    _buildStatCard(
+                      'Pending Approvals',
+                      (stats?.pendingApprovals ?? quick?['pendingApprovals'] ?? 0).toString(),
+                      Icons.pending_actions,
+                      (stats?.hasHighPendingApprovals ?? ((quick?['pendingApprovals'] ?? 0) > 10)) ? AdminTheme.error : AdminTheme.warning,
+                      isLoading: stats == null && _cacheService.isLoadingStats,
+                      growth: null,
+                    ),
+                    _buildStatCard(
+                      'Pending KYC',
+                      (stats?.pendingKycSubmissions ?? quick?['pendingKyc'] ?? 0).toString(),
+                      Icons.verified_user_outlined,
+                      (stats?.hasPendingKyc ?? ((quick?['pendingKyc'] ?? 0) > 0)) ? AdminTheme.warning : AdminTheme.success,
+                      isLoading: stats == null && _cacheService.isLoadingStats,
+                      growth: null,
+                    ),
+                  ],
+                );
+              },
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildStatCard(String title, String value, IconData icon, Color color, {bool isLoading = false, double? growth}) {
+    return SkeletonLoading(
+      isLoading: isLoading,
+      child: Container(
+        padding: const EdgeInsets.all(20),
+        decoration: AdminTheme.cardDecoration(
+          boxShadow: [
+            BoxShadow(
+              color: AdminTheme.indigo.withOpacity(0.1),
+              blurRadius: 20,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: color.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(icon, color: color, size: 24),
+                ),
+                if (growth != null)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                      color: AdminTheme.success.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.trending_up, color: AdminTheme.success, size: 12),
+                        const SizedBox(width: 2),
+                        Text(
+                          '${growth.toStringAsFixed(1)}%',
+                          style: AdminTheme.labelSmall.copyWith(
+                            color: AdminTheme.success,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+            const Spacer(),
+            Text(
+              value,
+              style: AdminTheme.displaySmall.copyWith(
+                color: color,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              title,
+              style: AdminTheme.bodyMedium.copyWith(
+                color: Ad

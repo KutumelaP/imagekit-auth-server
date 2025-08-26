@@ -2,13 +2,25 @@
 <html>
 <head>
     <script>
-      // Register dev service worker stub for FCM to avoid MIME errors in debug
+      // Robust SW registration for various base hrefs/paths
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', function() {
-          const swUrl = '/firebase-messaging-sw.js';
-          fetch(swUrl, { method: 'HEAD' })
-            .then(() => navigator.serviceWorker.register(swUrl))
-            .catch(() => {});
+          const baseHref = (document.querySelector('base')?.getAttribute('href') || '/').replace(/\/+$|^$/, '');
+          const candidates = [
+            'firebase-messaging-sw.js',
+            baseHref ? baseHref + '/firebase-messaging-sw.js' : '/firebase-messaging-sw.js',
+            '/firebase-messaging-sw.js'
+          ];
+          (async () => {
+            for (const url of candidates) {
+              try {
+                await navigator.serviceWorker.register(url);
+                break;
+              } catch (e) {
+                // try next
+              }
+            }
+          })();
         });
       }
     </script>

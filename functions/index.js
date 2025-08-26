@@ -25,6 +25,7 @@ const {
 admin.initializeApp();
 const db = admin.firestore();
 const axios = require('axios');
+const puppeteer = require('puppeteer');
 
 // Import scheduled functions
 const { dailyPaymentAlerts, weeklyPaymentSummary } = require('./scheduled_payment_alerts');
@@ -755,6 +756,402 @@ exports.sendOrderEmail = functions.https.onCall(async (data, context) => {
   } catch (e) {
     console.error('sendOrderEmail error', e);
     throw new functions.https.HttpsError('internal', 'Failed to send email');
+  }
+});
+
+// === Email current Fees & Payouts policy to all active sellers ===
+exports.emailFeesPolicyToSellers = functions.https.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError('unauthenticated', 'Sign in required');
+  }
+  const isAdmin = context.auth.token?.admin === true || context.auth.token?.role === 'admin';
+  if (!isAdmin) {
+    throw new functions.https.HttpsError('permission-denied', 'Admin only');
+  }
+  const transporter = await ensureTransporter();
+  if (!transporter) throw new functions.https.HttpsError('failed-precondition', 'Email not configured');
+
+  // Load settings for merge tokens
+  const settingsDoc = await db.collection('admin_settings').doc('payment_settings').get();
+  const s = settingsDoc.exists ? (settingsDoc.data() || {}) : {};
+  const brandDoc = await db.collection('admin_settings').doc('branding').get().catch(() => null);
+  const b = brandDoc && brandDoc.exists ? (brandDoc.data() || {}) : {};
+
+  const brandName = b.name || process.env.BRAND_NAME || 'Mzansi Marketplace';
+  const supportEmail = b.supportEmail || process.env.SUPPORT_EMAIL || (process.env.MAIL_FROM || mailUser);
+
+  // Build HTML body from settings (simple merge; you can switch to a full template engine later)
+  const bodyHtml = `
+    <div style="font-size:14px;color:#0f172a">
+      <p>Hi Seller,</p>
+      <p>Here are the current fees and payouts for ${brandName}.</p>
+      <h3 style="margin:12px 0 4px">Commission (per order)</h3>
+      <ul>
+        <li>Pickup: ${Number(s.pickupPct ?? s.platformFeePercentage ?? 0).toFixed(1)}% (min R${Number(s.commissionMin || 0).toFixed(2)}, cap R${Number(s.commissionCapPickup || 0).toFixed(2)})</li>
+        <li>You deliver: ${Number(s.merchantDeliveryPct ?? s.platformFeePercentage ?? 0).toFixed(1)}% (cap R${Number(s.commissionCapDeliveryMerchant || 0).toFixed(2)})</li>
+        <li>We arrange courier: ${Number(s.platformDeliveryPct ?? s.platformFeePercentage ?? 0).toFixed(1)}% (cap R${Number(s.commissionCapDeliveryPlatform || 0).toFixed(2)})</li>
+      </ul>
+      <h3 style="margin:12px 0 4px">Buyer fees</h3>
+      <ul>
+        <li>Service fee: ${Number(s.buyerServiceFeePct || 0).toFixed(1)}% + R${Number(s.buyerServiceFeeFixed || 0).toFixed(2)} (min R3, max R15)</li>
+        <li>Small‑order fee: R${Number(s.smallOrderFee || 0).toFixed(2)} under R${Number(s.smallOrderThreshold || 0).toFixed(2)}</li>
+        <li>Delivery fee: pass‑through</li>
+      </ul>
+      <h3 style="margin:12px 0 4px">Payouts</h3>
+      <ul>
+        <li>Weekly payouts (minimum R100)</li>
+        <li>Instant payouts available (optional fee)</li>
+        <li>COD commission settled via payout or top‑up</li>
+      </ul>
+      <p class="muted" style="color:#475569">This notice reflects the current settings in your account. Live rates are visible in the Seller → Earnings screen.</p>
+    </div>
+  `;
+
+  const subject = `${brandName} – Fees & Payouts Update`;
+  const from = process.env.MAIL_FROM || mailUser;
+
+  // Fetch seller emails
+  const sellersSnap = await db.collection('users').where('role', '==', 'seller').get();
+  let sent = 0, skipped = 0;
+  for (const doc of sellersSnap.docs) {
+    const u = doc.data() || {};
+    const toEmail = String(u.email || '').trim();
+    if (!toEmail) { skipped += 1; continue; }
+    const htmlWrapped = renderBrandedEmail({ title: subject, heading: 'Fees & Payouts', intro: '', bodyHtml, footer: `Questions? Contact ${supportEmail}` });
+    try {
+      await transporter.sendMail({ from, to: toEmail, subject, html: htmlWrapped, headers: { 'List-Unsubscribe': `<mailto:${from}>` } });
+      sent += 1;
+    } catch (e) {
+      console.warn('[mail][fees_policy] failed', toEmail, e?.message);
+    }
+  }
+
+  return { ok: true, sent, skipped };
+});
+
+// === Generate PDF of Fees & Payouts (renders the HTML template with settings) ===
+exports.generateFeesPolicyPdf = functions.runWith({ timeoutSeconds: 120, memory: '512MB' }).https.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError('unauthenticated', 'Sign in required');
+  }
+  const isAdmin = context.auth.token?.admin === true || context.auth.token?.role === 'admin';
+  if (!isAdmin) throw new functions.https.HttpsError('permission-denied', 'Admin only');
+
+  try {
+    const settingsDoc = await db.collection('admin_settings').doc('payment_settings').get();
+    const s = settingsDoc.exists ? (settingsDoc.data() || {}) : {};
+    const brandDoc = await db.collection('admin_settings').doc('branding').get().catch(() => null);
+    const b = brandDoc && brandDoc.exists ? (brandDoc.data() || {}) : {};
+
+    const fs = require('fs');
+    const path = require('path');
+    // Load template from functions/templates so it's included in deploy bundle
+    let htmlRaw = '';
+    try {
+      const tmplPath = path.join(__dirname, 'templates', 'seller_fees_payouts_template.html');
+      htmlRaw = fs.readFileSync(tmplPath, 'utf8');
+    } catch (e) {
+      console.warn('[pdf] Template not found, using inline default');
+      htmlRaw = `<!doctype html><html><head><meta charset="utf-8"/><style>body{font-family:Arial;margin:40px;color:#0f172a}.wm{position:fixed;inset:0;background:url('{{brandLogoUrl}}') no-repeat center center;background-size:60%;opacity:.06;transform:rotate(-20deg);z-index:0}.brand,.card,.grid{position:relative;z-index:1}.card{border:1px solid #e2e8f0;border-radius:10px;padding:16px;margin:12px 0}.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}</style></head><body><div class="wm"></div><div class="brand"><img src="{{brandLogoUrl}}" style="height:32px"/><div><h1>Fees & Payouts</h1><p>Effective {{issueDate}} • Version {{version}}</p></div></div><div class="card"><h2>Commission</h2><ul><li>Pickup: {{pickupPct}}% (min R{{commissionMin}}, cap R{{capPickup}})</li><li>You deliver: {{merchantDeliveryPct}}% (cap R{{capMerchant}})</li><li>We arrange: {{platformDeliveryPct}}% (cap R{{capPlatform}})</li></ul></div><div class="card"><h2>Buyer fees</h2><ul><li>Service fee: {{buyerServiceFeePct}}% + R{{buyerServiceFeeFixed}}</li><li>Small-order fee: R{{smallOrderFee}} under R{{smallOrderThreshold}}</li></ul></div><p style="margin-top:20px;font-size:12px;color:#64748b">Questions? {{supportEmail}}</p></body></html>`;
+    }
+    const tokens = {
+      '{{brandName}}': b.name || process.env.BRAND_NAME || 'Mzansi Marketplace',
+      '{{brandLogoUrl}}': b.logoUrl || '',
+      '{{issueDate}}': new Date().toISOString().slice(0, 10),
+      '{{version}}': String(s.version || '1.0'),
+      '{{pickupPct}}': Number(s.pickupPct ?? s.platformFeePercentage ?? 0).toFixed(1),
+      '{{merchantDeliveryPct}}': Number(s.merchantDeliveryPct ?? s.platformFeePercentage ?? 0).toFixed(1),
+      '{{platformDeliveryPct}}': Number(s.platformDeliveryPct ?? s.platformFeePercentage ?? 0).toFixed(1),
+      '{{commissionMin}}': Number(s.commissionMin || 0).toFixed(2),
+      '{{capPickup}}': Number(s.commissionCapPickup || 0).toFixed(2),
+      '{{capMerchant}}': Number(s.commissionCapDeliveryMerchant || 0).toFixed(2),
+      '{{capPlatform}}': Number(s.commissionCapDeliveryPlatform || 0).toFixed(2),
+      '{{buyerServiceFeePct}}': Number(s.buyerServiceFeePct || 0).toFixed(1),
+      '{{buyerServiceFeeFixed}}': Number(s.buyerServiceFeeFixed || 0).toFixed(2),
+      '{{smallOrderFee}}': Number(s.smallOrderFee || 0).toFixed(2),
+      '{{smallOrderThreshold}}': Number(s.smallOrderThreshold || 0).toFixed(2),
+      '{{supportEmail}}': b.supportEmail || process.env.SUPPORT_EMAIL || (process.env.MAIL_FROM || '')
+    };
+    let html = htmlRaw;
+    for (const [k, v] of Object.entries(tokens)) html = html.replace(new RegExp(k, 'g'), v);
+
+    const browser = await puppeteer.launch({ headless: 'new', args: ['--no-sandbox', '--disable-setuid-sandbox'] });
+    const page = await browser.newPage();
+    await page.setContent(html, { waitUntil: 'load' });
+    const pdf = await page.pdf({ format: 'A4', printBackground: true, margin: { top: '16mm', bottom: '16mm', left: '12mm', right: '12mm' } });
+    await browser.close();
+
+    const bucket = admin.storage().bucket();
+    const fileName = `fees_payouts/fees_payouts_${Date.now()}.pdf`;
+    const file = bucket.file(fileName);
+    await file.save(pdf, { contentType: 'application/pdf', resumable: false, public: false });
+    const [signedUrl] = await file.getSignedUrl({ action: 'read', expires: Date.now() + 1000 * 60 * 60 });
+
+    return { ok: true, url: signedUrl, path: fileName };
+  } catch (e) {
+    console.error('generateFeesPolicyPdf error', e);
+    throw new functions.https.HttpsError('internal', 'Failed to generate PDF');
+  }
+});
+
+// CORS-enabled HTTP variant for web clients that can't use callable in some environments
+exports.generateFeesPolicyPdfHttp = functions.runWith({ timeoutSeconds: 120, memory: '512MB' }).https.onRequest(async (req, res) => {
+  const origin = req.get('origin') || '*';
+  res.set('Access-Control-Allow-Origin', origin);
+  res.set('Vary', 'Origin');
+  const requestedHeaders = req.header('access-control-request-headers');
+  if (requestedHeaders) {
+    res.set('Access-Control-Allow-Headers', requestedHeaders);
+  } else {
+    res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, x-client-data');
+  }
+  res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.set('Access-Control-Allow-Credentials', 'true');
+  if (req.method === 'OPTIONS') return res.status(204).send('');
+  try {
+    const authHeader = String(req.headers.authorization || '');
+    if (!authHeader.startsWith('Bearer ')) return res.status(401).json({ error: 'unauthenticated' });
+    const token = authHeader.substring(7);
+    const decoded = await admin.auth().verifyIdToken(token);
+    const isAdmin = decoded.admin === true || decoded.role === 'admin';
+    if (!isAdmin) return res.status(403).json({ error: 'permission-denied' });
+
+    // Reuse generator logic
+    const settingsDoc = await db.collection('admin_settings').doc('payment_settings').get();
+    const s = settingsDoc.exists ? (settingsDoc.data() || {}) : {};
+    const brandDoc = await db.collection('admin_settings').doc('branding').get().catch(() => null);
+    const b = brandDoc && brandDoc.exists ? (brandDoc.data() || {}) : {};
+
+    const fs = require('fs');
+    const path = require('path');
+    let htmlRaw = '';
+    try {
+      const tmplPath = path.join(__dirname, 'templates', 'seller_fees_payouts_template.html');
+      htmlRaw = fs.readFileSync(tmplPath, 'utf8');
+    } catch (_) {
+      htmlRaw = '<html><body><h1>Fees & Payouts</h1></body></html>';
+    }
+    const tokens = {
+      '{{brandName}}': b.name || process.env.BRAND_NAME || 'Mzansi Marketplace',
+      '{{brandLogoUrl}}': b.logoUrl || '',
+      '{{issueDate}}': new Date().toISOString().slice(0, 10),
+      '{{version}}': String(s.version || '1.0'),
+      '{{pickupPct}}': Number(s.pickupPct ?? s.platformFeePercentage ?? 0).toFixed(1),
+      '{{merchantDeliveryPct}}': Number(s.merchantDeliveryPct ?? s.platformFeePercentage ?? 0).toFixed(1),
+      '{{platformDeliveryPct}}': Number(s.platformDeliveryPct ?? s.platformFeePercentage ?? 0).toFixed(1),
+      '{{commissionMin}}': Number(s.commissionMin || 0).toFixed(2),
+      '{{capPickup}}': Number(s.commissionCapPickup || 0).toFixed(2),
+      '{{capMerchant}}': Number(s.commissionCapDeliveryMerchant || 0).toFixed(2),
+      '{{capPlatform}}': Number(s.commissionCapDeliveryPlatform || 0).toFixed(2),
+      '{{buyerServiceFeePct}}': Number(s.buyerServiceFeePct || 0).toFixed(1),
+      '{{buyerServiceFeeFixed}}': Number(s.buyerServiceFeeFixed || 0).toFixed(2),
+      '{{smallOrderFee}}': Number(s.smallOrderFee || 0).toFixed(2),
+      '{{smallOrderThreshold}}': Number(s.smallOrderThreshold || 0).toFixed(2),
+      '{{supportEmail}}': b.supportEmail || process.env.SUPPORT_EMAIL || (process.env.MAIL_FROM || '')
+    };
+    let html = htmlRaw;
+    for (const [k, v] of Object.entries(tokens)) html = html.replace(new RegExp(k, 'g'), v);
+
+    const browser = await puppeteer.launch({ headless: 'new', args: ['--no-sandbox', '--disable-setuid-sandbox'] });
+    const page = await browser.newPage();
+    await page.setContent(html, { waitUntil: 'load' });
+    const pdf = await page.pdf({ format: 'A4', printBackground: true, margin: { top: '16mm', bottom: '16mm', left: '12mm', right: '12mm' } });
+    await browser.close();
+
+    const bucket = admin.storage().bucket();
+    const fileName = `fees_payouts/fees_payouts_${Date.now()}.pdf`;
+    const file = bucket.file(fileName);
+    await file.save(pdf, { contentType: 'application/pdf', resumable: false, public: false });
+    const [signedUrl] = await file.getSignedUrl({ action: 'read', expires: Date.now() + 1000 * 60 * 60 });
+
+    return res.status(200).json({ ok: true, url: signedUrl, path: fileName });
+  } catch (e) {
+    console.error('generateFeesPolicyPdfHttp error', e);
+    return res.status(500).json({ error: 'internal', message: e.message || String(e) });
+  }
+});
+
+// ===== PayFast Payouts (manual trigger per payout) =====
+async function getPayoutProviderConfig() {
+  try {
+    const doc = await db.collection('admin_settings').doc('payout_provider').get();
+    const data = doc.exists ? (doc.data() || {}) : {};
+    const payfast = data.payfast || {};
+    const cfg = {
+      provider: (data.provider || 'payfast').toString(),
+      live: Boolean((payfast.live ?? (process.env.PAYFAST_LIVE !== 'false')) !== false),
+      merchantId: (payfast.merchantId || process.env.PAYFAST_MERCHANT_ID || '').toString(),
+      merchantKey: (payfast.merchantKey || process.env.PAYFAST_MERCHANT_KEY || '').toString(),
+      passphrase: (payfast.passphrase || process.env.PAYFAST_PASSPHRASE || '').toString(),
+      apiToken: (payfast.apiToken || process.env.PAYFAST_API_TOKEN || '').toString(),
+      apiBase: (payfast.apiBase || process.env.PAYFAST_API_BASE || '').toString() || (((payfast.live ?? (process.env.PAYFAST_LIVE !== 'false')) !== false) ? 'https://api.payfast.co.za' : 'https://sandbox.payfast.co.za'),
+    };
+    return cfg;
+  } catch (e) {
+    return { provider: 'payfast', live: true, merchantId: process.env.PAYFAST_MERCHANT_ID || '', merchantKey: process.env.PAYFAST_MERCHANT_KEY || '', passphrase: process.env.PAYFAST_PASSPHRASE || '', apiToken: process.env.PAYFAST_API_TOKEN || '', apiBase: process.env.PAYFAST_API_BASE || 'https://api.payfast.co.za' };
+  }
+}
+
+exports.sendPayoutViaPayfast = functions.https.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError('unauthenticated', 'Sign in required');
+  }
+  const isAdmin = context.auth.token?.admin === true || context.auth.token?.role === 'admin';
+  if (!isAdmin) throw new functions.https.HttpsError('permission-denied', 'Admin only');
+  const payoutId = String(data?.payoutId || '').trim();
+  if (!payoutId) throw new functions.https.HttpsError('invalid-argument', 'payoutId required');
+
+  // Load payout
+  const pref = db.collection('payouts').doc(payoutId);
+  const psnap = await pref.get();
+  if (!psnap.exists) throw new functions.https.HttpsError('not-found', 'Payout not found');
+  const payout = psnap.data() || {};
+  if (String(payout.status || '') !== 'requested' && String(payout.status || '') !== 'failed') {
+    throw new functions.https.HttpsError('failed-precondition', 'Payout must be requested or failed to send');
+  }
+
+  const sellerId = String(payout.sellerId || '');
+  if (!sellerId) throw new functions.https.HttpsError('failed-precondition', 'Missing sellerId on payout');
+
+  // Load bank details
+  const bankDoc = await db.collection('users').doc(sellerId).collection('payout').doc('bank').get();
+  if (!bankDoc.exists) throw new functions.https.HttpsError('failed-precondition', 'Seller bank details missing');
+  const bank = bankDoc.data() || {};
+  const accountNumber = String(bank.accountNumber || '');
+  const branchCode = String(bank.branchCode || '');
+  const accountHolder = String(bank.accountHolder || '');
+  const bankName = String(bank.bankName || '');
+  if (!accountNumber || !branchCode || !accountHolder) {
+    throw new functions.https.HttpsError('failed-precondition', 'Incomplete bank details');
+  }
+
+  const cfg = await getPayoutProviderConfig();
+  if (!cfg.merchantId || !cfg.merchantKey) {
+    throw new functions.https.HttpsError('failed-precondition', 'PayFast credentials not configured');
+  }
+
+  // Build request (structure may differ per PayFast account; we keep this generic)
+  const amount = Number(payout.amount || 0);
+  if (!(amount > 0)) throw new functions.https.HttpsError('failed-precondition', 'Invalid payout amount');
+  const ref = `PO_${payoutId}`;
+
+  const url = `${cfg.apiBase.replace(/\/$/, '')}/payouts`;
+  const headers = {};
+  if (cfg.apiToken) headers['Authorization'] = `Bearer ${cfg.apiToken}`;
+  headers['Content-Type'] = 'application/json';
+  const body = {
+    merchant_id: cfg.merchantId,
+    merchant_key: cfg.merchantKey,
+    passphrase: cfg.passphrase || undefined,
+    reference: ref,
+    amount: Number(amount).toFixed(2),
+    currency: 'ZAR',
+    beneficiary: {
+      name: accountHolder,
+      bankName: bankName || undefined,
+      accountNumber,
+      branchCode,
+      accountType: bank.accountType || 'cheque',
+    },
+  };
+
+  try {
+    const resp = await axios.post(url, body, { headers, timeout: 15000 });
+    const providerRef = resp?.data?.id || resp?.data?.reference || ref;
+    await pref.set({ status: 'processing', provider: 'payfast', providerRef, updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
+    await pref.collection('events').add({ type: 'provider_submitted', provider: 'payfast', providerRef, request: body, response: resp.data || null, at: admin.firestore.FieldValue.serverTimestamp() });
+    return { ok: true, providerRef };
+  } catch (e) {
+    const msg = e?.response?.data || e?.message || String(e);
+    await pref.set({ status: 'failed', provider: 'payfast', providerError: msg, updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
+    await pref.collection('events').add({ type: 'provider_error', provider: 'payfast', request: body, error: msg, at: admin.firestore.FieldValue.serverTimestamp() });
+    throw new functions.https.HttpsError('internal', 'PayFast payout failed');
+  }
+});
+
+// === PayFast payout webhook (status updates) ===
+exports.payfastPayoutWebhook = functions.https.onRequest(async (req, res) => {
+  try {
+    // PayFast posts payout status; extract reference and status
+    const body = req.method === 'POST' ? req.body : req.query;
+    const reference = String(body.reference || body.m_payment_id || body.ref || '').trim();
+    const statusRaw = String(body.status || body.payment_status || '').toLowerCase();
+    if (!reference) return res.status(400).send('missing reference');
+
+    // Our reference is 'PO_<payoutId>'
+    const payoutId = reference.startsWith('PO_') ? reference.substring(3) : reference;
+    const pref = db.collection('payouts').doc(payoutId);
+    const snap = await pref.get();
+    if (!snap.exists) {
+      // accept but log
+      await db.collection('webhook_logs').add({ source: 'payfast', type: 'payout', unknownReference: reference, at: admin.firestore.FieldValue.serverTimestamp(), raw: body });
+      return res.status(200).send('ok');
+    }
+
+    let newStatus = 'processing';
+    if (statusRaw.includes('complete') || statusRaw.includes('paid') || statusRaw === 'success') newStatus = 'paid';
+    if (statusRaw.includes('failed') || statusRaw.includes('error')) newStatus = 'failed';
+
+    await pref.set({ status: newStatus, provider: 'payfast', providerStatus: statusRaw, updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
+    await pref.collection('events').add({ type: 'provider_webhook', provider: 'payfast', providerStatus: statusRaw, raw: body, at: admin.firestore.FieldValue.serverTimestamp() });
+
+    return res.status(200).send('ok');
+  } catch (e) {
+    console.error('payfastPayoutWebhook error', e);
+    return res.status(500).send('error');
+  }
+});
+
+// === Payout provider status (for admin UI) ===
+exports.getPayoutProviderStatus = functions.https.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError('unauthenticated', 'Sign in required');
+  }
+  const isAdmin = context.auth.token?.admin === true || context.auth.token?.role === 'admin';
+  if (!isAdmin) throw new functions.https.HttpsError('permission-denied', 'Admin only');
+  try {
+    const doc = await db.collection('admin_settings').doc('payout_provider').get();
+    const d = doc.exists ? (doc.data() || {}) : {};
+    const pf = d.payfast || {};
+    const env = {
+      merchantId: process.env.PAYFAST_MERCHANT_ID || '',
+      merchantKey: process.env.PAYFAST_MERCHANT_KEY || '',
+      passphrase: process.env.PAYFAST_PASSPHRASE || '',
+      apiToken: process.env.PAYFAST_API_TOKEN || '',
+      apiBase: process.env.PAYFAST_API_BASE || '',
+      live: (process.env.PAYFAST_LIVE || 'true') !== 'false',
+    };
+    const cfg = await getPayoutProviderConfig();
+    const src = {
+      usedEnv: Boolean((!pf.merchantId && env.merchantId) || (!pf.merchantKey && env.merchantKey)),
+      docHasKeys: Boolean(pf.merchantId && pf.merchantKey),
+      envHasKeys: Boolean(env.merchantId && env.merchantKey),
+    };
+    return {
+      provider: cfg.provider || 'payfast',
+      live: cfg.live === true,
+      apiBase: cfg.apiBase || null,
+      effective: {
+        hasMerchantId: Boolean(cfg.merchantId),
+        hasMerchantKey: Boolean(cfg.merchantKey),
+        hasApiToken: Boolean(cfg.apiToken),
+      },
+      source: src,
+      firestore: {
+        merchantId: Boolean(pf.merchantId),
+        merchantKey: Boolean(pf.merchantKey),
+        apiToken: Boolean(pf.apiToken),
+        apiBase: pf.apiBase || null,
+      },
+      env: {
+        merchantId: Boolean(env.merchantId),
+        merchantKey: Boolean(env.merchantKey),
+        apiToken: Boolean(env.apiToken),
+        apiBase: env.apiBase || null,
+      },
+    };
+  } catch (e) {
+    throw new functions.https.HttpsError('internal', 'Failed to read status');
   }
 });
 
@@ -2150,6 +2547,60 @@ const MIN_PAYOUT_AMOUNT = Number(process.env.MIN_PAYOUT_AMOUNT || 50); // R50 de
 
 function toRand(n) { return Math.round(Number(n || 0) * 100) / 100; }
 
+// Compute per-order commission using admin settings (supports per-mode pct + min/caps)
+async function computeCommissionWithSettings({ gross, order }) {
+  try {
+    const doc = await db.collection('admin_settings').doc('payment_settings').get();
+    const s = doc.exists ? (doc.data() || {}) : {};
+    // Determine order mode
+    const isDelivery = String(order.orderType || order.type || '').toLowerCase() === 'delivery';
+    const deliveryPref = String(order.deliveryModelPreference || '').toLowerCase();
+    const isPlatformDelivery = isDelivery && (deliveryPref === 'system');
+
+    // Choose pct
+    let pct = null;
+    if (!isDelivery) {
+      pct = Number(s.pickupPct);
+    } else if (isPlatformDelivery) {
+      pct = Number(s.platformDeliveryPct);
+    } else {
+      pct = Number(s.merchantDeliveryPct);
+    }
+    if (isNaN(pct) || pct < 0 || pct > 50) {
+      // fallback to legacy percent
+      const legacyPct = await getCommissionPct().catch(() => COMMISSION_PCT_FALLBACK);
+      pct = legacyPct * 100; // getCommissionPct returns fraction
+    }
+
+    // Compute raw commission on subtotal only (exclude delivery & buyer fees)
+    const subtotal = Number(order.totalPrice || order.total || 0) || 0;
+    let commission = subtotal * (pct / 100);
+
+    // Apply min and caps
+    const cmin = Number(s.commissionMin);
+    if (!isNaN(cmin) && cmin > 0) commission = Math.max(commission, cmin);
+    let cap = null;
+    if (!isDelivery) {
+      cap = Number(s.commissionCapPickup);
+    } else if (isPlatformDelivery) {
+      cap = Number(s.commissionCapDeliveryPlatform);
+    } else {
+      cap = Number(s.commissionCapDeliveryMerchant);
+    }
+    if (!isNaN(cap) && cap > 0) commission = Math.min(commission, cap);
+
+    commission = toRand(commission);
+    const net = toRand(subtotal - commission);
+    return { commission, net, pctUsed: pct };
+  } catch (e) {
+    const fallbackPct = await getCommissionPct().catch(() => COMMISSION_PCT_FALLBACK);
+    const subtotal = Number(order.totalPrice || order.total || 0) || 0;
+    const commission = toRand(subtotal * fallbackPct);
+    const net = toRand(subtotal - commission);
+    return { commission, net, pctUsed: fallbackPct * 100 };
+  }
+}
+
 // Ledger-driven available balance: sum receivable entries marked 'available' and not locked + COD seller share
 async function computeSellerAvailableBalance(sellerId) {
   // Get traditional available entries (online payments)
@@ -2452,11 +2903,9 @@ exports.markCodPaid = functions.https.onCall(async (data, context) => {
     throw new functions.https.HttpsError('failed-precondition', 'Order is not Cash on Delivery');
   }
 
-  // Derive amounts
+  // Derive amounts with per-mode settings and caps/mins
   const gross = Number(order.totalPrice || order.total || order.paymentAmount || 0) || 0;
-  const pct = await getCommissionPct().catch(() => COMMISSION_PCT_FALLBACK);
-  const commission = Math.round((gross * pct) * 100) / 100;
-  const net = Math.round((gross - commission) * 100) / 100;
+  const { commission, net } = await computeCommissionWithSettings({ gross, order });
 
   // Create debt entry: seller owes platform the commission
   const eref = db.collection('platform_receivables').doc(sellerId).collection('entries').doc(orderId);
@@ -2968,4 +3417,123 @@ exports.autoCreatePayoutBatch = functions.pubsub.schedule('0 8 * * 1').onRun(asy
     console.error('[autoCreatePayoutBatch] error', e);
   }
   return null;
+});
+
+// === Export Nedbank CSV for manual bank payouts ===
+exports.exportNedbankCsv = functions.https.onCall(async (data, context) => {
+  if (!context.auth) throw new functions.https.HttpsError('unauthenticated', 'Sign in required');
+  const isAdmin = context.auth.token?.admin === true || context.auth.token?.role === 'admin';
+  if (!isAdmin) throw new functions.https.HttpsError('permission-denied', 'Admin only');
+
+  const batchLabel = data?.batchLabel ? String(data.batchLabel) : null;
+  const statuses = Array.isArray(data?.statuses) && data.statuses.length > 0
+    ? data.statuses.map((s) => String(s))
+    : ['processing', 'requested'];
+
+  let q = db.collection('payouts').where('status', 'in', statuses);
+  if (batchLabel) q = q.where('batchLabel', '==', batchLabel);
+
+  const snap = await q.get();
+  const rows = [
+    ['Beneficiary Name','Account Number','Branch Code','Account Type','Amount','Reference'],
+  ];
+
+  for (const d of snap.docs) {
+    const p = d.data() || {};
+    const sellerId = String(p.sellerId || '');
+    const amount = Number(p.amount || 0);
+    if (!sellerId || !(amount > 0)) continue;
+    // Prefer bank snapshot captured at payout time; fallback to current bank doc
+    let b = p.bankSnapshot || {};
+    if (!b || !b.accountNumber) {
+      const bankDoc = await db.collection('users').doc(sellerId).collection('payout').doc('bank').get();
+      b = bankDoc.exists ? (bankDoc.data() || {}) : {};
+    }
+    const name = (b.accountHolder || '');
+    const acc = (b.accountNumber || '');
+    const branch = (b.branchCode || '');
+    const type = (b.accountType || 'cheque');
+    const ref = `PO_${d.id}`;
+    rows.push([name, acc, branch, type, amount.toFixed(2), ref]);
+  }
+
+  const csv = rows.map((r) => r.map((c) => {
+    const s = String(c ?? '');
+    return /[",\n]/.test(s) ? '"' + s.replace(/"/g,'""') + '"' : s;
+  }).join(',')).join('\n');
+
+  return { ok: true, count: rows.length - 1, csv };
+});
+
+// === Accounting CSV export (journal-style summary) ===
+exports.exportAccountingCsv = functions.https.onCall(async (data, context) => {
+  if (!context.auth) throw new functions.https.HttpsError('unauthenticated', 'Sign in required');
+  const isAdmin = context.auth.token?.admin === true || context.auth.token?.role === 'admin';
+  if (!isAdmin) throw new functions.https.HttpsError('permission-denied', 'Admin only');
+
+  const startIso = String(data?.start || '');
+  const endIso = String(data?.end || '');
+  const start = startIso ? new Date(startIso) : new Date(Date.now() - 30*24*60*60*1000);
+  const end = endIso ? new Date(endIso) : new Date();
+
+  function toIso(d){ return new Date(d).toISOString(); }
+
+  const rows = [['date','type','reference','description','amount','notes']];
+  let commissionTotal = 0, buyerFeeTotal = 0, payoutsPaidTotal = 0;
+
+  // 1) Orders completed within range → commission + buyer fees
+  const ordersSnap = await db.collection('orders')
+    .where('timestamp', '>=', admin.firestore.Timestamp.fromDate(start))
+    .where('timestamp', '<=', admin.firestore.Timestamp.fromDate(end))
+    .where('status', 'in', ['completed','delivered'])
+    .get().catch(async () => {
+      // fallback without status filter
+      return await db.collection('orders')
+        .where('timestamp', '>=', admin.firestore.Timestamp.fromDate(start))
+        .where('timestamp', '<=', admin.firestore.Timestamp.fromDate(end))
+        .get();
+    });
+  for (const d of ordersSnap.docs) {
+    const o = d.data() || {};
+    const date = o.timestamp && o.timestamp.toDate ? o.timestamp.toDate() : new Date();
+    const pf = Number(o.platformFee || 0);
+    const bsf = Number(o.buyerServiceFee || 0) + Number(o.smallOrderFee || 0);
+    if (pf > 0) {
+      commissionTotal += pf;
+      rows.push([toIso(date),'commission', d.id, 'Platform commission on order', pf.toFixed(2), '']);
+    }
+    if (bsf > 0) {
+      buyerFeeTotal += bsf;
+      rows.push([toIso(date),'buyer_fee', d.id, 'Buyer service/small-order fees', bsf.toFixed(2), '']);
+    }
+  }
+
+  // 2) Payouts marked paid within range → reduce seller payables (for your accounting)
+  const payoutsSnap = await db.collection('payouts')
+    .where('status', '==', 'paid')
+    .where('updatedAt', '>=', admin.firestore.Timestamp.fromDate(start))
+    .where('updatedAt', '<=', admin.firestore.Timestamp.fromDate(end))
+    .get().catch(async () => await db.collection('payouts').where('status','==','paid').get());
+  for (const d of payoutsSnap.docs) {
+    const p = d.data() || {};
+    const dt = p.updatedAt && p.updatedAt.toDate ? p.updatedAt.toDate() : new Date();
+    const amount = Number(p.amount || 0);
+    if (amount > 0) {
+      payoutsPaidTotal += amount;
+      rows.push([toIso(dt),'payout', d.id, 'Seller payout (net to seller)', (-amount).toFixed(2), p.sellerId || '']);
+    }
+  }
+
+  // Footer totals
+  rows.push(['','','','','','']);
+  rows.push([toIso(end),'totals','', 'Commission total', commissionTotal.toFixed(2), '']);
+  rows.push([toIso(end),'totals','', 'Buyer fees total', buyerFeeTotal.toFixed(2), '']);
+  rows.push([toIso(end),'totals','', 'Payouts paid total', (-payoutsPaidTotal).toFixed(2), '']);
+
+  const csv = rows.map((r) => r.map((c) => {
+    const s = String(c ?? '');
+    return /[",\n]/.test(s) ? '"' + s.replace(/"/g,'""') + '"' : s;
+  }).join(',')).join('\n');
+
+  return { ok: true, csv, commissionTotal, buyerFeeTotal, payoutsPaidTotal };
 });

@@ -195,17 +195,19 @@ class _RolesPermissionsSectionState extends State<RolesPermissionsSection> {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.all(24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildHeader(),
-          const SizedBox(height: 24),
-          _buildRoleSelector(),
-          const SizedBox(height: 24),
-          _buildPermissionsGrid(),
-          const SizedBox(height: 24),
-          _buildUserManagement(),
-        ],
+      child: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildHeader(),
+            const SizedBox(height: 24),
+            _buildRoleSelector(),
+            const SizedBox(height: 24),
+            _buildPermissionsGrid(),
+            const SizedBox(height: 24),
+            _buildUserManagement(),
+          ],
+        ),
       ),
     );
   }

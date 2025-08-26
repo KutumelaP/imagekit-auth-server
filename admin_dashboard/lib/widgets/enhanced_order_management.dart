@@ -515,6 +515,15 @@ class _EnhancedOrderManagementState extends State<EnhancedOrderManagement>
               AdminTheme.cloud,
             ),
           ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: _buildStatCard(
+              'Platform Revenue',
+              'R${(stats['platformRevenue'] as double).toStringAsFixed(2)}',
+              Icons.payments,
+              Colors.green,
+            ),
+          ),
         ],
       ),
     );
@@ -525,16 +534,21 @@ class _EnhancedOrderManagementState extends State<EnhancedOrderManagement>
     int pending = 0;
     int completed = 0;
     double revenue = 0.0;
+    double platformRevenue = 0.0;
     
     for (final order in _filteredOrders) {
       final status = order['status'] as String? ?? '';
       final totalAmount = (order['total'] as num?)?.toDouble() ?? 0.0;
+      final platformFee = (order['platformFee'] as num?)?.toDouble() ?? 0.0;
+      final buyerFees = ((order['buyerServiceFee'] as num?)?.toDouble() ?? 0.0) +
+          ((order['smallOrderFee'] as num?)?.toDouble() ?? 0.0);
       
       if (status == 'pending' || status == 'confirmed' || status == 'preparing') {
         pending++;
       } else if (status == 'delivered' || status == 'completed') {
         completed++;
         revenue += totalAmount;
+        platformRevenue += platformFee + buyerFees;
       }
     }
     
@@ -543,6 +557,7 @@ class _EnhancedOrderManagementState extends State<EnhancedOrderManagement>
       'pending': pending,
       'completed': completed,
       'revenue': revenue,
+      'platformRevenue': platformRevenue,
     };
   }
 
