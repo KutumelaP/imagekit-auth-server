@@ -120,18 +120,7 @@ class _ModernProductCardState extends State<ModernProductCard>
         ),
       );
       
-      // Show success message (simple text to avoid overflow)
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('${widget.name} added to cart'),
-          backgroundColor: Theme.of(context).colorScheme.primary,
-          duration: const Duration(seconds: 2),
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
-          ),
-        ),
-      );
+      // No success toast
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(

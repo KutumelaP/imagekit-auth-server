@@ -114,24 +114,7 @@ class _EnhancedProductCardState extends State<EnhancedProductCard>
         availableStock: (widget.quantity != null && widget.quantity! > 0) ? widget.quantity : null,
       );
       
-      if (success) {
-        // Show success or clamped notice based on provider flags
-        final cart = Provider.of<CartProvider>(context, listen: false);
-        final msg = cart.lastAddClamped && cart.lastAddNotice != null
-            ? cart.lastAddNotice!
-            : '${widget.name} added to cart';
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(msg),
-            backgroundColor: const Color(0xFF2E7D32),
-            duration: const Duration(seconds: 2),
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
-            ),
-          ),
-        );
-      } else {
+      if (!success) {
         // Show specific error message from cart provider
         final cart = Provider.of<CartProvider>(context, listen: false);
         final errorMessage = cart.lastAddError ?? 'Insufficient stock for ${widget.name}';

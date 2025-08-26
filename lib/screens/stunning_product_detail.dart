@@ -799,18 +799,15 @@ class _StunningProductDetailState extends State<StunningProductDetail>
       availableStock: stock,
     );
     
-    if (success) {
-      // Show success message
-      _showSnackBar('Product added to cart!', AppTheme.primaryGreen);
-      
-      // Navigate to cart
-      Navigator.pushNamed(context, '/cart');
-    } else {
+    if (!success) {
       // Show specific error message from cart provider
       final errorMessage = cartProvider.lastAddError ?? 'Failed to add product to cart';
       final backgroundColor = cartProvider.lastAddBlocked ? AppTheme.error : AppTheme.warning;
       
       _showSnackBar(errorMessage, backgroundColor);
+    } else {
+      // Navigate to cart
+      Navigator.pushNamed(context, '/cart');
     }
   }
 
