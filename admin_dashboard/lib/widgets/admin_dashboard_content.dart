@@ -1142,6 +1142,12 @@ class _AdminDashboardContentState extends State<AdminDashboardContent> {
                   Colors.indigo,
                   () => widget.onSectionChanged(36),
                 ),
+                _buildQuickActionCard(
+                  'Payouts',
+                  Icons.payments,
+                  Colors.green,
+                  () => widget.onSectionChanged(34),
+                ),
               ],
             );
           },

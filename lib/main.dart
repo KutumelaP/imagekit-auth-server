@@ -20,8 +20,8 @@ import 'screens/security_settings_screen.dart';
 import 'screens/KycUploadScreen.dart';
 import 'screens/ChatRoute.dart';
 import 'services/global_message_listener.dart';
-import 'widgets/in_app_notification_widget.dart';
-import 'widgets/notification_badge.dart';
+// import 'widgets/in_app_notification_widget.dart'; // DISABLED - No popup overlays
+// import 'widgets/notification_badge.dart'; // DISABLED - No global notification badge
 import 'widgets/simple_splash_screen.dart';
 import 'widgets/chatbot_widget.dart';
 
@@ -89,6 +89,9 @@ void main() async {
   // Initialize Awesome Notifications for local banners (mobile)
   await AwesomeNotificationService().initialize();
   
+  // Request awesome notification permissions
+  await AwesomeNotificationService().requestPermissions();
+  
   // Initialize optimized location services (skip on iOS Safari web to avoid reloads)
   try {
     final skipLocationOnIOSWeb = WebEnv.isIOSWeb && !WebEnv.isStandalonePWA;
@@ -131,20 +134,27 @@ class MyApp extends StatelessWidget {
           if (kDebugMode) _DebugNavigatorObserver(),
           RoutePersistenceObserver(),
         ],
-        home: InAppNotificationWidget(
-          child: NotificationBadge(
-            child: ChatbotWrapper(
-              child: SplashWrapper(),
-            ),
-          ),
-        ),
+        home: SplashWrapper(),
         builder: (context, child) {
           // Global bottom SafeArea to avoid iPhone home indicator overlap
+          // Only show bot on the actual Home screen widget
+          final isHome = child is SimpleHomeScreen;
+          final showBot = isHome;
+
+          final layered = ChatbotWrapper(
+            child: child!,
+            showChatbot: showBot,
+            // Position above the Add Product FAB (FAB is bottom-right)
+            // Slightly higher so it doesn't overlap
+            initialDx: 0.88, // near right edge
+            initialDy: 0.72, // above typical FAB area
+          );
+
           final wrapped = SafeArea(
             top: false,
             bottom: true,
             minimum: const EdgeInsets.only(bottom: 34),
-            child: child!,
+            child: layered,
           );
           return MediaQuery(
             data: MediaQuery.of(context).copyWith(

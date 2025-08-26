@@ -266,7 +266,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   Future<void> _initializeOptimized() async {
     try {
       final startTime = DateTime.now();
-      
+
       // Check if user is logged in
       if (currentUser == null) {
         if (mounted) {
@@ -281,25 +281,37 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         return;
       }
 
-      // Use optimized service to preload data
-      final checkoutData = await OptimizedCheckoutService.preloadCheckoutData();
-      
-      if (!mounted) return;
-      
-      // Apply preloaded data to state
-      _applyPreloadedData(checkoutData);
-      
-      // Start background operations that don't block UI
-      _finishInitializationInBackground(checkoutData);
-      
-      final endTime = DateTime.now();
-      final totalTime = endTime.difference(startTime).inMilliseconds;
-      
-      if (kDebugMode) {
-        print('⚡ Optimized checkout initialization completed in ${totalTime}ms');
-        print('📊 Preload time: ${checkoutData.loadTimeMs}ms, UI update time: ${totalTime - checkoutData.loadTimeMs}ms');
+      // Show basic UI immediately while preloading runs in background
+      if (mounted) {
+        setState(() {
+          _paymentMethods = ['Cash on Delivery', 'PayFast (Card)', 'Bank Transfer (EFT)'];
+          _paymentMethodsLoaded = true;
+          _deliveryFee = 15.0;
+          _deliveryDistance = 5.0;
+          _isLoading = false; // Do not block UI
+        });
       }
-      
+
+      // Kick off preloading with a hard timeout so it never blocks
+      OptimizedCheckoutService
+          .preloadCheckoutData()
+          .timeout(const Duration(seconds: 2), onTimeout: () => CheckoutData.empty())
+          .then((checkoutData) {
+        if (!mounted) return;
+        // Apply preloaded data (if any)
+        _applyPreloadedData(checkoutData);
+        // Continue background finishing
+        _finishInitializationInBackground(checkoutData);
+
+        if (kDebugMode) {
+          final endTime = DateTime.now();
+          final totalTime = endTime.difference(startTime).inMilliseconds;
+          print('⚡ Optimized checkout preload finished in ${totalTime}ms (UI was shown immediately)');
+        }
+      }).catchError((e) {
+        if (kDebugMode) print('⚠️ Preload failed (non-blocking): $e');
+      });
+
     } catch (e) {
       if (kDebugMode) print('❌ Error in optimized initialization: $e');
       // Fallback to original method
@@ -3344,6 +3356,14 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     } finally {
         if (mounted) setState(() {
         _paymentMethodsLoaded = true;
+        // Auto-select a payment method if none selected yet
+        if (_selectedPaymentMethod == null && _paymentMethods.isNotEmpty) {
+          // Prefer non-cash when COD is gated
+          _selectedPaymentMethod = _paymentMethods.firstWhere(
+            (m) => !m.toLowerCase().contains('cash'),
+            orElse: () => _paymentMethods.first,
+          );
+        }
       });
     }
   }
@@ -3710,6 +3730,20 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       print('🔍 DEBUG: Early return - loading or completed');
       return; // Prevent multiple submissions
     }
+
+    // CHECK: Store must be open for payments
+    if (!_isStoreCurrentlyOpen()) {
+      print('🔍 DEBUG: Store is closed - blocking payment');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Sorry, ${widget.storeName ?? 'this store'} is currently closed. ${_getStoreStatusText()}'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 4),
+        ),
+      );
+      return;
+    }
+    print('🔍 DEBUG: Store is open - proceeding with payment');
     
     print('🔍 DEBUG: Checking form validation...');
     print('🔍 DEBUG: Name: ${_nameController.text}');
@@ -5828,6 +5862,40 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                       ),
                     ],
                   ),
+          SizedBox(height: ResponsiveUtils.getVerticalPadding(context)),
+          
+          // Store Status Indicator
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: _isStoreCurrentlyOpen() ? Colors.green.withOpacity(0.1) : Colors.red.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: _isStoreCurrentlyOpen() ? Colors.green : Colors.red,
+                width: 1,
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  _isStoreCurrentlyOpen() ? Icons.store : Icons.store_mall_directory_outlined,
+                  color: _isStoreCurrentlyOpen() ? Colors.green : Colors.red,
+                  size: 16,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  _getStoreStatusText(),
+                  style: TextStyle(
+                    color: _isStoreCurrentlyOpen() ? Colors.green[700] : Colors.red[700],
+                    fontWeight: FontWeight.w600,
+                    fontSize: 13,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          
           SizedBox(height: ResponsiveUtils.getVerticalPadding(context)),
           SafeUI.safeText(
             'Store: ${_storeName ?? 'N/A'}',
@@ -9629,11 +9697,15 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       child: Container(
         width: double.infinity,
       decoration: BoxDecoration(
-        gradient: AppTheme.primaryButtonGradient,
+        gradient: (_isLoading || !_isStoreCurrentlyOpen()) 
+          ? LinearGradient(colors: [Colors.grey[400]!, Colors.grey[500]!])
+          : AppTheme.primaryButtonGradient,
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: AppTheme.deepTeal.withOpacity(0.3),
+            color: (_isLoading || !_isStoreCurrentlyOpen())
+              ? Colors.grey.withOpacity(0.3)
+              : AppTheme.deepTeal.withOpacity(0.3),
             blurRadius: 8,
             offset: const Offset(0, 4),
           ),
@@ -9643,9 +9715,33 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           color: Colors.transparent,
           child: InkWell(
           borderRadius: BorderRadius.circular(12),
-          onTap: _isLoading || _selectedPaymentMethod == null || 
-                 (_selectedPaymentMethod!.toLowerCase().contains('cash') && 
-                  !_paymentMethods.any((m) => m.toLowerCase().contains('cash'))) ? null : () {
+          onTap: _isLoading ? null : () {
+            // Check if store is open before allowing payment
+            if (!_isStoreCurrentlyOpen()) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Sorry, ${widget.storeName ?? 'this store'} is currently closed. ${_getStoreStatusText()}'),
+                  backgroundColor: Colors.red,
+                  duration: const Duration(seconds: 4),
+                ),
+              );
+              return;
+            }
+
+            // Auto-select a valid method if none is selected
+            if (_selectedPaymentMethod == null ||
+                (_selectedPaymentMethod!.toLowerCase().contains('cash') &&
+                 !_paymentMethods.any((m) => m.toLowerCase().contains('cash')))) {
+              final fallback = _paymentMethods.firstWhere(
+                (m) => !m.toLowerCase().contains('cash'),
+                orElse: () => _paymentMethods.isNotEmpty ? _paymentMethods.first : '',
+              );
+              if (fallback.isNotEmpty) {
+                setState(() {
+                  _selectedPaymentMethod = fallback;
+                });
+              }
+            }
             print('🔴 DEBUG: BUTTON CLICKED!');
             print('🔴 DEBUG: _selectedPaymentMethod: $_selectedPaymentMethod');
             print('🔴 DEBUG: _isLoading: $_isLoading');
@@ -9667,9 +9763,11 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 ),
                 SizedBox(width: ResponsiveUtils.getHorizontalPadding(context) * 0.5),
                 SafeUI.safeText(
-                  _selectedPaymentMethod?.toLowerCase().contains('cash') == true 
-                      ? 'Place Order' 
-                      : 'Continue to Payment',
+                  !_isStoreCurrentlyOpen() 
+                      ? 'Store Closed'
+                      : (_selectedPaymentMethod?.toLowerCase().contains('cash') == true 
+                          ? 'Place Order' 
+                          : 'Continue to Payment'),
                   style: TextStyle(
                     fontSize: ResponsiveUtils.getTitleSize(context) + 2,
                     fontWeight: FontWeight.w600,

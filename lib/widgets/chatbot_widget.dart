@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../services/chatbot_service.dart';
 
 /// Floating chatbot widget for customer support
 class ChatbotWidget extends StatefulWidget {
-  const ChatbotWidget({Key? key}) : super(key: key);
+  final double? initialDx; // 0..1 of screen width
+  final double? initialDy; // 0..1 of screen height
+  const ChatbotWidget({Key? key, this.initialDx, this.initialDy}) : super(key: key);
 
   @override
   State<ChatbotWidget> createState() => _ChatbotWidgetState();
@@ -20,6 +23,18 @@ class _ChatbotWidgetState extends State<ChatbotWidget> with TickerProviderStateM
   bool _isTyping = false;
   List<ChatMessage> _messages = [];
   
+  // Draggable FAB position (normalized to screen width/height)
+  // Persisted per device via SharedPreferences
+  bool _positionLoaded = false;
+  double _fabDx = 0.9; // 90% from left by default (near right)
+  double _fabDy = 0.8; // 80% from top by default (near bottom)
+
+  static const double _fabSize = 50.0;
+  static const double _margin = 16.0;
+  static const double _windowWidth = 280.0;
+  static const double _windowHeight = 400.0;
+  static const double _windowGap = 10.0;
+  
   late AnimationController _slideController;
   late AnimationController _bounceController;
   late Animation<Offset> _slideAnimation;
@@ -30,6 +45,7 @@ class _ChatbotWidgetState extends State<ChatbotWidget> with TickerProviderStateM
     super.initState();
     _initializeAnimations();
     _initializeChatbot();
+    _loadSavedPosition();
   }
 
   void _initializeAnimations() {
@@ -97,6 +113,45 @@ class _ChatbotWidgetState extends State<ChatbotWidget> with TickerProviderStateM
     }
   }
 
+  Future<void> _loadSavedPosition() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final savedDx = prefs.getDouble('chatbot_fab_dx');
+      final savedDy = prefs.getDouble('chatbot_fab_dy');
+      if (mounted) {
+        setState(() {
+          if (savedDx != null) {
+            _fabDx = savedDx;
+          } else if (widget.initialDx != null) {
+            _fabDx = widget.initialDx!.clamp(0.0, 1.0);
+          }
+          if (savedDy != null) {
+            _fabDy = savedDy;
+          } else if (widget.initialDy != null) {
+            _fabDy = widget.initialDy!.clamp(0.0, 1.0);
+          }
+          _positionLoaded = true;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _positionLoaded = true;
+        });
+      }
+    }
+  }
+
+  Future<void> _savePosition(double dx, double dy) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setDouble('chatbot_fab_dx', dx);
+      await prefs.setDouble('chatbot_fab_dy', dy);
+    } catch (_) {
+      // ignore persistence failures silently
+    }
+  }
+
   void _toggleExpanded() {
     setState(() {
       _isExpanded = !_isExpanded;
@@ -147,22 +202,79 @@ class _ChatbotWidgetState extends State<ChatbotWidget> with TickerProviderStateM
 
   @override
   Widget build(BuildContext context) {
-    return Positioned(
-      bottom: 20,
-      right: 20,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          // Chat window
-          if (_isExpanded) _buildChatWindow(),
-          
-          const SizedBox(height: 10),
-          
-          // Floating action button
-          _buildFloatingButton(),
-        ],
-      ),
+    final media = MediaQuery.of(context);
+    final size = media.size;
+    final keyboardInset = media.viewInsets.bottom;
+
+    // Ensure position is loaded at least once; defaults are fine meanwhile
+    final minLeft = media.padding.left + _margin;
+    final minTop = media.padding.top + _margin;
+    final maxLeft = size.width - media.padding.right - _margin - _fabSize;
+    final maxTop = size.height - media.padding.bottom - _margin - _fabSize - keyboardInset;
+
+    // Convert normalized to pixels and clamp to safe area
+    double buttonLeft = (_fabDx * size.width).clamp(minLeft, maxLeft);
+    double buttonTop = (_fabDy * size.height).clamp(minTop, maxTop);
+
+    // Position chat window above and right-aligned to the button
+    final windowLeft = (buttonLeft + _fabSize - _windowWidth).clamp(
+      minLeft,
+      size.width - media.padding.right - _margin - _windowWidth,
+    );
+    final windowTop = (buttonTop - _windowGap - _windowHeight).clamp(
+      minTop,
+      size.height - media.padding.bottom - _margin - _windowHeight - keyboardInset,
+    );
+
+    return Stack(
+      children: [
+        // Chat window when expanded
+        if (_isExpanded)
+          Positioned(
+            left: windowLeft,
+            top: windowTop,
+            child: _buildChatWindow(),
+          ),
+
+        // Draggable floating action button (hidden while expanded to avoid covering input/send)
+        if (!_isExpanded)
+          Positioned(
+            left: buttonLeft,
+            top: buttonTop,
+            child: Listener(
+              onPointerDown: (_) {
+                _bounceController.stop();
+              },
+              onPointerUp: (_) {
+                if (!_isExpanded) {
+                  _bounceController.repeat(reverse: true);
+                }
+              },
+              child: GestureDetector(
+                onTap: _toggleExpanded,
+                onLongPress: () {
+                  setState(() {
+                    _fabDx = 0.9; // default near right
+                    _fabDy = 0.8; // default near bottom
+                  });
+                  _savePosition(_fabDx, _fabDy);
+                },
+                onPanUpdate: (details) {
+                  setState(() {
+                    buttonLeft = (buttonLeft + details.delta.dx).clamp(minLeft, maxLeft);
+                    buttonTop = (buttonTop + details.delta.dy).clamp(minTop, maxTop);
+                    _fabDx = (buttonLeft / size.width).clamp(0.0, 1.0);
+                    _fabDy = (buttonTop / size.height).clamp(0.0, 1.0);
+                  });
+                },
+                onPanEnd: (_) {
+                  _savePosition(_fabDx, _fabDy);
+                },
+                child: _buildFloatingButton(),
+              ),
+            ),
+          ),
+      ],
     );
   }
 
@@ -170,8 +282,8 @@ class _ChatbotWidgetState extends State<ChatbotWidget> with TickerProviderStateM
     return SlideTransition(
       position: _slideAnimation,
       child: Container(
-        width: 320,
-        height: 450,
+        width: 280,
+        height: 400,
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(20),
@@ -437,6 +549,12 @@ class _ChatbotWidgetState extends State<ChatbotWidget> with TickerProviderStateM
           Expanded(
             child: TextField(
               controller: _messageController,
+              keyboardType: TextInputType.multiline,
+              textCapitalization: TextCapitalization.sentences,
+              autocorrect: false,
+              enableSuggestions: false,
+              smartDashesType: SmartDashesType.disabled,
+              smartQuotesType: SmartQuotesType.disabled,
               decoration: InputDecoration(
                 hintText: 'Type your message...',
                 hintStyle: TextStyle(color: Colors.grey[500]),
@@ -485,8 +603,8 @@ class _ChatbotWidgetState extends State<ChatbotWidget> with TickerProviderStateM
       child: GestureDetector(
         onTap: _toggleExpanded,
         child: Container(
-          width: 60,
-          height: 60,
+          width: 50,
+          height: 50,
           decoration: BoxDecoration(
             gradient: const LinearGradient(
               colors: [Color(0xFF2E7D5A), Color(0xFF4CAF50)],
@@ -508,7 +626,7 @@ class _ChatbotWidgetState extends State<ChatbotWidget> with TickerProviderStateM
                 child: Icon(
                   _isExpanded ? Icons.close : Icons.chat_bubble,
                   color: Colors.white,
-                  size: 28,
+                  size: 22,
                 ),
               ),
               if (!_isExpanded && _messages.isNotEmpty)
@@ -560,11 +678,15 @@ class _ChatbotWidgetState extends State<ChatbotWidget> with TickerProviderStateM
 class ChatbotWrapper extends StatelessWidget {
   final Widget child;
   final bool showChatbot;
+  final double? initialDx;
+  final double? initialDy;
 
   const ChatbotWrapper({
     Key? key,
     required this.child,
     this.showChatbot = true,
+    this.initialDx,
+    this.initialDy,
   }) : super(key: key);
 
   @override
@@ -572,7 +694,20 @@ class ChatbotWrapper extends StatelessWidget {
     return Stack(
       children: [
         child,
-        if (showChatbot) const ChatbotWidget(),
+        if (showChatbot)
+          Overlay(
+            initialEntries: [
+              OverlayEntry(
+                builder: (context) => Material(
+                  type: MaterialType.transparency,
+                  child: ChatbotWidget(
+                    initialDx: initialDx,
+                    initialDy: initialDy,
+                  ),
+                ),
+              ),
+            ],
+          ),
       ],
     );
   }

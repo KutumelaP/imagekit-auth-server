@@ -1761,7 +1761,12 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                               ),
                             ),
                             TextButton.icon(
-                              onPressed: () => Navigator.of(context).pushNamed('/kyc'),
+                              onPressed: () async {
+                                await Navigator.of(context).pushNamed('/kyc');
+                                if (mounted) {
+                                  await _loadProfile();
+                                }
+                              },
                               icon: const Icon(Icons.upload),
                               label: const Text('Complete KYC'),
                             ),

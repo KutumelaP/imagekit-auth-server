@@ -19,6 +19,7 @@ class ChatbotService {
   String? _currentConversationId;
   List<ChatMessage> _messages = [];
   bool _isInitialized = false;
+  bool _persistenceEnabled = true; // fallback to local-only when Firestore not permitted
 
   // Getters for streams
   Stream<List<ChatMessage>> get messagesStream => _messagesController.stream;
@@ -69,7 +70,11 @@ class ChatbotService {
       }
     } catch (e) {
       print('❌ Error loading conversation: $e');
-      await _createNewConversation();
+      // Fallback to local-only mode
+      _persistenceEnabled = false;
+      _currentConversationId = 'local';
+      _messages.clear();
+      await _addWelcomeMessage();
     }
   }
 
@@ -101,6 +106,11 @@ class ChatbotService {
       print('🤖 New conversation created: $_currentConversationId');
     } catch (e) {
       print('❌ Error creating conversation: $e');
+      // Fallback to local-only mode
+      _persistenceEnabled = false;
+      _currentConversationId = 'local';
+      _messages.clear();
+      await _addWelcomeMessage();
     }
   }
 
@@ -109,6 +119,11 @@ class ChatbotService {
     if (_currentConversationId == null) return;
 
     try {
+      if (!_persistenceEnabled) {
+        // Local-only mode: keep what we have
+        _messagesController.add(_messages);
+        return;
+      }
       final messagesQuery = await _firestore
           .collection('chatbot_conversations')
           .doc(_currentConversationId)
@@ -126,21 +141,41 @@ class ChatbotService {
     }
   }
 
-  /// Add welcome message
+  /// Add welcome message based on user role
   Future<void> _addWelcomeMessage() async {
-    final welcomeMessage = ChatMessage(
-      id: 'welcome_${DateTime.now().millisecondsSinceEpoch}',
-      text: '''👋 Hi there! I'm your AI assistant for Food Marketplace.
+    final user = _auth.currentUser;
+    final userRole = await _getUserRole(user?.uid);
+    
+    String welcomeText;
+    if (userRole == 'seller') {
+      welcomeText = '''👋 Hi there! I'm your AI assistant for sellers on Food Marketplace.
+
+I can help you with:
+🏪 Store management and settings
+📦 Order management and fulfillment
+💰 Earnings, payouts, and COD tracking
+📊 Sales analytics and performance
+👥 Customer communication
+🛠️ Technical support for sellers
+
+What can I help you with today?''';
+    } else {
+      welcomeText = '''👋 Hi there! I'm your AI assistant for Food Marketplace.
 
 I can help you with:
 🛒 Order tracking and status updates
 📦 Delivery information and pickup points
 💳 Payment and billing questions
-🏪 Store information and hours
+🏪 Finding stores and products
 🔄 Returns and refunds
 ❓ General marketplace questions
 
-What can I help you with today?''',
+What can I help you with today?''';
+    }
+
+    final welcomeMessage = ChatMessage(
+      id: 'welcome_${DateTime.now().millisecondsSinceEpoch}',
+      text: welcomeText,
       isUser: false,
       timestamp: DateTime.now(),
       type: 'welcome',
@@ -220,47 +255,85 @@ Is there anything else I can help you with?''',
     if (_currentConversationId == null) return;
 
     try {
-      // Add to local list
+      // Always add to local list
       _messages.add(message);
       _messagesController.add(_messages);
 
-      // Save to Firestore
-      await _firestore
-          .collection('chatbot_conversations')
-          .doc(_currentConversationId)
-          .collection('messages')
-          .doc(message.id)
-          .set(message.toFirestore());
+      if (_persistenceEnabled) {
+        // Save to Firestore
+        await _firestore
+            .collection('chatbot_conversations')
+            .doc(_currentConversationId)
+            .collection('messages')
+            .doc(message.id)
+            .set(message.toFirestore());
 
-      // Update conversation metadata
-      await _firestore
-          .collection('chatbot_conversations')
-          .doc(_currentConversationId)
-          .update({
-        'lastMessageAt': FieldValue.serverTimestamp(),
-        'messageCount': FieldValue.increment(1),
-      });
+        // Update conversation metadata
+        await _firestore
+            .collection('chatbot_conversations')
+            .doc(_currentConversationId)
+            .update({
+          'lastMessageAt': FieldValue.serverTimestamp(),
+          'messageCount': FieldValue.increment(1),
+        });
+      }
     } catch (e) {
       print('❌ Error adding message: $e');
     }
   }
 
-  /// Generate AI response based on user input
+  /// Get user role from Firestore
+  Future<String> _getUserRole(String? userId) async {
+    if (userId == null) return 'buyer';
+    
+    try {
+      final userDoc = await _firestore.collection('users').doc(userId).get();
+      if (userDoc.exists) {
+        final userData = userDoc.data();
+        return userData?['role'] ?? 'buyer';
+      }
+    } catch (e) {
+      print('❌ Error getting user role: $e');
+    }
+    
+    return 'buyer'; // Default to buyer
+  }
+
+  /// Generate AI response based on user input and role
   Future<String> _generateResponse(String userInput) async {
     try {
-      // Analyze user intent
-      final intent = _analyzeIntent(userInput.toLowerCase());
+      final user = _auth.currentUser;
+      final userRole = await _getUserRole(user?.uid);
       
-      // Get context-aware response
-      return await _getContextualResponse(intent, userInput);
+      // Analyze user intent with role context
+      final intent = _analyzeIntent(userInput.toLowerCase(), userRole);
+      
+      // Get role-aware context response
+      return await _getContextualResponse(intent, userInput, userRole);
     } catch (e) {
       print('❌ Error in response generation: $e');
       return _getFallbackResponse();
     }
   }
 
-  /// Analyze user intent from message
-  String _analyzeIntent(String input) {
+  /// Analyze user intent from message with role context
+  String _analyzeIntent(String input, [String userRole = 'buyer']) {
+    // Seller-specific keywords
+    if (userRole == 'seller') {
+      if (input.contains(RegExp(r'\b(earnings|payout|commission|cod|cash.*delivery)\b'))) {
+        return 'seller_earnings';
+      }
+      if (input.contains(RegExp(r'\b(customers|customer.*service|respond|reply)\b'))) {
+        return 'seller_customer_service';
+      }
+      if (input.contains(RegExp(r'\b(sales|analytics|performance|dashboard)\b'))) {
+        return 'seller_analytics';
+      }
+      if (input.contains(RegExp(r'\b(inventory|stock|product.*manage|add.*product)\b'))) {
+        return 'seller_inventory';
+      }
+    }
+    
     // Order-related keywords
     if (input.contains(RegExp(r'\b(order|track|status|delivery|shipped|delivered)\b'))) {
       return 'order_tracking';
@@ -299,30 +372,41 @@ Is there anything else I can help you with?''',
     return 'general';
   }
 
-  /// Get contextual response based on intent
-  Future<String> _getContextualResponse(String intent, String userInput) async {
+  /// Get contextual response based on intent and user role
+  Future<String> _getContextualResponse(String intent, String userInput, String userRole) async {
     switch (intent) {
+      // Seller-specific intents
+      case 'seller_earnings':
+        return await _getSellerEarningsResponse(userInput);
+      case 'seller_customer_service':
+        return await _getSellerCustomerServiceResponse(userInput);
+      case 'seller_analytics':
+        return await _getSellerAnalyticsResponse(userInput);
+      case 'seller_inventory':
+        return await _getSellerInventoryResponse(userInput);
+        
+      // Common intents (role-aware)
       case 'order_tracking':
-        return await _getOrderTrackingResponse(userInput);
+        return await _getOrderTrackingResponse(userInput, userRole);
       case 'payment':
-        return await _getPaymentResponse(userInput);
+        return await _getPaymentResponse(userInput, userRole);
       case 'store_info':
-        return await _getStoreInfoResponse(userInput);
+        return await _getStoreInfoResponse(userInput, userRole);
       case 'returns':
-        return await _getReturnsResponse(userInput);
+        return await _getReturnsResponse(userInput, userRole);
       case 'account':
-        return await _getAccountResponse(userInput);
+        return await _getAccountResponse(userInput, userRole);
       case 'delivery':
-        return await _getDeliveryResponse(userInput);
+        return await _getDeliveryResponse(userInput, userRole);
       case 'help':
-        return await _getHelpResponse(userInput);
+        return await _getHelpResponse(userInput, userRole);
       default:
-        return await _getGeneralResponse(userInput);
+        return await _getGeneralResponse(userInput, userRole);
     }
   }
 
-  /// Order tracking responses
-  Future<String> _getOrderTrackingResponse(String input) async {
+  /// Order tracking responses (role-aware)
+  Future<String> _getOrderTrackingResponse(String input, [String userRole = 'buyer']) async {
     final user = _auth.currentUser;
     if (user == null) {
       return '''To track your orders, please log in to your account first.
@@ -335,24 +419,43 @@ Once logged in, I can help you:
     }
 
     try {
-      // Get user's recent orders
-      final ordersQuery = await _firestore
-          .collection('orders')
-          .where('buyerId', isEqualTo: user.uid)
-          .orderBy('orderDate', descending: true)
-          .limit(3)
-          .get();
+      // Get user's recent orders based on role
+      final ordersQuery = userRole == 'seller' 
+          ? await _firestore
+              .collection('orders')
+              .where('sellerId', isEqualTo: user.uid)
+              .orderBy('orderDate', descending: true)
+              .limit(3)
+              .get()
+          : await _firestore
+              .collection('orders')
+              .where('buyerId', isEqualTo: user.uid)
+              .orderBy('orderDate', descending: true)
+              .limit(3)
+              .get();
 
       if (ordersQuery.docs.isEmpty) {
-        return '''I don't see any recent orders for your account.
+        if (userRole == 'seller') {
+          return '''I don't see any recent orders for your store.
+
+You can:
+🏪 Check if your store is active and open
+📦 Add more products to attract customers
+📞 Contact support if you think this is an error
+❓ Ask me about promoting your store''';
+        } else {
+          return '''I don't see any recent orders for your account.
 
 You can:
 🛒 Browse products and place your first order
 📞 Contact support if you think this is an error
 ❓ Ask me any other questions about the marketplace''';
+        }
       }
 
-      String response = '📦 Here are your recent orders:\n\n';
+      String response = userRole == 'seller' 
+          ? '📦 Here are your recent customer orders:\n\n'
+          : '📦 Here are your recent orders:\n\n';
       
       for (final doc in ordersQuery.docs) {
         final data = doc.data();
@@ -382,9 +485,35 @@ You can:
     }
   }
 
-  /// Payment-related responses
-  Future<String> _getPaymentResponse(String input) async {
-    return '''💳 I can help with payment questions!
+  /// Payment-related responses (role-aware)
+  Future<String> _getPaymentResponse(String input, [String userRole = 'buyer']) async {
+    if (userRole == 'seller') {
+      return '''💳 Payment Help for Sellers
+
+**Receiving Payments:**
+🏦 Bank Transfer (EFT) - Instant to escrow
+💳 Credit/Debit Cards - Via PayFast gateway
+💰 Cash on Delivery - You collect directly
+
+**Payment Processing:**
+• Online payments → Escrow → Payouts
+• COD payments → Your cash drawer
+• Commission deducted from all sales
+• Minimum R50 for payouts
+
+**Common Issues:**
+• COD disabled → Complete KYC verification
+• Payout delays → Check bank details
+• Commission questions → View earnings breakdown
+
+**Managing COD:**
+✅ Verify customer orders before preparing
+✅ Collect exact change
+✅ Mark orders as "paid" after collection
+
+Need help with specific payment processing?''';
+    } else {
+      return '''💳 I can help with payment questions!
 
 **Accepted Payment Methods:**
 🏦 Bank Transfer (EFT)
@@ -400,10 +529,11 @@ You can:
 
 **Need specific help?**
 Tell me what payment issue you're experiencing, and I'll provide detailed assistance!''';
+    }
   }
 
-  /// Store information responses
-  Future<String> _getStoreInfoResponse(String input) async {
+  /// Store information responses (role-aware)
+  Future<String> _getStoreInfoResponse(String input, [String userRole = 'buyer']) async {
     return '''🏪 Store Information Help
 
 **Finding Store Details:**
@@ -423,7 +553,7 @@ Tell me the store name or what you're looking for, and I'll help you find it!'''
   }
 
   /// Returns and refunds responses
-  Future<String> _getReturnsResponse(String input) async {
+  Future<String> _getReturnsResponse(String input, [String userRole = 'buyer']) async {
     return '''🔄 Returns & Refunds Help
 
 **Return Policy:**
@@ -444,8 +574,8 @@ Go to "My Orders" → Select order → "Request Return"
 Having trouble with a specific return? Tell me your order number and I'll help!''';
   }
 
-  /// Account-related responses
-  Future<String> _getAccountResponse(String input) async {
+  /// Account-related responses (role-aware)
+  Future<String> _getAccountResponse(String input, [String userRole = 'buyer']) async {
     return '''👤 Account Help
 
 **Account Management:**
@@ -465,7 +595,7 @@ Tell me what account issue you're experiencing!''';
   }
 
   /// Delivery information responses
-  Future<String> _getDeliveryResponse(String input) async {
+  Future<String> _getDeliveryResponse(String input, [String userRole = 'buyer']) async {
     return '''🚚 Delivery & Pickup Help
 
 **Delivery Options:**
@@ -489,7 +619,7 @@ Check "My Orders" for real-time updates!''';
   }
 
   /// General help responses
-  Future<String> _getHelpResponse(String input) async {
+  Future<String> _getHelpResponse(String input, [String userRole = 'buyer']) async {
     return '''❓ General Help
 
 **I can assist with:**
@@ -513,7 +643,7 @@ Just ask me anything about the marketplace!''';
   }
 
   /// General conversation responses
-  Future<String> _getGeneralResponse(String input) async {
+  Future<String> _getGeneralResponse(String input, [String userRole = 'buyer']) async {
     final responses = [
       '''I understand you're asking about "${input.length > 50 ? input.substring(0, 50) + '...' : input}"
 
@@ -684,6 +814,122 @@ Please try rephrasing your question, and I'll do my best to help!''';
       print('❌ Error fetching conversation history: $e');
       return [];
     }
+  }
+
+  /// Seller earnings and payouts responses
+  Future<String> _getSellerEarningsResponse(String input) async {
+    return '''💰 Seller Earnings & Payouts Help
+
+**COD (Cash on Delivery) Tracking:**
+• Cash collected from customers
+• Commission owed to platform (10%)
+• Your net share after commission
+• View in Earnings & Payouts screen
+
+**Payout Process:**
+1️⃣ Complete KYC verification
+2️⃣ Minimum R50 balance required
+3️⃣ Request payout in app
+4️⃣ Funds transferred within 2-3 business days
+
+**COD Balance Issues:**
+• Outstanding commission affects payouts
+• Pay platform fees to unlock full balance
+• Contact support for payment arrangements
+
+Need help with specific earnings question?''';
+  }
+
+  /// Seller customer service responses
+  Future<String> _getSellerCustomerServiceResponse(String input) async {
+    return '''👥 Customer Service for Sellers
+
+**Handling Customer Inquiries:**
+• Respond to messages within 24 hours
+• Use professional, friendly tone
+• Provide clear order updates
+• Address concerns promptly
+
+**Common Customer Questions:**
+🕐 "When will my order be ready?"
+📦 "Can I change my delivery address?"
+💳 "Payment issues or refunds"
+🔄 "Returns and exchanges"
+
+**Best Practices:**
+✅ Set clear store hours
+✅ Update order status regularly
+✅ Provide tracking information
+✅ Be proactive with delays
+
+**Escalation:**
+For complex issues, direct customers to platform support through the app menu.
+
+Need help with a specific customer situation?''';
+  }
+
+  /// Seller analytics and performance responses
+  Future<String> _getSellerAnalyticsResponse(String input) async {
+    return '''📊 Sales Analytics & Performance
+
+**Key Metrics to Track:**
+📈 Total revenue and orders
+🎯 Conversion rates
+⭐ Customer ratings
+🔄 Return rates
+
+**Performance Insights:**
+• Best-selling products
+• Peak order times
+• Customer demographics
+• Seasonal trends
+
+**Improving Performance:**
+✅ Optimize product photos
+✅ Competitive pricing
+✅ Fast order fulfillment
+✅ Excellent customer service
+✅ Regular inventory updates
+
+**Available Reports:**
+• View in Seller Dashboard
+• Revenue trends
+• Order patterns
+• Product performance
+
+Want help analyzing specific metrics?''';
+  }
+
+  /// Seller inventory management responses
+  Future<String> _getSellerInventoryResponse(String input) async {
+    return '''📦 Inventory Management Help
+
+**Stock Management:**
+• Update stock levels regularly
+• Set low-stock alerts
+• Track inventory turnover
+• Manage product variants
+
+**Adding Products:**
+📸 High-quality photos (multiple angles)
+📝 Detailed descriptions
+💰 Competitive pricing
+🏷️ Accurate categories
+📊 Initial stock quantity
+
+**Inventory Best Practices:**
+✅ Regular stock audits
+✅ Seasonal inventory planning
+✅ Monitor popular items
+✅ Remove discontinued products
+✅ Update prices competitively
+
+**Out of Stock Management:**
+• Mark items as unavailable
+• Set restock notifications
+• Communicate delays to customers
+
+Need help with specific inventory tasks?''';
   }
 
   /// Dispose resources

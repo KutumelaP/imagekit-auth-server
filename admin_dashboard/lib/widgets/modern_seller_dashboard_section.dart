@@ -1154,23 +1154,20 @@ class _ModernSellerDashboardSectionState extends State<ModernSellerDashboardSect
         children: [
           _buildCodKycPanel(),
           const SizedBox(height: 16),
-          // COD receivables summary (dues)
-          FutureBuilder<QuerySnapshot<Map<String, dynamic>>>(
-            future: _sellerId == null
-                ? null
-                : FirebaseFirestore.instance
-                    .collection('users')
-                    .doc(_sellerId)
-                    .collection('platform_receivables')
-                    .where('status', isEqualTo: 'outstanding')
-                    .get(),
+          // COD receivables summary (dues) - updated structure
+          if (_sellerId != null) FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+            future: FirebaseFirestore.instance
+                .collection('platform_receivables')
+                .doc(_sellerId)
+                .get(),
             builder: (context, snapshot) {
-              if (!snapshot.hasData) return const SizedBox.shrink();
-              double totalDue = 0;
-              for (final d in snapshot.data!.docs) {
-                totalDue += (d.data()['amount'] ?? 0.0).toDouble();
-              }
+              if (!snapshot.hasData || !snapshot.data!.exists) return const SizedBox.shrink();
+              
+              final data = snapshot.data!.data()!;
+              final totalDue = (data['amount'] ?? 0.0).toDouble();
+              
               if (totalDue <= 0) return const SizedBox.shrink();
+              
               return Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(12),
@@ -1185,66 +1182,21 @@ class _ModernSellerDashboardSectionState extends State<ModernSellerDashboardSect
                     const Icon(Icons.account_balance_wallet, color: Colors.red),
                     const SizedBox(width: 10),
                     Expanded(
-                      child: Text('COD fees outstanding: R${totalDue.toStringAsFixed(2)}. Settle to re-enable features.'),
+                      child: Text('COD commission outstanding: R${totalDue.toStringAsFixed(2)}. Seller owes platform for cash orders.'),
                     ),
                     TextButton.icon(
                       onPressed: () {
-                        // For now, push to settings where wallet top-up is typically surfaced in the buyer app; here we just inform
-                        setState(() { _selectedIndex = 8; });
+                        setState(() { _selectedIndex = 6; }); // Go to Financial Reports
                       },
                       icon: const Icon(Icons.arrow_forward),
-                      label: const Text('View'),
+                      label: const Text('View Details'),
                     ),
                   ],
                 ),
               );
             },
           ),
-          if ((_sellerData?['kycStatus'] ?? 'none') != 'approved') ...[
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(12),
-              margin: const EdgeInsets.only(bottom: 12),
-              decoration: BoxDecoration(
-                color: Colors.orange.withOpacity(0.08),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.orange.withOpacity(0.2)),
-              ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Icon(Icons.verified_user, color: Colors.orange),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Identity verification required',
-                          style: TextStyle(fontWeight: FontWeight.w700, color: Colors.orange[800]),
-                        ),
-                        const SizedBox(height: 4),
-                        const Text('To accept Cash on Delivery and payouts, please complete KYC.'),
-                        const SizedBox(height: 8),
-                        Wrap(
-                          spacing: 8,
-                          children: [
-                            ElevatedButton.icon(
-                              onPressed: () {
-                                Navigator.of(context).pushNamed('/kyc');
-                              },
-                              icon: const Icon(Icons.upload),
-                              label: const Text('Complete KYC'),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
+
           // Header
           Row(
             children: [
@@ -1922,6 +1874,145 @@ class _ModernSellerDashboardSectionState extends State<ModernSellerDashboardSect
             ],
           ),
           const SizedBox(height: 24),
+          
+          // COD Wallet Section
+          if (_sellerId != null) FutureBuilder<Map<String, dynamic>>(
+            future: _loadCodWalletData(),
+            builder: (context, snapshot) {
+              if (!snapshot.hasData) return const SizedBox.shrink();
+              
+              final codWallet = snapshot.data!;
+              final cashCollected = (codWallet['cashCollected'] ?? 0.0).toDouble();
+              final commissionOwed = (codWallet['commissionOwed'] ?? 0.0).toDouble();
+              final yourShare = cashCollected - commissionOwed;
+              
+              if (cashCollected <= 0) return const SizedBox.shrink();
+              
+              return Column(
+                children: [
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.05),
+                          blurRadius: 10,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                      border: Border.all(color: Colors.green.withOpacity(0.3), width: 1),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.all(20),
+                          child: Row(
+                            children: [
+                              Icon(Icons.account_balance_wallet, color: Colors.green[700], size: 24),
+                              const SizedBox(width: 8),
+                              Text('COD Wallet', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                              const Spacer(),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: Colors.green.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Text('${(codWallet['orderCount'] ?? 0)} orders', 
+                                     style: TextStyle(color: Colors.green[700], fontSize: 12, fontWeight: FontWeight.w600)),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 20),
+                          child: Text(
+                            'Cash collected from customers vs commission owed to platform',
+                            style: TextStyle(color: Colors.grey[600], fontSize: 14),
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+                        
+                        // COD Summary Row
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 20),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text('Cash Collected', style: TextStyle(fontSize: 12, color: Colors.grey[600], fontWeight: FontWeight.w500)),
+                                    const SizedBox(height: 4),
+                                    Text('R${cashCollected.toStringAsFixed(2)}', 
+                                         style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.green)),
+                                  ],
+                                ),
+                              ),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text('Commission Owed', style: TextStyle(fontSize: 12, color: Colors.grey[600], fontWeight: FontWeight.w500)),
+                                    const SizedBox(height: 4),
+                                    Text('R${commissionOwed.toStringAsFixed(2)}', 
+                                         style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.orange)),
+                                  ],
+                                ),
+                              ),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text('Seller Share', style: TextStyle(fontSize: 12, color: Colors.grey[600], fontWeight: FontWeight.w500)),
+                                    const SizedBox(height: 4),
+                                    Text('R${yourShare.toStringAsFixed(2)}', 
+                                         style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.blue)),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        
+                        if (commissionOwed > 0) ...[
+                          const SizedBox(height: 20),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 20),
+                            child: Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: Colors.orange.withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: Colors.orange.withOpacity(0.3)),
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(Icons.warning_amber, color: Colors.orange[700], size: 20),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      'R${commissionOwed.toStringAsFixed(2)} commission payment pending from seller',
+                                      style: TextStyle(color: Colors.orange[700], fontWeight: FontWeight.w500, fontSize: 14),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                        
+                        const SizedBox(height: 20),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                ],
+              );
+            },
+          ),
           
           // Recent Transactions placeholder
             Container(
@@ -3346,6 +3437,19 @@ class _ModernSellerDashboardSectionState extends State<ModernSellerDashboardSect
     }
   }
 
+  Future<Map<String, dynamic>> _loadCodWalletData() async {
+    if (_sellerId == null) return {};
+    try {
+      final functions = FirebaseFunctions.instance;
+      final res = await functions.httpsCallable('getSellerAvailableBalance').call({ 'userId': _sellerId });
+      final data = Map<String, dynamic>.from(res.data as Map);
+      return Map<String, dynamic>.from(data['codWallet'] ?? {});
+    } catch (e) {
+      if (kDebugMode) print('Error loading COD wallet data: $e');
+      return {};
+    }
+  }
+
   Future<void> _loadPayoutHistory() async {
     if (_sellerId == null) return;
     try {
@@ -3733,12 +3837,7 @@ class _ModernSellerDashboardSectionState extends State<ModernSellerDashboardSect
                   icon: const Icon(Icons.check),
                   label: const Text('Mark as paid'),
                 ),
-                const SizedBox(width: 8),
-                TextButton.icon(
-                  onPressed: () => Navigator.pushNamed(context, '/kyc'),
-                  icon: const Icon(Icons.assignment_ind),
-                  label: const Text('Open KYC Review'),
-                ),
+
               ],
             ),
           ],
@@ -3764,13 +3863,82 @@ class _ModernSellerDashboardSectionState extends State<ModernSellerDashboardSect
   Widget _buildSalesChart() {
     return Container(
       height: 200,
-      alignment: Alignment.center,
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
         boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 2))],
       ),
-      child: const Text('Sales chart (coming soon)'),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Sales Overview',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Expanded(
+            child: Row(
+              children: [
+                Expanded(
+                  child: _buildSalesMetric(
+                    'Total Revenue', 
+                    'R${_totalRevenue.toStringAsFixed(2)}',
+                    Icons.attach_money,
+                    Colors.green,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: _buildSalesMetric(
+                    'Total Orders', 
+                    '$_totalOrders',
+                    Icons.shopping_bag,
+                    Colors.blue,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSalesMetric(String title, String value, IconData icon, Color color) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withOpacity(0.3)),
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(icon, color: color, size: 24),
+          const SizedBox(height: 8),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            title,
+            style: const TextStyle(
+              fontSize: 12,
+              color: Colors.grey,
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
     );
   }
 
@@ -3782,7 +3950,58 @@ class _ModernSellerDashboardSectionState extends State<ModernSellerDashboardSect
         borderRadius: BorderRadius.circular(12),
         boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 2))],
       ),
-      child: const Text('Recent activity (coming soon)'),
+        child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Recent Activity',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 16),
+          if (_recentActivity.isEmpty) 
+            const Center(
+              child: Padding(
+                padding: EdgeInsets.all(20),
+                child: Text(
+                  'No recent activity',
+                  style: TextStyle(color: Colors.grey),
+                ),
+              ),
+            )
+          else
+            ...(_recentActivity.take(5).map((activity) => Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Row(
+                children: [
+                  Container(
+                    width: 8,
+                    height: 8,
+                    decoration: const BoxDecoration(
+                      color: Colors.blue,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      activity['description'] ?? 'Activity',
+                      style: const TextStyle(fontSize: 14),
+                    ),
+                  ),
+                  Text(
+                    _formatTimeAgo(activity['timestamp']),
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey,
+                    ),
+                  ),
+                ],
+              ),
+            ))),
+        ],
+      ),
     );
   }
 
@@ -3794,8 +4013,110 @@ class _ModernSellerDashboardSectionState extends State<ModernSellerDashboardSect
         borderRadius: BorderRadius.circular(12),
         boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 2))],
       ),
-      child: const Text('Recent orders (coming soon)'),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Recent Orders',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 16),
+          if (_recentOrders.isEmpty)
+            const Center(
+              child: Padding(
+                padding: EdgeInsets.all(20),
+                child: Text(
+                  'No recent orders',
+                  style: TextStyle(color: Colors.grey),
+                ),
+              ),
+            )
+          else
+            ...(_recentOrders.take(5).map((order) => Container(
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.grey.withOpacity(0.05),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.grey.withOpacity(0.2)),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Order #${(order['orderNumber'] ?? order['id'] ?? 'N/A').toString().substring(0, 8)}...',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w500,
+                            fontSize: 14,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Customer: ${order['buyerName'] ?? 'Unknown'}',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text(
+                        'R${(order['total'] ?? 0).toStringAsFixed(2)}',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                          color: Colors.green,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: _getStatusColor(order['status'] ?? 'pending'),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          (order['status'] ?? 'pending').toString().toUpperCase(),
+                          style: const TextStyle(
+                            fontSize: 10,
+                            color: Colors.white,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ))),
+        ],
+      ),
     );
+  }
+
+  Color _getStatusColor(String status) {
+    switch (status.toLowerCase()) {
+      case 'completed':
+      case 'delivered':
+        return Colors.green;
+      case 'pending':
+        return Colors.orange;
+      case 'processing':
+        return Colors.blue;
+      case 'cancelled':
+        return Colors.red;
+      default:
+        return Colors.grey;
+    }
   }
 
   Widget _buildTopProducts() {
@@ -3806,7 +4127,108 @@ class _ModernSellerDashboardSectionState extends State<ModernSellerDashboardSect
         borderRadius: BorderRadius.circular(12),
         boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 2))],
       ),
-      child: const Text('Top products (coming soon)'),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Top Products',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 16),
+          if (_topProducts.isEmpty)
+            const Center(
+              child: Padding(
+                padding: EdgeInsets.all(20),
+                child: Text(
+                  'No products available',
+                  style: TextStyle(color: Colors.grey),
+                ),
+              ),
+            )
+          else
+            ...(_topProducts.take(5).map((product) => Container(
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.grey.withOpacity(0.05),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.grey.withOpacity(0.2)),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: Colors.grey.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: product['imageUrl'] != null
+                        ? ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: Image.network(
+                              product['imageUrl'],
+                              fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) {
+                                return const Icon(Icons.image, color: Colors.grey);
+                              },
+                            ),
+                          )
+                        : const Icon(Icons.shopping_bag, color: Colors.grey),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          product['name'] ?? 'Product',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w500,
+                            fontSize: 14,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Stock: ${product['stock'] ?? 0}',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text(
+                        'R${(product['price'] ?? 0).toStringAsFixed(2)}',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                          color: Colors.green,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Sold: ${product['sold'] ?? 0}',
+                        style: const TextStyle(
+                          fontSize: 10,
+                          color: Colors.grey,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ))),
+        ],
+      ),
     );
   }
 
@@ -3875,14 +4297,7 @@ class _ModernSellerDashboardSectionState extends State<ModernSellerDashboardSect
     );
   }
 
-  Color _getStatusColor(String status) {
-    final s = status.toLowerCase();
-    if (s.contains('pending')) return AdminTheme.warning;
-    if (s.contains('processing')) return AdminTheme.info;
-    if (s.contains('completed') || s.contains('delivered')) return AdminTheme.success;
-    if (s.contains('cancel')) return AdminTheme.error;
-    return Colors.grey;
-  }
+
 }
 
 // Chat Dialog Widget

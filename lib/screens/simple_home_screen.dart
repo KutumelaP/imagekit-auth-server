@@ -24,6 +24,7 @@ import '../widgets/notification_badge.dart';
 import '../widgets/chat_badge.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:flutter/services.dart'; // Added import for SystemUiOverlayStyle
+import '../widgets/chatbot_widget.dart';
 
 class SimpleHomeScreen extends StatefulWidget {
   const SimpleHomeScreen({super.key});
@@ -361,11 +362,23 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
             child: const Icon(Icons.add_shopping_cart),
             tooltip: 'Upload Product',
           ) : null,
-      body: SafeArea(
-        child: FadeTransition(
-          opacity: _fadeAnimation,
-          child: _buildBody(),
-        ),
+      body: Stack(
+        children: [
+          SafeArea(
+            child: FadeTransition(
+              opacity: _fadeAnimation,
+              child: _buildBody(),
+            ),
+          ),
+          // Chatbot on home only, positioned above seller FAB
+          const Material(
+            type: MaterialType.transparency,
+            child: ChatbotWidget(
+              initialDx: 0.88,
+              initialDy: 0.72,
+            ),
+          ),
+        ],
       ),
         );
       },

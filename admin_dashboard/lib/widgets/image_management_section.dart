@@ -52,6 +52,14 @@ class _ImageManagementSectionState extends State<ImageManagementSection> {
             return path.startsWith('profile_videos/');
           case 'store_videos':
             return path.startsWith('store_videos/');
+          case 'uncategorized':
+            return !(path.startsWith('products/') ||
+                     path.startsWith('profile_images/') ||
+                     path.startsWith('store_images/') ||
+                     path.startsWith('chat_images/') ||
+                     path.startsWith('profile_videos/') ||
+                     path.startsWith('store_videos/') ||
+                     path.startsWith('kyc/'));
           default:
             return false;
         }
@@ -89,6 +97,7 @@ class _ImageManagementSectionState extends State<ImageManagementSection> {
       final chatOrphans = await ImageCleanupService.findOrphanedChatImages();
       final profileVideoOrphans = await ImageCleanupService.findOrphanedProfileVideos();
       final storeVideoOrphans = await ImageCleanupService.findOrphanedStoreVideos();
+      final uncategorized = await ImageCleanupService.findUncategorizedMedia();
       
       allOrphaned.addAll(productOrphans);
       allOrphaned.addAll(profileOrphans);
@@ -96,6 +105,7 @@ class _ImageManagementSectionState extends State<ImageManagementSection> {
       allOrphaned.addAll(chatOrphans);
       allOrphaned.addAll(profileVideoOrphans);
       allOrphaned.addAll(storeVideoOrphans);
+      allOrphaned.addAll(uncategorized);
       
       if (mounted) {
         setState(() {
@@ -286,6 +296,17 @@ class _ImageManagementSectionState extends State<ImageManagementSection> {
     counts['store_videos'] = _orphanedImages.where((img) {
       final path = _normalizePath(img['filePath'] as String?);
       return path.startsWith('store_videos/');
+    }).length;
+    counts['uncategorized'] = _orphanedImages.where((img) {
+      final path = _normalizePath(img['filePath'] as String?);
+      final known = path.startsWith('products/') ||
+                    path.startsWith('profile_images/') ||
+                    path.startsWith('store_images/') ||
+                    path.startsWith('chat_images/') ||
+                    path.startsWith('profile_videos/') ||
+                    path.startsWith('store_videos/') ||
+                    path.startsWith('kyc/');
+      return !known;
     }).length;
     return counts;
   }
@@ -579,6 +600,17 @@ class _ImageManagementSectionState extends State<ImageManagementSection> {
               onSelected: (selected) {
                 setState(() {
                   _selectedOrphanType = 'chat';
+                  _updateFilteredImages();
+                });
+              },
+              selectedColor: AdminTheme.deepTeal.withOpacity(0.2),
+            ),
+            FilterChip(
+              label: Text('Uncategorized (${orphanCounts['uncategorized']})'),
+              selected: _selectedOrphanType == 'uncategorized',
+              onSelected: (selected) {
+                setState(() {
+                  _selectedOrphanType = 'uncategorized';
                   _updateFilteredImages();
                 });
               },

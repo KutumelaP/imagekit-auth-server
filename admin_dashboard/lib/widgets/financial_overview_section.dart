@@ -16,6 +16,12 @@ class _FinancialOverviewSectionState extends State<FinancialOverviewSection> {
   int _sellersWithDebt = 0;
   double _collectionRate = 0.0;
   List<Map<String, dynamic>> _topDebtors = [];
+  
+  // Platform earnings data
+  double _totalCollected = 0.0;
+  double _totalCodCommission = 0.0;
+  double _totalOnlineCommission = 0.0;
+  int _totalOrders = 0;
 
   @override
   void initState() {
@@ -72,11 +78,45 @@ class _FinancialOverviewSectionState extends State<FinancialOverviewSection> {
       // Calculate collection rate (simplified - you might want more complex logic)
       final collectionRate = sellersWithDebt > 0 ? (1 - (sellersWithDebt / receivablesSnap.docs.length)) : 1.0;
 
+      // Calculate platform earnings from collected commissions
+      double totalCollected = 0.0;
+      double totalCodCommission = 0.0;
+      double totalOnlineCommission = 0.0;
+      int totalOrders = 0;
+
+      // Get all orders to calculate total platform earnings
+      final ordersSnap = await FirebaseFirestore.instance
+          .collection('orders')
+          .where('status', isEqualTo: 'completed')
+          .get();
+
+      final commission_pct = 0.1; // 10% commission
+
+      for (final orderDoc in ordersSnap.docs) {
+        final orderData = orderDoc.data();
+        final total = (orderData['totalPrice'] ?? orderData['total'] ?? 0.0).toDouble();
+        final paymentMethod = (orderData['paymentMethod'] ?? '').toString().toLowerCase();
+        final commission = total * commission_pct;
+
+        totalOrders++;
+        totalCollected += commission;
+
+        if (paymentMethod.contains('cash')) {
+          totalCodCommission += commission;
+        } else {
+          totalOnlineCommission += commission;
+        }
+      }
+
       setState(() {
         _totalOutstanding = totalOutstanding;
         _sellersWithDebt = sellersWithDebt;
         _topDebtors = topDebtors;
         _collectionRate = collectionRate;
+        _totalCollected = totalCollected;
+        _totalCodCommission = totalCodCommission;
+        _totalOnlineCommission = totalOnlineCommission;
+        _totalOrders = totalOrders;
         _isLoading = false;
       });
 
@@ -114,63 +154,144 @@ class _FinancialOverviewSectionState extends State<FinancialOverviewSection> {
             if (_isLoading)
               const Center(child: CircularProgressIndicator())
             else ...[
-              // Summary Cards - Responsive layout
-              LayoutBuilder(
-                builder: (context, constraints) {
-                  if (constraints.maxWidth < 600) {
-                    // Stack cards vertically on small screens
-                    return Column(
+              // Platform Earnings Section
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: Colors.green[50],
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.green[200]!),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
                       children: [
-                        SummaryCard(
-                          label: 'Total Outstanding',
-                          value: 'R${_totalOutstanding.toStringAsFixed(2)}',
-                          icon: Icons.account_balance_wallet,
-                        ),
-                        const SizedBox(height: 16),
-                        SummaryCard(
-                          label: 'Sellers with Debt',
-                          value: _sellersWithDebt.toString(),
-                          icon: Icons.people,
-                        ),
-                        const SizedBox(height: 16),
-                        SummaryCard(
-                          label: 'Collection Rate',
-                          value: '${(_collectionRate * 100).toStringAsFixed(1)}%',
-                          icon: Icons.trending_up,
+                        Icon(Icons.monetization_on, color: Colors.green[700], size: 24),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Platform Earnings (Your Share)',
+                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.green[700]),
                         ),
                       ],
-                    );
-                  } else {
-                    // Display horizontally on larger screens
-                    return Row(
+                    ),
+                    const SizedBox(height: 16),
+                    
+                    LayoutBuilder(
+                      builder: (context, constraints) {
+                        if (constraints.maxWidth < 800) {
+                          return Column(
+                            children: [
+                              _buildEarningsCard('Total Commission Earned', 'R${_totalCollected.toStringAsFixed(2)}', Icons.attach_money, Colors.green),
+                              const SizedBox(height: 12),
+                              _buildEarningsCard('From Online Orders', 'R${_totalOnlineCommission.toStringAsFixed(2)}', Icons.credit_card, Colors.blue),
+                              const SizedBox(height: 12),
+                              _buildEarningsCard('From COD Orders', 'R${_totalCodCommission.toStringAsFixed(2)}', Icons.local_atm, Colors.orange),
+                              const SizedBox(height: 12),
+                              _buildEarningsCard('Total Orders Processed', _totalOrders.toString(), Icons.shopping_cart, Colors.purple),
+                            ],
+                          );
+                        } else {
+                          return Row(
+                            children: [
+                              Expanded(child: _buildEarningsCard('Total Commission Earned', 'R${_totalCollected.toStringAsFixed(2)}', Icons.attach_money, Colors.green)),
+                              const SizedBox(width: 12),
+                              Expanded(child: _buildEarningsCard('From Online Orders', 'R${_totalOnlineCommission.toStringAsFixed(2)}', Icons.credit_card, Colors.blue)),
+                              const SizedBox(width: 12),
+                              Expanded(child: _buildEarningsCard('From COD Orders', 'R${_totalCodCommission.toStringAsFixed(2)}', Icons.local_atm, Colors.orange)),
+                              const SizedBox(width: 12),
+                              Expanded(child: _buildEarningsCard('Total Orders Processed', _totalOrders.toString(), Icons.shopping_cart, Colors.purple)),
+                            ],
+                          );
+                        }
+                      },
+                    ),
+                  ],
+                ),
+              ),
+              
+              const SizedBox(height: 24),
+              
+              // Outstanding Amounts Section
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: Colors.orange[50],
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.orange[200]!),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
                       children: [
-                        Expanded(
-                          child: SummaryCard(
-                            label: 'Total Outstanding',
-                            value: 'R${_totalOutstanding.toStringAsFixed(2)}',
-                            icon: Icons.account_balance_wallet,
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: SummaryCard(
-                            label: 'Sellers with Debt',
-                            value: _sellersWithDebt.toString(),
-                            icon: Icons.people,
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: SummaryCard(
-                            label: 'Collection Rate',
-                            value: '${(_collectionRate * 100).toStringAsFixed(1)}%',
-                            icon: Icons.trending_up,
-                          ),
+                        Icon(Icons.account_balance_wallet, color: Colors.orange[700], size: 24),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Outstanding Collections',
+                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.orange[700]),
                         ),
                       ],
-                    );
-                  }
-                },
+                    ),
+                    const SizedBox(height: 16),
+                    
+                    LayoutBuilder(
+                      builder: (context, constraints) {
+                        if (constraints.maxWidth < 600) {
+                          return Column(
+                            children: [
+                              SummaryCard(
+                                label: 'Total Outstanding',
+                                value: 'R${_totalOutstanding.toStringAsFixed(2)}',
+                                icon: Icons.account_balance_wallet,
+                              ),
+                              const SizedBox(height: 16),
+                              SummaryCard(
+                                label: 'Sellers with Debt',
+                                value: _sellersWithDebt.toString(),
+                                icon: Icons.people,
+                              ),
+                              const SizedBox(height: 16),
+                              SummaryCard(
+                                label: 'Collection Rate',
+                                value: '${(_collectionRate * 100).toStringAsFixed(1)}%',
+                                icon: Icons.trending_up,
+                              ),
+                            ],
+                          );
+                        } else {
+                          return Row(
+                            children: [
+                              Expanded(
+                                child: SummaryCard(
+                                  label: 'Total Outstanding',
+                                  value: 'R${_totalOutstanding.toStringAsFixed(2)}',
+                                  icon: Icons.account_balance_wallet,
+                                ),
+                              ),
+                              const SizedBox(width: 16),
+                              Expanded(
+                                child: SummaryCard(
+                                  label: 'Sellers with Debt',
+                                  value: _sellersWithDebt.toString(),
+                                  icon: Icons.people,
+                                ),
+                              ),
+                              const SizedBox(width: 16),
+                              Expanded(
+                                child: SummaryCard(
+                                  label: 'Collection Rate',
+                                  value: '${(_collectionRate * 100).toStringAsFixed(1)}%',
+                                  icon: Icons.trending_up,
+                                ),
+                              ),
+                            ],
+                          );
+                        }
+                      },
+                    ),
+                  ],
+                ),
               ),
               
               const SizedBox(height: 32),
@@ -276,6 +397,39 @@ class _FinancialOverviewSectionState extends State<FinancialOverviewSection> {
             ],
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildEarningsCard(String label, String value, IconData icon, Color color) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withOpacity(0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, color: color, size: 20),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  label,
+                  style: TextStyle(fontSize: 12, color: Colors.grey[600], fontWeight: FontWeight.w500),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            value,
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: color),
+          ),
+        ],
       ),
     );
   }

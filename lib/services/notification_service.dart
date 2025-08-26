@@ -30,7 +30,7 @@ class NotificationService {
   // Notification preferences
   bool _systemNotificationsEnabled = true;
   bool _audioNotificationsEnabled = true;
-  bool _inAppNotificationsEnabled = true;
+  bool _inAppNotificationsEnabled = false;
   bool _voiceAnnouncementsEnabled = true;
   bool _speakUnreadSummaryOnOpen = true;
   bool _autoClearBadgeOnNotificationsOpen = false;
@@ -151,7 +151,7 @@ class NotificationService {
     final prefs = await SharedPreferences.getInstance();
     _systemNotificationsEnabled = prefs.getBool('system_notifications') ?? true;
     _audioNotificationsEnabled = prefs.getBool('audio_notifications') ?? true;
-    _inAppNotificationsEnabled = prefs.getBool('inapp_notifications') ?? true;
+    _inAppNotificationsEnabled = prefs.getBool('inapp_notifications') ?? false;
     _voiceAnnouncementsEnabled = prefs.getBool('voice_announcements') ?? true;
     _autoClearBadgeOnNotificationsOpen = prefs.getBool('auto_clear_badge_notifications') ?? false;
     _ttsLanguage = prefs.getString('tts_language') ?? 'en-ZA';

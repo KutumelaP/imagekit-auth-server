@@ -21,10 +21,15 @@ class _SellerPayoutsScreenState extends State<SellerPayoutsScreen> {
   double _commissionPct = 0.0;
   List<Map<String, dynamic>> _history = [];
   
+  // COD wallet balance
+  Map<String, dynamic> _codWallet = {};
+  
   // Outstanding fees
   double _outstandingAmount = 0.0;
   String _outstandingType = '';
   bool _codDisabled = false;
+
+  
 
   @override
   void initState() {
@@ -54,6 +59,7 @@ class _SellerPayoutsScreenState extends State<SellerPayoutsScreen> {
         _net = (data['net'] ?? 0).toDouble();
         _min = (data['minPayoutAmount'] ?? 0).toDouble();
         _commissionPct = ((data['commissionPct'] ?? 0) as num).toDouble();
+        _codWallet = Map<String, dynamic>.from(data['codWallet'] ?? {});
       });
     } catch (e) {
       if (mounted) {
@@ -121,6 +127,8 @@ class _SellerPayoutsScreenState extends State<SellerPayoutsScreen> {
     }
   }
 
+  
+
   Future<void> _requestPayout() async {
     try {
       setState(() { _requesting = true; });
@@ -147,6 +155,16 @@ class _SellerPayoutsScreenState extends State<SellerPayoutsScreen> {
         title: const Text('Earnings & Payouts'),
         backgroundColor: AppTheme.deepTeal,
         foregroundColor: AppTheme.angel,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () {
+            // Navigate to simple home screen instead of just popping
+            Navigator.of(context).pushNamedAndRemoveUntil(
+              '/home',
+              (route) => false,
+            );
+          },
+        ),
       ),
       body: RefreshIndicator(
         onRefresh: _refreshAll,
@@ -254,6 +272,166 @@ class _SellerPayoutsScreenState extends State<SellerPayoutsScreen> {
               ),
             ),
             const SizedBox(height: 16),
+
+            // COD Wallet Section
+            if (_codWallet.isNotEmpty && (_codWallet['cashCollected'] ?? 0) > 0) Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 2))],
+                border: Border.all(color: Colors.green.withOpacity(0.3), width: 1),
+              ),
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(children: [
+                    Icon(Icons.account_balance_wallet, color: Colors.green[700]),
+                    const SizedBox(width: 8),
+                    const Text('COD Wallet', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                    const Spacer(),
+                    IconButton(onPressed: _loadBalance, icon: const Icon(Icons.refresh, size: 20)),
+                  ]),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Cash collected from customers vs commission owed to platform',
+                    style: TextStyle(fontSize: 12, color: Colors.grey[600], fontStyle: FontStyle.italic),
+                  ),
+                  const SizedBox(height: 12),
+                  
+                  // COD Summary - Vertical List
+                  Column(
+                    children: [
+                      // Cash Collected
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.green[50],
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.green[200]!),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(Icons.money, color: Colors.green[700], size: 24),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text('Cash Collected', style: TextStyle(fontSize: 14, color: Colors.grey[600], fontWeight: FontWeight.w500)),
+                                  Text('R${(_codWallet['cashCollected'] ?? 0).toStringAsFixed(2)}', 
+                                       style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.green)),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      
+                      // Commission Owed
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.orange[50],
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.orange[200]!),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(Icons.account_balance, color: Colors.orange[700], size: 24),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text('Commission Owed to Platform', style: TextStyle(fontSize: 14, color: Colors.grey[600], fontWeight: FontWeight.w500)),
+                                  Text('R${(_codWallet['commissionOwed'] ?? 0).toStringAsFixed(2)}', 
+                                       style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.orange)),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      
+                      // Your Share
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.blue[50],
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.blue[200]!),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(Icons.savings, color: Colors.blue[700], size: 24),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text('Your Share (After Commission)', style: TextStyle(fontSize: 14, color: Colors.grey[600], fontWeight: FontWeight.w500)),
+                                  Text('R${((_codWallet['cashCollected'] ?? 0) - (_codWallet['commissionOwed'] ?? 0)).toStringAsFixed(2)}', 
+                                       style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.blue)),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  
+                  if ((_codWallet['commissionOwed'] ?? 0) > 0) ...[
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.orange.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.orange.withOpacity(0.3)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(Icons.info_outline, color: Colors.orange[700], size: 16),
+                              const SizedBox(width: 6),
+                              const Text('Platform Commission Due', style: TextStyle(fontWeight: FontWeight.w600)),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'You collected R${(_codWallet['cashCollected'] ?? 0).toStringAsFixed(2)} in cash but owe R${(_codWallet['commissionOwed'] ?? 0).toStringAsFixed(2)} in platform commission. Pay this to keep your earnings available for payout.',
+                            style: TextStyle(fontSize: 12, color: Colors.grey[700], height: 1.4),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        onPressed: () => _payOutstandingFees(),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.orange,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                        icon: const Icon(Icons.payment),
+                        label: Text('Pay Commission R${(_codWallet['commissionOwed'] ?? 0).toStringAsFixed(2)}'),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            
+            if (_codWallet.isNotEmpty && (_codWallet['cashCollected'] ?? 0) > 0) const SizedBox(height: 16),
             
             // Outstanding Fees Section
             if (_outstandingAmount > 0 || _codDisabled) Container(
@@ -327,13 +505,11 @@ class _SellerPayoutsScreenState extends State<SellerPayoutsScreen> {
                           ],
                         ),
                         const SizedBox(height: 8),
-                        Flexible(
-                          child: Text(
-                            _outstandingAmount > 0 
-                                ? '• Platform commission from recent sales\n• Payment processing fees\n• Service charges for marketplace features\n\nPaying these fees re-enables Cash on Delivery for your customers.'
-                                : '• Complete your identity verification in Profile settings\n• This ensures secure transactions for all users\n• Required by South African financial regulations',
-                            style: TextStyle(fontSize: 12, color: Colors.grey[700], height: 1.4),
-                          ),
+                        Text(
+                          _outstandingAmount > 0 
+                              ? '• Platform commission from recent sales\n• Payment processing fees\n• Service charges for marketplace features\n\nPaying these fees re-enables Cash on Delivery for your customers.'
+                              : '• Complete your identity verification in Profile settings\n• This ensures secure transactions for all users\n• Required by South African financial regulations',
+                          style: TextStyle(fontSize: 12, color: Colors.grey[700], height: 1.4),
                         ),
                       ],
                     ),
@@ -415,35 +591,7 @@ class _SellerPayoutsScreenState extends State<SellerPayoutsScreen> {
               ),
             ),
             
-            const SizedBox(height: 16),
-            
-            // Financial Tips Section
-            Container(
-              decoration: BoxDecoration(
-                color: Colors.green.withOpacity(0.05),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.green.withOpacity(0.2)),
-              ),
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(children: [
-                    Icon(Icons.lightbulb_outline, color: Colors.green),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: const Text('Financial Tips', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.green)),
-                    ),
-                  ]),
-                  const SizedBox(height: 12),
-                  _buildTipRow('💰', 'Request payouts regularly to maintain cash flow'),
-                  _buildTipRow('📊', 'Monitor your commission rate - it may decrease as you grow'),
-                  _buildTipRow('⚡', 'Keep outstanding fees low to maintain COD access'),
-                  _buildTipRow('🏦', 'Update your bank details in Profile > Payout Settings'),
-                  _buildTipRow('📱', 'Enable notifications to know when payments are processed'),
-                ],
-              ),
-            ),
+
           ],
             );
           },
@@ -452,24 +600,7 @@ class _SellerPayoutsScreenState extends State<SellerPayoutsScreen> {
     );
   }
 
-  Widget _buildTipRow(String emoji, String tip) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(emoji, style: const TextStyle(fontSize: 16)),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              tip,
-              style: TextStyle(fontSize: 13, color: Colors.grey[700], height: 1.3),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+
 
   void _payOutstandingFees() {
     // Navigate to payment screen for outstanding fees

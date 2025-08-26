@@ -151,6 +151,9 @@ class _AdminPayoutsSectionState extends State<AdminPayoutsSection> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        // Financial Flow Overview
+        _buildFinancialFlowHeader(),
+        const SizedBox(height: 24),
         Row(
           children: [
             Text('Payouts', style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold)),
@@ -304,6 +307,227 @@ class _AdminPayoutsSectionState extends State<AdminPayoutsSection> {
         );
       },
     );
+  }
+
+  Widget _buildFinancialFlowHeader() {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [Colors.blue.shade50, Colors.indigo.shade50],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.blue.shade200, width: 1),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.account_balance, color: Colors.blue.shade700, size: 24),
+              const SizedBox(width: 8),
+              Text(
+                'Financial Flow Overview',
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: Colors.blue.shade800,
+                ),
+              ),
+              const Spacer(),
+              IconButton(
+                icon: Icon(Icons.refresh, color: Colors.blue.shade600),
+                onPressed: () {
+                  // Refresh financial data - could add StreamBuilder later
+                  setState(() {});
+                },
+                tooltip: 'Refresh Financial Data',
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          FutureBuilder<Map<String, double>>(
+            future: _getFinancialSummary(),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(20),
+                    child: CircularProgressIndicator(),
+                  ),
+                );
+              }
+              
+              final data = snapshot.data ?? {};
+              final totalGross = data['totalGross'] ?? 0.0;
+              final totalCommission = data['totalCommission'] ?? 0.0;
+              final totalNet = data['totalNet'] ?? 0.0;
+              final pendingPayouts = data['pendingPayouts'] ?? 0.0;
+              final outstandingReceivables = data['outstandingReceivables'] ?? 0.0;
+              
+              return Row(
+                children: [
+                  Expanded(
+                    child: _buildFinancialCard(
+                      'Total Gross Revenue',
+                      'R${totalGross.toStringAsFixed(2)}',
+                      Icons.trending_up,
+                      Colors.green,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _buildFinancialCard(
+                      'Platform Commission',
+                      'R${totalCommission.toStringAsFixed(2)}',
+                      Icons.business_center,
+                      Colors.orange,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _buildFinancialCard(
+                      'Seller Net Payouts',
+                      'R${totalNet.toStringAsFixed(2)}',
+                      Icons.account_balance_wallet,
+                      Colors.blue,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _buildFinancialCard(
+                      'Pending Payouts',
+                      'R${pendingPayouts.toStringAsFixed(2)}',
+                      Icons.schedule,
+                      Colors.amber,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _buildFinancialCard(
+                      'Outstanding Receivables',
+                      'R${outstandingReceivables.toStringAsFixed(2)}',
+                      Icons.receipt_long,
+                      Colors.red,
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFinancialCard(String title, String amount, IconData icon, Color color) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withOpacity(0.3)),
+        boxShadow: [
+          BoxShadow(
+            color: color.withOpacity(0.1),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, color: color, size: 20),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  title,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey.shade600,
+                    fontWeight: FontWeight.w500,
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            amount,
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<Map<String, double>> _getFinancialSummary() async {
+    try {
+      final now = DateTime.now();
+      final thirtyDaysAgo = now.subtract(const Duration(days: 30));
+      
+      // Get payouts from last 30 days for summary
+      final payoutsQuery = await _firestore
+          .collection('payouts')
+          .where('createdAt', isGreaterThan: Timestamp.fromDate(thirtyDaysAgo))
+          .get();
+      
+      double totalGross = 0.0;
+      double totalCommission = 0.0;
+      double totalNet = 0.0;
+      double pendingPayouts = 0.0;
+      
+      for (final doc in payoutsQuery.docs) {
+        final data = doc.data();
+        final gross = (data['gross'] as num?)?.toDouble() ?? 0.0;
+        final commission = (data['commission'] as num?)?.toDouble() ?? 0.0;
+        final amount = (data['amount'] as num?)?.toDouble() ?? 0.0;
+        final status = data['status'] as String? ?? '';
+        
+        totalGross += gross;
+        totalCommission += commission;
+        totalNet += amount;
+        
+        if (status == 'requested' || status == 'processing') {
+          pendingPayouts += amount;
+        }
+      }
+      
+      // Get outstanding receivables (COD orders not yet collected)
+      final codOrdersQuery = await _firestore
+          .collection('orders')
+          .where('paymentMethod', isEqualTo: 'cod')
+          .where('status', whereIn: ['confirmed', 'processing', 'shipped'])
+          .get();
+      
+      double outstandingReceivables = 0.0;
+      for (final doc in codOrdersQuery.docs) {
+        final data = doc.data();
+        final total = (data['total'] as num?)?.toDouble() ?? 0.0;
+        outstandingReceivables += total;
+      }
+      
+      return {
+        'totalGross': totalGross,
+        'totalCommission': totalCommission,
+        'totalNet': totalNet,
+        'pendingPayouts': pendingPayouts,
+        'outstandingReceivables': outstandingReceivables,
+      };
+    } catch (e) {
+      debugPrint('Error getting financial summary: $e');
+      return {};
+    }
   }
 
 

@@ -15,7 +15,7 @@ class AwesomeNotificationService {
   // Notification preferences
   bool _systemNotificationsEnabled = true;
   bool _audioNotificationsEnabled = true;
-  bool _inAppNotificationsEnabled = true;
+  bool _inAppNotificationsEnabled = false;
 
   bool get systemNotificationsEnabled => _systemNotificationsEnabled;
   bool get audioNotificationsEnabled => _audioNotificationsEnabled;
@@ -208,7 +208,7 @@ class AwesomeNotificationService {
     final prefs = await SharedPreferences.getInstance();
     _systemNotificationsEnabled = prefs.getBool('system_notifications') ?? true;
     _audioNotificationsEnabled = prefs.getBool('audio_notifications') ?? true;
-    _inAppNotificationsEnabled = prefs.getBool('inapp_notifications') ?? true;
+    _inAppNotificationsEnabled = prefs.getBool('inapp_notifications') ?? false;
     
     print('🔔 Notification preferences loaded: System: $_systemNotificationsEnabled, Audio: $_audioNotificationsEnabled, In-app: $_inAppNotificationsEnabled');
   }
@@ -242,12 +242,38 @@ class AwesomeNotificationService {
   /// Request notification permissions
   Future<bool> requestPermissions() async {
     try {
+      // Check if already allowed first
+      final isAlreadyAllowed = await AwesomeNotifications().isNotificationAllowed();
+      print('🔔 Notification already allowed: $isAlreadyAllowed');
+      
+      if (isAlreadyAllowed) {
+        return true;
+      }
+      
       final isAllowed = await AwesomeNotifications().requestPermissionToSendNotifications();
-      print('🔔 Notification permission granted: $isAllowed');
+      print('🔔 Notification permission request result: $isAllowed');
       return isAllowed;
     } catch (e) {
       print('❌ Error requesting notification permissions: $e');
       return false;
+    }
+  }
+
+  /// Test notification functionality
+  Future<void> showTestNotification() async {
+    try {
+      await AwesomeNotifications().createNotification(
+        content: NotificationContent(
+          id: DateTime.now().millisecondsSinceEpoch.remainder(100000),
+          channelKey: 'basic_channel',
+          title: '🔔 Test Notification',
+          body: 'Awesome notifications are working!',
+          notificationLayout: NotificationLayout.Default,
+        ),
+      );
+      print('✅ Test notification sent successfully');
+    } catch (e) {
+      print('❌ Error sending test notification: $e');
     }
   }
 

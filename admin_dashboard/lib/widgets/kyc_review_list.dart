@@ -24,20 +24,54 @@ class _KycReviewListState extends State<KycReviewList> {
   Future<void> _load() async {
     setState(() => _loading = true);
     try {
-      final users = await _db.collection('users').where('kycStatus', isEqualTo: 'pending').get();
+      // Read from kyc_submissions collection instead of users
+      final submissions = await _db.collection('kyc_submissions')
+          .where('status', isEqualTo: 'pending')
+          .orderBy('submittedAt', descending: true)
+          .get();
+      
       final items = <_KycItem>[];
-      for (final u in users.docs) {
-        final l1 = await _db.collection('users').doc(u.id).collection('kyc').doc('L1').get();
-        final d = l1.data() ?? {};
+      for (final sub in submissions.docs) {
+        final subData = sub.data();
+        final userId = subData['userId'] as String?;
+        if (userId == null) continue;
+        
+        // Get user info
+        final userDoc = await _db.collection('users').doc(userId).get();
+        final userData = userDoc.data() ?? {};
+        
+        // Get all kyc images for this user
+        final kycDocs = await _db.collection('users').doc(userId).collection('kyc').get();
+        String? idFrontUrl, idBackUrl, selfieUrl;
+        
+        for (final kycDoc in kycDocs.docs) {
+          final kycData = kycDoc.data();
+          final url = kycData['url'] as String?;
+          final filePath = kycData['filePath'] as String? ?? '';
+          
+          if (url != null) {
+            if (filePath.contains('id_front') || filePath.contains('front')) {
+              idFrontUrl = url;
+            } else if (filePath.contains('id_back') || filePath.contains('back')) {
+              idBackUrl = url;
+            } else if (filePath.contains('selfie')) {
+              selfieUrl = url;
+            }
+          }
+        }
+        
         items.add(
           _KycItem(
-            userId: u.id,
-            email: (u.data()['email'] as String?) ?? 'unknown',
-            storeName: (u.data()['storeName'] as String?) ?? 'Seller',
-            idFrontUrl: d['idFrontUrl'] as String?,
-            idBackUrl: d['idBackUrl'] as String?,
-            selfieUrl: d['selfieUrl'] as String?,
-            submittedAt: (d['submittedAt'] as Timestamp?)?.toDate(),
+            userId: userId,
+            submissionId: sub.id,
+            email: (userData['email'] as String?) ?? 'unknown',
+            storeName: (userData['storeName'] as String?) ?? 'Seller',
+            idFrontUrl: idFrontUrl,
+            idBackUrl: idBackUrl,
+            selfieUrl: selfieUrl,
+            submittedAt: (subData['submittedAt'] is Timestamp) 
+                ? (subData['submittedAt'] as Timestamp).toDate()
+                : DateTime.tryParse(subData['submittedAt']?.toString() ?? ''),
           ),
         );
       }
@@ -49,10 +83,20 @@ class _KycReviewListState extends State<KycReviewList> {
     }
   }
 
-  Future<void> _mark(String userId, String status) async {
+  Future<void> _mark(String userId, String submissionId, String status) async {
     try {
-      await _db.collection('users').doc(userId).set({'kycStatus': status, 'kycApprovedAt': status == 'approved' ? FieldValue.serverTimestamp() : null}, SetOptions(merge: true));
-      await _db.collection('users').doc(userId).collection('kyc').doc('L1').set({'status': status, 'updatedAt': FieldValue.serverTimestamp()}, SetOptions(merge: true));
+      // Update user's KYC status
+      await _db.collection('users').doc(userId).set({
+        'kycStatus': status, 
+        'kycApprovedAt': status == 'approved' ? FieldValue.serverTimestamp() : null
+      }, SetOptions(merge: true));
+      
+      // Update the submission status 
+      await _db.collection('kyc_submissions').doc(submissionId).update({
+        'status': status,
+        'reviewedAt': FieldValue.serverTimestamp(),
+      });
+      
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('KYC $status')));
         _load();
@@ -130,7 +174,7 @@ class _KycReviewListState extends State<KycReviewList> {
             Row(
               children: [
                 ElevatedButton.icon(
-                  onPressed: () => _mark(item.userId, 'approved'),
+                  onPressed: () => _mark(item.userId, item.submissionId, 'approved'),
                   icon: const Icon(Icons.check),
                   label: const Text('Approve'),
                   style: ElevatedButton.styleFrom(
@@ -140,7 +184,7 @@ class _KycReviewListState extends State<KycReviewList> {
                 ),
                 const SizedBox(width: 12),
                 OutlinedButton.icon(
-                  onPressed: () => _mark(item.userId, 'rejected'),
+                  onPressed: () => _mark(item.userId, item.submissionId, 'rejected'),
                   icon: const Icon(Icons.close),
                   label: const Text('Reject'),
                   style: OutlinedButton.styleFrom(
@@ -159,6 +203,7 @@ class _KycReviewListState extends State<KycReviewList> {
 
 class _KycItem {
   final String userId;
+  final String submissionId;
   final String email;
   final String storeName;
   final String? idFrontUrl;
@@ -167,6 +212,7 @@ class _KycItem {
   final DateTime? submittedAt;
   _KycItem({
     required this.userId,
+    required this.submissionId,
     required this.email,
     required this.storeName,
     this.idFrontUrl,

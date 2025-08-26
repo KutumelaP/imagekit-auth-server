@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
@@ -260,7 +261,7 @@ class _SellerOrderDetailScreenState extends State<SellerOrderDetailScreen>
                       _buildOrderItemsCard(items, total),
                       
                       // Payment Information Card
-                      _buildPaymentInfoCard(paymentMethod, paymentStatus, total),
+                      _buildPaymentInfoCard(orderRef, order, paymentMethod, paymentStatus, total),
                       
                       // Status Management Card
                       _buildStatusManagementCard(orderRef, status, sellerName),
@@ -623,8 +624,10 @@ class _SellerOrderDetailScreenState extends State<SellerOrderDetailScreen>
     );
   }
 
-  Widget _buildPaymentInfoCard(String paymentMethod, String paymentStatus, dynamic total) {
-    final isPaid = paymentStatus.toLowerCase() == 'paid';
+  Widget _buildPaymentInfoCard(DocumentReference orderRef, Map<String, dynamic> order, String paymentMethod, String paymentStatus, dynamic total) {
+    final isPaid = paymentStatus.toLowerCase() == 'paid' || paymentStatus.toLowerCase() == 'completed';
+    final methods = (order['paymentMethods'] as List?)?.map((e) => e.toString().toLowerCase()).toList() ?? [];
+    final isCOD = methods.any((m) => m.contains('cash')) || (order['paymentMethod']?.toString().toLowerCase().contains('cash') ?? false);
     
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -697,9 +700,80 @@ class _SellerOrderDetailScreenState extends State<SellerOrderDetailScreen>
           ),
           const SizedBox(height: 8),
           _buildInfoRow(Icons.receipt, 'Total Amount', 'R${(total is num ? total.toDouble() : 0.0).toStringAsFixed(2)}'),
+          const SizedBox(height: 12),
+          if (isCOD && !isPaid)
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: _updating ? null : () => _markCashAsPaid(orderRef),
+                icon: _updating
+                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                    : const Icon(Icons.check_circle),
+                label: Text(_updating ? 'Updating...' : 'Mark as Paid (Cash)'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.primaryGreen,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+            ),
         ],
       ),
     );
+  }
+
+  Future<void> _markCashAsPaid(DocumentReference orderRef) async {
+    setState(() => _updating = true);
+    try {
+      await orderRef.update({
+        'paymentStatus': 'completed',
+        'codPaid': true,
+        'paidAt': FieldValue.serverTimestamp(),
+      });
+
+      // Credit receivable ledger for COD so earnings reflect immediately
+      try {
+        await FirebaseFunctions.instance.httpsCallable('markCodPaid').call({ 'orderId': orderRef.id });
+      } catch (e) {
+        // Non-fatal: UI will still show paid; balance may refresh on finalize
+        print('markCodPaid failed: $e');
+      }
+
+      // Optional: add a timeline update for transparency
+      final currentUser = FirebaseAuth.instance.currentUser;
+      String sellerName = 'Seller';
+      if (currentUser != null) {
+        final userDoc = await FirebaseFirestore.instance.collection('users').doc(currentUser.uid).get();
+        if (userDoc.exists) {
+          final data = userDoc.data() as Map<String, dynamic>;
+          sellerName = data['displayName'] ?? data['storeName'] ?? data['email']?.split('@')[0] ?? 'Seller';
+        }
+      }
+      await orderRef.update({
+        'trackingUpdates': FieldValue.arrayUnion([
+          {
+            'description': 'Cash payment received. Marked PAID.',
+            'timestamp': Timestamp.now(),
+            'by': sellerName,
+          }
+        ]),
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: const Text('Marked as paid (cash)'), backgroundColor: AppTheme.success),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to mark as paid: $e'), backgroundColor: AppTheme.error),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _updating = false);
+    }
   }
 
   Widget _buildStatusManagementCard(DocumentReference orderRef, String currentStatus, String sellerName) {

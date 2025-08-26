@@ -452,6 +452,31 @@ class ImageCleanupService {
 		}
 	}
 
+	// Uncategorized media: files not under known prefixes and not in kyc/
+	static Future<List<Map<String, dynamic>>> findUncategorizedMedia() async {
+		try {
+			final orphaned = <Map<String, dynamic>>[];
+			final knownPrefixes = <String>{
+				'products/', 'profile_images/', 'store_images/', 'chat_images/',
+				'profile_videos/', 'store_videos/', 'kyc/'
+			};
+			final allImages = await getAllImages(limit: 1000);
+			for (final image in allImages) {
+				final rawPath = (image['filePath'] as String? ?? '').trim();
+				if (rawPath.isEmpty) continue;
+				final imagePath = rawPath.startsWith('/') ? rawPath.substring(1) : rawPath;
+				final hasKnownPrefix = knownPrefixes.any((p) => imagePath.startsWith(p));
+				if (!hasKnownPrefix) {
+					orphaned.add(image);
+				}
+			}
+			return orphaned;
+		} catch (e) {
+			print('❌ Error finding uncategorized media: $e');
+			return [];
+		}
+	}
+
 	// Debug function to list all images and their paths
 	static Future<void> debugListAllImages() async {
 		try {

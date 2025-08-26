@@ -2094,20 +2094,32 @@ const MIN_PAYOUT_AMOUNT = Number(process.env.MIN_PAYOUT_AMOUNT || 50); // R50 de
 
 function toRand(n) { return Math.round(Number(n || 0) * 100) / 100; }
 
-// Ledger-driven available balance: sum receivable entries marked 'available' and not locked
+// Ledger-driven available balance: sum receivable entries marked 'available' and not locked + COD seller share
 async function computeSellerAvailableBalance(sellerId) {
-  const entriesSnap = await db
+  // Get traditional available entries (online payments)
+  const availableSnap = await db
     .collection('platform_receivables')
     .doc(sellerId)
     .collection('entries')
     .where('status', '==', 'available')
     .get();
+  
+  // Get COD entries (seller's share is available even though commission is owed)
+  const codSnap = await db
+    .collection('platform_receivables')
+    .doc(sellerId)
+    .collection('entries')
+    .where('method', '==', 'COD')
+    .get();
+  
   let gross = 0;
   let commission = 0;
   let net = 0;
   const orderIds = [];
   const entryIds = [];
-  entriesSnap.docs.forEach((doc) => {
+  
+  // Add traditional available entries
+  availableSnap.docs.forEach((doc) => {
     const e = doc.data() || {};
     // Skip if locked to a payout
     if (e.payoutLockId) return;
@@ -2122,21 +2134,50 @@ async function computeSellerAvailableBalance(sellerId) {
       entryIds.push(doc.id);
     }
   });
+  
+  // Add COD seller share (gross - commission, even if commission is still owed)
+  codSnap.docs.forEach((doc) => {
+    const e = doc.data() || {};
+    // Skip if locked to a payout
+    if (e.payoutLockId) return;
+    const g = Number(e.gross || 0);
+    const c = Number(e.commission || 0);
+    const n = Number(e.net || (g - c));
+    if (g > 0) { // If there's any COD transaction
+      gross += g;
+      commission += c;
+      net += n; // Add seller's net share
+      if (e.orderId) orderIds.push(e.orderId);
+      entryIds.push(doc.id);
+    }
+  });
+  
   return { gross: toRand(gross), commission: toRand(commission), net: toRand(net), count: entryIds.length, orderIds, entryIds };
 }
 
 // Internal: get eligible receivable entries for seller (available and not locked)
 async function getEligibleReceivablesForSeller(sellerId) {
-  const snap = await db
+  // Get both available entries and COD entries
+  const availableSnap = await db
     .collection('platform_receivables')
     .doc(sellerId)
     .collection('entries')
     .where('status', '==', 'available')
     .get();
+    
+  const codSnap = await db
+    .collection('platform_receivables')
+    .doc(sellerId)
+    .collection('entries')
+    .where('method', '==', 'COD')
+    .get();
+  
   const entryIds = [];
   let gross = 0, commission = 0, net = 0;
   const orders = [];
-  snap.docs.forEach((d) => {
+  
+  // Process available entries
+  availableSnap.docs.forEach((d) => {
     const e = d.data() || {};
     if (e.payoutLockId) return; // skip locked
     const g = Number(e.gross || 0);
@@ -2148,6 +2189,21 @@ async function getEligibleReceivablesForSeller(sellerId) {
       if (e.orderId) orders.push(e.orderId);
     }
   });
+  
+  // Process COD entries (seller gets their share)
+  codSnap.docs.forEach((d) => {
+    const e = d.data() || {};
+    if (e.payoutLockId) return; // skip locked
+    const g = Number(e.gross || 0);
+    const c = Number(e.commission || 0);
+    const n = Number(e.net || (g - c));
+    if (g > 0) {
+      entryIds.push(d.id);
+      gross += g; commission += c; net += n;
+      if (e.orderId) orders.push(e.orderId);
+    }
+  });
+  
   return { entryIds, gross: toRand(gross), commission: toRand(commission), net: toRand(net), orderIds: orders };
 }
 
@@ -2166,8 +2222,64 @@ exports.getSellerAvailableBalance = functions.https.onCall(async (data, context)
 
   const result = await computeSellerAvailableBalance(targetUid);
   const cpct = await getCommissionPct().catch(() => COMMISSION_PCT_FALLBACK);
-  return { ...result, minPayoutAmount: MIN_PAYOUT_AMOUNT, commissionPct: cpct };
+
+  // Also get COD wallet balance (cash collected but commission owed)
+  const codBalance = await computeSellerCodBalance(targetUid);
+
+  return { 
+    ...result, 
+    minPayoutAmount: MIN_PAYOUT_AMOUNT, 
+    commissionPct: cpct,
+    codWallet: codBalance
+  };
 });
+
+// Compute COD wallet: cash collected vs commission owed
+async function computeSellerCodBalance(sellerId) {
+  const entriesSnap = await db
+    .collection('platform_receivables')
+    .doc(sellerId)
+    .collection('entries')
+    .where('method', '==', 'COD')
+    .get();
+  
+  let cashCollected = 0;
+  let commissionOwed = 0;
+  let netAvailable = 0;
+  const orders = [];
+
+  entriesSnap.docs.forEach((doc) => {
+    const e = doc.data() || {};
+    const gross = Number(e.gross || 0);
+    const commission = Number(e.commission || 0);
+    const net = Number(e.net || 0);
+    const status = e.status || '';
+
+    if (gross > 0) {
+      cashCollected += gross;
+      if (status === 'due') {
+        commissionOwed += commission;
+      } else if (status === 'available') {
+        netAvailable += net;
+      }
+      orders.push({
+        orderId: e.orderId,
+        gross,
+        commission,
+        net,
+        status
+      });
+    }
+  });
+
+  return {
+    cashCollected: toRand(cashCollected),
+    commissionOwed: toRand(commissionOwed),
+    netAvailable: toRand(netAvailable),
+    orderCount: orders.length,
+    orders
+  };
+}
 
 exports.requestPayout = functions.https.onCall(async (data, context) => {
   if (!context.auth) {
@@ -2255,6 +2367,80 @@ exports.requestPayout = functions.https.onCall(async (data, context) => {
   try { setTimeout(() => lockRef.delete().catch(() => {}), 30000); } catch (_) {}
 
   return { ok: true, payoutId: payoutRef.id, amount: net, orderCount: count };
+});
+
+// === Mark COD order as paid and create platform debt entry ===
+exports.markCodPaid = functions.https.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError('unauthenticated', 'Sign in required');
+  }
+  const sellerId = context.auth.uid;
+  const orderId = String(data?.orderId || '').trim();
+  if (!orderId) {
+    throw new functions.https.HttpsError('invalid-argument', 'orderId is required');
+  }
+
+  const orderRef = db.collection('orders').doc(orderId);
+  const snap = await orderRef.get();
+  if (!snap.exists) {
+    throw new functions.https.HttpsError('not-found', 'Order not found');
+  }
+  const order = snap.data() || {};
+  if (String(order.sellerId || '') !== sellerId) {
+    throw new functions.https.HttpsError('permission-denied', 'Not your order');
+  }
+
+  const methods = Array.isArray(order.paymentMethods) ? order.paymentMethods.map(String) : [];
+  const isCOD = methods.some((m) => m.toLowerCase().includes('cash')) || String(order.paymentMethod || '').toLowerCase().includes('cash');
+  if (!isCOD) {
+    throw new functions.https.HttpsError('failed-precondition', 'Order is not Cash on Delivery');
+  }
+
+  // Derive amounts
+  const gross = Number(order.totalPrice || order.total || order.paymentAmount || 0) || 0;
+  const pct = await getCommissionPct().catch(() => COMMISSION_PCT_FALLBACK);
+  const commission = Math.round((gross * pct) * 100) / 100;
+  const net = Math.round((gross - commission) * 100) / 100;
+
+  // Create debt entry: seller owes platform the commission
+  const eref = db.collection('platform_receivables').doc(sellerId).collection('entries').doc(orderId);
+  await eref.set({
+    orderId,
+    sellerId,
+    method: 'COD',
+    source: 'cash_collection',
+    amount: commission, // Amount seller owes platform
+    gross,
+    commission,
+    net,
+    status: 'due', // Platform is owed this money
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    description: `Commission owed for COD order ${orderId}`,
+  }, { merge: true });
+
+  // Update parent receivable doc with total outstanding amount
+  const allDueSnap = await db.collection('platform_receivables')
+    .doc(sellerId)
+    .collection('entries')
+    .where('status', '==', 'due')
+    .get();
+  
+  let totalDue = 0;
+  allDueSnap.docs.forEach(doc => {
+    const entry = doc.data();
+    totalDue += Number(entry.amount || 0);
+  });
+
+  await db.collection('platform_receivables').doc(sellerId).set({
+    sellerId,
+    amount: totalDue,
+    type: 'commission',
+    description: 'Platform commission from COD sales',
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  }, { merge: true });
+
+  return { success: true, gross, commission, net, amountDue: commission };
 });
 
 exports.adminUpdatePayoutStatus = functions.https.onCall(async (data, context) => {
