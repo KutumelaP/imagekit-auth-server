@@ -41,3 +41,4 @@ echo 🌐 Web build: build\web\
 echo.
 echo 🎉 Your app is ready for deployment!
 pause
+

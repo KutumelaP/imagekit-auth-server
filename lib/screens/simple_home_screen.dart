@@ -21,10 +21,8 @@ import 'seller_product_management.dart';
 import 'dart:async'; // Added import for StreamSubscription
 import '../services/global_message_listener.dart';
 import '../widgets/notification_badge.dart';
-import '../widgets/chat_badge.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:flutter/services.dart'; // Added import for SystemUiOverlayStyle
-import '../widgets/chatbot_widget.dart';
 
 class SimpleHomeScreen extends StatefulWidget {
   const SimpleHomeScreen({super.key});
@@ -917,9 +915,7 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
                   height: 40,
                   child: Row(
                     children: [
-                      ChatBadge(
-                        child: Icon(Icons.chat_outlined, size: 16, color: AppTheme.deepTeal),
-                      ),
+                      Icon(Icons.chat_outlined, size: 16, color: AppTheme.deepTeal),
                       const SizedBox(width: 10),
                       Text(
                         'Chat',
@@ -1256,33 +1252,6 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
               ),
             ),
             const Spacer(),
-            // Chat badge button to match Android look on PWA/Web
-            ChatBadge(
-              child: Container(
-                decoration: BoxDecoration(
-                  color: AppTheme.primaryGreen,
-                  shape: BoxShape.circle,
-                  boxShadow: [
-                    BoxShadow(
-                      color: AppTheme.primaryGreen.withOpacity(0.3),
-                      blurRadius: 8,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-                child: IconButton(
-                  icon: const Icon(Icons.chat_bubble, color: Colors.white, size: 18),
-                  onPressed: () {
-                    showModalBottomSheet(
-                      context: context,
-                      isScrollControlled: true,
-                      backgroundColor: Colors.transparent,
-                      builder: (context) => const ChatbotWidget(),
-                    );
-                  },
-                ),
-              ),
-            ),
           ],
         ),
       ),

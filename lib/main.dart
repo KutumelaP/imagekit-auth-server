@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'package:geolocator/geolocator.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 
@@ -137,9 +136,9 @@ class MyApp extends StatelessWidget {
         home: SplashWrapper(),
         builder: (context, child) {
           // Global bottom SafeArea to avoid iPhone home indicator overlap
-          // Only show bot on the actual Home screen widget
-          final isHome = child is SimpleHomeScreen;
-          final showBot = isHome;
+          // Show bot globally except on login screen
+          final isLogin = child is LoginScreen;
+          final showBot = !isLogin;
 
           final layered = ChatbotWrapper(
             child: child!,
