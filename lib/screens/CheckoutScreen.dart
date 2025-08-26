@@ -890,13 +890,14 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                   child: Column(
                     children: [
                               // Address with map icon
+                              // Hide full address on checkout for store pickup; show a concise label instead
                               _buildEnhancedDetailRow(
                                 '📍 Location',
-                                point.address,
+                                point.isPargoPoint || point.isPaxiPoint
+                                    ? point.address
+                                    : (point.name.isNotEmpty ? point.name : 'Local store'),
                                 Icons.location_on,
-                                point.isPargoPoint 
-                                    ? AppTheme.deepTeal
-                                    : AppTheme.deepTeal,
+                                AppTheme.deepTeal,
                               ),
                               SizedBox(height: 16),
                               
@@ -2620,7 +2621,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                     );
                   },
                 ),
-                // Address
+                // Address (for local store pickup show name only in dialog)
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -2628,7 +2629,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                     SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        point.address,
+                        (point.isPargoPoint || point.isPaxiPoint)
+                            ? point.address
+                            : (point.name.isNotEmpty ? point.name : 'Local store'),
                         style: TextStyle(
                           color: AppTheme.angel,
                           fontSize: 14,
@@ -4909,7 +4912,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         return false;
       }
 
-      // Stock check
+      // Stock check (use unified stock/quantity resolution)
       for (final doc in cartSnapshot.docs) {
         final item = doc.data();
         final productId = item['id'] ?? item['productId'];
@@ -4928,10 +4931,22 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         }
         
         final product = productDoc.data()!;
-        final stock = product['stock'] ?? 999999;
-        final quantity = item['quantity'] ?? 1;
+        // Resolve stock from 'stock' or 'quantity' fields; default to 0 when unknown
+        int resolveStock(dynamic value) {
+          if (value is int) return value;
+          if (value is num) return value.toInt();
+          if (value is String) return int.tryParse(value) ?? 0;
+          return 0;
+        }
+        final bool hasExplicitStock = product.containsKey('stock') || product.containsKey('quantity');
+        final int stock = hasExplicitStock
+            ? (product.containsKey('stock')
+                ? resolveStock(product['stock'])
+                : resolveStock(product['quantity']))
+            : 999999; // treat as unlimited if no stock tracking
+        final int quantity = resolveStock(item['quantity'] ?? 1);
         
-        if (quantity > stock) {
+        if (hasExplicitStock && quantity > stock) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('Not enough stock for ${item['name'] ?? 'an item'}')),
           );
@@ -5482,6 +5497,44 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         name: 'purchase',
         parameters: {'totalPrice': widget.totalPrice, 'sellerId': sellerId},
       );
+
+      // Decrement product stock atomically per item
+      try {
+        for (var doc in cartSnapshot.docs) {
+          final item = doc.data();
+          final String? productId = (item['id'] ?? item['productId'])?.toString();
+          if (productId == null || productId.isEmpty) continue;
+          final int qty = ((item['quantity'] ?? 1) as num).toInt();
+          final productRef = FirebaseFirestore.instance.collection('products').doc(productId);
+          await FirebaseFirestore.instance.runTransaction((tx) async {
+            final snap = await tx.get(productRef);
+            if (!snap.exists) return;
+            final data = snap.data() as Map<String, dynamic>;
+            int resolveStock(dynamic value) {
+              if (value is int) return value;
+              if (value is num) return value.toInt();
+              if (value is String) return int.tryParse(value) ?? 0;
+              return 0;
+            }
+            final bool hasExplicitStock = data.containsKey('stock') || data.containsKey('quantity');
+            if (!hasExplicitStock) return; // do not decrement for items without stock tracking
+            final int current = data.containsKey('stock')
+              ? resolveStock(data['stock'])
+              : resolveStock(data['quantity']);
+            final int next = (current - qty).clamp(0, 1 << 31);
+            if (data.containsKey('stock')) {
+              tx.update(productRef, {'stock': next});
+            } else if (data.containsKey('quantity')) {
+              tx.update(productRef, {'quantity': next});
+            } else {
+              // default to 'stock'
+              tx.update(productRef, {'stock': next});
+            }
+          });
+        }
+      } catch (e) {
+        debugPrint('⚠️ Failed to decrement stock: $e');
+      }
 
       // Clear cart from Firestore
       for (var doc in cartSnapshot.docs) {
@@ -6413,14 +6466,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                         fontWeight: FontWeight.w700,
                                       ),
                                     ),
-                                    Text(
-                                      _storeAddress.isNotEmpty ? _storeAddress : 'Collect at seller',
-                                      style: TextStyle(
-                                        color: _selectedServiceFilter == 'store' ? AppTheme.angel.withOpacity(0.85) : AppTheme.deepTeal.withOpacity(0.7),
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w500,
-                                      ),
-                                    ),
+                                    // Remove address hint entirely for store pickup chip
+                                    SizedBox.shrink(),
                                   ],
                                 ),
                               ),
@@ -6938,15 +6985,17 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                             ],
                           ),
                           SizedBox(height: 4),
-                          Text(
-                            _selectedPickupPoint!.address,
-                            style: TextStyle(
-                              color: AppTheme.deepTeal,
-                              fontSize: 13,
+                          // Remove address for local store; show nothing here
+                          if (_selectedPickupPoint!.isPargoPoint || _selectedPickupPoint!.isPaxiPoint)
+                            Text(
+                              _selectedPickupPoint!.address,
+                              style: TextStyle(
+                                color: AppTheme.deepTeal,
+                                fontSize: 13,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                              maxLines: 2,
                             ),
-                            overflow: TextOverflow.ellipsis,
-                            maxLines: 2,
-                          ),
                           SizedBox(height: 8),
                           Row(
                             children: [
@@ -7179,15 +7228,17 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                       fontWeight: FontWeight.w500,
                                     ),
                                   ),
-                                  Text(
-                                    point.address,
-                                    style: TextStyle(
-                                      color: AppTheme.deepTeal.withOpacity(0.8),
-                                      fontSize: 12,
+                                  // Remove address for local store in options list
+                                  if (point.isPargoPoint || point.isPaxiPoint)
+                                    Text(
+                                      point.address,
+                                      style: TextStyle(
+                                        color: AppTheme.deepTeal.withOpacity(0.8),
+                                        fontSize: 12,
+                                      ),
+                                      maxLines: 3,
+                                      softWrap: true,
                                     ),
-                                    maxLines: 3,
-                                    softWrap: true,
-                                  ),
                                   Row(
                                     children: [
                                       Text(
@@ -9557,6 +9608,52 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 );
               },
             ),
+            SizedBox(height: ResponsiveUtils.getVerticalPadding(context) * 0.5),
+            if (_selectedPickupPoint != null) ...[
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.store_mall_directory, color: AppTheme.breeze, size: ResponsiveUtils.getIconSize(context, baseSize: 16)),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        SafeUI.safeText(
+                          _selectedPickupPoint!.name,
+                          style: TextStyle(
+                            fontSize: ResponsiveUtils.getTitleSize(context) - 4,
+                            color: AppTheme.deepTeal,
+                            fontWeight: FontWeight.w600,
+                          ),
+                          maxLines: 1,
+                        ),
+                        if (_selectedPickupPoint!.isPargoPoint || _selectedPickupPoint!.isPaxiPoint) ...[
+                          SafeUI.safeText(
+                            _selectedPickupPoint!.address,
+                            style: TextStyle(
+                              fontSize: ResponsiveUtils.getTitleSize(context) - 6,
+                              color: AppTheme.deepTeal.withOpacity(0.8),
+                            ),
+                            maxLines: 2,
+                          ),
+                        ],
+                        if (!(_selectedPickupPoint!.isPargoPoint || _selectedPickupPoint!.isPaxiPoint)) ...[
+                          SafeUI.safeText(
+                            'Store pickup address will be included in your order receipt',
+                            style: TextStyle(
+                              fontSize: ResponsiveUtils.getTitleSize(context) - 6,
+                              color: AppTheme.deepTeal.withOpacity(0.7),
+                            ),
+                            maxLines: 2,
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ],
           
           if (_isDelivery && _deliveryTimeMinutes != null) ...[

@@ -136,10 +136,8 @@ class MyApp extends StatelessWidget {
         home: SplashWrapper(),
         builder: (context, child) {
           // Global bottom SafeArea to avoid iPhone home indicator overlap
-          // Only show bot on the home screen - check route name since child isn't the actual screen
-          final currentRoute = ModalRoute.of(context)?.settings.name;
-          final isHome = currentRoute == null || currentRoute == '/' || currentRoute == '/home';
-          final showBot = isHome;
+          // Disable chatbot globally for now - will be re-enabled only on home screen
+          final showBot = false;
 
           final layered = ChatbotWrapper(
             child: child!,

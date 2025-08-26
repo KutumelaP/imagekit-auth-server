@@ -23,6 +23,7 @@ import '../services/global_message_listener.dart';
 import '../widgets/notification_badge.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:flutter/services.dart'; // Added import for SystemUiOverlayStyle
+import '../widgets/chatbot_widget.dart';
 
 class SimpleHomeScreen extends StatefulWidget {
   const SimpleHomeScreen({super.key});
@@ -400,6 +401,11 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
               opacity: _fadeAnimation,
               child: _buildBody(),
             ),
+          ),
+          // Floating chatbot (full-screen overlay inside this screen)
+          const ChatbotWidget(
+            initialDx: 0.88,
+            initialDy: 0.72,
           ),
         ],
       ),

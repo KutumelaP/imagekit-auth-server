@@ -42,6 +42,10 @@ class OrderDetailScreen extends StatelessWidget {
           final excludedZones = (order['excludedZones'] as List?)?.join(', ') ?? '';
           final platformFee = order['platformFee'] ?? 0.0;
           final sellerPayout = order['sellerPayout'] ?? (order['totalPrice'] ?? 0.0) - platformFee;
+          final orderType = (order['orderType'] as String?)?.toLowerCase() ?? '';
+          final pickupAddress = order['pickupPointAddress'] as String?;
+          final pickupName = order['pickupPointName'] as String?;
+          final pickupType = order['pickupPointType'] as String?; // pargo, paxi, local_store
 
           return Padding(
             padding: const EdgeInsets.all(16),
@@ -100,6 +104,16 @@ class OrderDetailScreen extends StatelessWidget {
                         _buildDetailRow('Excluded Delivery Zones', excludedZones),
                       if (driver != null)
                         _buildDetailRow('Driver', '${driver['name'] ?? ''} (${driver['phone'] ?? ''})'),
+                      if (orderType == 'pickup' && pickupAddress != null && pickupAddress.isNotEmpty) ...[
+                        const SizedBox(height: 12),
+                        Text('Pickup Details', style: AppTheme.headlineMedium),
+                        const SizedBox(height: 8),
+                        if (pickupName != null && pickupName.isNotEmpty)
+                          _buildDetailRow('Location', pickupName),
+                        _buildDetailRow('Address', pickupAddress),
+                        if (pickupType != null)
+                          _buildDetailRow('Pickup Type', pickupType == 'local_store' ? 'Store pickup' : pickupType.toUpperCase()),
+                      ],
                     ],
                   ),
                 ),
