@@ -284,6 +284,30 @@ class ImageCleanupService {
 		}
 	}
 	
+	// Videos: profile_videos/<userId>/...
+	static Future<List<Map<String, dynamic>>> findOrphanedProfileVideos() async {
+		try {
+			final orphaned = <Map<String, dynamic>>[];
+			final allImages = await getAllImages(limit: 1000);
+			final usersSnapshot = await FirebaseFirestore.instance.collection('users').get();
+			final validUserIds = usersSnapshot.docs.map((doc) => doc.id).toSet();
+			for (final image in allImages) {
+				final rawPath = (image['filePath'] as String? ?? '').trim();
+				if (rawPath.isEmpty) continue;
+				final imagePath = rawPath.startsWith('/') ? rawPath.substring(1) : rawPath;
+				final parts = imagePath.split('/').where((s) => s.isNotEmpty).toList();
+				if (parts.length >= 2 && parts[0] == 'profile_videos') {
+					final userId = parts[1];
+					if (!validUserIds.contains(userId)) orphaned.add(image);
+				}
+			}
+			return orphaned;
+		} catch (e) {
+			print('❌ Error finding orphaned profile videos: $e');
+			return [];
+		}
+	}
+
 	static Future<List<Map<String, dynamic>>> findOrphanedStoreImages() async {
 		try {
 			final orphanedImages = <Map<String, dynamic>>[];
@@ -307,6 +331,30 @@ class ImageCleanupService {
 		}
 	}
 	
+	// Videos: store_videos/<sellerId>/...
+	static Future<List<Map<String, dynamic>>> findOrphanedStoreVideos() async {
+		try {
+			final orphaned = <Map<String, dynamic>>[];
+			final allImages = await getAllImages(limit: 1000);
+			final sellersSnapshot = await FirebaseFirestore.instance.collection('users').where('role', isEqualTo: 'seller').get();
+			final validSellerIds = sellersSnapshot.docs.map((doc) => doc.id).toSet();
+			for (final image in allImages) {
+				final rawPath = (image['filePath'] as String? ?? '').trim();
+				if (rawPath.isEmpty) continue;
+				final imagePath = rawPath.startsWith('/') ? rawPath.substring(1) : rawPath;
+				final parts = imagePath.split('/').where((s) => s.isNotEmpty).toList();
+				if (parts.length >= 2 && parts[0] == 'store_videos') {
+					final sellerId = parts[1];
+					if (!validSellerIds.contains(sellerId)) orphaned.add(image);
+				}
+			}
+			return orphaned;
+		} catch (e) {
+			print('❌ Error finding orphaned store videos: $e');
+			return [];
+		}
+	}
+
 	static Future<List<Map<String, dynamic>>> findOrphanedChatImages() async {
 		try {
 			final orphanedImages = <Map<String, dynamic>>[];
@@ -336,6 +384,8 @@ class ImageCleanupService {
 			final orphanedProfiles = await findOrphanedProfileImages();
 			final orphanedStores = await findOrphanedStoreImages();
 			final orphanedChats = await findOrphanedChatImages();
+			final orphanedProfileVids = await findOrphanedProfileVideos();
+			final orphanedStoreVids = await findOrphanedStoreVideos();
 			final results = <String, int>{};
 			if (orphanedProducts.isNotEmpty) {
 				final ids = orphanedProducts.map((e) => e['fileId'] as String).toList();
@@ -356,6 +406,16 @@ class ImageCleanupService {
 				final ids = orphanedChats.map((e) => e['fileId'] as String).toList();
 				final res = await deleteImages(ids);
 				results['orphanedChats'] = res.values.where((ok) => ok).length;
+			}
+			if (orphanedProfileVids.isNotEmpty) {
+				final ids = orphanedProfileVids.map((e) => e['fileId'] as String).toList();
+				final res = await deleteImages(ids);
+				results['orphanedProfileVideos'] = res.values.where((ok) => ok).length;
+			}
+			if (orphanedStoreVids.isNotEmpty) {
+				final ids = orphanedStoreVids.map((e) => e['fileId'] as String).toList();
+				final res = await deleteImages(ids);
+				results['orphanedStoreVideos'] = res.values.where((ok) => ok).length;
 			}
 			return results;
 		} catch (e) {
