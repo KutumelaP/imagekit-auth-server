@@ -23,6 +23,7 @@ import '../services/global_message_listener.dart';
 import '../widgets/notification_badge.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:flutter/services.dart'; // Added import for SystemUiOverlayStyle
+import 'package:flutter/foundation.dart' show kIsWeb;
 import '../widgets/chatbot_widget.dart';
 
 class SimpleHomeScreen extends StatefulWidget {
@@ -375,6 +376,10 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
 
   @override
   Widget build(BuildContext context) {
+    // Position chatbot differently on Web vs Android/iOS
+    final double chatDx = kIsWeb ? 0.95 : 0.75; // web: near right edge, mobile: balanced spacing (leaves room for another icon)
+    // On web place near categories header (higher), on mobile keep above FAB
+    final double chatDy = kIsWeb ? 0.20 : 0.72;
     return Consumer<UserProvider>(
       builder: (context, userProvider, child) {
     return Scaffold(
@@ -403,9 +408,10 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
             ),
           ),
           // Floating chatbot (full-screen overlay inside this screen)
-          const ChatbotWidget(
-            initialDx: 0.88,
-            initialDy: 0.72,
+          ChatbotWidget(
+            initialDx: chatDx,
+            initialDy: chatDy,
+            ignoreSavedPosition: true,
           ),
         ],
       ),

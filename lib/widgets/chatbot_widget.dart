@@ -7,7 +7,8 @@ import '../services/chatbot_service.dart';
 class ChatbotWidget extends StatefulWidget {
   final double? initialDx; // 0..1 of screen width
   final double? initialDy; // 0..1 of screen height
-  const ChatbotWidget({Key? key, this.initialDx, this.initialDy}) : super(key: key);
+  final bool ignoreSavedPosition; // when true, don't restore saved position (use initial)
+  const ChatbotWidget({Key? key, this.initialDx, this.initialDy, this.ignoreSavedPosition = false}) : super(key: key);
 
   @override
   State<ChatbotWidget> createState() => _ChatbotWidgetState();
@@ -116,8 +117,8 @@ class _ChatbotWidgetState extends State<ChatbotWidget> with TickerProviderStateM
   Future<void> _loadSavedPosition() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final savedDx = prefs.getDouble('chatbot_fab_dx');
-      final savedDy = prefs.getDouble('chatbot_fab_dy');
+      final savedDx = widget.ignoreSavedPosition ? null : prefs.getDouble('chatbot_fab_dx');
+      final savedDy = widget.ignoreSavedPosition ? null : prefs.getDouble('chatbot_fab_dy');
       if (mounted) {
         setState(() {
           if (savedDx != null) {
@@ -132,6 +133,10 @@ class _ChatbotWidgetState extends State<ChatbotWidget> with TickerProviderStateM
           }
           _positionLoaded = true;
         });
+        // If we're ignoring saved position and we had initials, persist the new position for next time
+        if (widget.ignoreSavedPosition) {
+          _savePosition(_fabDx, _fabDy);
+        }
       }
     } catch (_) {
       if (mounted) {
