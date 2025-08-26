@@ -581,7 +581,9 @@ class _CustomerSupportSectionState extends State<CustomerSupportSection> {
           CircleAvatar(
             backgroundColor: AdminTheme.primaryColor.withOpacity(0.2),
             child: Text(
-              conversation['userName']?.toString().substring(0, 1).toUpperCase() ?? 'U',
+              (conversation['userName']?.toString().isNotEmpty == true) 
+                  ? conversation['userName']!.toString().substring(0, 1).toUpperCase()
+                  : 'U',
               style: TextStyle(color: AdminTheme.primaryColor, fontWeight: FontWeight.bold),
             ),
           ),
