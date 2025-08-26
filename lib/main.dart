@@ -136,9 +136,9 @@ class MyApp extends StatelessWidget {
         home: SplashWrapper(),
         builder: (context, child) {
           // Global bottom SafeArea to avoid iPhone home indicator overlap
-          // Show bot globally except on login screen
-          final isLogin = child is LoginScreen;
-          final showBot = !isLogin;
+          // Only show bot on the home screen
+          final isHome = child is SimpleHomeScreen;
+          final showBot = isHome;
 
           final layered = ChatbotWrapper(
             child: child!,
