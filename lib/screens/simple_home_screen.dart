@@ -641,49 +641,53 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
 
   Widget _buildAccountMenu() {
     final screenWidth = MediaQuery.of(context).size.width;
-    final iconSize = screenWidth < 600 ? 24.0 : screenWidth < 900 ? 26.0 : 28.0;
+    final iconSize = screenWidth < 600 ? 20.0 : 22.0;
     
     return Consumer<UserProvider>(
       builder: (context, userProvider, child) {
         return Container(
-          margin: EdgeInsets.only(right: screenWidth < 600 ? 4.0 : screenWidth < 900 ? 6.0 : 8.0),
+          margin: EdgeInsets.only(right: screenWidth < 600 ? 8.0 : 16.0),
           decoration: BoxDecoration(
             color: Colors.white,
-            borderRadius: BorderRadius.circular(screenWidth < 600 ? 10.0 : 12.0),
+            borderRadius: BorderRadius.circular(20),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.1),
-                blurRadius: 8,
+                color: Colors.black.withOpacity(0.08),
+                blurRadius: 6,
                 offset: const Offset(0, 2),
               ),
             ],
           ),
           child: PopupMenuButton<String>(
             tooltip: 'Account',
-            elevation: 12,
+            elevation: 8,
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: BorderRadius.circular(12),
             ),
-            color: AppTheme.angel,
-            offset: const Offset(0, 8),
+            color: Colors.white,
+            offset: const Offset(-20, 8),
+            constraints: const BoxConstraints(
+              minWidth: 200,
+              maxWidth: 220,
+            ),
             child: Padding(
-              padding: EdgeInsets.all(screenWidth < 600 ? 8.0 : 10.0),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               child: Stack(
               clipBehavior: Clip.none,
               children: [
-                Icon(Icons.account_circle, color: AppTheme.deepTeal, size: iconSize),
+                Icon(Icons.account_circle_outlined, color: AppTheme.deepTeal, size: iconSize),
                 Positioned(
-                  right: 0,
-                  top: 0,
+                  right: -2,
+                  top: -2,
                   child: Container(
                     decoration: BoxDecoration(
                       color: Colors.white,
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: BorderRadius.circular(8),
                       boxShadow: [
                         BoxShadow(
                           color: Colors.black.withOpacity(0.1),
-                          blurRadius: 4,
-                          offset: const Offset(0, 2),
+                          blurRadius: 2,
+                          offset: const Offset(0, 1),
                         ),
                       ],
                     ),
@@ -831,187 +835,127 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
               ] else if (userProvider.user == null) ...[
                 PopupMenuItem(
                   value: 'login',
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(vertical: 4),
-                    child: Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: AppTheme.deepTeal.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Icon(Icons.login, size: 18, color: AppTheme.deepTeal),
+                  height: 40,
+                  child: Row(
+                    children: [
+                      Icon(Icons.login, size: 16, color: AppTheme.deepTeal),
+                      const SizedBox(width: 10),
+                      Text(
+                        'Login',
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.w500,
+                          fontSize: 14,
                         ),
-                        const SizedBox(width: 12),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Login',
-                              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            Text(
-                              'Access your account',
-                              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                color: AppTheme.cloud,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ),
               ] else ...[
                 PopupMenuItem(
                   value: 'notifications',
+                  height: 40,
                   child: Row(
                     children: [
                       NotificationBadge(
-                        child: Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: AppTheme.deepTeal.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Icon(Icons.notifications, size: 18, color: AppTheme.deepTeal),
+                        child: Icon(Icons.notifications_outlined, size: 16, color: AppTheme.deepTeal),
+                      ),
+                      const SizedBox(width: 10),
+                      Text(
+                        'Notifications',
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.w500,
+                          fontSize: 14,
                         ),
                       ),
-                      const SizedBox(width: 12),
-                      const Text('Notifications'),
                     ],
                   ),
                 ),
                 PopupMenuItem(
                   value: 'my_stores',
+                  height: 40,
                   child: Row(
                     children: [
-                      Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: AppTheme.deepTeal.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(8),
+                      Icon(Icons.favorite_outline, size: 16, color: AppTheme.deepTeal),
+                      const SizedBox(width: 10),
+                      Text(
+                        'My Stores',
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.w500,
+                          fontSize: 14,
                         ),
-                        child: Icon(Icons.favorite, size: 18, color: AppTheme.deepTeal),
                       ),
-                      const SizedBox(width: 12),
-                      const Text('My Stores'),
                     ],
                   ),
                 ),
                 PopupMenuItem(
                   value: 'chat',
+                  height: 40,
                   child: Row(
                     children: [
                       ChatBadge(
-                        child: Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: AppTheme.deepTeal.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Icon(Icons.chat_outlined, size: 18, color: AppTheme.deepTeal),
+                        child: Icon(Icons.chat_outlined, size: 16, color: AppTheme.deepTeal),
+                      ),
+                      const SizedBox(width: 10),
+                      Text(
+                        'Chat',
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.w500,
+                          fontSize: 14,
                         ),
                       ),
-                      const SizedBox(width: 12),
-                      const Text('Chat'),
                     ],
                   ),
                 ),
                 PopupMenuItem(
                   value: 'notification_settings',
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(vertical: 4),
-                    child: Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: AppTheme.deepTeal.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Icon(Icons.settings, size: 18, color: AppTheme.deepTeal),
+                  height: 40,
+                  child: Row(
+                    children: [
+                      Icon(Icons.settings_outlined, size: 16, color: AppTheme.deepTeal),
+                      const SizedBox(width: 10),
+                      Text(
+                        'Settings',
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.w500,
+                          fontSize: 14,
                         ),
-                        const SizedBox(width: 12),
-                        const Text('Notification Settings'),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ),
                 // Edit Profile
                 PopupMenuItem(
                   value: 'profile',
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(vertical: 4),
-                    child: Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: AppTheme.deepTeal.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Icon(Icons.edit, size: 18, color: AppTheme.deepTeal),
+                  height: 40,
+                  child: Row(
+                    children: [
+                      Icon(Icons.edit_outlined, size: 16, color: AppTheme.deepTeal),
+                      const SizedBox(width: 10),
+                      Text(
+                        'Edit Profile',
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.w500,
+                          fontSize: 14,
                         ),
-                        const SizedBox(width: 12),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Edit Profile',
-                              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            Text(
-                              'Update your information',
-                              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                color: AppTheme.cloud,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ),
                 PopupMenuItem(
                   value: 'seller_payouts',
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(vertical: 4),
-                    child: Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: AppTheme.deepTeal.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Icon(Icons.account_balance_wallet, size: 18, color: AppTheme.deepTeal),
+                  height: 40,
+                  child: Row(
+                    children: [
+                      Icon(Icons.account_balance_wallet_outlined, size: 16, color: AppTheme.deepTeal),
+                      const SizedBox(width: 10),
+                      Text(
+                        'Earnings',
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.w500,
+                          fontSize: 14,
                         ),
-                        const SizedBox(width: 12),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Earnings & Payouts',
-                              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            Text(
-                              'View balance, request payout',
-                              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                color: AppTheme.cloud,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ),
                 
@@ -1019,38 +963,19 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
                 if (!userProvider.isSeller)
                   PopupMenuItem(
                     value: 'order_history',
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(vertical: 4),
-                      child: Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: AppTheme.primaryGreen.withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Icon(Icons.history, size: 18, color: AppTheme.primaryGreen),
+                    height: 40,
+                    child: Row(
+                      children: [
+                        Icon(Icons.history, size: 16, color: AppTheme.primaryGreen),
+                        const SizedBox(width: 10),
+                        Text(
+                          'Order History',
+                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            fontWeight: FontWeight.w500,
+                            fontSize: 14,
                           ),
-                          const SizedBox(width: 12),
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Order History',
-                                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              Text(
-                                'View past orders',
-                                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                  color: AppTheme.cloud,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
                   ),
                 
@@ -1058,38 +983,19 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
                 if (!userProvider.isSeller)
                   PopupMenuItem(
                     value: 'register',
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(vertical: 4),
-                      child: Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: AppTheme.primaryOrange.withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Icon(Icons.store, size: 18, color: AppTheme.primaryOrange),
+                    height: 40,
+                    child: Row(
+                      children: [
+                        Icon(Icons.store_outlined, size: 16, color: AppTheme.primaryOrange),
+                        const SizedBox(width: 10),
+                        Text(
+                          'Become a Seller',
+                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            fontWeight: FontWeight.w500,
+                            fontSize: 14,
                           ),
-                          const SizedBox(width: 12),
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Become a Seller',
-                                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              Text(
-                                'Start selling on Mzansi',
-                                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                  color: AppTheme.cloud,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
                   ),
                 
@@ -1097,38 +1003,19 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
                 if (userProvider.isSeller)
                   PopupMenuItem(
                     value: 'orders',
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(vertical: 4),
-                      child: Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: AppTheme.primaryGreen.withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Icon(Icons.list_alt, size: 18, color: AppTheme.primaryGreen),
+                    height: 40,
+                    child: Row(
+                      children: [
+                        Icon(Icons.list_alt, size: 16, color: AppTheme.primaryGreen),
+                        const SizedBox(width: 10),
+                        Text(
+                          'Orders',
+                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            fontWeight: FontWeight.w500,
+                            fontSize: 14,
                           ),
-                          const SizedBox(width: 12),
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Manage Orders',
-                                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              Text(
-                                'Handle customer orders',
-                                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                  color: AppTheme.cloud,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
                   ),
                 
@@ -1136,38 +1023,19 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
                 if (userProvider.isSeller)
                   PopupMenuItem(
                     value: 'my_products',
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(vertical: 4),
-                      child: Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: AppTheme.deepTeal.withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Icon(Icons.inventory, size: 18, color: AppTheme.deepTeal),
+                    height: 40,
+                    child: Row(
+                      children: [
+                        Icon(Icons.inventory_outlined, size: 16, color: AppTheme.deepTeal),
+                        const SizedBox(width: 10),
+                        Text(
+                          'My Products',
+                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            fontWeight: FontWeight.w500,
+                            fontSize: 14,
                           ),
-                          const SizedBox(width: 12),
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'My Products',
-                                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              Text(
-                                'Manage your products',
-                                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                  color: AppTheme.cloud,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
                   ),
                 
@@ -1175,38 +1043,19 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
                 if (userProvider.isSeller)
                   PopupMenuItem(
                     value: 'upload_product',
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(vertical: 4),
-                      child: Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: AppTheme.deepTeal.withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Icon(Icons.add_shopping_cart, size: 18, color: AppTheme.deepTeal),
+                    height: 40,
+                    child: Row(
+                      children: [
+                        Icon(Icons.add_box_outlined, size: 16, color: AppTheme.deepTeal),
+                        const SizedBox(width: 10),
+                        Text(
+                          'Upload Product',
+                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            fontWeight: FontWeight.w500,
+                            fontSize: 14,
                           ),
-                          const SizedBox(width: 12),
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Upload Product',
-                                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              Text(
-                                'Add new products to sell',
-                                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                  color: AppTheme.cloud,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
                   ),
                 
@@ -1220,76 +1069,40 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
                 if (_isDriver)
                   PopupMenuItem(
                     value: 'driver_app',
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(vertical: 4),
-                      child: Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: AppTheme.warning.withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Icon(Icons.delivery_dining, size: 18, color: AppTheme.warning),
+                    height: 40,
+                    child: Row(
+                      children: [
+                        Icon(Icons.delivery_dining, size: 16, color: AppTheme.warning),
+                        const SizedBox(width: 10),
+                        Text(
+                          'Driver App',
+                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            fontWeight: FontWeight.w500,
+                            fontSize: 14,
                           ),
-                          const SizedBox(width: 12),
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Driver App',
-                                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              Text(
-                                'Manage deliveries',
-                                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                  color: AppTheme.cloud,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
                   ),
 
                 // Logout
+                const PopupMenuDivider(),
                 PopupMenuItem(
                   value: 'logout',
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(vertical: 4),
-                    child: Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: AppTheme.primaryRed.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Icon(Icons.logout, size: 18, color: AppTheme.primaryRed),
+                  height: 40,
+                  child: Row(
+                    children: [
+                      Icon(Icons.logout, size: 16, color: AppTheme.primaryRed),
+                      const SizedBox(width: 10),
+                      Text(
+                        'Logout',
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.w500,
+                          fontSize: 14,
+                          color: AppTheme.primaryRed,
                         ),
-                        const SizedBox(width: 12),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Logout',
-                              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            Text(
-                              'Sign out of your account',
-                              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                color: AppTheme.cloud,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ),
               ],
