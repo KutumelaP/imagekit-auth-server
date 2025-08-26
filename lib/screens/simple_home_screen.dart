@@ -403,14 +403,6 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
               child: _buildBody(),
             ),
           ),
-          // Chatbot on home only, positioned above seller FAB
-          const Material(
-            type: MaterialType.transparency,
-            child: ChatbotWidget(
-              initialDx: 0.88,
-              initialDy: 0.72,
-            ),
-          ),
         ],
       ),
         );
@@ -1261,6 +1253,34 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
                 fontSize: 20,
                 fontWeight: FontWeight.bold,
                 color: AppTheme.deepTeal,
+              ),
+            ),
+            const Spacer(),
+            // Chat badge button to match Android look on PWA/Web
+            ChatBadge(
+              child: Container(
+                decoration: BoxDecoration(
+                  color: AppTheme.primaryGreen,
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppTheme.primaryGreen.withOpacity(0.3),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: IconButton(
+                  icon: const Icon(Icons.chat_bubble, color: Colors.white, size: 18),
+                  onPressed: () {
+                    showModalBottomSheet(
+                      context: context,
+                      isScrollControlled: true,
+                      backgroundColor: Colors.transparent,
+                      builder: (context) => const ChatbotWidget(),
+                    );
+                  },
+                ),
               ),
             ),
           ],

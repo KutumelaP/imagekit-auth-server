@@ -1021,8 +1021,8 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
         }
       }
 
-      // Save to users collection (as per the existing data structure)
-      await FirebaseFirestore.instance.collection('users').doc(user.uid).update({
+      // Save to users collection (merge to avoid touching forbidden fields)
+      await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
         'email': user.email, // Add the logged-in user's email
         'storeName': _storeNameController.text.trim(),
         'storeCategory': _selectedStoreCategory,
@@ -1069,7 +1069,7 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
         'addressLine2': _addressLine2Controller.text.trim(),
         'city': _cityController.text.trim(),
         'postalCode': _postalCodeController.text.trim(),
-      });
+      }, SetOptions(merge: true));
 
       // Save payout details to secure sub-document
       try {

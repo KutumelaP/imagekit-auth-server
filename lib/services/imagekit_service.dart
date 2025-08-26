@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:async';
 import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:cloud_functions/cloud_functions.dart';
@@ -15,6 +16,30 @@ class ImageKitService {
   static const List<String> _legacyAuthServerUrls = [];
   
   static const String _uploadUrl = 'https://upload.imagekit.io/api/v1/files/upload';
+
+  // Send a multipart request with configurable timeout and simple retry for timeouts
+  static Future<http.Response> _sendMultipartWithRetry(
+    http.MultipartRequest request, {
+    Duration timeout = const Duration(minutes: 3),
+    int retries = 1,
+  }) async {
+    int attempt = 0;
+    while (true) {
+      attempt++;
+      try {
+        final streamed = await request.send().timeout(timeout);
+        // Also bound the stream-to-response phase
+        return await http.Response.fromStream(streamed).timeout(const Duration(minutes: 1));
+      } on TimeoutException catch (_) {
+        if (kDebugMode) {
+          print('⚠️ ImageKit upload timed out (attempt $attempt).');
+        }
+        if (attempt > retries) rethrow;
+        // Backoff briefly before retrying
+        await Future.delayed(const Duration(seconds: 2));
+      }
+    }
+  }
 
   /// Upload image to ImageKit with authentication
   static Future<String?> uploadImageWithAuth({
@@ -134,9 +159,12 @@ class ImageKitService {
 
       request.files.add(multipartFile);
 
-      if (kDebugMode) print('🔍 Sending ImageKit upload request...');
-      final streamedResponse = await request.send().timeout(const Duration(seconds: 30));
-      final uploadResponse = await http.Response.fromStream(streamedResponse);
+      if (kDebugMode) print('🔍 Sending ImageKit upload request (extended timeout for large files)...');
+      final uploadResponse = await _sendMultipartWithRetry(
+        request,
+        timeout: const Duration(minutes: 3),
+        retries: 1,
+      );
 
       if (kDebugMode) print('🔍 ImageKit upload response status: ${uploadResponse.statusCode}');
 
@@ -229,9 +257,12 @@ class ImageKitService {
 
       request.files.add(multipartFile);
 
-      if (kDebugMode) print('🔍 Sending ImageKit upload request...');
-      final streamedResponse = await request.send().timeout(const Duration(seconds: 30));
-      final uploadResponse = await http.Response.fromStream(streamedResponse);
+      if (kDebugMode) print('🔍 Sending ImageKit upload request (extended timeout for large files)...');
+      final uploadResponse = await _sendMultipartWithRetry(
+        request,
+        timeout: const Duration(minutes: 3),
+        retries: 1,
+      );
 
       if (kDebugMode) print('🔍 ImageKit upload response status: ${uploadResponse.statusCode}');
 
