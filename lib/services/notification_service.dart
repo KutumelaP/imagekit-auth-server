@@ -522,6 +522,13 @@ class NotificationService {
     required String message,
   }) async {
     try {
+      // Don't show notification if sender is the current user
+      final currentUserId = _auth.currentUser?.uid;
+      if (currentUserId != null && senderId == currentUserId) {
+        print('🔇 Skipping chat notification - message sent by current user');
+        return;
+      }
+
       // Get sender's name
       final senderDoc = await _firestore
           .collection('users')

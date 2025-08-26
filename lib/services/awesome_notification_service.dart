@@ -284,6 +284,13 @@ class AwesomeNotificationService {
     required String message,
   }) async {
     try {
+      // Don't show notification if sender is the current user
+      final currentUser = FirebaseAuth.instance.currentUser;
+      if (currentUser != null && senderId == currentUser.uid) {
+        print('🔇 Skipping awesome chat notification - message sent by current user');
+        return;
+      }
+
       // Get sender's name
       final senderDoc = await _firestore
           .collection('users')
