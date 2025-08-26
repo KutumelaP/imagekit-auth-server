@@ -293,21 +293,27 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
       
       if (mounted) {
         setState(() {
-          _categories = snapshot.docs.map((doc) {
-            final data = doc.data();
-            String imageUrl = data['imageUrl'] ?? '';
-            
-            // If no image URL is provided, use a default image based on category name
-            if (imageUrl.isEmpty) {
-              imageUrl = _getDefaultCategoryImage(data['name'] ?? '');
-            }
-            
-            return {
-              'id': doc.id,
-              'name': data['name'] ?? '',
-              'imageUrl': imageUrl,
-            };
-          }).toList();
+          if (snapshot.docs.isEmpty) {
+            // If no categories in database, show default categories
+            _categories = _getDefaultCategories();
+            print('🔍 No categories in database, using defaults: ${_categories.length} categories');
+          } else {
+            _categories = snapshot.docs.map((doc) {
+              final data = doc.data();
+              String imageUrl = data['imageUrl'] ?? '';
+              
+              // If no image URL is provided, use a default image based on category name
+              if (imageUrl.isEmpty) {
+                imageUrl = _getDefaultCategoryImage(data['name'] ?? '');
+              }
+              
+              return {
+                'id': doc.id,
+                'name': data['name'] ?? '',
+                'imageUrl': imageUrl,
+              };
+            }).toList();
+          }
           _isLoading = false;
         });
       }
@@ -315,11 +321,38 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
       print('❌ Error loading categories: $e');
       if (mounted) {
         setState(() {
-          _error = 'Failed to load categories. Please check your connection.';
+          // On error, also show default categories for better UX
+          _categories = _getDefaultCategories();
+          print('🔍 Error loading categories, using defaults: ${_categories.length} categories');
           _isLoading = false;
         });
       }
     }
+  }
+
+  List<Map<String, dynamic>> _getDefaultCategories() {
+    return [
+      {
+        'id': 'clothing',
+        'name': 'Clothing',
+        'imageUrl': _getDefaultCategoryImage('Clothing'),
+      },
+      {
+        'id': 'electronics',
+        'name': 'Electronics',
+        'imageUrl': _getDefaultCategoryImage('Electronics'),
+      },
+      {
+        'id': 'food',
+        'name': 'Food',
+        'imageUrl': _getDefaultCategoryImage('Food'),
+      },
+      {
+        'id': 'other',
+        'name': 'Other',
+        'imageUrl': _getDefaultCategoryImage('Other'),
+      },
+    ];
   }
 
   void _goToCategory(String category) {
@@ -1237,58 +1270,37 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
   }
 
   Widget _buildCategoriesGridSliver() {
-    if (_categories.isEmpty) {
-      return const SliverToBoxAdapter(
-        child: Padding(
-          padding: EdgeInsets.all(32),
-          child: Center(
-            child: Column(
-              children: [
-                Icon(
-                  Icons.category_outlined,
-                  color: AppTheme.deepTeal,
-                  size: 48,
-                ),
-                SizedBox(height: 16),
-                Text(
-                  'No categories available',
-                  style: TextStyle(
-                    color: AppTheme.deepTeal,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                SizedBox(height: 8),
-                Text(
-                  'Categories will appear here once added',
-                  style: TextStyle(
-                    color: AppTheme.cloud,
-                    fontSize: 14,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      );
-    }
-
+    // Categories should always display now with default fallback
     final screenWidth = MediaQuery.of(context).size.width;
     int crossAxisCount = 2;
-    if (screenWidth >= 900) {
+    double childAspectRatio = 0.85;
+    
+    // Better responsive layout for web/PWA
+    if (screenWidth >= 1200) {
       crossAxisCount = 4;
+      childAspectRatio = 0.9;
+    } else if (screenWidth >= 900) {
+      crossAxisCount = 4;
+      childAspectRatio = 0.8;
     } else if (screenWidth >= 600) {
       crossAxisCount = 3;
+      childAspectRatio = 0.85;
+    } else {
+      crossAxisCount = 2;
+      childAspectRatio = 0.9;
     }
 
     return SliverPadding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: EdgeInsets.symmetric(
+        horizontal: screenWidth >= 600 ? 24 : 16,
+        vertical: 8,
+      ),
       sliver: SliverGrid(
         gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: crossAxisCount,
-          mainAxisSpacing: 16,
-          crossAxisSpacing: 16,
-          childAspectRatio: 0.78,
+          mainAxisSpacing: screenWidth >= 600 ? 20 : 16,
+          crossAxisSpacing: screenWidth >= 600 ? 20 : 16,
+          childAspectRatio: childAspectRatio,
         ),
         delegate: SliverChildBuilderDelegate(
           (context, index) {
