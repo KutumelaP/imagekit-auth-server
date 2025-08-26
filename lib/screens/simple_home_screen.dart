@@ -665,7 +665,7 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
               borderRadius: BorderRadius.circular(12),
             ),
             color: Colors.white,
-            offset: const Offset(-20, 8),
+            offset: const Offset(-120, 8),
             constraints: const BoxConstraints(
               minWidth: 200,
               maxWidth: 220,
