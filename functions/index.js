@@ -1295,22 +1295,36 @@ exports.batchDeleteImages = functions.runWith({
   timeoutSeconds: 540,  // 9 minutes max
   memory: '1GB'
 }).https.onCall(async (data, context) => {
-  if (!context.auth) {
-    throw new functions.https.HttpsError('unauthenticated', 'Sign in required');
-  }
-  if (!(await isAdmin(context))) {
-    throw new functions.https.HttpsError('permission-denied', 'Admin access required');
-  }
+  console.log('🚀 batchDeleteImages: Function started');
+  
   try {
-    console.log('batchDeleteImages called');
+    // Authentication check
+    if (!context.auth) {
+      console.error('❌ No authentication context');
+      throw new functions.https.HttpsError('unauthenticated', 'Sign in required');
+    }
+    console.log('✅ User authenticated:', context.auth.uid);
+
+    // Admin check
+    const adminCheck = await isAdmin(context);
+    if (!adminCheck) {
+      console.error('❌ User is not admin');
+      throw new functions.https.HttpsError('permission-denied', 'Admin access required');
+    }
+    console.log('✅ Admin verified');
+
+    // Input validation
     const fileIds = Array.isArray(data?.fileIds) ? data.fileIds.map(String) : [];
     if (fileIds.length === 0) {
+      console.error('❌ No fileIds provided');
       throw new functions.https.HttpsError('invalid-argument', 'fileIds required');
     }
+    console.log('✅ Input validated:', fileIds.length, 'files');
     
-    // Limit batch size to prevent timeouts
+    // Batch size validation
     const MAX_BATCH_SIZE = 50;
     if (fileIds.length > MAX_BATCH_SIZE) {
+      console.log('⚠️ Batch size too large:', fileIds.length);
       return {
         success: false,
         error: `Batch size too large. Maximum ${MAX_BATCH_SIZE} images per batch. Please split into smaller batches.`,
@@ -1318,81 +1332,106 @@ exports.batchDeleteImages = functions.runWith({
         providedCount: fileIds.length
       };
     }
-    
-    console.log('batchDeleteImages count:', fileIds.length, 'first', fileIds[0]);
 
+    // ImageKit credentials check
     const { privateKey } = getImageKitCredentials();
     if (!privateKey) {
+      console.error('❌ ImageKit credentials not found');
       throw new functions.https.HttpsError('failed-precondition', 'ImageKit not configured');
     }
+    console.log('✅ ImageKit credentials found');
 
-    // Delete from ImageKit with chunked parallel processing
+    // Test ImageKit connectivity first
+    try {
+      const testResponse = await axios.get(`${IK_API_BASE}/files`, {
+        headers: { Authorization: `Basic ${Buffer.from(`${privateKey}:`).toString('base64')}` },
+        params: { limit: 1 },
+        timeout: 10000,
+      });
+      console.log('✅ ImageKit connectivity test passed:', testResponse.status);
+    } catch (connectError) {
+      console.error('❌ ImageKit connectivity test failed:', connectError.message);
+      return { 
+        success: false, 
+        error: `ImageKit connectivity failed: ${connectError.message}`,
+        details: connectError.response?.data || 'No additional details'
+      };
+    }
+
+    // Process deletions
     const headers = { Authorization: `Basic ${Buffer.from(`${privateKey}:`).toString('base64')}` };
     const results = {};
     const errors = {};
     
-    // Process in chunks of 10 for parallel execution
-    const CHUNK_SIZE = 10;
+    // Process in chunks of 5 for better reliability
+    const CHUNK_SIZE = 5;
     const chunks = [];
     for (let i = 0; i < fileIds.length; i += CHUNK_SIZE) {
       chunks.push(fileIds.slice(i, i + CHUNK_SIZE));
     }
     
-    console.log(`Processing ${fileIds.length} images in ${chunks.length} chunks of ${CHUNK_SIZE}`);
+    console.log(`🔄 Processing ${fileIds.length} images in ${chunks.length} chunks of ${CHUNK_SIZE}`);
     
     for (const [chunkIndex, chunk] of chunks.entries()) {
-      console.log(`Processing chunk ${chunkIndex + 1}/${chunks.length}`);
+      console.log(`📦 Processing chunk ${chunkIndex + 1}/${chunks.length}: [${chunk.join(', ')}]`);
       
-      // Process chunk in parallel
-      const chunkPromises = chunk.map(async (id) => {
+      // Process chunk sequentially to avoid rate limits
+      for (const id of chunk) {
         try {
+          console.log(`🗑️ Deleting ${id}...`);
           const delRes = await axios.delete(`${IK_API_BASE}/files/${encodeURIComponent(id)}`, { 
             headers, 
-            timeout: 15000  // Reduced individual timeout
+            timeout: 30000  // Increased timeout for individual requests
           });
-          console.log('IK delete ok', id, delRes.status);
-          return { id, success: true };
+          console.log('✅ Delete successful:', id, 'status:', delRes.status);
+          results[id] = true;
         } catch (e) {
           const status = e?.response?.status || 0;
           const msg = e?.response?.data || e?.message || 'unknown';
-          console.warn('IK delete error', id, status, msg);
+          console.warn('⚠️ Delete failed:', id, 'status:', status, 'message:', msg);
+          
           // Idempotent success if file already gone
           if (status === 404) {
-            return { id, success: true };
+            console.log('✅ File already deleted:', id);
+            results[id] = true;
           } else {
-            return { id, success: false, error: { status, message: msg } };
+            console.error('❌ Delete error:', id, status, msg);
+            results[id] = false;
+            errors[id] = { status, message: msg };
           }
         }
-      });
-      
-      const chunkResults = await Promise.all(chunkPromises);
-      
-      // Process chunk results
-      for (const result of chunkResults) {
-        results[result.id] = result.success;
-        if (!result.success && result.error) {
-          errors[result.id] = result.error;
-        }
+        
+        // Small delay between individual requests
+        await new Promise(resolve => setTimeout(resolve, 500));
       }
       
-      // Small delay between chunks to be gentle on ImageKit API
+      // Delay between chunks
       if (chunkIndex < chunks.length - 1) {
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        console.log('⏳ Waiting 2 seconds before next chunk...');
+        await new Promise(resolve => setTimeout(resolve, 2000));
       }
     }
 
-    // Update Firestore mirror in batches
+    // Update Firestore mirror
     const successfulIds = Object.keys(results).filter(id => results[id] === true);
-    console.log(`Updating Firestore mirror for ${successfulIds.length} successful deletions`);
+    console.log(`🗄️ Updating Firestore mirror for ${successfulIds.length} successful deletions`);
     
-    // Process Firestore updates in batches of 500 (Firestore limit)
-    for (let i = 0; i < successfulIds.length; i += 500) {
-      const batch = db.batch();
-      const batchIds = successfulIds.slice(i, i + 500);
-      for (const id of batchIds) {
-        batch.delete(db.collection('image_assets').doc(id));
+    if (successfulIds.length > 0) {
+      try {
+        // Process Firestore updates in batches of 500 (Firestore limit)
+        for (let i = 0; i < successfulIds.length; i += 500) {
+          const batch = db.batch();
+          const batchIds = successfulIds.slice(i, i + 500);
+          for (const id of batchIds) {
+            batch.delete(db.collection('image_assets').doc(id));
+          }
+          await batch.commit();
+          console.log(`✅ Firestore batch ${Math.floor(i/500) + 1} updated`);
+        }
+      } catch (firestoreError) {
+        console.error('❌ Firestore update failed:', firestoreError.message);
+        // Don't fail the entire operation for Firestore errors
       }
-      await batch.commit();
     }
     
     const allOk = Object.values(results).every((v) => v === true);
@@ -1402,7 +1441,7 @@ exports.batchDeleteImages = functions.runWith({
       failed: Object.values(results).filter(v => v === false).length
     };
     
-    console.log('batchDeleteImages summary:', summary);
+    console.log('📊 Final summary:', summary);
     
     return { 
       success: allOk, 
@@ -1411,9 +1450,15 @@ exports.batchDeleteImages = functions.runWith({
       summary
     };
   } catch (e) {
-    console.error('batchDeleteImages error:', e?.message || e);
+    console.error('💥 batchDeleteImages critical error:', e?.message || e);
+    console.error('Stack trace:', e?.stack);
     // Return structured error instead of throwing to avoid client [internal]
-    return { success: false, error: e?.message || String(e) };
+    return { 
+      success: false, 
+      error: e?.message || String(e),
+      errorType: e?.constructor?.name || 'Unknown',
+      stack: e?.stack || 'No stack trace available'
+    };
   }
 });
 
