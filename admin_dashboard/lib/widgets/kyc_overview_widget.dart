@@ -103,7 +103,7 @@ class _KycOverviewWidgetState extends State<KycOverviewWidget> {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
+    return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -175,12 +175,12 @@ class _KycOverviewWidgetState extends State<KycOverviewWidget> {
               ),
             )
           else
-            Expanded(
-              child: ListView.separated(
-                itemCount: _items.length,
-                separatorBuilder: (_, __) => const SizedBox(height: 12),
-                itemBuilder: (context, i) => _buildOverviewCard(_items[i]),
-              ),
+            ListView.separated(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: _items.length,
+              separatorBuilder: (_, __) => const SizedBox(height: 12),
+              itemBuilder: (context, i) => _buildOverviewCard(_items[i]),
             ),
         ],
       ),

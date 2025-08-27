@@ -34,6 +34,7 @@ class SimpleHomeScreen extends StatefulWidget {
 
 class _SimpleHomeScreenState extends State<SimpleHomeScreen> 
     with TickerProviderStateMixin {
+  final GlobalKey _browseCategoriesKey = GlobalKey(debugLabel: 'browse_categories_header');
   List<Map<String, dynamic>> _categories = [];
   bool _isLoading = true;
   String? _error;
@@ -45,6 +46,7 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
   late Animation<double> _fadeAnimation;
 
   bool _isDriver = false;
+  double? _computedChatDy;
 
   @override
   void initState() {
@@ -61,10 +63,38 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final userProvider = Provider.of<UserProvider>(context, listen: false);
       userProvider.loadUserData();
+      _measureBrowseHeaderPosition();
     });
     
     // Request location permission when app starts
     _requestLocationPermission();
+  }
+
+  void _measureBrowseHeaderPosition({int retries = 3}) {
+    try {
+      final ctx = _browseCategoriesKey.currentContext;
+      if (ctx == null) {
+        if (retries > 0) Future.delayed(const Duration(milliseconds: 100), () => _measureBrowseHeaderPosition(retries: retries - 1));
+        return;
+      }
+      final renderObject = ctx.findRenderObject();
+      if (renderObject is! RenderBox || !renderObject.hasSize) {
+        if (retries > 0) Future.delayed(const Duration(milliseconds: 100), () => _measureBrowseHeaderPosition(retries: retries - 1));
+        return;
+      }
+      final topLeft = renderObject.localToGlobal(Offset.zero);
+      final headerHeight = renderObject.size.height;
+      final screenHeight = MediaQuery.of(ctx).size.height;
+      final centerY = topLeft.dy + headerHeight / 2.0;
+      final dy = (centerY / screenHeight).clamp(0.0, 1.0);
+      // Log for debugging/verification
+      // ignore: avoid_print
+      print('🔍 Browse Categories header position -> topY: ${topLeft.dy.toStringAsFixed(1)}px, height: ${headerHeight.toStringAsFixed(1)}px, normalized center dy: ${dy.toStringAsFixed(3)}');
+      if (mounted) setState(() => _computedChatDy = dy);
+    } catch (e) {
+      // ignore: avoid_print
+      print('❌ Failed to measure Browse Categories header: $e');
+    }
   }
   
   Future<void> _requestLocationPermission() async {
@@ -377,7 +407,7 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
   Widget build(BuildContext context) {
     // Unified chatbot position across platforms
     final double chatDx = 0.75;
-    final double chatDy = 0.30;
+    final double chatDy = _computedChatDy ?? 0.25;
     return Consumer<UserProvider>(
       builder: (context, userProvider, child) {
     return Scaffold(
@@ -1237,6 +1267,7 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
   Widget _buildCategoriesHeaderSliver() {
     return SliverToBoxAdapter(
       child: Padding(
+        key: _browseCategoriesKey,
         padding: const EdgeInsets.all(16),
         child: Row(
           children: [

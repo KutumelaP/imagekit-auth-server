@@ -113,9 +113,27 @@ class _CategoriesSectionState extends State<CategoriesSection> {
       children: [
         Padding(
           padding: const EdgeInsets.all(16.0),
-          child: StreamBuilder<QuerySnapshot>(
-            stream: widget.firestore.collection('categories').orderBy('name').snapshots(),
-            builder: (context, snapshot) {
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.smart_toy, size: 20, color: Theme.of(context).colorScheme.primary),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Categories',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: Theme.of(context).colorScheme.onSurface,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Expanded(
+                child: StreamBuilder<QuerySnapshot>(
+                  stream: widget.firestore.collection('categories').orderBy('name').snapshots(),
+                  builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
                 return Center(
                   child: CircularProgressIndicator(
@@ -164,6 +182,8 @@ class _CategoriesSectionState extends State<CategoriesSection> {
                                           fontWeight: FontWeight.bold,
                                           color: Theme.of(context).colorScheme.onSurface,
                                         ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
                                       ),
                                       if ((((doc.data() as Map<String, dynamic>)['description'] ?? '').toString()).isNotEmpty)
                                         Padding(
@@ -204,6 +224,9 @@ class _CategoriesSectionState extends State<CategoriesSection> {
                 },
               );
             },
+          ),
+        ),
+            ],
           ),
         ),
         Positioned(

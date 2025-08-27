@@ -18,6 +18,8 @@ class _ChatbotWidgetState extends State<ChatbotWidget> with TickerProviderStateM
   final ChatbotService _chatbotService = ChatbotService();
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+  final FocusNode _inputFocusNode = FocusNode(debugLabel: 'chatbot_input');
+  bool _isFullscreen = false;
   
   bool _isExpanded = false;
   bool _isInitialized = false;
@@ -160,15 +162,25 @@ class _ChatbotWidgetState extends State<ChatbotWidget> with TickerProviderStateM
   void _toggleExpanded() {
     setState(() {
       _isExpanded = !_isExpanded;
+      if (!_isExpanded) _isFullscreen = false;
     });
 
     if (_isExpanded) {
       _slideController.forward();
       _bounceController.stop();
+      // Focus input after opening
+      Future.delayed(const Duration(milliseconds: 200), () {
+        if (mounted) _inputFocusNode.requestFocus();
+      });
     } else {
       _slideController.reverse();
       _bounceController.repeat(reverse: true);
     }
+  }
+
+  void _toggleFullscreen() {
+    if (!_isExpanded) return;
+    setState(() { _isFullscreen = !_isFullscreen; });
   }
 
   Future<void> _sendMessage() async {
@@ -237,12 +249,10 @@ class _ChatbotWidgetState extends State<ChatbotWidget> with TickerProviderStateM
     return Stack(
       children: [
         // Chat window when expanded
-        if (_isExpanded)
-          Positioned(
-            left: windowLeft,
-            top: windowTop,
-            child: _buildChatWindow(),
-          ),
+        if (_isExpanded && !_isFullscreen)
+          Positioned(left: windowLeft, top: windowTop, child: _buildChatWindow(fullscreen: false)),
+        if (_isExpanded && _isFullscreen)
+          Positioned.fill(child: _buildChatWindow(fullscreen: true)),
 
         // Draggable floating action button (hidden while expanded to avoid covering input/send)
         if (!_isExpanded)
@@ -286,24 +296,23 @@ class _ChatbotWidgetState extends State<ChatbotWidget> with TickerProviderStateM
     );
   }
 
-  Widget _buildChatWindow() {
+  Widget _buildChatWindow({bool fullscreen = false}) {
     final keyboardInset = MediaQuery.of(context).viewInsets.bottom;
-    final maxHeight = MediaQuery.of(context).size.height * 0.6; // Max 60% of screen height
-    final minHeight = 280.0; // Minimum height to keep chat usable
-    
-    // Reduce height when keyboard is visible
-    final availableHeight = keyboardInset > 0 
-        ? (maxHeight - keyboardInset * 0.3).clamp(minHeight, maxHeight)
-        : 400.0;
+    final screenSize = MediaQuery.of(context).size;
+    final double maxHeight = fullscreen ? screenSize.height : screenSize.height * 0.6;
+    const double minHeight = 280.0;
+    final availableHeight = fullscreen
+        ? screenSize.height - keyboardInset
+        : (keyboardInset > 0 ? (maxHeight - keyboardInset * 0.3).clamp(minHeight, maxHeight) : 400.0);
     
     return SlideTransition(
       position: _slideAnimation,
       child: Container(
-        width: 280,
+        width: fullscreen ? screenSize.width : 280,
         height: availableHeight,
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(fullscreen ? 0 : 20),
           boxShadow: [
             BoxShadow(
               color: Colors.black.withOpacity(0.15),
@@ -314,7 +323,7 @@ class _ChatbotWidgetState extends State<ChatbotWidget> with TickerProviderStateM
         ),
         child: Column(
           children: [
-            _buildHeader(),
+            _buildHeader(fullscreen: fullscreen),
             Expanded(child: _buildMessagesList()),
             _buildInputArea(),
           ],
@@ -323,18 +332,18 @@ class _ChatbotWidgetState extends State<ChatbotWidget> with TickerProviderStateM
     );
   }
 
-  Widget _buildHeader() {
+  Widget _buildHeader({bool fullscreen = false}) {
     return Container(
       padding: const EdgeInsets.all(16),
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
           colors: [Color(0xFF2E7D5A), Color(0xFF4CAF50)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.only(
-          topLeft: Radius.circular(20),
-          topRight: Radius.circular(20),
+          topLeft: Radius.circular(fullscreen ? 0 : 20),
+          topRight: Radius.circular(fullscreen ? 0 : 20),
         ),
       ),
       child: Row(
@@ -373,6 +382,11 @@ class _ChatbotWidgetState extends State<ChatbotWidget> with TickerProviderStateM
                 ),
               ],
             ),
+          ),
+          IconButton(
+            tooltip: fullscreen ? 'Exit full screen (F)' : 'Full screen (F)',
+            onPressed: _toggleFullscreen,
+            icon: Icon(fullscreen ? Icons.fullscreen_exit : Icons.fullscreen, color: Colors.white, size: 20),
           ),
           IconButton(
             onPressed: _toggleExpanded,
@@ -553,73 +567,32 @@ class _ChatbotWidgetState extends State<ChatbotWidget> with TickerProviderStateM
 
   Widget _buildInputArea() {
     return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.grey[50],
-        borderRadius: const BorderRadius.only(
-          bottomLeft: Radius.circular(20),
-          bottomRight: Radius.circular(20),
-        ),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.only(bottomLeft: Radius.circular(20), bottomRight: Radius.circular(20)),
       ),
-      child: SafeArea(
-        top: false,
-        child: Row(
-          children: [
-            Expanded(
-              child: TextField(
-                controller: _messageController,
-                keyboardType: TextInputType.multiline,
-                textCapitalization: TextCapitalization.sentences,
-                autocorrect: false,
-                enableSuggestions: false,
-                smartDashesType: SmartDashesType.disabled,
-                smartQuotesType: SmartQuotesType.disabled,
-                maxLines: 3,
-                minLines: 1,
-                decoration: InputDecoration(
-                  hintText: 'Type your message...',
-                  hintStyle: TextStyle(color: Colors.grey[500]),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(25),
-                    borderSide: BorderSide.none,
-                  ),
-                  filled: true,
-                  fillColor: Colors.white,
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 10,
-                  ),
-                ),
-                textInputAction: TextInputAction.send,
-                onSubmitted: (_) => _sendMessage(),
-                onTap: () {
-                  // Scroll to bottom when input is focused
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    _scrollToBottom();
-                  });
-                },
+      child: Row(
+        children: [
+          Expanded(
+            child: TextField(
+              focusNode: _inputFocusNode,
+              controller: _messageController,
+              minLines: 1,
+              maxLines: 4,
+              textInputAction: TextInputAction.send,
+              onSubmitted: (_) => _sendMessage(),
+              decoration: const InputDecoration(
+                hintText: 'Type a message…',
+                border: InputBorder.none,
               ),
             ),
-            const SizedBox(width: 8),
-            GestureDetector(
-              onTap: _sendMessage,
-              child: Container(
-                padding: const EdgeInsets.all(12),
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [Color(0xFF2E7D5A), Color(0xFF4CAF50)],
-                  ),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  Icons.send,
-                  color: Colors.white,
-                  size: 20,
-                ),
-              ),
-            ),
-          ],
-        ),
+          ),
+          IconButton(
+            onPressed: _sendMessage,
+            icon: const Icon(Icons.send, color: Color(0xFF2E7D5A)),
+          ),
+        ],
       ),
     );
   }
@@ -697,6 +670,7 @@ class _ChatbotWidgetState extends State<ChatbotWidget> with TickerProviderStateM
     _bounceController.dispose();
     _messageController.dispose();
     _scrollController.dispose();
+    _inputFocusNode.dispose();
     super.dispose();
   }
 }

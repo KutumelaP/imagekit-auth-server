@@ -48,7 +48,14 @@ class ChatbotService {
   /// Load existing conversation or create new one
   Future<void> _loadOrCreateConversation() async {
     final user = _auth.currentUser;
-    if (user == null) return;
+    if (user == null) {
+      // Enable local-only mode when not logged in
+      _persistenceEnabled = false;
+      _currentConversationId = 'local';
+      _messages.clear();
+      await _addWelcomeMessage();
+      return;
+    }
 
     try {
       // Try to find existing conversation
@@ -189,7 +196,8 @@ What can I help you with today?''';
     if (text.trim().isEmpty) return;
     
     final user = _auth.currentUser;
-    if (user == null) {
+    final bool isLocal = _currentConversationId == 'local' || !_persistenceEnabled;
+    if (user == null && !isLocal) {
       throw Exception('User must be logged in to send messages');
     }
 
@@ -369,6 +377,11 @@ Is there anything else I can help you with?''',
       return 'help';
     }
     
+    // Escalation / talk to a human
+    if (input.contains(RegExp(r'\b(agent|human|escalat|complain|contact\s*support|talk\s*to\s*(a\s*)?person)\b'))) {
+      return 'escalation';
+    }
+    
     return 'general';
   }
 
@@ -400,6 +413,8 @@ Is there anything else I can help you with?''',
         return await _getDeliveryResponse(userInput, userRole);
       case 'help':
         return await _getHelpResponse(userInput, userRole);
+      case 'escalation':
+        return await _getEscalationResponse(userInput, userRole);
       default:
         return await _getGeneralResponse(userInput, userRole);
     }
@@ -419,18 +434,87 @@ Once logged in, I can help you:
     }
 
     try {
-      // Get user's recent orders based on role
+      // Try to extract a specific order number from the user's input
+      final extractedOrderNumber = _extractOrderNumber(input);
+      if (extractedOrderNumber != null) {
+        // First attempt: exact match on orderNumber
+        final exactQuery = await _firestore
+            .collection('orders')
+            .where(userRole == 'seller' ? 'sellerId' : 'buyerId', isEqualTo: user.uid)
+            .where('orderNumber', isEqualTo: extractedOrderNumber)
+            .limit(1)
+            .get();
+
+        if (exactQuery.docs.isNotEmpty) {
+          final doc = exactQuery.docs.first;
+          final data = doc.data();
+          final orderNumber = data['orderNumber'] ?? doc.id;
+          final status = data['status'] ?? 'unknown';
+          final paymentStatus = data['paymentStatus'] ?? 'unknown';
+          final orderType = data['orderType'] ?? (data['isDelivery'] == true ? 'delivery' : 'pickup');
+          final total = (data['totalPrice'] as num?)?.toDouble() ?? (data['totalAmount'] as num?)?.toDouble() ?? 0.0;
+          final ts = (data['timestamp'] as Timestamp?)?.toDate();
+
+          return '''📦 Order ${orderNumber}
+Status: ${_formatOrderStatus(status)}
+Payment: ${paymentStatus}
+Type: ${orderType}
+Total: R${total.toStringAsFixed(2)}${ts != null ? '\nPlaced: ${ts.toLocal()}' : ''}
+
+Would you like detailed delivery tracking or help with this order?''';
+        }
+
+        // Fallback: search in recent orders by partial contains (client-side filter)
+        final recentForSearch = await _firestore
+            .collection('orders')
+            .where(userRole == 'seller' ? 'sellerId' : 'buyerId', isEqualTo: user.uid)
+            .orderBy('timestamp', descending: true)
+            .limit(25)
+            .get();
+        QueryDocumentSnapshot<Map<String, dynamic>>? matchDoc;
+        for (final d in recentForSearch.docs) {
+          final on = (d.data()['orderNumber'] ?? d.id).toString().toLowerCase();
+          if (on.contains(extractedOrderNumber.toLowerCase())) {
+            matchDoc = d;
+            break;
+          }
+        }
+
+        if (matchDoc != null) {
+          final data = matchDoc.data();
+          final orderNumber = data['orderNumber'] ?? matchDoc.id;
+          final status = data['status'] ?? 'unknown';
+          final paymentStatus = data['paymentStatus'] ?? 'unknown';
+          final orderType = data['orderType'] ?? (data['isDelivery'] == true ? 'delivery' : 'pickup');
+          final total = (data['totalPrice'] as num?)?.toDouble() ?? (data['totalAmount'] as num?)?.toDouble() ?? 0.0;
+          final ts = (data['timestamp'] as Timestamp?)?.toDate();
+
+          return '''📦 Order ${orderNumber}
+Status: ${_formatOrderStatus(status)}
+Payment: ${paymentStatus}
+Type: ${orderType}
+Total: R${total.toStringAsFixed(2)}${ts != null ? '\nPlaced: ${ts.toLocal()}' : ''}
+
+Would you like detailed delivery tracking or help with this order?''';
+        }
+
+        return '''I couldn't find an order matching "${extractedOrderNumber}" on your account.
+
+Please double-check the order number (e.g., ORD-01012025-1205-123) or ask me to list your recent orders.''';
+      }
+
+      // No specific order number provided - show recent orders
       final ordersQuery = userRole == 'seller' 
           ? await _firestore
               .collection('orders')
               .where('sellerId', isEqualTo: user.uid)
-              .orderBy('orderDate', descending: true)
+              .orderBy('timestamp', descending: true)
               .limit(3)
               .get()
           : await _firestore
               .collection('orders')
               .where('buyerId', isEqualTo: user.uid)
-              .orderBy('orderDate', descending: true)
+              .orderBy('timestamp', descending: true)
               .limit(3)
               .get();
 
@@ -461,7 +545,7 @@ You can:
         final data = doc.data();
         final orderNumber = data['orderNumber'] ?? doc.id;
         final status = data['status'] ?? 'unknown';
-        final total = data['totalAmount'] ?? 0;
+        final total = (data['totalPrice'] as num?)?.toDouble() ?? (data['totalAmount'] as num?)?.toDouble() ?? 0.0;
         
         response += '''🔸 Order #${orderNumber.toString().substring(0, 8)}...
    Status: ${_formatOrderStatus(status)}
@@ -472,7 +556,7 @@ You can:
 
       response += '''💡 For detailed tracking, visit the "My Orders" section in your profile.
 
-Need help with a specific order? Just tell me the order number!''';
+Need help with a specific order? Share the order number (e.g., ORD-01012025-1205-123).''';
 
       return response;
     } catch (e) {
@@ -483,6 +567,21 @@ You can:
 📞 Contact our support team
 🔄 Try again in a few moments''';
     }
+  }
+
+  /// Try to extract an order number like "ORD-..." or a short token that looks like one
+  String? _extractOrderNumber(String input) {
+    final lower = input.toLowerCase();
+    final match = RegExp(r'(ord-[a-z0-9-]{5,})').firstMatch(lower);
+    if (match != null) {
+      return match.group(1)!.toUpperCase();
+    }
+    // Fallback: if the user provided a long token with dashes and digits, accept it
+    final fallback = RegExp(r'([a-z0-9]{6,}(-[a-z0-9]{2,}){1,})').firstMatch(lower);
+    if (fallback != null) {
+      return fallback.group(1)!.toUpperCase();
+    }
+    return null;
   }
 
   /// Payment-related responses (role-aware)
@@ -644,6 +743,10 @@ Just ask me anything about the marketplace!''';
 
   /// General conversation responses
   Future<String> _getGeneralResponse(String input, [String userRole = 'buyer']) async {
+    // Try knowledge base first
+    final kbAnswer = await _maybeGetKnowledgeBaseAnswer(input);
+    if (kbAnswer != null) return kbAnswer;
+
     final responses = [
       '''I understand you're asking about "${input.length > 50 ? input.substring(0, 50) + '...' : input}"
 
@@ -678,6 +781,88 @@ What aspect of the marketplace can I help you with today?''',
     ];
 
     return responses[Random().nextInt(responses.length)];
+  }
+
+  /// Search the Firestore knowledge base for a relevant answer
+  Future<String?> _maybeGetKnowledgeBaseAnswer(String input) async {
+    try {
+      final lower = input.toLowerCase();
+      final doc = await _firestore.collection('chatbot_knowledge').doc('faq').get();
+      if (!doc.exists) return null;
+      final data = doc.data() as Map<String, dynamic>;
+      final categories = (data['categories'] as Map<String, dynamic>?);
+      if (categories == null) return null;
+
+      String? bestAnswer;
+      int bestScore = 0;
+
+      for (final entry in categories.entries) {
+        final questions = (entry.value['questions'] as List?)?.cast<Map<String, dynamic>>();
+        if (questions == null) continue;
+        for (final qa in questions) {
+          final q = (qa['q'] ?? '').toString().toLowerCase();
+          final a = (qa['a'] ?? '').toString();
+          int score = 0;
+          for (final token in lower.split(RegExp(r'[^a-z0-9]+'))) {
+            if (token.length < 3) continue;
+            if (q.contains(token)) score++;
+          }
+          if (score > bestScore && score >= 2) {
+            bestScore = score;
+            bestAnswer = a;
+          }
+        }
+      }
+
+      return bestAnswer;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Create a support ticket and return acknowledgment text
+  Future<String> _getEscalationResponse(String input, [String userRole = 'buyer']) async {
+    try {
+      final user = _auth.currentUser;
+      if (user == null) {
+        return 'Please log in so I can hand this over to a human agent.';
+      }
+
+      final lower = input.toLowerCase();
+      String priority = 'normal';
+      if (RegExp(r'(refund|charge|fraud|stolen|not\s*delivered|missing)').hasMatch(lower)) {
+        priority = 'high';
+      } else if (RegExp(r'(cancel|change|address|late)').hasMatch(lower)) {
+        priority = 'normal';
+      } else {
+        priority = 'low';
+      }
+
+      final recent = _messages.take(8).map((m) => {
+        'text': m.text,
+        'isUser': m.isUser,
+        'timestamp': m.timestamp.toIso8601String(),
+        'type': m.type,
+      }).toList();
+
+      final ref = await _firestore.collection('support_tickets').add({
+        'userId': user.uid,
+        'userEmail': user.email ?? '',
+        'conversationId': _currentConversationId,
+        'createdAt': FieldValue.serverTimestamp(),
+        'status': 'open',
+        'priority': priority,
+        'lastUserMessage': input,
+        'recentMessages': recent,
+        'role': userRole,
+        'source': 'chatbot',
+      });
+
+      final ticketIdShort = ref.id.substring(0, 6).toUpperCase();
+      return 'I have escalated this to a human agent. Your ticket ID is ${ticketIdShort}. You will be contacted shortly.';
+    } catch (e) {
+      return 'I tried to escalate this but ran into a problem. Please use the Help & Support option in the menu.';
+    }
   }
 
   /// Fallback response for errors

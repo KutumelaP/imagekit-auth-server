@@ -125,7 +125,9 @@ class _UploadManagementSectionState extends State<UploadManagementSection> {
               itemCount: (_uploadTypes.length / 3).ceil(),
               itemBuilder: (context, pageIndex) {
                 final startIndex = pageIndex * 3;
-                final endIndex = (startIndex + 3).clamp(0, _uploadTypes.length);
+                final endIndex = (startIndex + 3 <= _uploadTypes.length)
+                    ? startIndex + 3
+                    : _uploadTypes.length;
                 final pageItems = _uploadTypes.sublist(startIndex, endIndex);
 
                 return Row(
@@ -174,6 +176,12 @@ class _UploadManagementSectionState extends State<UploadManagementSection> {
         ],
       ),
     );
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
   }
 
   Widget _buildUploadTypeCard(Map<String, dynamic> type, int index) {

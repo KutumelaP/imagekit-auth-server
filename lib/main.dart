@@ -149,7 +149,7 @@ class MyApp extends StatelessWidget {
           );
 
           final wrapped = SafeArea(
-            top: false,
+            top: true,
             bottom: true,
             minimum: const EdgeInsets.only(bottom: 34),
             child: layered,

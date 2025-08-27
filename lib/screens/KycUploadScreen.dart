@@ -187,13 +187,13 @@ class _KycUploadScreenState extends State<KycUploadScreen> {
       String? backUrl = _idBackUrl;
       String? selfieUrl = _selfieUrl;
       if (_idFront != null) {
-        frontUrl = await ImageKitService.uploadImageWithAuth(file: _idFront!, folder: 'kyc', customFileName: 'kyc/$uid/front_${DateTime.now().millisecondsSinceEpoch}.jpg');
+        frontUrl = await ImageKitService.uploadImageWithAuth(file: _idFront!, folder: 'kyc_uploads', customFileName: 'kyc_uploads/$uid/front_${DateTime.now().millisecondsSinceEpoch}.jpg');
       }
       if (_idBack != null) {
-        backUrl = await ImageKitService.uploadImageWithAuth(file: _idBack!, folder: 'kyc', customFileName: 'kyc/$uid/back_${DateTime.now().millisecondsSinceEpoch}.jpg');
+        backUrl = await ImageKitService.uploadImageWithAuth(file: _idBack!, folder: 'kyc_uploads', customFileName: 'kyc_uploads/$uid/back_${DateTime.now().millisecondsSinceEpoch}.jpg');
       }
       if (_selfie != null) {
-        selfieUrl = await ImageKitService.uploadImageWithAuth(file: _selfie!, folder: 'kyc', customFileName: 'kyc/$uid/selfie_${DateTime.now().millisecondsSinceEpoch}.jpg');
+        selfieUrl = await ImageKitService.uploadImageWithAuth(file: _selfie!, folder: 'kyc_uploads', customFileName: 'kyc_uploads/$uid/selfie_${DateTime.now().millisecondsSinceEpoch}.jpg');
       }
       await FirebaseFirestore.instance
           .collection('users')

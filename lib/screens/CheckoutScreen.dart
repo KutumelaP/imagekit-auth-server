@@ -6,16 +6,13 @@ import '../config/paxi_config.dart';
 import '../config/here_config.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:cloud_firestore/cloud_firestore.dart' show Timestamp;
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
 import '../services/optimized_location_service.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 import '../services/payfast_service.dart';
 import '../services/biometric_stepup.dart';
-import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -31,7 +28,6 @@ import '../services/delivery_fulfillment_service.dart';
 import '../widgets/home_navigation_button.dart';
 import '../services/courier_quote_service.dart';
 import '../utils/time_utils.dart';
-import '../widgets/paxi_delivery_speed_selector.dart';
 import '../config/paxi_config.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 
@@ -3905,6 +3901,19 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     try {
       final gate = await _callRiskGate('checkout');
       print('🔐 Gate result: $gate');
+      try {
+        final bool gateErrored = gate is Map<String, dynamic> && (gate['error'] != null || gate['code'] == 'internal');
+        if (gateErrored) {
+          final bool newAccount = await _isNewAccount();
+          if (newAccount) {
+            if (mounted) setState(() => _isLoading = false);
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Additional verification required. Please use Bank Transfer (EFT) for your first order.')),
+            );
+            return;
+          }
+        }
+      } catch (_) {}
     } catch (_) {}
 
     // Fraud/Scam: quick risk evaluation before proceeding
@@ -4052,11 +4061,35 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       if (pm.contains('eft')) {
         print('🔍 DEBUG: Processing Bank Transfer EFT');
         await _processBankTransferEFT();
-      } else if (pm.contains('payfast') || pm.contains('card')) {
+      } else if (pm.contains('payfast') || pm.contains('card') || pm.toLowerCase().contains('payfast')) {
         print('🔍 DEBUG: Processing PayFast payment');
+        print('🔍 DEBUG: Payment method string: "$pm"');
+        print('🔍 DEBUG: Original payment method: "$_selectedPaymentMethod"');
+        
+        // Compute buyer-facing total and confirm before creating PayFast session
+        final double deliveryFeeFinal = _isDelivery ? (_deliveryFee ?? 0.0) : 0.0;
+        final double buyerServiceFeeAmount = _computeBuyerServiceFeeAmount(subtotal: widget.totalPrice);
+        final double smallOrderFeeAmount = _computeSmallOrderFeeAmount(subtotal: widget.totalPrice);
+        final double totalAmount = widget.totalPrice + deliveryFeeFinal + buyerServiceFeeAmount + smallOrderFeeAmount;
+        
+        print('🔍 DEBUG: About to show PayFast confirmation dialog with total: R${totalAmount.toStringAsFixed(2)}');
+        
+        // Show confirmation dialog before proceeding
+        final shouldProceed = await _showPaymentConfirmationDialog(totalAmount);
+        print('🔍 DEBUG: Confirmation dialog result: $shouldProceed');
+        
+        if (!shouldProceed) {
+          print('🔍 DEBUG: User cancelled payment confirmation');
+          if (mounted) setState(() => _isLoading = false);
+          return;
+        }
+        
+        print('🔍 DEBUG: User confirmed payment, proceeding to PayFast');
         await _processPayFastPayment();
       } else if (pm.contains('cash')) {
         print('🔍 DEBUG: Processing Cash on Delivery');
+        print('🔍 DEBUG: Cash payment method string: "$pm"');
+        print('🔍 DEBUG: Original cash payment method: "$_selectedPaymentMethod"');
         await _processCashOnDelivery();
       } else {
         print('🔍 DEBUG: Processing default order completion');
@@ -4073,8 +4106,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   }
 
   Future<void> _processBankTransferEFT() async {
-    // Create order with awaiting_payment status, then show bank details dialog
-    String? orderNumber = await _completeOrder(paymentStatusOverride: 'awaiting_payment');
+    // Create order with awaiting_payment status, then show bank details dialog (no navigation popups)
+    String? orderNumber = await _completeOrder(paymentStatusOverride: 'awaiting_payment', suppressUi: true);
     if (orderNumber == null) {
       try {
         orderNumber = await _fetchLatestOrderNumberForCurrentUser();
@@ -4128,6 +4161,21 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     } catch (e) {
       return {'error': e.toString(), 'code': 'unknown'};
     }
+  }
+
+  Future<bool> _isNewAccount() async {
+    try {
+      final uid = currentUser?.uid; if (uid == null) return true;
+      final userDoc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
+      final data = userDoc.data() ?? <String, dynamic>{};
+      final createdAt = data['createdAt'];
+      DateTime? created;
+      if (createdAt is Timestamp) created = createdAt.toDate();
+      if (createdAt is String) created = DateTime.tryParse(createdAt);
+      if (created == null) return true;
+      final age = DateTime.now().difference(created);
+      return age < const Duration(days: 3);
+    } catch (_) { return true; }
   }
   Future<bool> _performOtpStepUp(String phoneNumber) async {
     final completer = Completer<bool>();
@@ -5086,30 +5134,28 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       final smallOrderFeeAmount = _computeSmallOrderFeeAmount(subtotal: widget.totalPrice);
       final totalAmount = widget.totalPrice + appliedFee + buyerServiceFeeAmount + smallOrderFeeAmount;
 
-      // Create 'awaiting_payment' order record before redirecting
-      await _completeOrder(paymentStatusOverride: 'awaiting_payment');
+      // Create 'awaiting_payment' order record before redirecting (suppress UI/nav)
+      final createdOrderNumber = await _completeOrder(paymentStatusOverride: 'awaiting_payment', suppressUi: true) ?? orderNumber;
 
-      // Show payment confirmation
-      final shouldProceed = await _showPaymentConfirmationDialog(totalAmount);
-      if (!shouldProceed) {
-        if (mounted) setState(() => _isLoading = false);
-        return;
-      }
-
-      // Get seller ID from cart items (same pattern as _completeOrder)
-      final cartSnapshot = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(currentUser!.uid)
-          .collection('cart')
-          .get();
-      
-      final cartItems = cartSnapshot.docs.map((doc) => doc.data()).toList();
-      final sellerId = cartItems.first['sellerId'] ?? cartItems.first['ownerId'] ?? '';
+      // Resolve sellerId from the just-created order to avoid relying on cart after clear
+      String sellerId = '';
+      try {
+        final snap = await FirebaseFirestore.instance
+            .collection('orders')
+            .where('buyerId', isEqualTo: currentUser!.uid)
+            .orderBy('timestamp', descending: true)
+            .limit(1)
+            .get();
+        if (snap.docs.isNotEmpty) {
+          final data = snap.docs.first.data();
+          sellerId = (data['sellerId'] as String?) ?? '';
+        }
+      } catch (_) {}
 
       // Use PayFastService (same as wallet top-up) for consistent payment processing
       final paymentResult = await PayFastService.createPayment(
         amount: totalAmount.toString(),
-        itemName: 'Food Order $orderNumber',
+        itemName: 'Food Order $createdOrderNumber',
         itemDescription: 'Marketplace order from seller',
         customerEmail: currentUser!.email ?? 'test@example.com',
         customerFirstName: _nameController.text.trim().isNotEmpty 
@@ -5119,7 +5165,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             ? _nameController.text.trim().split(' ').skip(1).join(' ')
             : 'Customer',
         customerPhone: '0606304683',
-        customString1: orderNumber,
+        customString1: createdOrderNumber,
         customString2: currentUser!.uid,
         customString3: sellerId,
         customString4: 'order_payment',
@@ -5143,7 +5189,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             print('🔍 DEBUG: Launching PayFast bridge (GET, _self) [order]');
             final launched = await launchUrlString(url, webOnlyWindowName: '_self');
             if (launched && mounted) {
-              _showPaymentReturnDialog(orderNumber);
+              _showPaymentReturnDialog(createdOrderNumber);
             }
           } else if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
@@ -5355,7 +5401,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     );
   }
 
-  Future<String?> _completeOrder({String? paymentStatusOverride}) async {
+  Future<String?> _completeOrder({String? paymentStatusOverride, bool suppressUi = false}) async {
     // Prevent duplicate orders
     if (_orderCompleted) {
       print('🔍 DEBUG: Order already completed, preventing duplicate');
@@ -5670,32 +5716,33 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
       if (!mounted) return orderNumber;
 
-      // Show popup notification with driver information
-      
-      NotificationService.showPopupNotification(
-        title: 'Order Placed Successfully! 🎉',
-        message: notificationMessage,
-        onTap: () {
-          // Navigate to order tracking
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(
-              builder: (_) => OrderTrackingScreen(orderId: orderRef.id),
-            ),
-          );
-        },
-      );
+      if (!suppressUi) {
+        // Show popup notification with driver information
+        NotificationService.showPopupNotification(
+          title: 'Order Placed Successfully! 🎉',
+          message: notificationMessage,
+          onTap: () {
+            // Navigate to order tracking
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                builder: (_) => OrderTrackingScreen(orderId: orderRef.id),
+              ),
+            );
+          },
+        );
 
-      // Send notifications
-      await _sendOrderNotifications(sellerId, orderRef.id, orderNumber);
+        // Send notifications
+        await _sendOrderNotifications(sellerId, orderRef.id, orderNumber);
 
-      // Navigate to tracking
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder: (_) => OrderTrackingScreen(orderId: orderRef.id),
-        ),
-      );
+        // Navigate to tracking
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => OrderTrackingScreen(orderId: orderRef.id),
+          ),
+        );
+      }
     } catch (e) {
       _orderCompleted = false; // Reset on error
       if (mounted) setState(() => _isLoading = false);
@@ -9876,6 +9923,105 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               ),
             ),
           ],
+          
+          // Service Fee (Buyer-facing fee)
+          Builder(
+            builder: (context) {
+              final buyerServiceFeeAmount = _computeBuyerServiceFeeAmount(subtotal: widget.totalPrice);
+              if (buyerServiceFeeAmount <= 0) return const SizedBox.shrink();
+              
+              return Column(
+                children: [
+                  SizedBox(height: ResponsiveUtils.getVerticalPadding(context) * 0.5),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(
+                        children: [
+                          SafeUI.safeText(
+                            'Service fee',
+                            style: TextStyle(
+                              fontSize: ResponsiveUtils.getTitleSize(context),
+                              color: AppTheme.breeze,
+                            ),
+                            maxLines: 1,
+                          ),
+                          SizedBox(width: 4),
+                          Tooltip(
+                            message: 'Payment processing and platform service fee',
+                            child: Icon(
+                              Icons.info_outline,
+                              size: ResponsiveUtils.getIconSize(context, baseSize: 14),
+                              color: AppTheme.breeze.withOpacity(0.7),
+                            ),
+                          ),
+                        ],
+                      ),
+                      SafeUI.safeText(
+                        'R${buyerServiceFeeAmount.toStringAsFixed(2)}',
+                        style: TextStyle(
+                          fontSize: ResponsiveUtils.getTitleSize(context),
+                          fontWeight: FontWeight.w600,
+                          color: AppTheme.deepTeal,
+                        ),
+                        maxLines: 1,
+                      ),
+                    ],
+                  ),
+                ],
+              );
+            },
+          ),
+          
+          // Small Order Fee
+          Builder(
+            builder: (context) {
+              final smallOrderFeeAmount = _computeSmallOrderFeeAmount(subtotal: widget.totalPrice);
+              if (smallOrderFeeAmount <= 0) return const SizedBox.shrink();
+              
+              final threshold = _smallOrderThreshold ?? 0.0;
+              return Column(
+                children: [
+                  SizedBox(height: ResponsiveUtils.getVerticalPadding(context) * 0.5),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(
+                        children: [
+                          SafeUI.safeText(
+                            'Small order fee',
+                            style: TextStyle(
+                              fontSize: ResponsiveUtils.getTitleSize(context),
+                              color: AppTheme.breeze,
+                            ),
+                            maxLines: 1,
+                          ),
+                          SizedBox(width: 4),
+                          Tooltip(
+                            message: 'Applied to orders under R${threshold.toStringAsFixed(0)}',
+                            child: Icon(
+                              Icons.info_outline,
+                              size: ResponsiveUtils.getIconSize(context, baseSize: 14),
+                              color: AppTheme.breeze.withOpacity(0.7),
+                            ),
+                          ),
+                        ],
+                      ),
+                      SafeUI.safeText(
+                        'R${smallOrderFeeAmount.toStringAsFixed(2)}',
+                        style: TextStyle(
+                          fontSize: ResponsiveUtils.getTitleSize(context),
+                          fontWeight: FontWeight.w600,
+                          color: AppTheme.deepTeal,
+                        ),
+                        maxLines: 1,
+                      ),
+                    ],
+                  ),
+                ],
+              );
+            },
+          ),
           
           Divider(
             height: ResponsiveUtils.getVerticalPadding(context) * 2,

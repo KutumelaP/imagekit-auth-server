@@ -712,7 +712,7 @@ function renderBrandedEmail({
                       </a>
                     </div>
                     <p style="margin:8px 0 0 0;font-size:12px;color:${muted}">
-                      If the button doesn’t work, copy and paste this link into your browser:<br/>
+                      If the button doesn't work, copy and paste this link into your browser:<br/>
                       <a href="${ctaUrl}" style="color:${brandColor};word-break:break-all">${ctaUrl}</a>
                     </p>
                   ` : ''}
@@ -1952,27 +1952,29 @@ exports.testBatchDelete = functions.https.onCall(async (data, context) => {
 });
 
 // === Risk gatekeeper: IP info + simple rate limits ===
-exports.riskGate = functions.https.onRequest(async (req, res) => {
+exports.riskGate = functions.https.onCall(async (data, context) => {
   try {
-    const ip = (req.headers['x-forwarded-for'] || req.ip || '').toString().split(',')[0].trim();
-    const path = (req.query.path || req.body.path || 'unknown').toString(); // e.g., signup/login/reset/checkout
-    const deviceId = (req.query.deviceId || req.body.deviceId || '').toString();
+    // Extract parameters from callable data
+    const action = data.action || 'unknown'; // e.g., signup/login/reset/checkout
+    const deviceId = data.deviceId || '';
+    
+    // Get IP from context (Firebase callable functions don't have direct req access)
+    const ip = context.rawRequest?.headers?.['x-forwarded-for'] || context.rawRequest?.ip || '';
     const now = Date.now();
 
-    // 1) Rate limit per IP+path per minute
-    const minuteKey = `${ip}_${path}_${new Date(now).toISOString().slice(0,16)}`; // YYYY-MM-DDTHH:MM
+    // 1) Rate limit per IP+action per minute
+    const minuteKey = `${ip}_${action}_${new Date(now).toISOString().slice(0,16)}`; // YYYY-MM-DDTHH:MM
     const ref = db.collection('rate_limits').doc(minuteKey);
     await db.runTransaction(async (tx) => {
       const snap = await tx.get(ref);
       const current = snap.exists ? (snap.data().count || 0) : 0;
-      tx.set(ref, { count: current + 1, ip, path, updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
+      tx.set(ref, { count: current + 1, ip, action, updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
     });
     const after = await ref.get();
     const count = after.exists ? (after.data().count || 0) : 0;
-    const limit = path === 'signup' ? 3 : path === 'password_reset' ? 5 : 30; // per minute
+    const limit = action === 'signup' ? 3 : action === 'password_reset' ? 5 : 30; // per minute
     if (count > limit) {
-      res.status(429).json({ ok: false, reason: 'rate_limited', limit, count });
-      return;
+      throw new functions.https.HttpsError('resource-exhausted', 'Rate limited', { reason: 'rate_limited', limit, count });
     }
 
     // 2) IP intel (optional vendor)
@@ -1996,13 +1998,13 @@ exports.riskGate = functions.https.onRequest(async (req, res) => {
 
     // 4) Log event
     await db.collection('risk_events').add({
-      type: 'gate', ip, path, deviceId, ipInfo, ts: admin.firestore.FieldValue.serverTimestamp(),
+      type: 'gate', ip, action, deviceId, ipInfo, ts: admin.firestore.FieldValue.serverTimestamp(),
     });
 
-    res.json({ ok: true, ipInfo });
+    return { ok: true, ipInfo };
   } catch (e) {
     console.error('riskGate error', e);
-    res.status(500).json({ ok: false, error: 'internal' });
+    throw new functions.https.HttpsError('internal', 'Gate error', { error: 'internal' });
   }
 });
 
@@ -2372,7 +2374,7 @@ exports.onSellerApproved = functions.runWith({ timeoutSeconds: 60, memory: '256M
         `,
         ctaText: 'Open your store',
         ctaUrl: storeUrl,
-        footer: 'If you have any questions, simply reply to this email and we’ll help you get set up.'
+        footer: 'If you have any questions, simply reply to this email and we\'ll help you get set up.'
       });
 
       const from = process.env.MAIL_FROM || mailUser;

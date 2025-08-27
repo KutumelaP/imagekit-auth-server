@@ -149,7 +149,8 @@ class _AdminPayoutsSectionState extends State<AdminPayoutsSection> {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
+    return SingleChildScrollView(
+      child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         FutureBuilder<HttpsCallableResult?>(
@@ -328,43 +329,38 @@ class _AdminPayoutsSectionState extends State<AdminPayoutsSection> {
           ],
         ),
         const SizedBox(height: 12),
-        Expanded(
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final bool showFooter = constraints.maxHeight > 120;
-              return Column(
-                children: [
-                  Expanded(
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: Theme.of(context).cardColor,
-                        borderRadius: BorderRadius.circular(12),
-                        boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 12, offset: const Offset(0, 4))],
-                      ),
-                      child: _buildTable(),
-                    ),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final bool showFooter = constraints.maxHeight > 120;
+            return Column(
+              children: [
+                Container(
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).cardColor,
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 12, offset: const Offset(0, 4))],
                   ),
-                  if (showFooter) ...[
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        Text(_loading ? 'Loading…' : _hasMore ? 'More available' : 'End of list', style: Theme.of(context).textTheme.bodySmall),
-                        const Spacer(),
-                        FilledButton.icon(
-                          onPressed: _hasMore && !_loading ? _loadNextPage : null,
-                          icon: const Icon(Icons.expand_more),
-                          label: const Text('Load more'),
-                        ),
-                      ],
-                    ),
-                  ],
-                ],
-              );
-            },
-          ),
+                  child: _buildTable(),
+                ),
+                const SizedBox(height: 8),
+                if (showFooter)
+                  Row(
+                    children: [
+                      Text(_loading ? 'Loading…' : _hasMore ? 'More available' : 'End of list', style: Theme.of(context).textTheme.bodySmall),
+                      const Spacer(),
+                      FilledButton.icon(
+                        onPressed: _hasMore && !_loading ? _loadNextPage : null,
+                        icon: const Icon(Icons.expand_more),
+                        label: const Text('Load more'),
+                      ),
+                    ],
+                  ),
+              ],
+            );
+          },
         ),
       ],
-    );
+    ));
   }
 
   Widget _buildTable() {
@@ -377,6 +373,8 @@ class _AdminPayoutsSectionState extends State<AdminPayoutsSection> {
     }
 
     return ListView.separated(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
       itemCount: rows.length,
       separatorBuilder: (_, __) => const Divider(height: 1),
       itemBuilder: (context, i) {
