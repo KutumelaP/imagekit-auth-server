@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
@@ -24,6 +25,7 @@ import '../widgets/notification_badge.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:flutter/services.dart'; // Added import for SystemUiOverlayStyle
 import '../widgets/chatbot_widget.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
 class SimpleHomeScreen extends StatefulWidget {
   const SimpleHomeScreen({super.key});
@@ -34,7 +36,7 @@ class SimpleHomeScreen extends StatefulWidget {
 
 class _SimpleHomeScreenState extends State<SimpleHomeScreen> 
     with TickerProviderStateMixin {
-  final GlobalKey _browseCategoriesKey = GlobalKey(debugLabel: 'browse_categories_header');
+
   List<Map<String, dynamic>> _categories = [];
   bool _isLoading = true;
   String? _error;
@@ -46,7 +48,7 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
   late Animation<double> _fadeAnimation;
 
   bool _isDriver = false;
-  double? _computedChatDy;
+  bool _isChatbotVisible = false; // Control chatbot visibility
 
   @override
   void initState() {
@@ -63,39 +65,13 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final userProvider = Provider.of<UserProvider>(context, listen: false);
       userProvider.loadUserData();
-      _measureBrowseHeaderPosition();
     });
     
     // Request location permission when app starts
     _requestLocationPermission();
   }
 
-  void _measureBrowseHeaderPosition({int retries = 3}) {
-    try {
-      final ctx = _browseCategoriesKey.currentContext;
-      if (ctx == null) {
-        if (retries > 0) Future.delayed(const Duration(milliseconds: 100), () => _measureBrowseHeaderPosition(retries: retries - 1));
-        return;
-      }
-      final renderObject = ctx.findRenderObject();
-      if (renderObject is! RenderBox || !renderObject.hasSize) {
-        if (retries > 0) Future.delayed(const Duration(milliseconds: 100), () => _measureBrowseHeaderPosition(retries: retries - 1));
-        return;
-      }
-      final topLeft = renderObject.localToGlobal(Offset.zero);
-      final headerHeight = renderObject.size.height;
-      final screenHeight = MediaQuery.of(ctx).size.height;
-      final centerY = topLeft.dy + headerHeight / 2.0;
-      final dy = (centerY / screenHeight).clamp(0.0, 1.0);
-      // Log for debugging/verification
-      // ignore: avoid_print
-      print('🔍 Browse Categories header position -> topY: ${topLeft.dy.toStringAsFixed(1)}px, height: ${headerHeight.toStringAsFixed(1)}px, normalized center dy: ${dy.toStringAsFixed(3)}');
-      if (mounted) setState(() => _computedChatDy = dy);
-    } catch (e) {
-      // ignore: avoid_print
-      print('❌ Failed to measure Browse Categories header: $e');
-    }
-  }
+
   
   Future<void> _requestLocationPermission() async {
     try {
@@ -329,17 +305,11 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
           } else {
             _categories = snapshot.docs.map((doc) {
               final data = doc.data();
-              String imageUrl = data['imageUrl'] ?? '';
-              
-              // If no image URL is provided, use a default image based on category name
-              if (imageUrl.isEmpty) {
-                imageUrl = _getDefaultCategoryImage(data['name'] ?? '');
-              }
               
               return {
                 'id': doc.id,
                 'name': data['name'] ?? '',
-                'imageUrl': imageUrl,
+                'imageUrl': data['imageUrl'] ?? '', // Use actual image URL if available
               };
             }).toList();
           }
@@ -364,22 +334,22 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
       {
         'id': 'clothing',
         'name': 'Clothing',
-        'imageUrl': _getDefaultCategoryImage('Clothing'),
+        'imageUrl': 'assets/images/clothing.jpg', // LOCAL ASSETS: Use local images
       },
       {
         'id': 'electronics',
         'name': 'Electronics',
-        'imageUrl': _getDefaultCategoryImage('Electronics'),
+        'imageUrl': 'assets/images/electronics.jpg', // LOCAL ASSETS: Use local images
       },
       {
         'id': 'food',
         'name': 'Food',
-        'imageUrl': _getDefaultCategoryImage('Food'),
+        'imageUrl': 'assets/images/food.jpg', // LOCAL ASSETS: Use local images
       },
       {
         'id': 'other',
         'name': 'Other',
-        'imageUrl': _getDefaultCategoryImage('Other'),
+        'imageUrl': 'assets/images/other.jpg', // LOCAL ASSETS: Use local images
       },
     ];
   }
@@ -396,6 +366,8 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
         const SnackBar(
           content: Text('Navigation failed. Please try again.'),
           backgroundColor: AppTheme.primaryRed,
+          behavior: SnackBarBehavior.floating,
+          margin: EdgeInsets.only(bottom: 100.0), // Position above FAB
         ),
       );
     }
@@ -405,44 +377,65 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
 
   @override
   Widget build(BuildContext context) {
-    // Unified chatbot position across platforms
-    final double chatDx = 0.75;
-    final double chatDy = _computedChatDy ?? 0.25;
     return Consumer<UserProvider>(
       builder: (context, userProvider, child) {
     return Scaffold(
       backgroundColor: AppTheme.angel,
-          floatingActionButton: userProvider.isSeller ? FloatingActionButton(
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const StunningProductUpload(
-                        storeId: 'all',
-                        storeName: 'My Store',
-                      )),
-              );
-            },
-            backgroundColor: AppTheme.deepTeal,
-            foregroundColor: Colors.white,
-            child: const Icon(Icons.add_shopping_cart),
-            tooltip: 'Upload Product',
+          floatingActionButton: userProvider.isSeller ? Padding(
+            padding: const EdgeInsets.only(bottom: 16.0),
+            child: FloatingActionButton(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const StunningProductUpload(
+                          storeId: 'all',
+                          storeName: 'My Store',
+                        )),
+                );
+              },
+              backgroundColor: AppTheme.deepTeal,
+              foregroundColor: Colors.white,
+              child: const Icon(Icons.add_shopping_cart),
+              tooltip: 'Upload Product',
+            ),
           ) : null,
       body: Stack(
         children: [
           SafeArea(
+            bottom: true,
             child: FadeTransition(
               opacity: _fadeAnimation,
               child: _buildBody(),
             ),
           ),
-          // Floating chatbot (full-screen overlay inside this screen)
-          ChatbotWidget(
-            initialDx: chatDx,
-            initialDy: chatDy,
-            ignoreSavedPosition: true,
-          ),
+          // Small toggle FAB for chatbot (bottom left) - only show when loaded
+          if (!_isLoading)
+            Positioned(
+              left: 16.0, // Padding from left wall
+              bottom: 100.0, // Above the main FAB
+              child: FloatingActionButton.small(
+                onPressed: () {
+                  setState(() {
+                    _isChatbotVisible = !_isChatbotVisible;
+                  });
+                },
+                backgroundColor: AppTheme.cloud,
+                foregroundColor: AppTheme.deepTeal,
+                child: const Icon(Icons.chat_bubble_outline),
+                tooltip: 'Chat with us',
+              ),
+            ),
+          // Chatbot widget with its own draggable FAB - only show when loaded and visible
+          if (!_isLoading && _isChatbotVisible)
+            ChatbotWidget(
+              initialDx: 0.1, // Start with 10% padding from left wall
+              initialDy: 0.8, // Start near bottom with 20% padding from bottom
+              ignoreSavedPosition: false, // Allow it to remember position
+            ),
         ],
       ),
+      // Ensure proper bottom spacing for FAB and SnackBars
+      bottomNavigationBar: const SizedBox(height: 0),
         );
       },
     );
@@ -496,20 +489,23 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
                     ),
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(25),
-                                              child: Image.asset(
-                          'assets/logo.png',
-                          width: 100,
-                          height: 100,
-                          fit: BoxFit.cover,
-                          errorBuilder: (context, error, stackTrace) {
-                            print('🔍 DEBUG: Loading screen logo failed to load: $error');
-                            return const Icon(
-                      Icons.shopping_bag,
-                      color: AppTheme.deepTeal,
-                      size: 50,
-                            );
-                          },
-                        ),
+                                                          // SUPER LIGHT: Compressed logo with fallback
+            child: Image.asset(
+              'assets/logo.png',
+              width: 100,
+              height: 100,
+              fit: BoxFit.cover,
+              // SUPER LIGHT: Aggressive optimization
+              filterQuality: FilterQuality.low,
+              errorBuilder: (context, error, stackTrace) {
+                print('🔍 DEBUG: Loading screen logo failed to load: $error');
+                return const Icon(
+                  Icons.shopping_bag,
+                  color: AppTheme.deepTeal,
+                  size: 50,
+                );
+              },
+            ),
                     ),
                   ),
                 );
@@ -638,8 +634,9 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
               _buildCategoriesHeaderSliver(),
               _buildCategoriesGridSliver(),
               _buildMyPurchasesSection(),
+              // Bottom padding to prevent FAB cutoff
               SliverToBoxAdapter(
-                child: SizedBox(height: MediaQuery.of(context).size.height * 0.05),
+                child: SizedBox(height: 120), // Fixed height instead of percentage
               ),
             ],
           ),
@@ -676,9 +673,12 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
           ),
           child: ClipRRect(
             borderRadius: BorderRadius.circular(8),
+            // SUPER LIGHT: Compressed header logo
             child: Image.asset(
               'assets/logo.png',
               fit: BoxFit.cover,
+              // SUPER LIGHT: Aggressive optimization
+              filterQuality: FilterQuality.low,
               errorBuilder: (context, error, stackTrace) {
                 return const Icon(Icons.shopping_bag, color: Colors.white, size: 18);
               },
@@ -770,6 +770,8 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
                     const SnackBar(
                       content: Text('Please wait while we load your account...'),
                       backgroundColor: AppTheme.deepTeal,
+                      behavior: SnackBarBehavior.floating,
+                      margin: EdgeInsets.only(bottom: 100.0), // Position above FAB
                     ),
                   );
                   return;
@@ -798,6 +800,8 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
                       const SnackBar(
                         content: Text('Logged out successfully'),
                         backgroundColor: AppTheme.primaryGreen,
+                        behavior: SnackBarBehavior.floating,
+                        margin: EdgeInsets.only(bottom: 100.0), // Position above FAB
                       ),
                     );
                   }
@@ -807,6 +811,8 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
                       SnackBar(
                         content: Text('Failed to logout: $e'),
                         backgroundColor: AppTheme.primaryRed,
+                        behavior: SnackBarBehavior.floating,
+                        margin: EdgeInsets.only(bottom: 100.0), // Position above FAB
                       ),
                     );
                   }
@@ -827,6 +833,8 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
                     SnackBar(
                       content: Text('Navigation error: $e'),
                       backgroundColor: AppTheme.primaryRed,
+                      behavior: SnackBarBehavior.floating,
+                      margin: EdgeInsets.only(bottom: 100.0), // Position above FAB
                     ),
                   );
                 }
@@ -855,7 +863,11 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
               } else if (value == 'fcm_test') {
                 // FCMTestScreen removed - test functionality no longer needed
                 ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('FCM Test screen removed during cleanup')),
+                  SnackBar(
+                    content: Text('FCM Test screen removed during cleanup'),
+                    behavior: SnackBarBehavior.floating,
+                    margin: EdgeInsets.only(bottom: 100.0), // Position above FAB
+                  ),
                 );
               }
             },
@@ -1267,7 +1279,6 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
   Widget _buildCategoriesHeaderSliver() {
     return SliverToBoxAdapter(
       child: Padding(
-        key: _browseCategoriesKey,
         padding: const EdgeInsets.all(16),
         child: Row(
           children: [
@@ -1510,184 +1521,164 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
 
   Widget _buildCategoryImage(Map<String, dynamic> category) {
     final categoryName = category['name'] ?? '';
-    final imageUrl = category['imageUrl'];
     
-    print('🔍 DEBUG: Building image for category: "$categoryName" with URL: "$imageUrl"');
+    print('🔍 DEBUG: Building SVG for category: "$categoryName"');
     
-    // If no image URL or empty, use default image
-    if (imageUrl == null || imageUrl.toString().isEmpty) {
-      print('🔍 DEBUG: No image URL for category: $categoryName, using default');
-      return _buildDefaultCategoryImage(categoryName);
-    }
-    
-    // Try to load the original image first
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(8),
-      child: Image.network(
-        imageUrl.toString(),
-        width: double.infinity,
-        height: double.infinity,
-        fit: BoxFit.cover,
-        errorBuilder: (context, error, stackTrace) {
-          print('🔍 DEBUG: Category image failed to load: $categoryName - $error');
-          // Try to use default image for specific categories
-          return _buildDefaultCategoryImage(categoryName);
-        },
-        loadingBuilder: (context, child, loadingProgress) {
-          if (loadingProgress == null) return child;
-          return Container(
-            width: double.infinity,
-            height: double.infinity,
-            decoration: BoxDecoration(
-              color: AppTheme.breeze.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Center(
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                valueColor: AlwaysStoppedAnimation<Color>(AppTheme.deepTeal),
-              ),
-            ),
-          );
-        },
-        // Add cache headers for better performance
-        headers: const {
-          'Cache-Control': 'max-age=3600',
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        },
-        // Add frameBuilder for better loading experience
-        frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
-          if (wasSynchronouslyLoaded) return child;
-          return AnimatedOpacity(
-            opacity: frame == null ? 0 : 1,
-            duration: const Duration(milliseconds: 300),
-            child: child,
-          );
-        },
-        // Add retry mechanism for mobile
-        gaplessPlayback: true,
-      ),
-    );
-  }
-
-  Widget _buildDefaultCategoryImage(String categoryName) {
-    final defaultImageUrl = _getDefaultCategoryImage(categoryName);
-    print('🔍 DEBUG: Loading default image for category: $categoryName - URL: $defaultImageUrl');
-    
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(8),
-      child: Image.network(
-        defaultImageUrl,
-        width: double.infinity,
-        height: double.infinity,
-        fit: BoxFit.cover,
-        errorBuilder: (context, error, stackTrace) {
-          print('🔍 DEBUG: Default image also failed for category: $categoryName - $error');
-          return _buildCategoryIconFallback(categoryName);
-        },
-        loadingBuilder: (context, child, loadingProgress) {
-          if (loadingProgress == null) return child;
-          return Container(
-            width: double.infinity,
-            height: double.infinity,
-            decoration: BoxDecoration(
-              color: AppTheme.breeze.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Center(
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                valueColor: AlwaysStoppedAnimation<Color>(AppTheme.deepTeal),
-              ),
-            ),
-          );
-        },
-        headers: const {
-          'Cache-Control': 'max-age=3600',
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        },
-        frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
-          if (wasSynchronouslyLoaded) return child;
-          return AnimatedOpacity(
-            opacity: frame == null ? 0 : 1,
-            duration: const Duration(milliseconds: 300),
-            child: child,
-          );
-        },
-        gaplessPlayback: true,
-      ),
-    );
-  }
-
-  String _getDefaultCategoryImage(String categoryName) {
-    final name = categoryName.toLowerCase();
-    print('🔍 DEBUG: Getting default image for category: "$categoryName" (normalized: "$name")');
-    
-    // Return placeholder images for common categories
-    if (name.contains('food') || name.contains('restaurant') || name.contains('cafe')) {
-      return 'https://images.unsplash.com/photo-1504674900240-9f883e8a6c3d?w=400&h=300&fit=crop';
-    } else if (name.contains('clothes') || name.contains('fashion') || name.contains('apparel') || name.contains('clothing')) {
-      print('🔍 DEBUG: Using clothing image for category: $categoryName');
-      return 'https://picsum.photos/400/300?random=1';
-    } else if (name.contains('electronics') || name.contains('tech') || name.contains('gadgets') || name.contains('electronic')) {
-      print('🔍 DEBUG: Using electronics image for category: $categoryName');
-      return 'https://picsum.photos/400/300?random=2';
-    } else if (name.contains('home') || name.contains('furniture') || name.contains('decor')) {
-      return 'https://images.unsplash.com/photo-1586023492125-27b2c045efd7?w=400&h=300&fit=crop';
-    } else if (name.contains('beauty') || name.contains('cosmetics') || name.contains('skincare')) {
-      return 'https://images.unsplash.com/photo-1596462502278-27bfdc403348?w=400&h=300&fit=crop';
-    } else if (name.contains('sports') || name.contains('fitness') || name.contains('athletic')) {
-      return 'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=400&h=300&fit=crop';
-    } else if (name.contains('books') || name.contains('education') || name.contains('learning')) {
-      return 'https://images.unsplash.com/photo-1481627834876-b7833e8f5570?w=400&h=300&fit=crop';
-    } else if (name.contains('automotive') || name.contains('car') || name.contains('vehicle')) {
-      return 'https://images.unsplash.com/photo-1549317661-bd32c8ce0db2?w=400&h=300&fit=crop';
-    } else if (name.contains('health') || name.contains('medical') || name.contains('pharmacy')) {
-      return 'https://images.unsplash.com/photo-1576091160399-112ba8d25d1f?w=400&h=300&fit=crop';
-    } else {
-      print('🔍 DEBUG: Using generic image for category: $categoryName');
-      // Generic category image
-      return 'https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?w=400&h=300&fit=crop';
-    }
-  }
-
-  Widget _buildCategoryIconFallback(String categoryName) {
-    return Container(
-      width: double.infinity,
-      height: double.infinity,
-      decoration: BoxDecoration(
+    // SVG: Use vector graphics - lightweight, no memory issues
+    final svgPath = _getCategorySvg(categoryName);
+    if (svgPath != null) {
+      return ClipRRect(
         borderRadius: BorderRadius.circular(8),
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            AppTheme.deepTeal.withOpacity(0.1),
-            AppTheme.cloud.withOpacity(0.05),
-          ],
+        child: SvgPicture.asset(
+          svgPath,
+          width: double.infinity,
+          height: double.infinity,
+          fit: BoxFit.cover,
+          placeholderBuilder: (context) => _buildStableCategoryDisplay(categoryName),
         ),
-        border: Border.all(
-          color: AppTheme.deepTeal.withOpacity(0.2),
-          width: 1,
+      );
+    } else {
+      // Fallback to stable icon display
+      return _buildStableCategoryDisplay(categoryName);
+    }
+  }
+
+  // REMOVED: No longer needed since we use hardcoded local assets
+
+  // REMOVED: No longer needed since we use hardcoded local assets
+
+  // REMOVED: No longer needed since we use SafeNetworkImage
+
+  // SVG: Get vector graphics path for each category
+  String? _getCategorySvg(String categoryName) {
+    final name = categoryName.toLowerCase();
+    
+    if (name.contains('food') || name.contains('restaurant') || name.contains('cafe')) {
+      return 'assets/svg/food.svg';
+    } else if (name.contains('clothes') || name.contains('fashion') || name.contains('apparel') || name.contains('clothing')) {
+      return 'assets/svg/clothing.svg';
+    } else if (name.contains('electronics') || name.contains('tech') || name.contains('gadgets')) {
+      return 'assets/svg/electronics.svg';
+    } else if (name.contains('other')) {
+      return 'assets/svg/other.svg';
+    }
+    
+    return null; // No SVG found
+  }
+
+  // SIMPLE: Use simple, stable approach like other pages
+  Widget _buildStableCategoryDisplay(String categoryName) {
+    // Simple, stable approach - no complex logic that can cause refreshes
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        width: double.infinity,
+        height: double.infinity,
+        decoration: BoxDecoration(
+          gradient: _getCategoryGradient(categoryName),
+          borderRadius: BorderRadius.circular(8),
         ),
-      ),
-      child: Center(
-        child: Icon(
-          _getCategoryIcon(categoryName),
-          color: AppTheme.deepTeal,
-          size: 32,
+        child: Center(
+          child: Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(25),
+              border: Border.all(
+                color: Colors.white.withOpacity(0.2),
+                width: 1,
+              ),
+            ),
+            child: Icon(
+              _getCategoryIcon(categoryName),
+              color: Colors.white,
+              size: 56,
+            ),
+          ),
         ),
       ),
     );
   }
+
+  // REMOVED: No longer needed since we use SafeNetworkImage
+
+  // HARDCODED: Get beautiful gradient for each category
+  LinearGradient _getCategoryGradient(String categoryName) {
+    final name = categoryName.toLowerCase();
+    
+    if (name.contains('food') || name.contains('restaurant') || name.contains('cafe')) {
+      return const LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [Color(0xFFFF6B6B), Color(0xFFFF8E53)],
+      );
+    } else if (name.contains('clothes') || name.contains('fashion') || name.contains('apparel') || name.contains('clothing')) {
+      return const LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [Color(0xFF667eea), Color(0xFF764ba2)],
+      );
+    } else if (name.contains('electronics') || name.contains('tech') || name.contains('gadgets') || name.contains('electronic')) {
+      return const LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [Color(0xFF11998e), Color(0xFF38ef7d)],
+      );
+    } else if (name.contains('home') || name.contains('furniture') || name.contains('decor')) {
+      return const LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [Color(0xFFf093fb), Color(0xFFf5576c)],
+      );
+    } else if (name.contains('beauty') || name.contains('cosmetics') || name.contains('skincare')) {
+      return const LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [Color(0xFFff9a9e), Color(0xFFfecfef)],
+      );
+    } else if (name.contains('sports') || name.contains('fitness') || name.contains('athletic')) {
+      return const LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [Color(0xFF4facfe), Color(0xFF00f2fe)],
+      );
+    } else if (name.contains('books') || name.contains('education') || name.contains('learning')) {
+      return const LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [Color(0xFFa8edea), Color(0xFFfed6e3)],
+      );
+    } else if (name.contains('automotive') || name.contains('car') || name.contains('vehicle')) {
+      return const LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [Color(0xFFffecd2), Color(0xFFfcb69f)],
+      );
+    } else if (name.contains('health') || name.contains('medical') || name.contains('pharmacy')) {
+      return const LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [Color(0xFFa8caba), Color(0xFF5d4e75)],
+      );
+    } else {
+      return const LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [Color(0xFF667eea), Color(0xFF764ba2)],
+      );
+    }
+  }
+
+  // REMOVED: No longer needed since we use SafeNetworkImage
 
   IconData _getCategoryIcon(String categoryName) {
     final name = categoryName.toLowerCase();
-    if (name.contains('food') || name.contains('restaurant')) {
-      return Icons.restaurant;
-    } else if (name.contains('clothes') || name.contains('fashion')) {
+    if (name.contains('food') || name.contains('restaurant') || name.contains('cafe')) {
+      return Icons.restaurant_menu;
+    } else if (name.contains('clothes') || name.contains('fashion') || name.contains('apparel') || name.contains('clothing')) {
       return Icons.checkroom;
-    } else if (name.contains('electronics')) {
-      return Icons.devices;
+    } else if (name.contains('electronics') || name.contains('tech') || name.contains('gadgets')) {
+      return Icons.phone_android;
     } else if (name.contains('home') || name.contains('furniture')) {
       return Icons.home;
     } else if (name.contains('beauty') || name.contains('cosmetics')) {
@@ -1696,13 +1687,19 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
       return Icons.sports_soccer;
     } else if (name.contains('books') || name.contains('education')) {
       return Icons.book;
+    } else if (name.contains('other')) {
+      return Icons.more_horiz;
     } else {
       return Icons.category;
     }
   }
 
   // Removed unused _buildQuickActionCard to fix lints
-} 
+}
+
+// REMOVED: No longer needed since we use SafeNetworkImage
+
+// REMOVED: No longer needed since we use SafeNetworkImage
 
 class _AccountUnreadCounter extends StatefulWidget {
   const _AccountUnreadCounter();

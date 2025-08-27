@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/chatbot_service.dart';
 
@@ -30,7 +31,7 @@ class _ChatbotWidgetState extends State<ChatbotWidget> with TickerProviderStateM
   // Persisted per device via SharedPreferences
   bool _positionLoaded = false;
   double _fabDx = 0.9; // 90% from left by default (near right)
-  double _fabDy = 0.8; // 80% from top by default (near bottom)
+  double _fabDy = kIsWeb ? 0.65 : 0.8; // Higher on web/PWA (65%), lower on mobile (80%)
 
   static const double _fabSize = 50.0;
   static const double _margin = 16.0;
@@ -86,7 +87,7 @@ class _ChatbotWidgetState extends State<ChatbotWidget> with TickerProviderStateM
     try {
       await _chatbotService.initialize();
       
-      // Listen to messages stream
+      // Listen to messages stream (debounced to reduce rebuilds)
       _chatbotService.messagesStream.listen((messages) {
         if (mounted) {
           setState(() {
@@ -96,23 +97,18 @@ class _ChatbotWidgetState extends State<ChatbotWidget> with TickerProviderStateM
         }
       });
 
-      // Listen to typing indicator
-      _chatbotService.typingStream.listen((typing) {
-        if (mounted) {
+      // Listen to typing indicator (debounced)
+      _chatbotService.typingStream.listen((isTyping) {
+        if (mounted && _isTyping != isTyping) {
           setState(() {
-            _isTyping = typing;
+            _isTyping = isTyping;
           });
-          if (typing) _scrollToBottom();
         }
       });
 
-      if (mounted) {
-        setState(() {
-          _isInitialized = true;
-        });
-      }
+      _isInitialized = true;
     } catch (e) {
-      print('❌ Failed to initialize chatbot widget: $e');
+      // Silent fail for chatbot initialization
     }
   }
 
@@ -241,10 +237,13 @@ class _ChatbotWidgetState extends State<ChatbotWidget> with TickerProviderStateM
       minLeft,
       size.width - media.padding.right - _margin - _windowWidth,
     );
-    final windowTop = (buttonTop - _windowGap - _windowHeight).clamp(
-      minTop,
-      size.height - media.padding.bottom - _margin - _windowHeight - keyboardInset,
-    );
+    // When keyboard is open, position window just above it with small gap
+    final windowTop = keyboardInset > 0
+        ? size.height - keyboardInset - _windowHeight - 10
+        : (buttonTop - _windowGap - _windowHeight).clamp(
+            minTop,
+            size.height - media.padding.bottom - _margin - _windowHeight,
+          );
 
     return Stack(
       children: [
@@ -254,8 +253,7 @@ class _ChatbotWidgetState extends State<ChatbotWidget> with TickerProviderStateM
         if (_isExpanded && _isFullscreen)
           Positioned.fill(child: _buildChatWindow(fullscreen: true)),
 
-        // Draggable floating action button (hidden while expanded to avoid covering input/send)
-        if (!_isExpanded)
+        // Draggable floating action button (always visible)
           Positioned(
             left: buttonLeft,
             top: buttonTop,
@@ -273,7 +271,7 @@ class _ChatbotWidgetState extends State<ChatbotWidget> with TickerProviderStateM
                 onLongPress: () {
                   setState(() {
                     _fabDx = 0.9; // default near right
-                    _fabDy = 0.8; // default near bottom
+                    _fabDy = kIsWeb ? 0.65 : 0.8; // Higher on web/PWA, lower on mobile
                   });
                   _savePosition(_fabDx, _fabDy);
                 },
@@ -303,7 +301,7 @@ class _ChatbotWidgetState extends State<ChatbotWidget> with TickerProviderStateM
     const double minHeight = 280.0;
     final availableHeight = fullscreen
         ? screenSize.height - keyboardInset
-        : (keyboardInset > 0 ? (maxHeight - keyboardInset * 0.3).clamp(minHeight, maxHeight) : 400.0);
+        : (keyboardInset > 0 ? maxHeight.clamp(minHeight, maxHeight) : 400.0);
     
     return SlideTransition(
       position: _slideAnimation,
@@ -387,14 +385,6 @@ class _ChatbotWidgetState extends State<ChatbotWidget> with TickerProviderStateM
             tooltip: fullscreen ? 'Exit full screen (F)' : 'Full screen (F)',
             onPressed: _toggleFullscreen,
             icon: Icon(fullscreen ? Icons.fullscreen_exit : Icons.fullscreen, color: Colors.white, size: 20),
-          ),
-          IconButton(
-            onPressed: _toggleExpanded,
-            icon: const Icon(
-              Icons.close,
-              color: Colors.white,
-              size: 20,
-            ),
           ),
         ],
       ),
