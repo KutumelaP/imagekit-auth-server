@@ -644,24 +644,25 @@ class _ChatScreenState extends State<ChatScreen> {
           const SizedBox(width: 16),
         ],
       ),
-      body: Column(
-        children: [
-          // AI Suggestions
-          if (_aiSuggestions.isNotEmpty)
-            Container(
-              padding: const EdgeInsets.all(8),
-              child: AISuggestionChips(
-                suggestions: _aiSuggestions,
-                onSuggestionTap: (suggestion) {
-                  _messageController.text = suggestion;
-                  _sendMessage();
-                },
+      body: SafeArea(
+        child: Column(
+          children: [
+            // AI Suggestions
+            if (_aiSuggestions.isNotEmpty)
+              Container(
+                padding: const EdgeInsets.all(8),
+                child: AISuggestionChips(
+                  suggestions: _aiSuggestions,
+                  onSuggestionTap: (suggestion) {
+                    _messageController.text = suggestion;
+                    _sendMessage();
+                  },
+                ),
               ),
-            ),
-          
-          // Messages
-          Expanded(
-            child: StreamBuilder<QuerySnapshot>(
+            
+            // Messages - Use Expanded with proper constraints
+            Expanded(
+              child: StreamBuilder<QuerySnapshot>(
               stream: FirebaseFirestore.instance
                   .collection('chats')
                   .doc(widget.chatId)
@@ -865,6 +866,7 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
           ),
         ],
+        ),
       ),
     );
   }
