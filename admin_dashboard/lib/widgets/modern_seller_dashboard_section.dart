@@ -2069,37 +2069,183 @@ class _ModernSellerDashboardSectionState extends State<ModernSellerDashboardSect
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                  const Text('Earnings & Payouts', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                            Text('Available (after commission)', style: TextStyle(color: Colors.grey[600], fontSize: 12)),
-                            const SizedBox(height: 6),
-                            Text('R ${_availableNet.toStringAsFixed(2)}', style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w700)),
-                            const SizedBox(height: 6),
-                            Text('Gross R ${_availableGross.toStringAsFixed(2)} • Commission R ${_availableCommission.toStringAsFixed(2)} (${(_commissionPct * 100).toStringAsFixed(0)}%)', style: TextStyle(color: Colors.grey[600], fontSize: 12)),
-                  ],
-                ),
-              ),
+                  const Text('💰 Your Money Breakdown', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Clear breakdown of what you\'ve earned and what you can withdraw',
+                    style: TextStyle(color: Colors.grey[600], fontSize: 12, fontStyle: FontStyle.italic),
+                  ),
+                  const SizedBox(height: 16),
+                  
+                  // Main Available Balance
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.green.shade50,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.green.shade200),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(Icons.account_balance_wallet, color: Colors.green.shade700, size: 20),
+                            const SizedBox(width: 8),
+                            Text(
+                              '💰 AVAILABLE TO WITHDRAW',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.green.shade700,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'R ${_availableNet.toStringAsFixed(2)}',
+                          style: TextStyle(
+                            fontSize: 28,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.green.shade700,
+                          ),
+                        ),
+                        Text(
+                          'This is your money after platform fees - ready to withdraw!',
+                          style: TextStyle(
+                            color: Colors.green.shade600,
+                            fontSize: 12,
+                            fontStyle: FontStyle.italic,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  
+                  const SizedBox(height: 16),
+                  
+                  // Detailed Breakdown
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: Colors.blue.shade50,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.blue.shade200),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Icon(Icons.receipt_long, color: Colors.blue.shade700, size: 16),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    'Total Sales',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.blue.shade700,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'R ${_availableGross.toStringAsFixed(2)}',
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.blue.shade700,
+                                ),
+                              ),
+                              Text(
+                                'What customers paid',
+                                style: TextStyle(
+                                  color: Colors.blue.shade600,
+                                  fontSize: 10,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
                       const SizedBox(width: 12),
-              ElevatedButton.icon(
-                        onPressed: (_requestingPayout || _availableNet < _minPayoutAmount) ? null : _onRequestPayout,
-                        icon: _requestingPayout
-                            ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                            : const Icon(Icons.payments),
-                        label: Text(_requestingPayout
-                            ? 'Requesting...'
-                            : (_availableNet < _minPayoutAmount
-                                ? 'Min R ${_minPayoutAmount.toStringAsFixed(0)}'
-                                : 'Request Payout')),
-                        style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14)),
-              ),
-            ],
-          ),
+                      Expanded(
+                        child: Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: Colors.orange.shade50,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.orange.shade200),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Icon(Icons.percent, color: Colors.orange.shade700, size: 16),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    'Platform Fee',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.orange.shade700,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'R ${_availableCommission.toStringAsFixed(2)}',
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.orange.shade700,
+                                ),
+                              ),
+                              Text(
+                                '${(_commissionPct * 100).toStringAsFixed(0)}% of sales',
+                                style: TextStyle(
+                                  color: Colors.orange.shade600,
+                                  fontSize: 10,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  
+                  // Payout Button
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: (_requestingPayout || _availableNet < _minPayoutAmount) ? null : _onRequestPayout,
+                          icon: _requestingPayout
+                              ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                              : const Icon(Icons.payments),
+                          label: Text(_requestingPayout
+                              ? 'Requesting...'
+                              : (_availableNet < _minPayoutAmount
+                                  ? 'Min R ${_minPayoutAmount.toStringAsFixed(0)}'
+                                  : 'Request Payout')),
+                          style: ElevatedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                            backgroundColor: Colors.green.shade600,
+                            foregroundColor: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                           const SizedBox(height: 16),
                 Row(
                   children: [
