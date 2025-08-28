@@ -2881,52 +2881,88 @@ async function computeCommissionWithSettings({ gross, order }) {
   try {
     const doc = await db.collection('admin_settings').doc('payment_settings').get();
     const s = doc.exists ? (doc.data() || {}) : {};
-    // Determine order mode
-    const isDelivery = String(order.orderType || order.type || '').toLowerCase() === 'delivery';
-    const deliveryPref = String(order.deliveryModelPreference || '').toLowerCase();
-    const isPlatformDelivery = isDelivery && (deliveryPref === 'system');
-
-    // Choose pct
-    let pct = null;
-    if (!isDelivery) {
-      pct = Number(s.pickupPct);
-    } else if (isPlatformDelivery) {
-      pct = Number(s.platformDeliveryPct);
-    } else {
-      pct = Number(s.merchantDeliveryPct);
-    }
-    if (isNaN(pct) || pct < 0 || pct > 50) {
-      // fallback to legacy percent
-      const legacyPct = await getCommissionPct().catch(() => COMMISSION_PCT_FALLBACK);
-      pct = legacyPct * 100; // getCommissionPct returns fraction
-    }
-
+    
     // Compute raw commission on subtotal only (exclude delivery & buyer fees)
     const subtotal = Number(order.totalPrice || order.total || 0) || 0;
+    
+    // Apply tiered pricing based on order amount
+    let pct = null;
+    let smallOrderFee = 0;
+    
+    if (subtotal <= Number(s.tier1Max || 25)) {
+      // Tier 1: Small orders (R0 - R25)
+      pct = Number(s.tier1Commission || 4.0);
+      smallOrderFee = Number(s.tier1SmallOrderFee || 3.0);
+    } else if (subtotal <= Number(s.tier2Max || 100)) {
+      // Tier 2: Medium orders (R25 - R100)
+      pct = Number(s.tier2Commission || 6.0);
+      smallOrderFee = Number(s.tier2SmallOrderFee || 5.0);
+    } else {
+      // Tier 3: Large orders (R100+)
+      pct = Number(s.tier3Commission || 6.0);
+      smallOrderFee = 0; // No small order fee for large orders
+    }
+    
+    // Fallback to legacy per-mode pricing if tiered pricing not configured
+    if (isNaN(pct) || pct < 0 || pct > 50) {
+      const isDelivery = String(order.orderType || order.type || '').toLowerCase() === 'delivery';
+      const deliveryPref = String(order.deliveryModelPreference || '').toLowerCase();
+      const isPlatformDelivery = isDelivery && (deliveryPref === 'system');
+
+      if (!isDelivery) {
+        pct = Number(s.pickupPct);
+      } else if (isPlatformDelivery) {
+        pct = Number(s.platformDeliveryPct);
+      } else {
+        pct = Number(s.merchantDeliveryPct);
+      }
+      
+      if (isNaN(pct) || pct < 0 || pct > 50) {
+        // fallback to legacy percent
+        const legacyPct = await getCommissionPct().catch(() => COMMISSION_PCT_FALLBACK);
+        pct = legacyPct * 100; // getCommissionPct returns fraction
+      }
+    }
+    
     let commission = subtotal * (pct / 100);
 
-    // Apply min and caps
-    const cmin = Number(s.commissionMin);
-    if (!isNaN(cmin) && cmin > 0) commission = Math.max(commission, cmin);
-    let cap = null;
-    if (!isDelivery) {
-      cap = Number(s.commissionCapPickup);
-    } else if (isPlatformDelivery) {
-      cap = Number(s.commissionCapDeliveryPlatform);
-    } else {
-      cap = Number(s.commissionCapDeliveryMerchant);
+    // Apply min and caps (only for legacy mode, tiered pricing handles this automatically)
+    if (!s.tier1Commission) {
+      const cmin = Number(s.commissionMin);
+      if (!isNaN(cmin) && cmin > 0) commission = Math.max(commission, cmin);
+      
+      let cap = null;
+      const isDelivery = String(order.orderType || order.type || '').toLowerCase() === 'delivery';
+      const deliveryPref = String(order.deliveryModelPreference || '').toLowerCase();
+      const isPlatformDelivery = isDelivery && (deliveryPref === 'system');
+      
+      if (!isDelivery) {
+        cap = Number(s.commissionCapPickup);
+      } else if (isPlatformDelivery) {
+        cap = Number(s.commissionCapDeliveryPlatform);
+      } else {
+        cap = Number(s.commissionCapDeliveryMerchant);
+      }
+      if (!isNaN(cap) && cap > 0) commission = Math.min(commission, cap);
     }
-    if (!isNaN(cap) && cap > 0) commission = Math.min(commission, cap);
 
     commission = toRand(commission);
     const net = toRand(subtotal - commission);
-    return { commission, net, pctUsed: pct };
+    
+    // Return commission, net, percentage used, and small order fee
+    return { 
+      commission, 
+      net, 
+      pctUsed: pct,
+      smallOrderFee: toRand(smallOrderFee),
+      tier: subtotal <= Number(s.tier1Max || 25) ? 1 : subtotal <= Number(s.tier2Max || 100) ? 2 : 3
+    };
   } catch (e) {
     const fallbackPct = await getCommissionPct().catch(() => COMMISSION_PCT_FALLBACK);
     const subtotal = Number(order.totalPrice || order.total || 0) || 0;
     const commission = toRand(subtotal * fallbackPct);
     const net = toRand(subtotal - commission);
-    return { commission, net, pctUsed: fallbackPct * 100 };
+    return { commission, net, pctUsed: fallbackPct * 100, smallOrderFee: 0, tier: 0 };
   }
 }
 
@@ -3232,9 +3268,9 @@ exports.markCodPaid = functions.https.onCall(async (data, context) => {
     throw new functions.https.HttpsError('failed-precondition', 'Order is not Cash on Delivery');
   }
 
-  // Derive amounts with per-mode settings and caps/mins
+  // Derive amounts with tiered pricing system
   const gross = Number(order.totalPrice || order.total || order.paymentAmount || 0) || 0;
-  const { commission, net } = await computeCommissionWithSettings({ gross, order });
+  const { commission, net, smallOrderFee, tier } = await computeCommissionWithSettings({ gross, order });
 
   // Create debt entry: seller owes platform the commission
   const eref = db.collection('platform_receivables').doc(sellerId).collection('entries').doc(orderId);
@@ -3247,10 +3283,12 @@ exports.markCodPaid = functions.https.onCall(async (data, context) => {
     gross,
     commission,
     net,
+    smallOrderFee,
+    tier,
     status: 'due', // Platform is owed this money
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-    description: `Commission owed for COD order ${orderId}`,
+    description: `Commission owed for COD order ${orderId} (Tier ${tier})`,
   }, { merge: true });
 
   // Update parent receivable doc with total outstanding amount

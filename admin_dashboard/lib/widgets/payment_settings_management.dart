@@ -34,6 +34,15 @@ class _PaymentSettingsManagementState extends State<PaymentSettingsManagement> {
   final TextEditingController _buyerServiceFeeFixedController = TextEditingController();
   final TextEditingController _smallOrderFeeController = TextEditingController();
   final TextEditingController _smallOrderThresholdController = TextEditingController();
+  
+  // Tiered pricing controllers
+  final TextEditingController _tier1MaxController = TextEditingController();
+  final TextEditingController _tier1CommissionController = TextEditingController();
+  final TextEditingController _tier1SmallOrderFeeController = TextEditingController();
+  final TextEditingController _tier2MaxController = TextEditingController();
+  final TextEditingController _tier2CommissionController = TextEditingController();
+  final TextEditingController _tier2SmallOrderFeeController = TextEditingController();
+  final TextEditingController _tier3CommissionController = TextEditingController();
 
   @override
   void initState() {
@@ -60,6 +69,15 @@ class _PaymentSettingsManagementState extends State<PaymentSettingsManagement> {
     _buyerServiceFeeFixedController.dispose();
     _smallOrderFeeController.dispose();
     _smallOrderThresholdController.dispose();
+    
+    // Dispose tiered pricing controllers
+    _tier1MaxController.dispose();
+    _tier1CommissionController.dispose();
+    _tier1SmallOrderFeeController.dispose();
+    _tier2MaxController.dispose();
+    _tier2CommissionController.dispose();
+    _tier2SmallOrderFeeController.dispose();
+    _tier3CommissionController.dispose();
     super.dispose();
   }
 
@@ -97,6 +115,15 @@ class _PaymentSettingsManagementState extends State<PaymentSettingsManagement> {
         _buyerServiceFeeFixedController.text = (_paymentSettings['buyerServiceFeeFixed'] ?? 0.0).toString();
         _smallOrderFeeController.text = (_paymentSettings['smallOrderFee'] ?? 0.0).toString();
         _smallOrderThresholdController.text = (_paymentSettings['smallOrderThreshold'] ?? 0.0).toString();
+        
+        // Tiered pricing fields
+        _tier1MaxController.text = (_paymentSettings['tier1Max'] ?? 25.0).toString();
+        _tier1CommissionController.text = (_paymentSettings['tier1Commission'] ?? 4.0).toString();
+        _tier1SmallOrderFeeController.text = (_paymentSettings['tier1SmallOrderFee'] ?? 3.0).toString();
+        _tier2MaxController.text = (_paymentSettings['tier2Max'] ?? 100.0).toString();
+        _tier2CommissionController.text = (_paymentSettings['tier2Commission'] ?? 6.0).toString();
+        _tier2SmallOrderFeeController.text = (_paymentSettings['tier2SmallOrderFee'] ?? 5.0).toString();
+        _tier3CommissionController.text = (_paymentSettings['tier3Commission'] ?? 6.0).toString();
       } else {
         // Set default values
         _platformFeeController.text = '5.0';
@@ -118,6 +145,15 @@ class _PaymentSettingsManagementState extends State<PaymentSettingsManagement> {
         _buyerServiceFeeFixedController.text = '3.0';
         _smallOrderFeeController.text = '7.0';
         _smallOrderThresholdController.text = '100.0';
+        
+        // Tiered pricing defaults
+        _tier1MaxController.text = '25.0';
+        _tier1CommissionController.text = '4.0';
+        _tier1SmallOrderFeeController.text = '3.0';
+        _tier2MaxController.text = '100.0';
+        _tier2CommissionController.text = '6.0';
+        _tier2SmallOrderFeeController.text = '5.0';
+        _tier3CommissionController.text = '6.0';
       }
     } catch (e) {
       print('Error loading payment settings: $e');
@@ -157,6 +193,15 @@ class _PaymentSettingsManagementState extends State<PaymentSettingsManagement> {
         'buyerServiceFeeFixed': double.parse(_buyerServiceFeeFixedController.text),
         'smallOrderFee': double.parse(_smallOrderFeeController.text),
         'smallOrderThreshold': double.parse(_smallOrderThresholdController.text),
+        
+        // Tiered pricing fields
+        'tier1Max': double.parse(_tier1MaxController.text),
+        'tier1Commission': double.parse(_tier1CommissionController.text),
+        'tier1SmallOrderFee': double.parse(_tier1SmallOrderFeeController.text),
+        'tier2Max': double.parse(_tier2MaxController.text),
+        'tier2Commission': double.parse(_tier2CommissionController.text),
+        'tier2SmallOrderFee': double.parse(_tier2SmallOrderFeeController.text),
+        'tier3Commission': double.parse(_tier3CommissionController.text),
         'updatedAt': FieldValue.serverTimestamp(),
         'updatedBy': 'admin', // In real app, get from auth
       };
@@ -204,6 +249,8 @@ class _PaymentSettingsManagementState extends State<PaymentSettingsManagement> {
                 _buildCommissionSettingsSection(),
                 const SizedBox(height: 24),
                 _buildBuyerFeesSection(),
+                const SizedBox(height: 24),
+                _buildTieredPricingSection(),
                 const SizedBox(height: 24),
                 _buildHoldbackSettingsSection(),
                 const SizedBox(height: 24),
@@ -285,7 +332,7 @@ class _PaymentSettingsManagementState extends State<PaymentSettingsManagement> {
                 Icon(Icons.attach_money, color: AdminTheme.deepTeal),
                 const SizedBox(width: 8),
                 Text(
-                  'Fee Structure',
+                  'Payment Processing Fees',
                   style: AdminTheme.headlineMedium.copyWith(
                     color: AdminTheme.deepTeal,
                     fontWeight: FontWeight.bold,
@@ -296,25 +343,6 @@ class _PaymentSettingsManagementState extends State<PaymentSettingsManagement> {
             const SizedBox(height: 16),
             Row(
               children: [
-                Expanded(
-                  child: _buildTextField(
-                    controller: _platformFeeController,
-                    label: 'Platform Fee (%)',
-                    hint: '5.0',
-                    icon: Icons.percent,
-                    validator: (value) {
-                      if (value == null || value.isEmpty) {
-                        return 'Please enter platform fee percentage';
-                      }
-                      double? fee = double.tryParse(value);
-                      if (fee == null || fee < 0 || fee > 50) {
-                        return 'Platform fee must be between 0% and 50%';
-                      }
-                      return null;
-                    },
-                  ),
-                ),
-                const SizedBox(width: 16),
                 Expanded(
                   child: _buildTextField(
                     controller: _payfastFeePercentageController,
@@ -331,6 +359,32 @@ class _PaymentSettingsManagementState extends State<PaymentSettingsManagement> {
                       }
                       return null;
                     },
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade100,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.grey.shade300),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.info_outline, color: Colors.blue.shade600),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Platform fees now use tiered pricing system below',
+                            style: AdminTheme.bodyMedium.copyWith(
+                              color: Colors.blue.shade600,
+                              fontStyle: FontStyle.italic,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ],
@@ -630,6 +684,305 @@ class _PaymentSettingsManagementState extends State<PaymentSettingsManagement> {
                 ),
               ),
             ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTieredPricingSection() {
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: AdminTheme.angel,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AdminTheme.cloud.withOpacity(0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.layers, color: AdminTheme.deepTeal),
+              const SizedBox(width: 8),
+              Text(
+                'Tiered Pricing (Smart Commission)',
+                style: AdminTheme.headlineMedium.copyWith(
+                  color: AdminTheme.deepTeal,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Automatically adjust commission and fees based on order size for fair pricing',
+            style: AdminTheme.bodyMedium.copyWith(
+              color: AdminTheme.cloud,
+              fontStyle: FontStyle.italic,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.blue.shade50,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.blue.shade200),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.security, color: Colors.blue.shade600, size: 16),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Legacy platform fee is hidden but kept as emergency fallback for system stability',
+                    style: AdminTheme.bodySmall.copyWith(
+                      color: Colors.blue.shade700,
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          
+          // Tier 1: Small Orders (R0 - R25)
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.green.shade50,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.green.shade200),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.trending_down, color: Colors.green.shade700, size: 20),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Tier 1: Small Orders (R0 - R25)',
+                      style: AdminTheme.titleMedium.copyWith(
+                        color: Colors.green.shade700,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _buildTextField(
+                        controller: _tier1MaxController,
+                        label: 'Max Amount (R)',
+                        hint: '25.00',
+                        icon: Icons.arrow_upward,
+                        validator: _validateMoney,
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: _buildTextField(
+                        controller: _tier1CommissionController,
+                        label: 'Commission (%)',
+                        hint: '4.0',
+                        icon: Icons.percent,
+                        validator: _validatePct,
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: _buildTextField(
+                        controller: _tier1SmallOrderFeeController,
+                        label: 'Small Order Fee (R)',
+                        hint: '3.00',
+                        icon: Icons.price_change,
+                        validator: _validateMoney,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          
+          const SizedBox(height: 16),
+          
+          // Tier 2: Medium Orders (R25 - R100)
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.orange.shade50,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.orange.shade200),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.trending_flat, color: Colors.orange.shade700, size: 20),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Tier 2: Medium Orders (R25 - R100)',
+                      style: AdminTheme.titleMedium.copyWith(
+                        color: Colors.orange.shade700,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _buildTextField(
+                        controller: _tier2MaxController,
+                        label: 'Max Amount (R)',
+                        hint: '100.00',
+                        icon: Icons.arrow_upward,
+                        validator: _validateMoney,
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: _buildTextField(
+                        controller: _tier2CommissionController,
+                        label: 'Commission (%)',
+                        hint: '6.0',
+                        icon: Icons.percent,
+                        validator: _validatePct,
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: _buildTextField(
+                        controller: _tier2SmallOrderFeeController,
+                        label: 'Small Order Fee (R)',
+                        hint: '5.00',
+                        icon: Icons.price_change,
+                        validator: _validateMoney,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          
+          const SizedBox(height: 16),
+          
+          // Tier 3: Large Orders (R100+)
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.blue.shade50,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.blue.shade200),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.trending_up, color: Colors.blue.shade700, size: 20),
+                    const SizedBox(width: 16),
+                    Text(
+                      'Tier 3: Large Orders (R100+)',
+                      style: AdminTheme.titleMedium.copyWith(
+                        color: Colors.blue.shade700,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _buildTextField(
+                        controller: _tier3CommissionController,
+                        label: 'Commission (%)',
+                        hint: '6.0',
+                        icon: Icons.percent,
+                        validator: _validatePct,
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade100,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.grey.shade300),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(Icons.check_circle, color: Colors.green.shade600),
+                            const SizedBox(width: 8),
+                            Text(
+                              'No Small Order Fee',
+                              style: AdminTheme.bodyMedium.copyWith(
+                                color: Colors.green.shade600,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          
+          const SizedBox(height: 16),
+          
+          // Example calculation
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: AdminTheme.deepTeal.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AdminTheme.deepTeal.withOpacity(0.3)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.calculate, color: AdminTheme.deepTeal),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Example: R10 Order with Tiered Pricing',
+                      style: AdminTheme.titleMedium.copyWith(
+                        color: AdminTheme.deepTeal,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '• R10 order falls in Tier 1 (R0-R25)\n'
+                  '• Commission: 4% = R0.40 (min R2.00 applies)\n'
+                  '• Small Order Fee: R3.00\n'
+                  '• Total Platform Take: R5.40\n'
+                  '• Seller Receives: R4.60\n'
+                  '• Much fairer than old system!',
+                  style: AdminTheme.bodyMedium.copyWith(
+                    color: AdminTheme.cloud,
+                    height: 1.4,
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),
