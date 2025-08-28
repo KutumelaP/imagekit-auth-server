@@ -53,6 +53,16 @@ class _SellerPayoutsScreenState extends State<SellerPayoutsScreen> {
       final functions = FirebaseFunctions.instance;
       final res = await functions.httpsCallable('getSellerAvailableBalance').call({ 'userId': user.uid });
       final data = Map<String, dynamic>.from(res.data as Map);
+      
+      // Debug logging
+      print('🔍 DEBUG: Cloud Function Response:');
+      print('  Raw response: ${res.data}');
+      print('  Parsed data: $data');
+      print('  Gross: ${data['gross']}');
+      print('  Commission: ${data['commission']}');
+      print('  Net: ${data['net']}');
+      print('  Min: ${data['minPayoutAmount']}');
+      
       setState(() {
         _gross = (data['gross'] ?? 0).toDouble();
         _commission = (data['commission'] ?? 0).toDouble();
@@ -60,6 +70,13 @@ class _SellerPayoutsScreenState extends State<SellerPayoutsScreen> {
         _min = (data['minPayoutAmount'] ?? 0).toDouble();
         _commissionPct = ((data['commissionPct'] ?? 0) as num).toDouble();
         _codWallet = Map<String, dynamic>.from(data['codWallet'] ?? {});
+        
+        // Debug logging after setState
+        print('🔍 DEBUG: Values set in setState:');
+        print('  _gross: $_gross');
+        print('  _commission: $_commission');
+        print('  _net: $_net');
+        print('  _min: $_min');
       });
     } catch (e) {
       if (mounted) {

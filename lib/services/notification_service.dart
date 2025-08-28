@@ -468,7 +468,7 @@ class NotificationService {
     return processedText.trim();
   }
 
-  // Request notification permissions
+  // 🚀 AWESOME NOTIFICATION PERMISSION REQUEST
   Future<bool> requestPermissions() async {
     try {
       if (kIsWeb) {
@@ -483,27 +483,45 @@ class NotificationService {
           print('❌ Browser does not define Notification API');
           return false;
         }
+        
         final String? currentPermission = js.context.callMethod('eval', ['Notification.permission']);
+        print('🔔 Current notification permission: $currentPermission');
         
         if (currentPermission == 'granted') {
+          print('✅ Notifications already enabled!');
+          await _showWelcomeNotification();
           return true;
         } else if (currentPermission == 'denied') {
+          print('❌ Notifications blocked by user');
+          await _showPermissionHelpNotification();
           return false;
         } else {
-          // Permission is 'default', request it
-          print('🔔 Requesting notification permissions...');
+          // Permission is 'default', request it with better UX
+          print('🔔 Requesting awesome notification permissions...');
           
-          // Request permission via JS interop Promise
+          // Show pre-permission explanation
+          await _showPrePermissionNotification();
+          
+          // Request permission with proper Promise handling
           try {
-            js.context.callMethod('eval', [
-              'Notification.requestPermission().then(function(r){console.log("🔔 Notification permission result:",r)}).catch(function(e){console.error("❌ Error requesting permission:",e)})'
-            ]);
+            final permissionResult = await _requestNotificationPermissionAsync();
+            
+            if (permissionResult == 'granted') {
+              print('✅ Notification permissions granted!');
+              await _showWelcomeNotification();
+              return true;
+            } else if (permissionResult == 'denied') {
+              print('❌ Notification permissions denied');
+              await _showPermissionHelpNotification();
+              return false;
+            } else {
+              print('⏳ Notification permission request dismissed');
+              return false;
+            }
           } catch (e) {
             print('❌ Error requesting notification permission: $e');
+            return false;
           }
-
-          // Return based on current status (result will be logged asynchronously)
-          return currentPermission == 'granted';
         }
       } else {
         // Mobile: For now, return true (will be implemented later)
@@ -512,6 +530,84 @@ class NotificationService {
     } catch (e) {
       print('❌ Error requesting notification permissions: $e');
       return false;
+    }
+  }
+
+  // 🎯 Request notification permission with proper Promise handling
+  Future<String> _requestNotificationPermissionAsync() async {
+    try {
+      // Create a more robust permission request
+      final result = js.context.callMethod('eval', ['''
+        (async function() {
+          try {
+            console.log("🔔 Requesting notification permission...");
+            const permission = await Notification.requestPermission();
+            console.log("🔔 Permission result:", permission);
+            return permission;
+          } catch (error) {
+            console.error("❌ Permission request error:", error);
+            return "error";
+          }
+        })()
+      ''']);
+      
+      // Handle the Promise result
+      if (result != null) {
+        return result.toString();
+      }
+      return 'error';
+    } catch (e) {
+      print('❌ Error in async permission request: $e');
+      return 'error';
+    }
+  }
+
+  // 📢 Show pre-permission explanation
+  Future<void> _showPrePermissionNotification() async {
+    try {
+      // Could show an in-app dialog explaining the benefits
+      print('💡 Would show pre-permission explanation here');
+      // For now, just log - in a real app you'd show a friendly dialog
+    } catch (e) {
+      print('❌ Error showing pre-permission notification: $e');
+    }
+  }
+
+  // 🎉 Show welcome notification after permission granted
+  Future<void> _showWelcomeNotification() async {
+    try {
+      if (kIsWeb) {
+        js.context.callMethod('eval', ['''
+          if (Notification.permission === 'granted') {
+            new Notification('🎉 Awesome Notifications Enabled!', {
+              body: 'You\'ll now receive real-time updates about your orders, messages, and promotions.',
+              icon: '/icons/Icon-192.png',
+              badge: '/icons/Icon-192.png',
+              tag: 'welcome',
+              silent: false,
+              requireInteraction: false,
+              vibrate: [100, 50, 100, 50, 200],
+              image: '/icons/notification-hero.png',
+              actions: [
+                { action: 'explore', title: '🚀 Explore App', icon: '/icons/explore-icon.png' },
+                { action: 'settings', title: '⚙️ Settings', icon: '/icons/settings-icon.png' }
+              ]
+            });
+          }
+        ''']);
+      }
+    } catch (e) {
+      print('❌ Error showing welcome notification: $e');
+    }
+  }
+
+  // 💡 Show help for users who denied permissions
+  Future<void> _showPermissionHelpNotification() async {
+    try {
+      print('💡 Notifications are blocked. You can enable them in your browser settings.');
+      // Could show in-app guidance here
+    } catch (e) {
+      print('❌ Error showing permission help: $e');
     }
   }
 

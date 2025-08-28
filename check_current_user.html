@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Check Current User</title>
+    <script src="https://www.gstatic.com/firebasejs/9.0.0/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.0.0/firebase-auth.js"></script>
+</head>
+<body>
+    <h1>Firebase Auth Check</h1>
+    <div id="result">Loading...</div>
+
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/9.0.0/firebase-app.js';
+        import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/9.0.0/firebase-auth.js';
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyDCtpHKT2qLhVKN6hJ3WIEtj_PTjV5UvBo",
+            authDomain: "marketplace-8d6bd.firebaseapp.com",
+            projectId: "marketplace-8d6bd",
+            storageBucket: "marketplace-8d6bd.appspot.com",
+            messagingSenderId: "648477936440",
+            appId: "1:648477936440:web:6c4b3e9f4d5c9d7e2f5c8a"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+
+        onAuthStateChanged(auth, (user) => {
+            const resultDiv = document.getElementById('result');
+            if (user) {
+                resultDiv.innerHTML = `
+                    <h2>✅ User Logged In</h2>
+                    <p><strong>User ID:</strong> ${user.uid}</p>
+                    <p><strong>Email:</strong> ${user.email}</p>
+                    <p><strong>Expected Seller ID:</strong> cKXh5nQSZ3SW2bNXFz7669srXH93</p>
+                    <p><strong>Match:</strong> ${user.uid === 'cKXh5nQSZ3SW2bNXFz7669srXH93' ? '✅ YES' : '❌ NO - This is the problem!'}</p>
+                `;
+            } else {
+                resultDiv.innerHTML = '<h2>❌ No user logged in</h2>';
+            }
+        });
+    </script>
+</body>
+</html>

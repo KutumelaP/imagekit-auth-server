@@ -11,6 +11,10 @@
     "scope": "/",
     "lang": "en",
     "categories": ["shopping", "food", "marketplace"],
+    "display_override": ["standalone", "minimal-ui"],
+    "edge_side_panel": {
+        "preferred_width": 400
+    },
     "icons": [
         {
             "src": "icons/Icon-192.png",
@@ -61,6 +65,52 @@
                     "sizes": "192x192"
                 }
             ]
+        },
+        {
+            "name": "Messages",
+            "short_name": "Chat",
+            "description": "View your messages",
+            "url": "/chat?source=pwa",
+            "icons": [
+                {
+                    "src": "icons/Icon-192.png",
+                    "sizes": "192x192"
+                }
+            ]
+        },
+        {
+            "name": "Orders",
+            "short_name": "Orders",
+            "description": "Track your orders",
+            "url": "/orders?source=pwa",
+            "icons": [
+                {
+                    "src": "icons/Icon-192.png",
+                    "sizes": "192x192"
+                }
+            ]
+        }
+    ],
+    "share_target": {
+        "action": "/share",
+        "method": "POST",
+        "enctype": "multipart/form-data",
+        "params": {
+            "title": "title",
+            "text": "text",
+            "url": "url",
+            "files": [
+                {
+                    "name": "images",
+                    "accept": ["image/*"]
+                }
+            ]
+        }
+    },
+    "protocol_handlers": [
+        {
+            "protocol": "web+marketplace",
+            "url": "/?protocol=%s"
         }
     ]
 }

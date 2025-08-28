@@ -8,6 +8,7 @@ import 'package:flutter/rendering.dart';
 import 'package:path_provider/path_provider.dart';
 import 'dart:ui' show ImageByteFormat;
 import 'dart:async';
+import '../services/install_prompt_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/safe_network_image.dart';
 import '../widgets/bottom_action_bar.dart';
@@ -67,6 +68,12 @@ class _SimpleStoreProfileScreenState extends State<SimpleStoreProfileScreen>
   void initState() {
     super.initState();
     _initializeAnimations();
+    
+    // 🚀 Show smart install prompt for non-PWA users visiting stores
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final storeName = widget.store['storeName'] as String? ?? 'this store';
+      InstallPromptService.showStoreInstallPrompt(context, storeName);
+    });
     _initializeVideo();
     _loadGalleryData(); // Load fresh data when navigating to the screen
     _loadFollowState();
@@ -317,6 +324,13 @@ class _SimpleStoreProfileScreenState extends State<SimpleStoreProfileScreen>
               slivers: [
                 _buildStunningAppBar(),
                 SliverToBoxAdapter(child: _buildModernHeroSection()),
+                // 🚀 Smart install reminder for non-PWA users
+                SliverToBoxAdapter(
+                  child: InstallPromptService.buildInstallReminderBanner(
+                    context, 
+                    widget.store['storeName'] as String? ?? 'this store'
+                  ),
+                ),
                 SliverToBoxAdapter(child: _buildModernStatsDashboard()),
                 SliverToBoxAdapter(child: _buildModernStorySection()),
                 const SliverToBoxAdapter(child: SizedBox(height: 16)),
@@ -1386,6 +1400,8 @@ class _SimpleStoreProfileScreenState extends State<SimpleStoreProfileScreen>
     final storeId = widget.store['storeId'] as String?;
     final storeName = widget.store['storeName'] as String? ?? 'Store';
     if (storeId != null) {
+      // 🚀 PWA-FRIENDLY: Use named route with proper URL for better PWA support
+      print('🔗 PWA Navigation: Opening product browser via route');
       Navigator.push(
         context,
         MaterialPageRoute(
@@ -1393,6 +1409,7 @@ class _SimpleStoreProfileScreenState extends State<SimpleStoreProfileScreen>
             storeId: storeId,
             storeName: storeName,
           ),
+          settings: RouteSettings(name: '/store/$storeId/products'),
         ),
       );
     }

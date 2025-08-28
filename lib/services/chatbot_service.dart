@@ -32,16 +32,17 @@ class ChatbotService {
     if (_isInitialized) return;
     
     try {
-      // Load or create conversation for current user
+      // Load or create conversation for current user (lazy loading)
       await _loadOrCreateConversation();
       
-      // Initialize knowledge base if empty
-      await _initializeKnowledgeBase();
+      // Initialize knowledge base if empty (only once)
+      if (_messages.isEmpty) {
+        await _initializeKnowledgeBase();
+      }
       
       _isInitialized = true;
-      print('🤖 Chatbot service initialized successfully');
     } catch (e) {
-      print('❌ Failed to initialize chatbot service: $e');
+      // Silent fail for initialization
     }
   }
 
@@ -58,14 +59,15 @@ class ChatbotService {
     }
 
     try {
-      // Try to find existing conversation
+      // Try to find existing conversation (with timeout)
       final conversationsQuery = await _firestore
           .collection('chatbot_conversations')
           .where('userId', isEqualTo: user.uid)
           .where('isActive', isEqualTo: true)
           .orderBy('lastMessageAt', descending: true)
           .limit(1)
-          .get();
+          .get()
+          .timeout(const Duration(seconds: 5)); // Add timeout
 
       if (conversationsQuery.docs.isNotEmpty) {
         // Load existing conversation
@@ -76,7 +78,6 @@ class ChatbotService {
         await _createNewConversation();
       }
     } catch (e) {
-      print('❌ Error loading conversation: $e');
       // Fallback to local-only mode
       _persistenceEnabled = false;
       _currentConversationId = 'local';

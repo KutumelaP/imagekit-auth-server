@@ -953,27 +953,28 @@ void _navigateToStoreProfile(Map<String, dynamic> store) {
   print('  - story: ${store['story']}');
   print('  - storyPhotoUrls: ${store['storyPhotoUrls']}');
   print('  - storyVideoUrl: ${store['storyVideoUrl']}');
-  Navigator.push(
-    context,
-    MaterialPageRoute(
-      builder: (_) => SimpleStoreProfileScreen(store: store),
-    ),
-  );
+  
+  // 🚀 PWA-FRIENDLY NAVIGATION: Use named route with proper URL
+  final storeId = store['storeId'] as String?;
+  if (storeId != null && storeId.isNotEmpty) {
+    print('🔗 PWA Navigation: Using named route /store/$storeId');
+    Navigator.pushNamed(context, '/store/$storeId');
+  } else {
+    print('⚠️ Fallback: Using direct navigation (no storeId)');
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => SimpleStoreProfileScreen(store: store),
+      ),
+    );
+  }
 }
 
   Widget _buildStoreCard(Map<String, dynamic> store, int index) {
               return GestureDetector(
                 onTap: () {
-        // Navigate to product browsing for this specific store
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-            builder: (context) => StunningProductBrowser(
-              storeId: store['storeId'],
-              storeName: store['storeName'] ?? 'Store',
-            ),
-                    ),
-                  );
+        // 🚀 PWA-FRIENDLY: Navigate to store profile with proper URL instead of direct product browser
+                  _navigateToStoreProfile(store);
                 },
       child: Container(
         margin: EdgeInsets.symmetric(

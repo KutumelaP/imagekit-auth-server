@@ -236,7 +236,7 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen>
   @override
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
-    final isSmallScreen = screenWidth < 600;
+    final isSmallScreen = screenWidth < 400; // Consistent with ResponsiveUtils
     
     return Scaffold(
       appBar: AppBar(
@@ -515,13 +515,13 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen>
         print('🔍 DEBUG: OrderHistoryScreen - Found ${orders.length} orders');
 
                   return ListView.builder(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.only(left: 16, right: 16, top: 16, bottom: 4),
             itemCount: orders.length,
             itemBuilder: (context, index) {
               final orderData = orders[index].data() as Map<String, dynamic>;
               final orderId = orders[index].id;
               final screenWidth = MediaQuery.of(context).size.width;
-              final isSmallScreen = screenWidth < 600;
+              final isSmallScreen = screenWidth < 400; // Consistent with ResponsiveUtils
               return _buildOrderCard(orderId, orderData, isSmallScreen);
             },
           );
@@ -531,7 +531,8 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen>
 
   Widget _buildOrderCard(String orderId, Map<String, dynamic> orderData, bool isSmallScreen) {
     final rawOrderNumber = (orderData['orderNumber'] as String?) ?? orderId;
-    final displayOrderNumber = isSmallScreen
+    // Use more readable formatting - only use very short format for very small screens
+    final displayOrderNumber = MediaQuery.of(context).size.width < 400
         ? OrderUtils.formatVeryShortOrderNumber(rawOrderNumber)
         : OrderUtils.formatShortOrderNumber(rawOrderNumber);
     final timestamp = orderData['timestamp'] as Timestamp?;
@@ -555,7 +556,7 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen>
     // Responsive layout - stack vertically on very small screens
     return Container(
       margin: EdgeInsets.symmetric(
-        vertical: isSmallScreen ? 4.0 : 8.0,
+        vertical: isSmallScreen ? 2.0 : 4.0,
         horizontal: isSmallScreen ? 4.0 : 8.0,
       ),
       child: isSmallScreen
@@ -608,7 +609,7 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen>
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                       ),
-                      const SizedBox(height: 4),
+                      const SizedBox(height: 2),
                       Row(
                         children: [
                           Icon(
@@ -629,7 +630,7 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen>
                           ),
                         ],
                       ),
-                      const SizedBox(height: 4),
+                      const SizedBox(height: 2),
                       Text(
                         formattedDate,
                         style: TextStyle(
@@ -637,7 +638,7 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen>
                           color: AppTheme.mediumGrey,
                         ),
                       ),
-                      const SizedBox(height: 4),
+                      const SizedBox(height: 2),
                       Row(
                         children: [
                           Icon(
@@ -684,7 +685,7 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen>
                           ),
                         ),
                       ),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 4),
                       Text(
                         'R${totalPrice.toStringAsFixed(2)}',
                         style: const TextStyle(

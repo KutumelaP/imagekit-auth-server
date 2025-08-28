@@ -1,0 +1,10 @@
+[33m4c338ed[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m Fix iOS notch safe area and PayFast CORS issues
+[33m477086e[m UX: align chatbot button top-right with Browse Categories (chatDx=0.75, chatDy=0.30) on Android/Web; unify wrapper defaults; fix lints
+[33m3707efa[m feat: payouts automation (PayFast webhook + send-to-PayFast), Nedbank CSV export, Accounting CSV export, admin UI fixes
+[33md30b469[m Fix critical range errors in admin dashboard: fix substring operations, add receivables collection rules, reorganize side menu alphabetically
+[33made58e9[m Fix admin dashboard errors: add receivables collection rules, fix range errors in substring operations, reorganize side menu alphabetically
+[33m843dded[m Improve chatbot positioning: balanced spacing on mobile, leaves room for another icon on right side
+[33m9e90487[m Checkout: move store pickup address to Order Summary, hide during selection; Stock: validate against stock/quantity and decrement tracked items transactionally; Chatbot: show only on home screen; Remove add-to-cart toasts
+[33mef13e94[m Fix floating chatbot visibility - now shows only on home screen + remove add-to-cart success toasts
+[33m42c69c7[m Fix chatbot to only show on home screen, not globally
+[33m6179879[m Fix duplicate chatbot - remove fixed chat button, keep only floating chatbot globally

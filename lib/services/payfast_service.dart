@@ -15,7 +15,8 @@ class PayFastService {
   static bool _isProduction = true; // production mode as requested
 
   // Callback URLs (updated to your deployed Cloud Functions URLs)
-  static String returnUrl = 'https://us-central1-marketplace-8d6bd.cloudfunctions.net/payfastReturn';
+  // Note: We'll append order ID to return URL dynamically
+  static String get returnUrl => 'https://us-central1-marketplace-8d6bd.cloudfunctions.net/payfastReturn';
   static String cancelUrl = 'https://us-central1-marketplace-8d6bd.cloudfunctions.net/payfastCancel';
   static String notifyUrl = 'https://us-central1-marketplace-8d6bd.cloudfunctions.net/payfastNotify';
 
@@ -64,10 +65,15 @@ class PayFastService {
       // Create payment data
       final merchantId = _isProduction ? _merchantId : '10000100';
       final merchantKey = _isProduction ? _merchantKey : '46f0cd694581a';
+      // Build return URL with order ID for proper tracking
+      final returnUrlWithOrderId = customString1 != null 
+          ? '$returnUrl?order_id=${Uri.encodeComponent(customString1)}'
+          : returnUrl;
+      
       Map<String, String> paymentData = {
         'merchant_id': merchantId,
         'merchant_key': merchantKey,
-        'return_url': returnUrl,
+        'return_url': returnUrlWithOrderId,
         'cancel_url': cancelUrl,
         'notify_url': notifyUrl,
         'amount': _formatAmount(amount),

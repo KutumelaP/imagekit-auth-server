@@ -25,7 +25,8 @@ class _CartScreenState extends State<CartScreen> {
   void initState() {
     super.initState();
     // Pre-warm checkout cache for faster navigation
-    OptimizedCheckoutService.prewarmCache();
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) OptimizedCheckoutService.prewarmCache(user.uid);
   }
 
   @override

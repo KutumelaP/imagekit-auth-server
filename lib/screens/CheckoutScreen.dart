@@ -29,6 +29,7 @@ import '../widgets/home_navigation_button.dart';
 import '../services/courier_quote_service.dart';
 import '../utils/time_utils.dart';
 import '../config/paxi_config.dart';
+// import '../widgets/enhanced_pickup_button.dart'; // Temporarily disabled for deployment
 import 'package:cloud_functions/cloud_functions.dart';
 
 import '../providers/cart_provider.dart';
@@ -353,7 +354,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
       // Kick off preloading with a hard timeout so it never blocks
       OptimizedCheckoutService
-          .preloadCheckoutData()
+          .preloadCheckoutData(FirebaseAuth.instance.currentUser!.uid)
           .timeout(const Duration(seconds: 2), onTimeout: () => CheckoutData.empty())
           .then((checkoutData) {
         if (!mounted) return;
@@ -6299,12 +6300,13 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           ),
           SizedBox(height: ResponsiveUtils.getVerticalPadding(context) * 0.5),
           
-          // Delivery Toggle
+          // 🏆 Enhanced Delivery/Pickup Toggle 🏆
           Row(
             children: [
               Expanded(
                 child: GestureDetector(
                   onTap: _deliveryAllowed ? () {
+                    HapticFeedback.lightImpact();
                     if (mounted) setState(() {
                       _isDelivery = true;
                       _calculateDeliveryFeeAndCheckStore();
@@ -6313,7 +6315,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                   child: Container(
                     padding: EdgeInsets.all(ResponsiveUtils.getHorizontalPadding(context)),
                     decoration: BoxDecoration(
-                                                gradient: _isDelivery 
+                      gradient: _isDelivery 
                               ? LinearGradient(colors: AppTheme.primaryGradient)
                               : LinearGradient(
                                   colors: [AppTheme.angel, AppTheme.angel],
@@ -6371,23 +6373,19 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               Expanded(
                 child: GestureDetector(
                   onTap: () {
-                    print('🔴 DEBUG: PICKUP BUTTON 1 CLICKED!');
-                    print('🔴 DEBUG: Before setState - _isDelivery: $_isDelivery');
+                    print('🏪 Enhanced pickup button tapped');
+                    HapticFeedback.lightImpact();
                     if (mounted) setState(() {
                       _isDelivery = false;
-                      _isLoadingPickupPoints = true; // show inline spinner immediately
-                      print('🔴 DEBUG: Inside setState - _isDelivery: $_isDelivery');
+                      _isLoadingPickupPoints = true;
                       _calculateDeliveryFeeAndCheckStore();
                     });
-                    print('🔴 DEBUG: After setState - _isDelivery: $_isDelivery');
-                    print('🔴 DEBUG: About to load pickup points...');
-                    // Load pickup points when switching to pickup mode
                     _loadPickupPointsForCurrentLocation();
                   },
                   child: Container(
                     padding: EdgeInsets.all(ResponsiveUtils.getHorizontalPadding(context)),
                     decoration: BoxDecoration(
-                                                gradient: !_isDelivery 
+                      gradient: !_isDelivery 
                               ? LinearGradient(colors: AppTheme.secondaryGradient)
                               : LinearGradient(
                                   colors: [AppTheme.angel, AppTheme.angel],
@@ -9491,42 +9489,103 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           ),
           SizedBox(height: ResponsiveUtils.getVerticalPadding(context)),
           
-          // Always show payment methods dropdown
-          DropdownButtonFormField<String>(
-            value: _selectedPaymentMethod,
-            items: availablePaymentMethods
-                .map((m) => DropdownMenuItem(
-                    value: m,
-                    child: SafeUI.safeText(
-                      m,
-                      style: TextStyle(
-                        fontSize: ResponsiveUtils.getTitleSize(context) - 2,
-                        color: AppTheme.deepTeal,
+          // 💳 Enhanced Payment Methods with Visual Cards
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SafeUI.safeText(
+                'Choose your payment method:',
+                style: TextStyle(
+                  fontSize: ResponsiveUtils.getTitleSize(context) - 1,
+                  fontWeight: FontWeight.w600,
+                  color: AppTheme.deepTeal,
+                ),
+                maxLines: 1,
+              ),
+              SizedBox(height: ResponsiveUtils.getVerticalPadding(context) * 0.75),
+              ...availablePaymentMethods.map((method) => 
+                GestureDetector(
+                  onTap: () {
+                    HapticFeedback.selectionClick();
+                    setState(() => _selectedPaymentMethod = method);
+                  },
+                  child: Container(
+                    margin: EdgeInsets.only(bottom: 8),
+                    padding: EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      gradient: _selectedPaymentMethod == method
+                        ? LinearGradient(colors: [
+                            AppTheme.deepTeal.withOpacity(0.1),
+                            AppTheme.angel,
+                          ])
+                        : LinearGradient(colors: [AppTheme.angel, AppTheme.angel]),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: _selectedPaymentMethod == method 
+                          ? AppTheme.deepTeal
+                          : AppTheme.breeze.withOpacity(0.3),
+                        width: _selectedPaymentMethod == method ? 2 : 1,
                       ),
-                      maxLines: 1,
-                    )))
-                .toList(),
-            onChanged: _isLoading ? null : (val) {
-              if (mounted) setState(() => _selectedPaymentMethod = val);
-            },
-            decoration: InputDecoration(
-              labelText: 'Select Payment Method',
-              labelStyle: TextStyle(color: AppTheme.breeze),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: AppTheme.breeze.withOpacity(0.3)),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: AppTheme.breeze.withOpacity(0.3)),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: AppTheme.deepTeal, width: 2),
-              ),
-              prefixIcon: Icon(Icons.credit_card, color: AppTheme.breeze),
-            ),
-            validator: (value) => value == null ? 'Please select a payment method' : null,
+                      boxShadow: _selectedPaymentMethod == method ? [
+                        BoxShadow(
+                          color: AppTheme.deepTeal.withOpacity(0.2),
+                          blurRadius: 8,
+                          offset: Offset(0, 2),
+                        ),
+                      ] : null,
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          padding: EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: _getPaymentMethodColor(method).withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Icon(
+                            _getPaymentMethodIcon(method),
+                            color: _getPaymentMethodColor(method),
+                            size: 24,
+                          ),
+                        ),
+                        SizedBox(width: 16),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              SafeUI.safeText(
+                                method,
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppTheme.deepTeal,
+                                ),
+                                maxLines: 1,
+                              ),
+                              SizedBox(height: 2),
+                              SafeUI.safeText(
+                                _getPaymentMethodDescription(method),
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: AppTheme.breeze,
+                                ),
+                                maxLines: 2,
+                              ),
+                            ],
+                          ),
+                        ),
+                        if (_selectedPaymentMethod == method)
+                          Icon(
+                            Icons.check_circle,
+                            color: AppTheme.deepTeal,
+                            size: 24,
+                          ),
+                      ],
+                    ),
+                  ),
+                )
+              ).toList(),
+            ],
           ),
           
           // Payment method visual cues and security notes
@@ -10156,306 +10215,36 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
 
 
-}
-
-// Enhanced AddressSearchScreen with suggestions
-class AddressSearchScreen extends StatefulWidget {
-  @override
-  _AddressSearchScreenState createState() => _AddressSearchScreenState();
-}
-class _AddressSearchScreenState extends State<AddressSearchScreen> {
-  final TextEditingController _searchController = TextEditingController();
-  List<Placemark> _suggestions = [];
-  bool _isLoading = false;
-  Timer? _debounceTimer;
-
-  @override
-  void initState() {
-    super.initState();
-    _searchController.addListener(_onSearchChanged);
+  /// Get payment method icon
+  IconData _getPaymentMethodIcon(String method) {
+    final methodLower = method.toLowerCase();
+    if (methodLower.contains('cash')) return Icons.payments;
+    if (methodLower.contains('eft') || methodLower.contains('bank')) return Icons.account_balance;
+    if (methodLower.contains('card') || methodLower.contains('payfast')) return Icons.credit_card;
+    return Icons.payment;
   }
 
-  @override
-  void dispose() {
-    _searchController.dispose();
-    _debounceTimer?.cancel();
-    super.dispose();
+  /// Get payment method color
+  Color _getPaymentMethodColor(String method) {
+    final methodLower = method.toLowerCase();
+    if (methodLower.contains('cash')) return Colors.green;
+    if (methodLower.contains('eft') || methodLower.contains('bank')) return Colors.blue;
+    if (methodLower.contains('card') || methodLower.contains('payfast')) return Colors.purple;
+    return AppTheme.deepTeal;
   }
 
-  void _onSearchChanged() {
-    // Debounce the search to avoid too many API calls
-    _debounceTimer?.cancel();
-    _debounceTimer = Timer(const Duration(milliseconds: 500), () {
-      _searchAddresses();
-    });
-  }
-
-  Future<void> _searchAddresses() async {
-    final query = _searchController.text.trim();
-    if (query.length < 3) {
-      if (mounted) setState(() {
-        _suggestions = [];
-        _isLoading = false;
-      });
-      return;
+  /// Get payment method description
+  String _getPaymentMethodDescription(String method) {
+    final methodLower = method.toLowerCase();
+    if (methodLower.contains('cash')) {
+      return _codDisabledReason ?? 'Pay when you receive your order';
     }
-    
-    if (mounted) setState(() {
-      _isLoading = true;
-    });
-
-    try {
-      // Search for addresses using geocoding
-      final locations = await locationFromAddress(query);
-      
-      if (locations.isNotEmpty) {
-        // Get detailed address information for each location
-        List<Placemark> placemarks = [];
-        for (final location in locations.take(5)) { // Limit to 5 results
-          try {
-            final placemarkList = await placemarkFromCoordinates(
-              location.latitude,
-              location.longitude,
-            );
-            if (placemarkList.isNotEmpty) {
-              placemarks.addAll(placemarkList);
-            }
-  } catch (e) {
-            print('Error getting placemark for location: $e');
-          }
-        }
-        
-        if (mounted) setState(() {
-          _suggestions = placemarks;
-          _isLoading = false;
-        });
-      } else {
-        if (mounted) setState(() {
-          _suggestions = [];
-          _isLoading = false;
-        });
-      }
-  } catch (e) {
-      print('Error searching addresses: $e');
-      if (mounted) setState(() {
-        _suggestions = [];
-        _isLoading = false;
-      });
+    if (methodLower.contains('eft') || methodLower.contains('bank')) {
+      return 'Direct bank transfer - no card fees';
     }
-  }
-
-  String _formatAddress(Placemark placemark) {
-    List<String> parts = [];
-    
-    if (placemark.street != null && placemark.street!.isNotEmpty) {
-      parts.add(placemark.street!);
+    if (methodLower.contains('card') || methodLower.contains('payfast')) {
+      return 'Secure card payment via PayFast';
     }
-    if (placemark.subLocality != null && placemark.subLocality!.isNotEmpty) {
-      parts.add(placemark.subLocality!);
-    }
-    if (placemark.locality != null && placemark.locality!.isNotEmpty) {
-      parts.add(placemark.locality!);
-    }
-    if (placemark.administrativeArea != null && placemark.administrativeArea!.isNotEmpty) {
-      parts.add(placemark.administrativeArea!);
-    }
-    if (placemark.postalCode != null && placemark.postalCode!.isNotEmpty) {
-      parts.add(placemark.postalCode!);
-    }
-    
-    return parts.join(', ');
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Search Address'),
-        backgroundColor: AppTheme.deepTeal,
-        foregroundColor: AppTheme.angel,
-        elevation: 0,
-      ),
-      body: Column(
-        children: [
-          // Search input
-          Container(
-            padding: const EdgeInsets.all(16.0),
-            decoration: BoxDecoration(
-              color: AppTheme.deepTeal,
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.1),
-                  blurRadius: 4,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
-            child: TextField(
-              controller: _searchController,
-              decoration: InputDecoration(
-                labelText: 'Enter your address',
-                labelStyle: TextStyle(color: AppTheme.angel.withOpacity(0.8)),
-                hintText: 'e.g., 123 Main Street, Johannesburg',
-                hintStyle: TextStyle(color: AppTheme.angel.withOpacity(0.6)),
-                filled: true,
-                fillColor: AppTheme.angel,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
-                ),
-                prefixIcon: Icon(Icons.search, color: AppTheme.deepTeal),
-                suffixIcon: _isLoading
-                    ? Padding(
-                        padding: const EdgeInsets.all(12.0),
-                        child: SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            valueColor: AlwaysStoppedAnimation<Color>(AppTheme.deepTeal),
-                          ),
-                        ),
-                      )
-                    : null,
-              ),
-              style: TextStyle(color: AppTheme.deepTeal),
-            ),
-          ),
-          
-          // Suggestions list
-          Expanded(
-            child: _suggestions.isEmpty && !_isLoading
-                ? _buildEmptyState()
-                : ListView.builder(
-                    padding: const EdgeInsets.all(16.0),
-                    itemCount: _suggestions.length,
-                    itemBuilder: (context, index) {
-                      final placemark = _suggestions[index];
-                      final address = _formatAddress(placemark);
-                      
-                      return Card(
-                        margin: const EdgeInsets.only(bottom: 8.0),
-                        elevation: 2,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: ListTile(
-                          leading: Icon(
-                            Icons.location_on,
-                            color: AppTheme.deepTeal,
-                          ),
-                          title: Text(
-                            address,
-                            style: TextStyle(
-                              fontWeight: FontWeight.w600,
-                              color: AppTheme.deepTeal,
-                            ),
-                          ),
-                          subtitle: placemark.country != null
-                              ? Text(
-                                  placemark.country!,
-                                  style: TextStyle(
-                                    color: AppTheme.breeze,
-                                    fontSize: 12,
-                                  ),
-                                )
-                              : null,
-                          onTap: () {
-                            Navigator.pop(context, address);
-                          },
-                        ),
-                      );
-                    },
-                  ),
-          ),
-          
-          // Manual address entry option
-          if (_suggestions.isNotEmpty)
-            Container(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                children: [
-                  const Divider(),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Or use your own address:',
-                    style: TextStyle(
-                      color: AppTheme.breeze,
-                      fontSize: 14,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      onPressed: () {
-                        final address = _searchController.text.trim();
-                        if (address.isNotEmpty) {
-                          Navigator.pop(context, address);
-                        } else {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Please enter an address.'),
-                              backgroundColor: Colors.red,
-                            ),
-                          );
-                        }
-                      },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppTheme.deepTeal,
-                        foregroundColor: AppTheme.angel,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                      ),
-                      child: const Text(
-                        'Use Entered Address',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w600,
-                          fontSize: 16,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildEmptyState() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            Icons.location_on_outlined,
-            size: 64,
-            color: AppTheme.breeze.withOpacity(0.5),
-          ),
-          const SizedBox(height: 16),
-          Text(
-            'Search for your address',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w600,
-              color: AppTheme.deepTeal,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Start typing to see address suggestions',
-            style: TextStyle(
-              fontSize: 14,
-              color: AppTheme.breeze,
-            ),
-            textAlign: TextAlign.center,
-          ),
-        ],
-      ),
-    );
+    return 'Secure payment processing';
   }
 }

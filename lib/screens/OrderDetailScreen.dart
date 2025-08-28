@@ -12,6 +12,22 @@ class OrderDetailScreen extends StatelessWidget {
 
   const OrderDetailScreen({super.key, required this.orderId});
 
+  /// Helper function to safely parse timestamps from different formats
+  DateTime? _parseTimestamp(dynamic timestamp) {
+    if (timestamp == null) return null;
+    
+    if (timestamp is Timestamp) {
+      return timestamp.toDate();
+    } else if (timestamp is String) {
+      try {
+        return DateTime.parse(timestamp);
+      } catch (e) {
+        return null;
+      }
+    }
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
     final orderRef = FirebaseFirestore.instance.collection('orders').doc(orderId);
@@ -146,8 +162,8 @@ class OrderDetailScreen extends StatelessWidget {
                             style: AppTheme.bodyMedium,
                           );
                           updates.sort((a, b) {
-                            final ta = (a['timestamp'] as Timestamp?)?.toDate() ?? DateTime.now();
-                            final tb = (b['timestamp'] as Timestamp?)?.toDate() ?? DateTime.now();
+                            final ta = _parseTimestamp(a['timestamp']) ?? DateTime.now();
+                            final tb = _parseTimestamp(b['timestamp']) ?? DateTime.now();
                             return ta.compareTo(tb);
                           });
                           return ListView.builder(
@@ -156,7 +172,7 @@ class OrderDetailScreen extends StatelessWidget {
                             itemCount: updates.length,
                             itemBuilder: (context, i) {
                               final u = updates[i];
-                              final ts = (u['timestamp'] as Timestamp).toDate();
+                              final ts = _parseTimestamp(u['timestamp']) ?? DateTime.now();
                               return ListTile(
                                 leading: Icon(
                                   i == 0 ? Icons.circle : Icons.check_circle_outline,

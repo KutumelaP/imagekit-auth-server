@@ -52,7 +52,7 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
     final orderRef = FirebaseFirestore.instance.collection('orders').doc(widget.orderId);
     final snapshot = await orderRef.get();
     if (snapshot.exists) {
-      final data = snapshot.data()! as Map<String, dynamic>;
+      final data = snapshot.data()!;
       setState(() {
         _orderData = data;
         
@@ -204,7 +204,7 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
             return CustomScrollView(
               slivers: [
                 // Beautiful App Bar
-                _buildSliverAppBar(currentStatus),
+                _buildSliverAppBar(currentStatus, data),
                 
                 // Order Summary Card
                 SliverToBoxAdapter(
@@ -325,8 +325,11 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
     }
   }
 
-  Widget _buildSliverAppBar(String status) {
+  Widget _buildSliverAppBar(String status, Map<String, dynamic> orderData) {
     final color = _statusColor(status);
+    // Get proper order number from order data, fallback to orderId if not available
+    final orderNumber = orderData['orderNumber'] ?? widget.orderId;
+    print('🔍 DEBUG: Order number for app bar: $orderNumber');
     
     return SliverSafeArea(
       top: true,
@@ -407,7 +410,7 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
                   ),
                   const SizedBox(height: 8),
                   Text(
-                      'Order ${OrderUtils.formatShortOrderNumber(widget.orderId)}',
+                      'Order ${OrderUtils.formatShortOrderNumber(orderNumber)}',
                       style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                         color: Colors.white,
                         fontWeight: FontWeight.bold,

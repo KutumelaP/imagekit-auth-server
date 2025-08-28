@@ -22,6 +22,13 @@
     // Prevent memory pressure refreshes
     flutterConfig.memoryOptimization = true;
     
+    // PWA-specific optimizations
+    if (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) {
+      console.log('📱 PWA mode detected - applying enhanced optimizations');
+      flutterConfig.poweredByFlutter = false; // Reduce memory footprint
+      flutterConfig.debugShowSemanticsDebugger = false;
+    }
+    
     // Use default CanvasKit variant for Safari (no chromium variant)
     
     // Keep app alive

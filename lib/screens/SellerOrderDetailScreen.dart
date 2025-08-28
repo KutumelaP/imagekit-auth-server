@@ -19,6 +19,25 @@ class SellerOrderDetailScreen extends StatefulWidget {
 
 class _SellerOrderDetailScreenState extends State<SellerOrderDetailScreen>
     with TickerProviderStateMixin {
+  
+  /// Helper function to safely parse timestamps from different formats
+  DateTime? _parseTimestamp(dynamic timestamp) {
+    if (timestamp == null) return null;
+    
+    if (timestamp is Timestamp) {
+      return timestamp.toDate();
+    } else if (timestamp is String) {
+      try {
+        return DateTime.parse(timestamp);
+      } catch (e) {
+        return null;
+      }
+    } else if (timestamp is DateTime) {
+      return timestamp;
+    }
+    return null;
+  }
+  
   final _driverNameController = TextEditingController();
   final _driverPhoneController = TextEditingController();
   final _statusNoteController = TextEditingController();
@@ -977,8 +996,9 @@ class _SellerOrderDetailScreenState extends State<SellerOrderDetailScreen>
               final index = entry.key;
               final update = entry.value;
               final timestamp = update['timestamp'];
-              final formattedTime = timestamp != null 
-                  ? DateFormat('MMM dd, yyyy • HH:mm').format(timestamp is Timestamp ? timestamp.toDate() : timestamp)
+              final parsedTimestamp = _parseTimestamp(timestamp);
+              final formattedTime = parsedTimestamp != null 
+                  ? DateFormat('MMM dd, yyyy • HH:mm').format(parsedTimestamp)
                   : 'Unknown time';
               
               return Container(

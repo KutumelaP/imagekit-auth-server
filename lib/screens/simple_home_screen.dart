@@ -48,7 +48,6 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
   late Animation<double> _fadeAnimation;
 
   bool _isDriver = false;
-  bool _isChatbotVisible = false; // Control chatbot visibility
 
   @override
   void initState() {
@@ -102,7 +101,14 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
         });
       }
     } catch (e) {
-      print('Error checking driver status: $e');
+      // Permission denied is expected for non-drivers - not an actual error
+      if (e.toString().contains('permission-denied')) {
+        setState(() {
+          _isDriver = false; // User is not a driver
+        });
+      } else {
+        print('Error checking driver status: $e');
+      }
     }
   }
 
@@ -401,41 +407,20 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
           ) : null,
       body: Stack(
         children: [
-          SafeArea(
-            bottom: true,
-            child: FadeTransition(
-              opacity: _fadeAnimation,
-              child: _buildBody(),
-            ),
+          FadeTransition(
+            opacity: _fadeAnimation,
+            child: _buildBody(),
           ),
-          // Small toggle FAB for chatbot (bottom left) - only show when loaded
+          // Chatbot widget with its own draggable FAB - only show when loaded
           if (!_isLoading)
-            Positioned(
-              left: 16.0, // Padding from left wall
-              bottom: 100.0, // Above the main FAB
-              child: FloatingActionButton.small(
-                onPressed: () {
-                  setState(() {
-                    _isChatbotVisible = !_isChatbotVisible;
-                  });
-                },
-                backgroundColor: AppTheme.cloud,
-                foregroundColor: AppTheme.deepTeal,
-                child: const Icon(Icons.chat_bubble_outline),
-                tooltip: 'Chat with us',
-              ),
-            ),
-          // Chatbot widget with its own draggable FAB - only show when loaded and visible
-          if (!_isLoading && _isChatbotVisible)
             ChatbotWidget(
-              initialDx: 0.1, // Start with 10% padding from left wall
-              initialDy: 0.8, // Start near bottom with 20% padding from bottom
+              initialDx: 0.05, // Bottom left position - 5% from left edge
+              initialDy: 0.91, // Aligned with upload FAB on same horizontal line (accounting for padding)
               ignoreSavedPosition: false, // Allow it to remember position
             ),
         ],
       ),
-      // Ensure proper bottom spacing for FAB and SnackBars
-      bottomNavigationBar: const SizedBox(height: 0),
+
         );
       },
     );
@@ -634,9 +619,9 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
               _buildCategoriesHeaderSliver(),
               _buildCategoriesGridSliver(),
               _buildMyPurchasesSection(),
-              // Bottom padding to prevent FAB cutoff
+              // Minimal bottom padding
               SliverToBoxAdapter(
-                child: SizedBox(height: 120), // Fixed height instead of percentage
+                child: SizedBox(height: 100), // Increased bottom spacing for FAB and toast clearance
               ),
             ],
           ),
@@ -1014,23 +999,26 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
                     ],
                   ),
                 ),
-                PopupMenuItem(
-                  value: 'seller_payouts',
-                  height: 40,
-                  child: Row(
-                    children: [
-                      Icon(Icons.account_balance_wallet_outlined, size: 16, color: AppTheme.deepTeal),
-                      const SizedBox(width: 10),
-                      Text(
-                        'Earnings',
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          fontWeight: FontWeight.w500,
-                          fontSize: 14,
+                
+                // Earnings (for sellers only)
+                if (userProvider.isSeller)
+                  PopupMenuItem(
+                    value: 'seller_payouts',
+                    height: 40,
+                    child: Row(
+                      children: [
+                        Icon(Icons.account_balance_wallet_outlined, size: 16, color: AppTheme.deepTeal),
+                        const SizedBox(width: 10),
+                        Text(
+                          'Earnings',
+                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            fontWeight: FontWeight.w500,
+                            fontSize: 14,
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
                 
                 // Order History (for buyers)
                 if (!userProvider.isSeller)

@@ -36,6 +36,7 @@ import 'kyc_review_list.dart';
 import 'kyc_overview_widget.dart';
 import 'customer_support_section.dart';
 import 'upload_management_section.dart';
+import 'cleanup_tools_section.dart';
 import '../services/dashboard_cache_service.dart';
 
 class AdminDashboardContent extends StatefulWidget {
@@ -330,7 +331,7 @@ class _AdminDashboardContentState extends State<AdminDashboardContent> {
       case 0: return SingleChildScrollView(child: AdvancedAnalyticsDashboard(firestore: widget.firestore)); // Advanced Analytics
       case 1: return AuditLogsSection(); // Audit Logs
       case 2: return CategoriesSection(firestore: FirebaseFirestore.instance); // Categories
-      case 3: return ImageManagementSection(); // Cleanup Tools
+      case 3: return const CleanupToolsSection(); // Cleanup Tools
       case 4: return const CustomerSupportSection(); // Customer Support
       case 5: return DataExportSection(); // Data Export
       case 6: return DeveloperToolsSection(); // Developer Tools
