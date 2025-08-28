@@ -1,7 +1,9 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
-import 'dart:html' as html;
 import 'package:shared_preferences/shared_preferences.dart';
+
+// Conditional import for web-only features
+import 'pwa_optimization_service_web.dart' if (dart.library.io) 'pwa_optimization_service_stub.dart';
 
 /// Service to optimize PWA performance and reduce iOS Safari refreshes
 class PWAOptimizationService {
@@ -52,9 +54,11 @@ class PWAOptimizationService {
       await prefs.setString(_sessionIdKey, _currentSessionId!);
       await prefs.setInt(_lastActiveKey, DateTime.now().millisecondsSinceEpoch);
       
-      // Also save to sessionStorage for immediate access
-      html.window.sessionStorage[_sessionIdKey] = _currentSessionId!;
-      html.window.sessionStorage[_lastActiveKey] = DateTime.now().millisecondsSinceEpoch.toString();
+      // Also save to sessionStorage for immediate access (web only)
+      if (kIsWeb) {
+        PWAOptimizationServiceWeb.saveToSessionStorage(_sessionIdKey, _currentSessionId!);
+        PWAOptimizationServiceWeb.saveToSessionStorage(_lastActiveKey, DateTime.now().millisecondsSinceEpoch.toString());
+      }
     } catch (e) {
       if (kDebugMode) {
         print('❌ Error saving PWA session: $e');
@@ -95,24 +99,11 @@ class PWAOptimizationService {
     if (!kIsWeb) return;
     
     try {
-      // Listen for page visibility changes
-      html.document.onVisibilityChange.listen((event) {
-        if (html.document.hidden == true) {
-          _onPageHidden();
-        } else {
-          _onPageVisible();
-        }
-      });
-      
-      // Listen for page hide/show events
-      html.window.onPageHide.listen((event) {
-        _onPageHidden();
-      });
-      
-      html.window.onPageShow.listen((event) {
-        _onPageVisible();
-      });
-      
+      // Use web-specific implementation
+      PWAOptimizationServiceWeb.setupVisibilityHandlers(
+        onPageHidden: _onPageHidden,
+        onPageVisible: _onPageVisible,
+      );
     } catch (e) {
       if (kDebugMode) {
         print('❌ Error setting up visibility handlers: $e');
@@ -170,15 +161,18 @@ class PWAOptimizationService {
   
   /// Keep-alive tick for PWA
   static void _pwKeepAliveTick() {
-    if (!kIsWeb || html.document.hidden == true) {
-      // Don't run keep-alive when page is hidden
-      Future.delayed(Duration(seconds: 30), () {
-        _pwKeepAliveTick();
-      });
-      return;
-    }
+    if (!kIsWeb) return;
     
     try {
+      // Check if page is hidden (web only)
+      if (PWAOptimizationServiceWeb.isPageHidden()) {
+        // Don't run keep-alive when page is hidden
+        Future.delayed(Duration(seconds: 30), () {
+          _pwKeepAliveTick();
+        });
+        return;
+      }
+      
       // Minimal activity to keep PWA alive
       if (kDebugMode) {
         print('📱 PWA keep-alive tick');
@@ -209,13 +203,14 @@ class PWAOptimizationService {
     try {
       await _saveCurrentSession();
       
-      // Save critical app state to localStorage for recovery
-      final timestamp = DateTime.now().millisecondsSinceEpoch;
-      html.window.localStorage['pwa_state_backup'] = timestamp.toString();
-      html.window.localStorage['pwa_last_save'] = timestamp.toString();
+      // Save critical app state to localStorage for recovery (web only)
+      if (kIsWeb) {
+        PWAOptimizationServiceWeb.saveToLocalStorage('pwa_state_backup', DateTime.now().millisecondsSinceEpoch.toString());
+        PWAOptimizationServiceWeb.saveToLocalStorage('pwa_last_save', DateTime.now().millisecondsSinceEpoch.toString());
+      }
       
       if (kDebugMode) {
-        print('📱 PWA state saved successfully at $timestamp');
+        print('📱 PWA state saved successfully');
       }
     } catch (e) {
       // Ignore errors - this is best-effort
@@ -233,9 +228,12 @@ class PWAOptimizationService {
       // Check if running as PWA
       if (isPWA) return true;
       
-      // Check if user has completed installation flow
-      final installCompleted = html.window.localStorage['pwa_install_completed'];
-      return installCompleted != null;
+      // Check if user has completed installation flow (web only)
+      if (kIsWeb) {
+        final installCompleted = PWAOptimizationServiceWeb.getFromLocalStorage('pwa_install_completed');
+        return installCompleted != null;
+      }
+      return false;
     } catch (e) {
       return false;
     }
@@ -267,7 +265,7 @@ class PWAOptimizationService {
     if (!kIsWeb) return false;
     
     try {
-      return html.window.matchMedia('(display-mode: standalone)').matches;
+      return PWAOptimizationServiceWeb.isPWAMode();
     } catch (e) {
       return false;
     }

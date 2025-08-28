@@ -78,7 +78,18 @@ void _setupPWANavigationListener() {
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
-  // ⚡ FAST LOAD: Run app immediately, initialize services in background
+  // 🚨 CRITICAL: Initialize Firebase FIRST before running the app
+  try {
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+    if (kDebugMode) print('✅ Firebase initialized successfully');
+  } catch (e) {
+    if (kDebugMode) print('❌ Firebase initialization failed: $e');
+    // Continue anyway - app will show error state
+  }
+  
+  // ⚡ FAST LOAD: Run app after Firebase is ready
   runApp(MyApp());
   
   // Initialize performance optimizations in background
@@ -92,13 +103,8 @@ void main() async {
     // Skip PWA optimization service to avoid delays
   }
   
-  // Initialize Firebase in background
-  Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  ).then((_) {
-    // Initialize services after Firebase is ready
-    _initializeServicesInBackground();
-  });
+  // Initialize other services in background (Firebase is already ready)
+  _initializeServicesInBackground();
 }
 
 // Initialize services in background to avoid blocking UI
@@ -194,6 +200,13 @@ class MyApp extends StatelessWidget {
           if (settings.name != null && settings.name!.startsWith('/store/')) {
             final storePath = settings.name!.substring('/store/'.length);
             
+            // 🔍 DEBUG: Log route handling
+            if (kDebugMode) {
+              print('🔗 ROUTE DEBUG: Handling store route: ${settings.name}');
+              print('🔗 ROUTE DEBUG: Store path: $storePath');
+              print('🔗 ROUTE DEBUG: Full settings: $settings');
+            }
+            
             // Handle /store/:storeId/products route
             if (storePath.contains('/products')) {
               final storeId = storePath.split('/')[0];
@@ -206,6 +219,12 @@ class MyApp extends StatelessWidget {
               // Handle /store/:storeId route
               final storeId = storePath;
               if (kDebugMode) print('🏪 PWA Route: Opening store profile for $storeId');
+              
+              // 🔍 DEBUG: Log the route loader creation
+              if (kDebugMode) {
+                print('🔗 ROUTE DEBUG: Creating StoreProfileRouteLoader with storeId: $storeId');
+              }
+              
               return MaterialPageRoute(
                 builder: (_) => StoreProfileRouteLoader(storeId: storeId),
                 settings: RouteSettings(name: settings.name),

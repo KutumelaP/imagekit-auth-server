@@ -94,12 +94,11 @@
       var pwaGateDismissed = localStorage.getItem('pwa_gate_dismissed') === '1';
       var isDirectStoreUrl = window.location.pathname.includes('/store/') || window.location.pathname.includes('/seller/');
       var skipParam = new URLSearchParams(window.location.search).get('skip_gate') === '1';
-      var forceShow = urlParams.get('show_gate') === '1'; // Debug parameter
+      var forceShow = new URLSearchParams(window.location.search).get('show_gate') === '1'; // Debug parameter
       
       // 🔍 DEBUG: Log all conditions
       console.log('🔍 PWA Gate Debug Info:');
       console.log('  - User Agent:', userAgent);
-      console.log('  - Platform:', platform);
       console.log('  - isIOS:', isIOS);
       console.log('  - isStandalone:', isStandalone);
       console.log('  - pwaGateDismissed:', pwaGateDismissed);
@@ -107,6 +106,13 @@
       console.log('  - skipParam:', skipParam);
       console.log('  - forceShow:', forceShow);
       console.log('  - Current URL:', window.location.href);
+      
+      // 🚫 CRITICAL FIX: Never block store navigation
+      if (isDirectStoreUrl) {
+        console.log('🔗 Store URL detected - PWA gate will NOT block navigation');
+        // Don't show PWA gate for store URLs to ensure navigation works
+        return;
+      }
       
       // Enhanced condition logic
       var shouldShowGate = false;

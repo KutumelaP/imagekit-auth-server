@@ -947,9 +947,12 @@ void _showLeaveReviewDialog(String storeId) {
 }
 
 void _navigateToStoreProfile(Map<String, dynamic> store) {
-  print('DEBUG: Navigating to store profile with data: $store');
-  print('DEBUG: Distance value: ${store['distance']}');
-  print('DEBUG: Store story data:');
+  print('🔗 NAVIGATION DEBUG: _navigateToStoreProfile called');
+  print('🔗 NAVIGATION DEBUG: Store data: $store');
+  print('🔗 NAVIGATION DEBUG: Store ID: ${store['storeId']}');
+  print('🔗 NAVIGATION DEBUG: Store name: ${store['storeName']}');
+  print('🔗 NAVIGATION DEBUG: Distance value: ${store['distance']}');
+  print('🔗 NAVIGATION DEBUG: Store story data:');
   print('  - story: ${store['story']}');
   print('  - storyPhotoUrls: ${store['storyPhotoUrls']}');
   print('  - storyVideoUrl: ${store['storyVideoUrl']}');
@@ -958,7 +961,22 @@ void _navigateToStoreProfile(Map<String, dynamic> store) {
   final storeId = store['storeId'] as String?;
   if (storeId != null && storeId.isNotEmpty) {
     print('🔗 PWA Navigation: Using named route /store/$storeId');
-    Navigator.pushNamed(context, '/store/$storeId');
+    print('🔗 NAVIGATION DEBUG: About to call Navigator.pushNamed');
+    
+    try {
+      Navigator.pushNamed(context, '/store/$storeId');
+      print('🔗 NAVIGATION DEBUG: Navigator.pushNamed completed successfully');
+    } catch (e) {
+      print('❌ NAVIGATION ERROR: Navigator.pushNamed failed: $e');
+      // Fallback to direct navigation
+      print('🔄 NAVIGATION FALLBACK: Using direct navigation');
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => SimpleStoreProfileScreen(store: store),
+        ),
+      );
+    }
   } else {
     print('⚠️ Fallback: Using direct navigation (no storeId)');
     Navigator.push(
