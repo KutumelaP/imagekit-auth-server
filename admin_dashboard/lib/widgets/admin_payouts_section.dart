@@ -27,6 +27,9 @@ class _AdminPayoutsSectionState extends State<AdminPayoutsSection> {
   // Cache for seller emails to avoid repeated API calls
   final Map<String, String> _sellerEmails = {};
 
+  // Key to force refresh of financial data
+  Key _financialDataKey = UniqueKey();
+
   static const int _pageSize = 50;
 
   @override
@@ -173,6 +176,10 @@ class _AdminPayoutsSectionState extends State<AdminPayoutsSection> {
 
   Future<void> _refresh() async {
     await _loadFirstPage();
+    // Force refresh of financial data
+    setState(() {
+      _financialDataKey = UniqueKey();
+    });
   }
 
   Iterable<QueryDocumentSnapshot<Map<String, dynamic>>> get _filteredRows {
@@ -703,7 +710,7 @@ class _AdminPayoutsSectionState extends State<AdminPayoutsSection> {
               IconButton(
                 icon: Icon(Icons.refresh, color: Colors.blue.shade600),
                 onPressed: () {
-                  // Refresh financial data - could add StreamBuilder later
+                  // Refresh financial data
                   setState(() {});
                 },
                 tooltip: 'Refresh Financial Data',
@@ -712,6 +719,7 @@ class _AdminPayoutsSectionState extends State<AdminPayoutsSection> {
           ),
           const SizedBox(height: 16),
           FutureBuilder<Map<String, double>>(
+            key: _financialDataKey,
             future: _getFinancialSummary(),
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
@@ -944,12 +952,16 @@ class _AdminPayoutsSectionState extends State<AdminPayoutsSection> {
         final amount = (data['amount'] as num?)?.toDouble() ?? 0.0;
         final status = data['status'] as String? ?? '';
         
-        totalGross += gross;
-        totalCommission += commission;
-        totalNet += amount;
-        
-        if (status == 'requested' || status == 'processing') {
-          pendingPayouts += amount;
+        // Only count successful payouts (not failed or cancelled)
+        // Failed payouts have money returned to seller's wallet, so they shouldn't count in totals
+        if (status != 'failed' && status != 'cancelled') {
+          totalGross += gross;
+          totalCommission += commission;
+          totalNet += amount;
+          
+          if (status == 'requested' || status == 'processing') {
+            pendingPayouts += amount;
+          }
         }
       }
       
@@ -976,7 +988,13 @@ class _AdminPayoutsSectionState extends State<AdminPayoutsSection> {
       };
     } catch (e) {
       debugPrint('Error getting financial summary: $e');
-      return {};
+      return {
+        'totalGross': 0.0,
+        'totalCommission': 0.0,
+        'totalNet': 0.0,
+        'pendingPayouts': 0.0,
+        'outstandingReceivables': 0.0,
+      };
     }
   }
 
