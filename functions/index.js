@@ -3287,6 +3287,8 @@ exports.adminUpdatePayoutStatus = functions.https.onCall(async (data, context) =
   const payoutId = String(data?.payoutId || '').trim();
   const status = String(data?.status || '').toLowerCase(); // requested|processing|paid|failed|cancelled
   const reference = String(data?.reference || '').trim() || null;
+  const failureReason = String(data?.failureReason || '').trim() || null;
+  const failureNotes = String(data?.failureNotes || '').trim() || null;
   if (!payoutId || !status) {
     throw new functions.https.HttpsError('invalid-argument', 'payoutId and status are required');
   }
@@ -3304,8 +3306,19 @@ exports.adminUpdatePayoutStatus = functions.https.onCall(async (data, context) =
 
   await db.runTransaction(async (tx) => {
     const now = admin.firestore.FieldValue.serverTimestamp();
-    tx.set(pref, { status, reference, updatedAt: now }, { merge: true });
-    tx.set(userPayoutRef, { status, reference, updatedAt: now }, { merge: true });
+    
+    // Prepare update data
+    const updateData = { status, reference, updatedAt: now };
+    
+    // Add failure details if status is failed
+    if (status === 'failed') {
+      updateData.failureReason = failureReason;
+      updateData.failureNotes = failureNotes;
+      updateData.failedAt = now;
+    }
+    
+    tx.set(pref, updateData, { merge: true });
+    tx.set(userPayoutRef, updateData, { merge: true });
 
     if (status === 'paid') {
       const orderIds = Array.isArray(pdata.orderIds) ? pdata.orderIds : [];
@@ -3333,12 +3346,21 @@ exports.adminUpdatePayoutStatus = functions.https.onCall(async (data, context) =
     }
 
     if (status === 'failed' || status === 'cancelled') {
+      // 🚨 AUTOMATIC PAYOUT REVERSAL: When marked as failed/cancelled, funds are automatically returned
+      // - Orders are unlocked for new payout requests
+      // - Platform receivables are unlocked and available for new payouts
+      // - No money is actually sent to seller (funds stay in admin account)
+      
       const orderIds = Array.isArray(pdata.orderIds) ? pdata.orderIds : [];
       const entryIds = Array.isArray(pdata.entryIds) ? pdata.entryIds : [];
+      
+      // Unlock orders for new payout requests
       orderIds.forEach(id => {
         const oref = db.collection('orders').doc(id);
         tx.set(oref, { payoutRequestId: admin.firestore.FieldValue.delete(), updatedAt: now }, { merge: true });
       });
+      
+      // Unlock platform receivables for new payouts
       if (sellerId && entryIds.length > 0) {
         entryIds.forEach((eid) => {
           const eref = db.collection('platform_receivables').doc(sellerId).collection('entries').doc(eid);
@@ -3349,6 +3371,43 @@ exports.adminUpdatePayoutStatus = functions.https.onCall(async (data, context) =
   });
 
   return { ok: true };
+});
+
+// === Admin: get seller emails for payouts ===
+exports.getSellerEmailsForPayouts = functions.https.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError('unauthenticated', 'Sign in required');
+  }
+  const isAdmin = context.auth.token?.admin === true || context.auth.token?.role === 'admin';
+  if (!isAdmin) throw new functions.https.HttpsError('permission-denied', 'Admin only');
+
+  const sellerIds = Array.isArray(data?.sellerIds) ? data.sellerIds : [];
+  if (sellerIds.length === 0) return {};
+
+  try {
+    const emails = {};
+    
+    // Fetch emails one by one since 'in' with documentId is not supported
+    for (const sellerId of sellerIds) {
+      try {
+        const userDoc = await db.collection('users').doc(sellerId).get();
+        if (userDoc.exists) {
+          const userData = userDoc.data();
+          emails[sellerId] = userData.email || 'No email';
+        } else {
+          emails[sellerId] = 'User not found';
+        }
+      } catch (docError) {
+        console.error(`Error fetching user ${sellerId}:`, docError);
+        emails[sellerId] = 'Error fetching';
+      }
+    }
+    
+    return emails;
+  } catch (error) {
+    console.error('Error fetching seller emails:', error);
+    throw new functions.https.HttpsError('internal', 'Failed to fetch seller emails');
+  }
 });
 
 // === Admin: delete a user (Auth + Firestore doc + subcollections + tokens)
