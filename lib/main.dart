@@ -78,74 +78,50 @@ void _setupPWANavigationListener() {
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
-  // Initialize performance optimizations
+  // ⚡ FAST LOAD: Run app immediately, initialize services in background
+  runApp(MyApp());
+  
+  // Initialize performance optimizations in background
   PerformanceConfig.initialize();
   SafariOptimizer.initialize();
   
-  // Web-specific optimizations
+  // Web-specific optimizations in background
   if (kIsWeb) {
     PerformanceConfig.optimizeForWeb();
-    // Initialize guard to clear caches when hidden/backgrounded
     WebMemoryGuard().initialize();
-    // Initialize PWA optimizations for iOS Safari
-    await PWAOptimizationService.initialize();
+    // Skip PWA optimization service to avoid delays
   }
   
-  // Initialize Firebase with options
-  await Firebase.initializeApp(
+  // Initialize Firebase in background
+  Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
-  );
-  
-  // Firestore optimizations removed for deployment
-  
-  // Register background message handler before any messaging usage
-  FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
-  
-  // Initialize notification service with reduced frequency for Safari
-  await NotificationService().initialize();
-  
-  // Request notification permissions
-  await NotificationService().requestPermissions();
+  ).then((_) {
+    // Initialize services after Firebase is ready
+    _initializeServicesInBackground();
+  });
+}
 
-  // Initialize FCM config service (token save, handlers)
-  await FCMConfigService().initialize();
-  
-  // ⚡ OPTIMIZED: Start background order prefetching
-  // Order prefetch service removed for deployment
-
-  // Initialize Awesome Notifications for local banners (mobile)
-  await AwesomeNotificationService().initialize();
-  
-  // Request awesome notification permissions
-  await AwesomeNotificationService().requestPermissions();
-  
-  // 🚀 PWA Navigation: Set up service worker message listener
-  if (kIsWeb) {
-    _setupPWANavigationListener();
-  }
-  
-  // Initialize optimized location services (skip on iOS Safari web to avoid reloads)
+// Initialize services in background to avoid blocking UI
+void _initializeServicesInBackground() async {
   try {
-    final skipLocationOnIOSWeb = WebEnv.isIOSWeb && !WebEnv.isStandalonePWA;
-    if (!skipLocationOnIOSWeb) {
-      // Warm up optimized location services for faster subsequent calls
-      await OptimizedLocationService.warmUpLocationServices();
-    } else {
-      if (kDebugMode) print('🔍 DEBUG: Skipping location services on iOS Safari tab');
-    }
+    // Register background message handler
+    FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+    
+    // Initialize essential services only
+    await NotificationService().initialize();
+    await FCMConfigService().initialize();
+    
+    // Skip non-essential services for faster loading
+    // await AwesomeNotificationService().initialize();
+    // await OptimizedLocationService.warmUpLocationServices();
+    
+    // Initialize error tracking
+    ErrorTrackingService.initialize();
+    
+    if (kDebugMode) print('✅ Background services initialized');
   } catch (e) {
-    if (kDebugMode) print('🔍 DEBUG: Error initializing location services: $e');
+    if (kDebugMode) print('❌ Background service error: $e');
   }
-  
-  // Initialize error tracking
-  ErrorTrackingService.initialize();
-  
-  // Initialize global message listener for notifications
-  if (!kIsWeb) {
-    await GlobalMessageListener().startListening();
-  }
-  
-  runApp(MyApp());
 }
 
 class MyApp extends StatelessWidget {
@@ -181,10 +157,6 @@ class MyApp extends StatelessWidget {
           final layered = ChatbotWrapper(
             child: child!,
             showChatbot: showBot,
-            // Position above the Add Product FAB (FAB is bottom-right)
-            // Slightly higher so it doesn't overlap
-            initialDx: 0.75,
-            initialDy: 0.30,
           );
 
           final wrapped = SafeArea(

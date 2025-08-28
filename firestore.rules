@@ -37,8 +37,12 @@ service cloud.firestore {
       allow update: if request.auth != null && (
         (
           request.auth.uid == userId &&
-          // Prevent users from modifying critical fields that should only be admin-controlled
-          !('kycStatus' in request.resource.data.diff(resource.data).affectedKeys()) &&
+          // Allow users to set KYC status to 'pending' for verification
+          (
+            !('kycStatus' in request.resource.data.diff(resource.data).affectedKeys()) ||
+            (request.resource.data.kycStatus == 'pending')
+          ) &&
+          // Prevent users from modifying other critical fields that should only be admin-controlled
           !('role' in request.resource.data.diff(resource.data).affectedKeys()) &&
           !('kycApprovedAt' in request.resource.data.diff(resource.data).affectedKeys()) &&
           !('approvedAt' in request.resource.data.diff(resource.data).affectedKeys()) &&
@@ -81,13 +85,12 @@ service cloud.firestore {
       match /kyc/{kycId} {
         // Users can read their own KYC documents
         allow read: if request.auth != null && request.auth.uid == userId;
-        // Users can create/upload KYC documents but cannot change status to 'approved'
+        // Users can create/upload KYC documents with 'pending' status
         allow create: if request.auth != null && request.auth.uid == userId && 
-          (!('status' in request.resource.data) || request.resource.data.status == 'pending');
-        // Users can update documents but cannot change status from pending to approved
+          (request.resource.data.status == 'pending' || !('status' in request.resource.data));
+        // Users can update their own documents but cannot change status to 'approved'
         allow update: if request.auth != null && request.auth.uid == userId && 
-          (!('status' in request.resource.data.diff(resource.data).affectedKeys()) || 
-           (resource.data.status != 'approved' && request.resource.data.status != 'approved'));
+          (resource.data.status != 'approved' && request.resource.data.status != 'approved');
         // Only admins can read all and approve/reject KYC
         allow read, write: if isAdmin();
       }

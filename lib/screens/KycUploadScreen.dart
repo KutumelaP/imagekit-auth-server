@@ -37,21 +37,35 @@ class _KycUploadScreenState extends State<KycUploadScreen> {
     try {
       final uid = FirebaseAuth.instance.currentUser?.uid;
       if (uid != null) {
+        if (kDebugMode) print('🔍 Loading KYC data for user: $uid');
+        
         final user = await FirebaseFirestore.instance.collection('users').doc(uid).get();
         final data = user.data();
         if (data != null) {
           _kycStatus = (data['kycStatus'] as String?) ?? 'none';
+          if (kDebugMode) print('📋 User KYC status: $_kycStatus');
         }
-        final doc = await FirebaseFirestore.instance
-            .collection('users').doc(uid).collection('kyc').doc('L1').get();
-        final k = doc.data();
-        if (k != null) {
-          _idFrontUrl = k['idFrontUrl'] as String?;
-          _idBackUrl = k['idBackUrl'] as String?;
-          _selfieUrl = k['selfieUrl'] as String?;
+        
+        try {
+          final doc = await FirebaseFirestore.instance
+              .collection('users').doc(uid).collection('kyc').doc('L1').get();
+          final k = doc.data();
+          if (k != null) {
+            _idFrontUrl = k['idFrontUrl'] as String?;
+            _idBackUrl = k['idBackUrl'] as String?;
+            _selfieUrl = k['selfieUrl'] as String?;
+            if (kDebugMode) print('📄 Found existing KYC documents');
+          } else {
+            if (kDebugMode) print('📄 No existing KYC documents found');
+          }
+        } catch (e) {
+          if (kDebugMode) print('⚠️ Error loading KYC documents: $e');
+          // This is expected for new users - don't treat as error
         }
       }
-    } catch (_) {}
+    } catch (e) {
+      if (kDebugMode) print('❌ Error loading user data: $e');
+    }
     if (mounted) setState(() => _loading = false);
   }
 
@@ -212,7 +226,21 @@ class _KycUploadScreenState extends State<KycUploadScreen> {
       setState(() { _kycStatus = 'pending'; });
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed: $e')));
+      if (kDebugMode) print('❌ KYC submission failed: $e');
+      
+      String errorMessage = 'KYC submission failed';
+      if (e.toString().contains('permission-denied')) {
+        errorMessage = 'Permission denied. Please check your account status.';
+      } else if (e.toString().contains('unavailable')) {
+        errorMessage = 'Service temporarily unavailable. Please try again.';
+      } else if (e.toString().contains('unauthenticated')) {
+        errorMessage = 'Please log in again to submit KYC.';
+      }
+      
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(errorMessage),
+        backgroundColor: Colors.red,
+      ));
     } finally {
       if (mounted) setState(() => _submitting = false);
     }

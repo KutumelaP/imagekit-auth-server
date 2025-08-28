@@ -36,7 +36,7 @@ class _ChatbotWidgetState extends State<ChatbotWidget> with TickerProviderStateM
   static const double _fabSize = 50.0;
   static const double _margin = 16.0;
   static const double _windowWidth = 280.0;
-  static const double _windowHeight = 400.0;
+  double _windowHeight = 400.0;
   static const double _windowGap = 10.0;
   
   late AnimationController _slideController;
@@ -50,6 +50,13 @@ class _ChatbotWidgetState extends State<ChatbotWidget> with TickerProviderStateM
     _initializeAnimations();
     _initializeChatbot();
     _loadSavedPosition();
+    
+    // Listen for keyboard changes to auto-scroll
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _inputFocusNode.addListener(_onInputFocusChange);
+      }
+    });
   }
 
   void _initializeAnimations() {
@@ -164,9 +171,12 @@ class _ChatbotWidgetState extends State<ChatbotWidget> with TickerProviderStateM
     if (_isExpanded) {
       _slideController.forward();
       _bounceController.stop();
-      // Focus input after opening
+      // Focus input after opening and scroll to bottom
       Future.delayed(const Duration(milliseconds: 200), () {
-        if (mounted) _inputFocusNode.requestFocus();
+        if (mounted) {
+          _inputFocusNode.requestFocus();
+          _scrollToBottom();
+        }
       });
     } else {
       _slideController.reverse();
@@ -215,6 +225,59 @@ class _ChatbotWidgetState extends State<ChatbotWidget> with TickerProviderStateM
       }
     });
   }
+  
+  void _onInputFocusChange() {
+    if (_inputFocusNode.hasFocus) {
+      // When input gets focus, scroll to bottom to show input field
+      Future.delayed(const Duration(milliseconds: 100), () {
+        if (mounted) {
+          _scrollToBottom();
+          
+          // Additional safety: ensure input field is visible above keyboard
+          final keyboardInset = MediaQuery.of(context).viewInsets.bottom;
+          if (keyboardInset > 0) {
+            // Keyboard is open, scroll to ensure input is visible
+            Future.delayed(const Duration(milliseconds: 200), () {
+              if (mounted && _scrollController.hasClients) {
+                _scrollController.animateTo(
+                  _scrollController.position.maxScrollExtent,
+                  duration: const Duration(milliseconds: 300),
+                  curve: Curves.easeOut,
+                );
+              }
+            });
+            
+            // Adjust window height if keyboard would push bot too high
+            _adjustWindowHeightForKeyboard(keyboardInset);
+          }
+        }
+      });
+    }
+  }
+  
+  void _adjustWindowHeightForKeyboard(double keyboardInset) {
+    if (!mounted) return;
+    
+    final media = MediaQuery.of(context);
+    final screenSize = media.size;
+    
+    // Calculate if keyboard would push bot too high
+    final currentHeight = _windowHeight;
+    final minGapAboveKeyboard = 120.0;
+    final minTop = 20.0;
+    
+    final wouldPushTooHigh = (screenSize.height - keyboardInset - currentHeight - minGapAboveKeyboard) < minTop;
+    
+    if (wouldPushTooHigh) {
+      // Adjust height to fit above keyboard while maintaining minimum top position
+      final adjustedHeight = screenSize.height - keyboardInset - minTop - minGapAboveKeyboard;
+      if (adjustedHeight > 200) { // Minimum viable height
+        setState(() {
+          _windowHeight = adjustedHeight;
+        });
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -222,28 +285,50 @@ class _ChatbotWidgetState extends State<ChatbotWidget> with TickerProviderStateM
     final size = media.size;
     final keyboardInset = media.viewInsets.bottom;
 
-    // Ensure position is loaded at least once; defaults are fine meanwhile
-    final minLeft = media.padding.left + _margin;
-    final minTop = media.padding.top + _margin;
-    final maxLeft = size.width - media.padding.right - _margin - _fabSize;
-    final maxTop = size.height - media.padding.bottom - _margin - _fabSize - keyboardInset;
+    // Fixed positioning for bot FAB (no need for dynamic calculations)
 
-    // Convert normalized to pixels and clamp to safe area
-    double buttonLeft = (_fabDx * size.width).clamp(minLeft, maxLeft);
-    double buttonTop = (_fabDy * size.height).clamp(minTop, maxTop);
-
-    // Position chat window above and right-aligned to the button
-    final windowLeft = (buttonLeft + _fabSize - _windowWidth).clamp(
-      minLeft,
-      size.width - media.padding.right - _margin - _windowWidth,
-    );
-    // When keyboard is open, position window just above it with small gap
-    final windowTop = keyboardInset > 0
-        ? size.height - keyboardInset - _windowHeight - 10
-        : (buttonTop - _windowGap - _windowHeight).clamp(
-            minTop,
-            size.height - media.padding.bottom - _margin - _windowHeight,
-          );
+    // Position chat window above the fixed bot FAB position
+    final double windowLeft = 20.0; // Same left position as bot FAB
+    
+    // Smart keyboard-aware positioning with better text field visibility
+    double windowTop;
+    if (keyboardInset > 0) {
+      // When keyboard is open, position window above keyboard with generous spacing
+      // Ensure input field is always visible above keyboard and bot doesn't get pushed up too much
+      final minGapAboveKeyboard = 120.0; // Increased gap to prevent bot from being pushed up too high
+      windowTop = size.height - keyboardInset - _windowHeight - minGapAboveKeyboard;
+      
+      // Ensure the bot doesn't go above the top of the screen
+      final minTop = 20.0;
+      if (windowTop < minTop) {
+        // If keyboard would push bot too high, adjust window height instead
+        final adjustedHeight = size.height - keyboardInset - minTop - minGapAboveKeyboard;
+        if (adjustedHeight > 200) { // Minimum viable height
+          _windowHeight = adjustedHeight;
+          windowTop = minTop;
+        } else {
+          // Fallback: position at minimum top with current height
+          windowTop = minTop;
+        }
+      }
+    } else {
+      // Normal position: above the shifted bot FAB (now at bottom: 60)
+      windowTop = size.height - _windowHeight - 120; // 120px above bottom (60px from FAB + 60px gap)
+    }
+    
+    // Ensure window doesn't go off-screen and input field is always accessible
+    final minTop = 20.0;
+    final maxTop = size.height - _windowHeight - 20.0;
+    windowTop = windowTop.clamp(minTop, maxTop);
+    
+    // Additional safety: if keyboard is open, ensure at least 120px gap above keyboard
+    if (keyboardInset > 0) {
+      final minGapAboveKeyboard = 120.0;
+      final maxAllowedTop = size.height - keyboardInset - minGapAboveKeyboard;
+      if (windowTop > maxAllowedTop) {
+        windowTop = maxAllowedTop;
+      }
+    }
 
     return Stack(
       children: [
@@ -253,43 +338,25 @@ class _ChatbotWidgetState extends State<ChatbotWidget> with TickerProviderStateM
         if (_isExpanded && _isFullscreen)
           Positioned.fill(child: _buildChatWindow(fullscreen: true)),
 
-        // Draggable floating action button (always visible)
-          Positioned(
-            left: buttonLeft,
-            top: buttonTop,
-            child: Listener(
-              onPointerDown: (_) {
-                _bounceController.stop();
-              },
-              onPointerUp: (_) {
-                if (!_isExpanded) {
-                  _bounceController.repeat(reverse: true);
-                }
-              },
-              child: GestureDetector(
-                onTap: _toggleExpanded,
-                onLongPress: () {
-                  setState(() {
-                    _fabDx = 0.9; // default near right
-                    _fabDy = kIsWeb ? 0.65 : 0.8; // Higher on web/PWA, lower on mobile
-                  });
-                  _savePosition(_fabDx, _fabDy);
-                },
-                onPanUpdate: (details) {
-                  setState(() {
-                    buttonLeft = (buttonLeft + details.delta.dx).clamp(minLeft, maxLeft);
-                    buttonTop = (buttonTop + details.delta.dy).clamp(minTop, maxTop);
-                    _fabDx = (buttonLeft / size.width).clamp(0.0, 1.0);
-                    _fabDy = (buttonTop / size.height).clamp(0.0, 1.0);
-                  });
-                },
-                onPanEnd: (_) {
-                  _savePosition(_fabDx, _fabDy);
-                },
-                child: _buildFloatingButton(),
-              ),
+        // Fixed position floating action button (shifted up by 2 positions)
+        Positioned(
+          bottom: 60, // Shifted up from 20 to 60
+          left: 20,
+          child: Listener(
+            onPointerDown: (_) {
+              _bounceController.stop();
+            },
+            onPointerUp: (_) {
+              if (!_isExpanded) {
+                _bounceController.repeat(reverse: true);
+              }
+            },
+            child: GestureDetector(
+              onTap: _toggleExpanded,
+              child: _buildFloatingButton(),
             ),
           ),
+        ),
       ],
     );
   }
@@ -297,11 +364,42 @@ class _ChatbotWidgetState extends State<ChatbotWidget> with TickerProviderStateM
   Widget _buildChatWindow({bool fullscreen = false}) {
     final keyboardInset = MediaQuery.of(context).viewInsets.bottom;
     final screenSize = MediaQuery.of(context).size;
-    final double maxHeight = fullscreen ? screenSize.height : screenSize.height * 0.6;
+    
+    if (fullscreen) {
+      // Fullscreen mode: use full height minus keyboard
+      return SlideTransition(
+        position: _slideAnimation,
+        child: Container(
+          width: screenSize.width,
+          height: screenSize.height - keyboardInset,
+          decoration: const BoxDecoration(
+            color: Colors.white,
+          ),
+          child: Column(
+            children: [
+              _buildHeader(fullscreen: true),
+              Expanded(child: _buildMessagesList()),
+              _buildInputArea(),
+            ],
+          ),
+        ),
+      );
+    }
+    
+    // Normal mode: smart height calculation for keyboard with guaranteed input visibility
+    final double maxHeight = screenSize.height * 0.6;
     const double minHeight = 280.0;
-    final availableHeight = fullscreen
-        ? screenSize.height - keyboardInset
-        : (keyboardInset > 0 ? maxHeight.clamp(minHeight, maxHeight) : 400.0);
+    
+    double availableHeight;
+    if (keyboardInset > 0) {
+      // When keyboard is open, ensure input field is always visible
+      // Calculate height to fit above keyboard with generous spacing
+      final maxAllowedHeight = screenSize.height - keyboardInset - 120; // 120px margin when keyboard is open
+      availableHeight = maxAllowedHeight.clamp(minHeight, maxHeight);
+    } else {
+      // Default height when no keyboard
+      availableHeight = 400.0;
+    }
     
     return SlideTransition(
       position: _slideAnimation,
@@ -557,7 +655,7 @@ class _ChatbotWidgetState extends State<ChatbotWidget> with TickerProviderStateM
 
   Widget _buildInputArea() {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12), // Increased padding for better spacing
       decoration: const BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.only(bottomLeft: Radius.circular(20), bottomRight: Radius.circular(20)),
@@ -575,12 +673,16 @@ class _ChatbotWidgetState extends State<ChatbotWidget> with TickerProviderStateM
               decoration: const InputDecoration(
                 hintText: 'Type a message…',
                 border: InputBorder.none,
+                contentPadding: EdgeInsets.symmetric(vertical: 8), // Better text field padding
               ),
             ),
           ),
+          const SizedBox(width: 8), // Add spacing between text field and send button
           IconButton(
             onPressed: _sendMessage,
             icon: const Icon(Icons.send, color: Color(0xFF2E7D5A)),
+            padding: const EdgeInsets.all(8), // Better button padding
+            constraints: const BoxConstraints(minWidth: 40, minHeight: 40), // Ensure button is large enough
           ),
         ],
       ),
@@ -661,6 +763,8 @@ class _ChatbotWidgetState extends State<ChatbotWidget> with TickerProviderStateM
     _messageController.dispose();
     _scrollController.dispose();
     _inputFocusNode.dispose();
+    // Clean up focus listener
+    _inputFocusNode.removeListener(_onInputFocusChange);
     super.dispose();
   }
 }

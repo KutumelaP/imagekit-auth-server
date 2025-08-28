@@ -174,10 +174,17 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
     final orderRef = FirebaseFirestore.instance.collection('orders').doc(widget.orderId);
 
     return Scaffold(
-      backgroundColor: AppTheme.whisper,
-      body: FadeTransition(
-        opacity: _fadeAnimation,
-        child: StreamBuilder<DocumentSnapshot>(
+      backgroundColor: Colors.transparent,
+      body: Container(
+        width: double.infinity,
+        height: double.infinity,
+        decoration: BoxDecoration(
+          gradient: AppTheme.screenBackgroundGradient,
+          color: AppTheme.whisper, // Fallback color
+        ),
+        child: FadeTransition(
+          opacity: _fadeAnimation,
+          child: StreamBuilder<DocumentSnapshot>(
           stream: orderRef.snapshots(),
           builder: (context, snapshot) {
             if (snapshot.hasError) return _buildErrorState();
@@ -260,12 +267,13 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
                 ),
                 
                 SliverToBoxAdapter(
-                  child: const SizedBox(height: 100), // Bottom padding
+                  child: const SizedBox(height: 20), // Minimal bottom padding
                 ),
               ],
             );
           },
         ),
+      ),
       ),
     );
   }

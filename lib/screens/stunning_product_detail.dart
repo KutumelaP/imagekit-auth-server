@@ -198,8 +198,15 @@ class _StunningProductDetailState extends State<StunningProductDetail>
     final isOutOfStock = stock <= 0;
 
     return Scaffold(
-      backgroundColor: AppTheme.angel,
-      body: CustomScrollView(
+      backgroundColor: Colors.transparent,
+      body: Container(
+        width: double.infinity,
+        height: double.infinity,
+        decoration: BoxDecoration(
+          gradient: AppTheme.screenBackgroundGradient,
+          color: AppTheme.angel, // Fallback color
+        ),
+        child: CustomScrollView(
         controller: _scrollController,
         slivers: [
           _buildSliverAppBar(isMobile, screenHeight),
@@ -213,6 +220,7 @@ class _StunningProductDetailState extends State<StunningProductDetail>
             ),
           ),
         ],
+      ),
       ),
       bottomNavigationBar: _buildBottomBar(isMobile, isOutOfStock),
     );
@@ -366,7 +374,7 @@ class _StunningProductDetailState extends State<StunningProductDetail>
             // Quantity Selector
             if (!isOutOfStock) _buildQuantitySelector(isMobile),
             
-            const SizedBox(height: 100), // Space for bottom bar
+            const SizedBox(height: 20), // Minimal bottom spacing
           ],
         ),
       ),

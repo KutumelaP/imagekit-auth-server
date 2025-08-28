@@ -24,7 +24,7 @@ import '../services/global_message_listener.dart';
 import '../widgets/notification_badge.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:flutter/services.dart'; // Added import for SystemUiOverlayStyle
-import '../widgets/chatbot_widget.dart';
+import '../widgets/embedded_support_chat.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 class SimpleHomeScreen extends StatefulWidget {
@@ -48,26 +48,30 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
   late Animation<double> _fadeAnimation;
 
   bool _isDriver = false;
+  bool _showSupportChat = false; // Add state to control support chat visibility
 
   @override
   void initState() {
     super.initState();
+    // ⚡ FAST LOAD: Initialize only essential animations and data
     _initializeAnimations();
     _initializeScreen();
-    _setupMessageListener();
-    _checkDriverStatus();
     
-    // Start global message listener for chat notifications
-    GlobalMessageListener().startListening();
-    
-    // Initialize user provider data
+    // Defer non-essential operations to post-frame callback
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      _setupMessageListener();
+      _checkDriverStatus();
+      
+      // Start global message listener for chat notifications
+      GlobalMessageListener().startListening();
+      
+      // Initialize user provider data
       final userProvider = Provider.of<UserProvider>(context, listen: false);
       userProvider.loadUserData();
+      
+      // Request location permission after UI is ready
+      _requestLocationPermission();
     });
-    
-    // Request location permission when app starts
-    _requestLocationPermission();
   }
 
 
@@ -386,10 +390,8 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
     return Consumer<UserProvider>(
       builder: (context, userProvider, child) {
     return Scaffold(
-      backgroundColor: AppTheme.angel,
-          floatingActionButton: userProvider.isSeller ? Padding(
-            padding: const EdgeInsets.only(bottom: 16.0),
-            child: FloatingActionButton(
+      backgroundColor: Colors.transparent, // Remove background to allow gradient
+          floatingActionButton: userProvider.isSeller ? FloatingActionButton(
               onPressed: () {
                 Navigator.push(
                   context,
@@ -403,22 +405,18 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
               foregroundColor: Colors.white,
               child: const Icon(Icons.add_shopping_cart),
               tooltip: 'Upload Product',
-            ),
-          ) : null,
-      body: Stack(
-        children: [
-          FadeTransition(
-            opacity: _fadeAnimation,
-            child: _buildBody(),
-          ),
-          // Chatbot widget with its own draggable FAB - only show when loaded
-          if (!_isLoading)
-            ChatbotWidget(
-              initialDx: 0.05, // Bottom left position - 5% from left edge
-              initialDy: 0.91, // Aligned with upload FAB on same horizontal line (accounting for padding)
-              ignoreSavedPosition: false, // Allow it to remember position
-            ),
-        ],
+            ) : null,
+      body: Container(
+        width: double.infinity,
+        height: double.infinity,
+        decoration: BoxDecoration(
+          gradient: AppTheme.screenBackgroundGradient,
+          color: AppTheme.angel, // Fallback color
+        ),
+        child: FadeTransition(
+          opacity: _fadeAnimation,
+          child: _buildBody(),
+        ),
       ),
 
         );
@@ -619,14 +617,186 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
               _buildCategoriesHeaderSliver(),
               _buildCategoriesGridSliver(),
               _buildMyPurchasesSection(),
-              // Minimal bottom padding
+              // Chatbot widget as regular content - only show when loaded
+              if (!_isLoading)
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 20, 16, 10), // Reduced bottom padding
+                    child: _buildInlineChatbot(),
+                  ),
+                ),
+              // Bottom padding for FAB clearance and proper spacing
               SliverToBoxAdapter(
-                child: SizedBox(height: 100), // Increased bottom spacing for FAB and toast clearance
+                child: SizedBox(height: 80), // Adequate spacing for FAB + safe area
               ),
             ],
           ),
         );
       },
+    );
+  }
+
+  Widget _buildInlineChatbot() {
+    return Column(
+      children: [
+        // Support section - tappable
+        if (!_showSupportChat)
+          GestureDetector(
+            onTap: _startSupportChat,
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.1),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        width: 50,
+                        height: 50,
+                        decoration: BoxDecoration(
+                          color: AppTheme.deepTeal,
+                          borderRadius: BorderRadius.circular(25),
+                        ),
+                        child: const Icon(
+                          Icons.support_agent,
+                          color: Colors.white,
+                          size: 24,
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      const Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Need Help?',
+                              style: TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.black87,
+                              ),
+                            ),
+                            Text(
+                              'Get support via chat, email, or phone',
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Colors.grey,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: AppTheme.deepTeal.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Icon(
+                          Icons.arrow_forward_ios,
+                          color: AppTheme.deepTeal,
+                          size: 16,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Our support team is ready to help with orders, products, payments, delivery, and any questions you might have. Choose your preferred way to get in touch!',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.black54,
+                      height: 1.4,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  // Quick support stats
+                  Row(
+                    children: [
+                      _buildSupportStat(
+                        icon: Icons.flash_on,
+                        label: 'Instant Chat',
+                        color: Colors.orange,
+                      ),
+                      const SizedBox(width: 16),
+                      _buildSupportStat(
+                        icon: Icons.schedule,
+                        label: '24/7 Available',
+                        color: Colors.green,
+                      ),
+                      const SizedBox(width: 16),
+                      _buildSupportStat(
+                        icon: Icons.phone,
+                        label: 'Direct Call',
+                        color: Colors.blue,
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        
+        // Show embedded support chat when enabled
+        if (_showSupportChat) ...[
+          EmbeddedSupportChat(
+            onClose: () {
+              setState(() {
+                _showSupportChat = false;
+              });
+            },
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildSupportStat({
+    required IconData icon,
+    required String label,
+    required Color color,
+  }) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              color: color,
+              size: 16,
+            ),
+            const SizedBox(width: 6),
+            Flexible(
+              child: Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: color,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -1683,6 +1853,36 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
   }
 
   // Removed unused _buildQuickActionCard to fix lints
+
+  // Method to start support chat
+  void _startSupportChat() {
+    setState(() {
+      _showSupportChat = true;
+    });
+    
+    // Add haptic feedback
+    HapticFeedback.lightImpact();
+    
+    // Show success message
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const Row(
+          children: [
+            Icon(
+              Icons.support_agent,
+              color: Colors.white,
+              size: 20,
+            ),
+            SizedBox(width: 8),
+            Text('Support options ready! Choose your preferred method.'),
+          ],
+        ),
+        backgroundColor: AppTheme.deepTeal,
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 3),
+      ),
+    );
+  }
 }
 
 // REMOVED: No longer needed since we use SafeNetworkImage

@@ -85,19 +85,15 @@
   </style>
   <script>
     (function(){
-      // 🔍 DEBUG: Enhanced detection and logging
+      // ⚡ FAST LOAD: Optimized detection with minimal blocking
       var userAgent = navigator.userAgent || '';
-      var platform = navigator.platform || '';
-      var isIOS = /iPad|iPhone|iPod/.test(userAgent) || (platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+      var isIOS = /iPad|iPhone|iPod/.test(userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
       var isStandalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone === true;
       
-      // Check conditions
-      var pwaGateDismissed = localStorage.getItem('pwa_gate_dismissed') === '1' || 
-                            sessionStorage.getItem('pwa_reminder_dismissed') === '1';
-      var isDirectStoreUrl = window.location.pathname.includes('/store/') || window.location.search.includes('store') || 
-                            window.location.hash.includes('store') || window.location.pathname.includes('/seller/');
-      var urlParams = new URLSearchParams(window.location.search);
-      var skipParam = urlParams.get('skip_gate') === '1';
+      // Quick checks for faster loading
+      var pwaGateDismissed = localStorage.getItem('pwa_gate_dismissed') === '1';
+      var isDirectStoreUrl = window.location.pathname.includes('/store/') || window.location.pathname.includes('/seller/');
+      var skipParam = new URLSearchParams(window.location.search).get('skip_gate') === '1';
       var forceShow = urlParams.get('show_gate') === '1'; // Debug parameter
       
       // 🔍 DEBUG: Log all conditions
@@ -836,11 +832,7 @@
     </div>
   </div>
 
-  <!-- 🧪 DEBUG: Manual test button -->
-  <div id="debug-controls" style="position: fixed; top: 10px; right: 10px; z-index: 2147483646; background: rgba(0,0,0,0.8); color: white; padding: 8px; border-radius: 4px; font-size: 12px;">
-    <button onclick="testPWAGate()" style="background: #22c55e; color: white; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer; margin-right: 4px;">🧪 Test PWA Gate</button>
-    <button onclick="clearPWAData()" style="background: #ef4444; color: white; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer;">🗑️ Clear Data</button>
-  </div>
+  <!-- Test PWA gate and clear data buttons removed -->
 
   <!-- iOS PWA Install Gate Overlay -->
   <div id="ios-pwa-gate" style="display: none;">
@@ -1027,32 +1019,7 @@
         });
       })();
 
-      // 🧪 DEBUG FUNCTIONS
-      
-      // Function to manually test PWA gate
-      window.testPWAGate = function() {
-        console.log('🧪 Manually testing PWA gate...');
-        var gate = document.getElementById('ios-pwa-gate');
-        if (gate) {
-          gate.style.display = 'block';
-          gate.style.pointerEvents = 'none';
-          var card = gate.querySelector('.card');
-          if (card) card.style.pointerEvents = 'all';
-          console.log('✅ PWA gate manually displayed');
-        } else {
-          console.error('❌ PWA gate element not found');
-        }
-      };
-      
-      // Function to clear all PWA data
-      window.clearPWAData = function() {
-        localStorage.removeItem('pwa_gate_dismissed');
-        sessionStorage.removeItem('pwa_reminder_dismissed');
-        sessionStorage.removeItem('apk_banner_dismissed');
-        sessionStorage.removeItem('install_btn_dismissed');
-        console.log('🗑️ All PWA data cleared - refresh to see gates again');
-        alert('PWA data cleared! Refresh the page to see install prompts again.');
-      };
+      // Test PWA gate and clear data functions removed
       
       // 🚀 ENHANCED PWA INSTALL HANDLERS
       

@@ -20,8 +20,9 @@ class _SimpleSplashScreenState extends State<SimpleSplashScreen>
     super.initState();
     print('SimpleSplashScreen: initState called');
     
+    // ⚡ FAST LOAD: Reduced animation duration for faster loading
     _controller = AnimationController(
-      duration: const Duration(milliseconds: 2000),
+      duration: const Duration(milliseconds: 800),
       vsync: this,
     );
     
@@ -30,9 +31,10 @@ class _SimpleSplashScreenState extends State<SimpleSplashScreen>
       end: 1.0,
     ).animate(CurvedAnimation(
       parent: _controller,
-      curve: Curves.easeInOut,
+      curve: Curves.easeOut,
     ));
     
+    // Start animation immediately
     _controller.forward();
   }
 

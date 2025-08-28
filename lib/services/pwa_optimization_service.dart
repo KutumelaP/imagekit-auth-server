@@ -209,13 +209,56 @@ class PWAOptimizationService {
     try {
       await _saveCurrentSession();
       
-      // Trigger platform-specific state saving
-      await SystemChannels.platform.invokeMethod('SystemNavigator.pop');
+      // Save critical app state to localStorage for recovery
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      html.window.localStorage['pwa_state_backup'] = timestamp.toString();
+      html.window.localStorage['pwa_last_save'] = timestamp.toString();
+      
+      if (kDebugMode) {
+        print('📱 PWA state saved successfully at $timestamp');
+      }
     } catch (e) {
       // Ignore errors - this is best-effort
       if (kDebugMode) {
         print('❌ Error saving app state: $e');
       }
+    }
+  }
+  
+  /// Get PWA installation status
+  static bool get isInstalled {
+    if (!kIsWeb) return false;
+    
+    try {
+      // Check if running as PWA
+      if (isPWA) return true;
+      
+      // Check if user has completed installation flow
+      final installCompleted = html.window.localStorage['pwa_install_completed'];
+      return installCompleted != null;
+    } catch (e) {
+      return false;
+    }
+  }
+  
+  /// Get PWA performance metrics
+  static Map<String, dynamic> getPerformanceMetrics() {
+    if (!kIsWeb) return {};
+    
+    try {
+      final uptime = getSessionUptime();
+      final isInstalled = PWAOptimizationService.isInstalled;
+      final isPWAMode = isPWA;
+      
+      return {
+        'session_uptime_minutes': uptime,
+        'is_installed': isInstalled,
+        'is_pwa_mode': isPWAMode,
+        'current_session_id': _currentSessionId,
+        'initialization_time': _isInitialized ? 'initialized' : 'not_initialized',
+      };
+    } catch (e) {
+      return {'error': e.toString()};
     }
   }
   
