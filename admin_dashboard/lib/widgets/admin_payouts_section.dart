@@ -3,6 +3,7 @@ import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'dart:async';
+import 'dart:html' as html;
 
 class AdminPayoutsSection extends StatefulWidget {
   const AdminPayoutsSection({super.key});
@@ -445,7 +446,7 @@ class _AdminPayoutsSectionState extends State<AdminPayoutsSection> {
                     if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No payouts to export')));
                     return;
                   }
-                  // Show dialog with CSV and copy button
+                  // Show dialog with CSV, copy button, and download button
                   if (!mounted) return;
                   await showDialog(
                     context: context,
@@ -453,7 +454,25 @@ class _AdminPayoutsSectionState extends State<AdminPayoutsSection> {
                       title: const Text('Nedbank CSV Export'),
                       content: SizedBox(
                         width: 700,
-                        child: SelectableText(csv),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text('CSV Content (${data['count'] ?? 0} payouts):'),
+                            const SizedBox(height: 8),
+                            Container(
+                              height: 300,
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                border: Border.all(color: Colors.grey.shade300),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: SingleChildScrollView(
+                                child: SelectableText(csv),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                       actions: [
                         TextButton(
@@ -464,6 +483,24 @@ class _AdminPayoutsSectionState extends State<AdminPayoutsSection> {
                             }
                           },
                           child: const Text('Copy'),
+                        ),
+                        FilledButton.icon(
+                          onPressed: () async {
+                            // Create and download CSV file
+                            final blob = html.Blob([csv], 'text/csv');
+                            final url = html.Url.createObjectUrlFromBlob(blob);
+                            final anchor = html.AnchorElement(href: url)
+                              ..setAttribute('download', 'nedbank_payouts_${DateTime.now().millisecondsSinceEpoch}.csv')
+                              ..click();
+                            html.Url.revokeObjectUrl(url);
+                            
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('CSV file downloaded')));
+                              Navigator.pop(ctx);
+                            }
+                          },
+                          icon: const Icon(Icons.download),
+                          label: const Text('Download CSV'),
                         ),
                         TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Close')),
                       ],
