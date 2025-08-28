@@ -221,6 +221,15 @@ class _KycUploadScreenState extends State<KycUploadScreen> {
         'submittedAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
+      
+      // Also create entry in kyc_submissions collection for admin review
+      await FirebaseFirestore.instance.collection('kyc_submissions').add({
+        'userId': uid,
+        'status': 'pending',
+        'submittedAt': FieldValue.serverTimestamp(),
+        'type': 'regular_user',
+        'hasDocuments': true,
+      });
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('KYC submitted for review')));
       setState(() { _kycStatus = 'pending'; });

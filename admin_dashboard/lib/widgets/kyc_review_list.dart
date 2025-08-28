@@ -24,62 +24,157 @@ class _KycReviewListState extends State<KycReviewList> {
   Future<void> _load() async {
     setState(() => _loading = true);
     try {
-      // Read from kyc_submissions collection instead of users
-      final submissions = await _db.collection('kyc_submissions')
-          .where('status', isEqualTo: 'pending')
-          .orderBy('submittedAt', descending: true)
-          .get();
-      
       final items = <_KycItem>[];
-      for (final sub in submissions.docs) {
-        final subData = sub.data();
-        final userId = subData['userId'] as String?;
-        if (userId == null) continue;
+      
+      // Method 1: Check kyc_submissions collection (for admin dashboard submissions)
+      try {
+        final submissions = await _db.collection('kyc_submissions')
+            .where('status', isEqualTo: 'pending')
+            .orderBy('submittedAt', descending: true)
+            .get();
         
-        // Get user info
-        final userDoc = await _db.collection('users').doc(userId).get();
-        final userData = userDoc.data() ?? {};
-        
-        // Get all kyc images for this user
-        final kycDocs = await _db.collection('users').doc(userId).collection('kyc').get();
-        String? idFrontUrl, idBackUrl, selfieUrl;
-        
-        for (final kycDoc in kycDocs.docs) {
-          final kycData = kycDoc.data();
-          final url = kycData['url'] as String?;
-          final filePath = kycData['filePath'] as String? ?? '';
+        for (final sub in submissions.docs) {
+          final subData = sub.data();
+          final userId = subData['userId'] as String?;
+          if (userId == null) continue;
           
-          if (url != null) {
-            if (filePath.contains('id_front') || filePath.contains('front')) {
-              idFrontUrl = url;
-            } else if (filePath.contains('id_back') || filePath.contains('back')) {
-              idBackUrl = url;
-            } else if (filePath.contains('selfie')) {
-              selfieUrl = url;
+          // Get user info
+          final userDoc = await _db.collection('users').doc(userId).get();
+          final userData = userDoc.data() ?? {};
+          
+          // Get all kyc images for this user
+          final kycDocs = await _db.collection('users').doc(userId).collection('kyc').get();
+          String? idFrontUrl, idBackUrl, selfieUrl;
+          
+          for (final kycDoc in kycDocs.docs) {
+            final kycData = kycDoc.data();
+            final url = kycData['url'] as String?;
+            final filePath = kycData['filePath'] as String? ?? '';
+            
+            if (url != null) {
+              if (filePath.contains('id_front') || filePath.contains('front')) {
+                idFrontUrl = url;
+              } else if (filePath.contains('id_back') || filePath.contains('back')) {
+                idBackUrl = url;
+              } else if (filePath.contains('selfie')) {
+                selfieUrl = url;
+              }
             }
           }
+          
+          items.add(
+            _KycItem(
+              userId: userId,
+              submissionId: sub.id,
+              email: (userData['email'] as String?) ?? 'unknown',
+              storeName: (userData['storeName'] as String?) ?? 'Seller',
+              idFrontUrl: idFrontUrl,
+              idBackUrl: idBackUrl,
+              selfieUrl: selfieUrl,
+              submittedAt: (subData['submittedAt'] is Timestamp) 
+                  ? (subData['submittedAt'] as Timestamp).toDate()
+                  : DateTime.tryParse(subData['submittedAt']?.toString() ?? ''),
+            ),
+          );
         }
-        
-        items.add(
-          _KycItem(
-            userId: userId,
-            submissionId: sub.id,
-            email: (userData['email'] as String?) ?? 'unknown',
-            storeName: (userData['storeName'] as String?) ?? 'Seller',
-            idFrontUrl: idFrontUrl,
-            idBackUrl: idBackUrl,
-            selfieUrl: selfieUrl,
-            submittedAt: (subData['submittedAt'] is Timestamp) 
-                ? (subData['submittedAt'] as Timestamp).toDate()
-                : DateTime.tryParse(subData['submittedAt']?.toString() ?? ''),
-          ),
-        );
+      } catch (e) {
+        debugPrint('Error loading kyc_submissions: $e');
       }
+      
+      // Method 2: Check users collection for pending KYC status (for regular user submissions)
+      try {
+        final pendingUsers = await _db.collection('users')
+            .where('kycStatus', isEqualTo: 'pending')
+            .get();
+        
+        for (final userDoc in pendingUsers.docs) {
+          final userData = userDoc.data();
+          final userId = userDoc.id;
+          
+          // Check if we already have this user from kyc_submissions
+          if (items.any((item) => item.userId == userId)) continue;
+          
+          // Get KYC documents
+          final kycDocs = await _db.collection('users').doc(userId).collection('kyc').get();
+          String? idFrontUrl, idBackUrl, selfieUrl;
+          
+          for (final kycDoc in kycDocs.docs) {
+            final kycData = kycDoc.data();
+            idFrontUrl = kycData['idFrontUrl'] as String?;
+            idBackUrl = kycData['idBackUrl'] as String?;
+            selfieUrl = kycData['selfieUrl'] as String?;
+          }
+          
+          // Only add if we have actual KYC documents
+          if (idFrontUrl != null || idBackUrl != null || selfieUrl != null) {
+            items.add(
+              _KycItem(
+                userId: userId,
+                submissionId: 'user_$userId', // Use a placeholder ID for regular users
+                email: (userData['email'] as String?) ?? 'unknown',
+                storeName: (userData['storeName'] as String?) ?? 'Seller',
+                idFrontUrl: idFrontUrl,
+                idBackUrl: idBackUrl,
+                selfieUrl: selfieUrl,
+                submittedAt: DateTime.now(), // Use current time as fallback
+              ),
+            );
+          }
+        }
+      } catch (e) {
+        debugPrint('Error loading pending users: $e');
+      }
+      
       setState(() { _items = items; });
     } catch (e) {
       debugPrint('KYC load error: $e');
     } finally {
       if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  // Migrate existing pending KYC users to submissions collection
+  Future<void> _migratePendingKyc() async {
+    try {
+      final pendingUsers = await _db.collection('users')
+          .where('kycStatus', isEqualTo: 'pending')
+          .get();
+      
+      int migrated = 0;
+      for (final userDoc in pendingUsers.docs) {
+        final userId = userDoc.id;
+        
+        // Check if submission already exists
+        final existingSubmissions = await _db.collection('kyc_submissions')
+            .where('userId', isEqualTo: userId)
+            .where('status', isEqualTo: 'pending')
+            .get();
+        
+        if (existingSubmissions.docs.isEmpty) {
+          // Create submission entry
+          await _db.collection('kyc_submissions').add({
+            'userId': userId,
+            'status': 'pending',
+            'submittedAt': FieldValue.serverTimestamp(),
+            'type': 'migrated',
+            'migratedAt': FieldValue.serverTimestamp(),
+          });
+          migrated++;
+        }
+      }
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Migrated $migrated pending KYC users to submissions collection'))
+        );
+        _load(); // Reload the list
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Migration failed: $e'))
+        );
+      }
     }
   }
 
@@ -91,11 +186,13 @@ class _KycReviewListState extends State<KycReviewList> {
         'kycApprovedAt': status == 'approved' ? FieldValue.serverTimestamp() : null
       }, SetOptions(merge: true));
       
-      // Update the submission status 
-      await _db.collection('kyc_submissions').doc(submissionId).update({
-        'status': status,
-        'reviewedAt': FieldValue.serverTimestamp(),
-      });
+      // Update the submission status if it's a real submission ID
+      if (!submissionId.startsWith('user_')) {
+        await _db.collection('kyc_submissions').doc(submissionId).update({
+          'status': status,
+          'reviewedAt': FieldValue.serverTimestamp(),
+        });
+      }
       
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('KYC $status')));
@@ -121,7 +218,21 @@ class _KycReviewListState extends State<KycReviewList> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('KYC Review', style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: AdminTheme.textColor)),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('KYC Review', style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: AdminTheme.textColor)),
+              ElevatedButton.icon(
+                onPressed: _migratePendingKyc,
+                icon: const Icon(Icons.sync),
+                label: const Text('Migrate Pending'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AdminTheme.deepTeal,
+                  foregroundColor: Colors.white,
+                ),
+              ),
+            ],
+          ),
           const SizedBox(height: 16),
           Expanded(
             child: ListView.separated(

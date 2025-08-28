@@ -2384,9 +2384,18 @@ exports.onNewMessage = functions.runWith({ timeoutSeconds: 60, memory: '256MB' }
         },
       };
 
+      // Update chat unreadCount and lastMessageBy before sending notification
+      const chatRef = admin.firestore().collection('chats').doc(chatId);
+      await chatRef.update({
+        unreadCount: admin.firestore.FieldValue.increment(1),
+        lastMessageBy: message.senderId,
+        lastMessageTime: admin.firestore.FieldValue.serverTimestamp(),
+        timestamp: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
       const result = await sendWithRetry(notificationMessage, 3);
       if (result.ok) {
-        console.log('Successfully sent chat notification');
+        console.log('Successfully sent chat notification and updated unreadCount');
         await admin.firestore().collection('notifications_sent').doc(idempotencyKey).set({
           chatId,
           messageId: context.params.messageId,
@@ -2422,6 +2431,26 @@ exports.markNotificationDelivered = functions.https.onCall(async (data, context)
     userId,
   }, { merge: true });
   return { ok: true };
+});
+
+// Mark chat as viewed and reset unreadCount
+exports.markChatAsViewed = functions.https.onCall(async (data, context) => {
+  try {
+    const { chatId, userId } = data || {};
+    if (!chatId || !userId) return { ok: false, error: 'Missing chatId or userId' };
+    
+    // Update the chat document to mark it as viewed by this user
+    await admin.firestore().collection('chats').doc(chatId).update({
+      [`lastViewed_${userId}`]: admin.firestore.FieldValue.serverTimestamp(),
+      unreadCount: 0, // Reset unread count when viewed
+    });
+    
+    console.log(`[markChatAsViewed] Chat ${chatId} marked as viewed by user ${userId}`);
+    return { ok: true };
+  } catch (e) {
+    console.error('[markChatAsViewed] Error:', e);
+    return { ok: false, error: e.message };
+  }
 });
 
 exports.markNotificationOpened = functions.https.onCall(async (data, context) => {
@@ -2613,6 +2642,112 @@ exports.onOrderFinalized = functions.runWith({ timeoutSeconds: 60, memory: '256M
       return null;
     }
   });
+
+// === Fix order sellerName when orders are created/updated ===
+exports.fixOrderSellerName = functions.runWith({ timeoutSeconds: 60, memory: '256MB' }).firestore
+  .document('orders/{orderId}')
+  .onWrite(async (change, context) => {
+    try {
+      const orderData = change.after.data();
+      if (!orderData) return null; // Document was deleted
+      
+      const orderId = context.params.orderId;
+      const sellerId = orderData.sellerId;
+      
+      // Only proceed if we have a sellerId and the sellerName is incorrect
+      if (sellerId && (!orderData.sellerName || orderData.sellerName === 'Unknown Store')) {
+        console.log(`[fixOrderSellerName] Fixing sellerName for order ${orderId}`);
+        
+        // Get the seller's user document to get their store name
+        const sellerDoc = await db.collection('users').doc(sellerId).get();
+        if (sellerDoc.exists) {
+          const sellerData = sellerDoc.data();
+          const correctSellerName = sellerData.storeName || sellerData.name || 'Store';
+          
+          // Update the order with the correct seller name
+          await change.after.ref.update({
+            sellerName: correctSellerName,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp()
+          });
+          
+          console.log(`[fixOrderSellerName] Updated order ${orderId} sellerName from "${orderData.sellerName}" to "${correctSellerName}"`);
+        }
+      }
+      
+      return null;
+    } catch (e) {
+      console.error('[fixOrderSellerName] Failed to fix order sellerName:', e);
+      return null;
+    }
+  });
+
+// === Fix existing orders with incorrect sellerName ===
+exports.fixExistingOrderSellerNames = functions.https.onCall(async (data, context) => {
+  try {
+    // Only allow admins to run this function
+    if (!context.auth) {
+      throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
+    }
+    
+    const callerUid = context.auth.uid;
+    const callerDoc = await db.collection('users').doc(callerUid).get();
+    if (!callerDoc.exists || callerDoc.data().role !== 'admin') {
+      throw new functions.https.HttpsError('permission-denied', 'Only admins can run this function');
+    }
+    
+    console.log('[fixExistingOrderSellerNames] Starting to fix existing orders...');
+    
+    // Get all orders with incorrect sellerName
+    const ordersSnapshot = await db.collection('orders')
+      .where('sellerName', '==', 'Unknown Store')
+      .limit(100) // Process in batches to avoid timeout
+      .get();
+    
+    let fixedCount = 0;
+    let errorCount = 0;
+    
+    for (const orderDoc of ordersSnapshot.docs) {
+      try {
+        const orderData = orderDoc.data();
+        const sellerId = orderData.sellerId;
+        
+        if (sellerId) {
+          // Get the seller's user document
+          const sellerDoc = await db.collection('users').doc(sellerId).get();
+          if (sellerDoc.exists) {
+            const sellerData = sellerDoc.data();
+            const correctSellerName = sellerData.storeName || sellerData.name || 'Store';
+            
+            // Update the order
+            await orderDoc.ref.update({
+              sellerName: correctSellerName,
+              updatedAt: admin.firestore.FieldValue.serverTimestamp()
+            });
+            
+            fixedCount++;
+            console.log(`[fixExistingOrderSellerNames] Fixed order ${orderDoc.id}: "${orderData.sellerName}" → "${correctSellerName}"`);
+          }
+        }
+      } catch (e) {
+        errorCount++;
+        console.error(`[fixExistingOrderSellerNames] Error fixing order ${orderDoc.id}:`, e);
+      }
+    }
+    
+    console.log(`[fixExistingOrderSellerNames] Completed. Fixed: ${fixedCount}, Errors: ${errorCount}`);
+    
+    return {
+      success: true,
+      message: `Fixed ${fixedCount} orders, ${errorCount} errors`,
+      fixedCount,
+      errorCount
+    };
+    
+  } catch (e) {
+    console.error('[fixExistingOrderSellerNames] Function failed:', e);
+    throw new functions.https.HttpsError('internal', `Failed to fix existing orders: ${e.message}`);
+  }
+});
 
 // === Set user custom claims based on Firestore role ===
 exports.setUserCustomClaims = functions.https.onCall(async (data, context) => {

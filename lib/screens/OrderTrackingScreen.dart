@@ -190,12 +190,13 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
             if (snapshot.hasError) return _buildErrorState();
             if (!snapshot.hasData || snapshot.data == null) return _buildLoadingState();
 
-            final data = snapshot.data!.data()! as Map<String, dynamic>;
+            final data = snapshot.data?.data() as Map<String, dynamic>?;
+            if (data == null) return _buildErrorState();
             
-            final currentStatus = data['status'] ?? 'pending';
+            final currentStatus = (data['status'] as String?) ?? 'pending';
             final updates = List<Map<String, dynamic>>.from(data['trackingUpdates'] ?? []);
             final orderItems = (data['items'] as List?) ?? [];
-            final total = data['totalPrice'] ?? data['total'] ?? 0.0;
+            final total = (data['totalPrice'] ?? data['total'] ?? 0.0) as double;
             final timestamp = _parseTimestamp(data['timestamp']);
 
             updates.sort((a, b) {
@@ -227,10 +228,10 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
                 ),
                 
                 // Driver Status Card (if driver is assigned)
-                if (data['driverAssigned'] == true && data['assignedDriverId'] != null)
+                if ((data['driverAssigned'] as bool?) == true && data['assignedDriverId'] != null)
                   SliverToBoxAdapter(
                     child: FutureBuilder<Widget>(
-                      future: _buildDriverStatusCard(data['assignedDriverId']),
+                      future: _buildDriverStatusCard(data['assignedDriverId'] as String),
                       builder: (context, snapshot) {
                         if (snapshot.connectionState == ConnectionState.waiting) {
                           return const Center(child: CircularProgressIndicator());
