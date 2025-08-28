@@ -267,15 +267,15 @@ class _AdminPayoutsSectionState extends State<AdminPayoutsSection> {
                         children: [
                           Icon(Icons.warning, color: Colors.orange.shade700),
                           const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              '⚠️ Marking as failed will automatically reverse the payout and return funds to your account.',
-                              style: TextStyle(
-                                color: Colors.orange.shade800,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ),
+                                                     Expanded(
+                             child: Text(
+                               '⚠️ Marking as failed will automatically reverse the payout and return funds to the seller\'s app wallet.',
+                               style: TextStyle(
+                                 color: Colors.orange.shade800,
+                                 fontWeight: FontWeight.w500,
+                               ),
+                             ),
+                           ),
                         ],
                       ),
                     ),
@@ -315,7 +315,7 @@ class _AdminPayoutsSectionState extends State<AdminPayoutsSection> {
                       if (status == 'failed') {
                         updateData['failureReason'] = failureReason;
                         updateData['failureNotes'] = data['failureNotes'] ?? '';
-                        updateData['failedAt'] = FieldValue.serverTimestamp();
+                        // Don't send FieldValue from client - let server handle timestamp
                       }
 
                       await _functions
@@ -325,12 +325,12 @@ class _AdminPayoutsSectionState extends State<AdminPayoutsSection> {
                       if (mounted) {
                         Navigator.pop(ctx);
                         ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(status == 'failed' 
-                              ? 'Payout marked as failed and funds reversed' 
-                              : 'Payout updated'),
-                            backgroundColor: status == 'failed' ? Colors.orange : Colors.green,
-                          ),
+                                                   SnackBar(
+                           content: Text(status == 'failed' 
+                             ? 'Payout marked as failed and funds returned to seller\'s wallet' 
+                             : 'Payout updated'),
+                           backgroundColor: status == 'failed' ? Colors.orange : Colors.green,
+                         ),
                         );
                         _refresh();
                       }
@@ -855,6 +855,24 @@ class _AdminPayoutsSectionState extends State<AdminPayoutsSection> {
         return 'Other';
       default:
         return reason;
+    }
+  }
+
+  String _formatDate(DateTime date) {
+    final now = DateTime.now();
+    final difference = now.difference(date);
+    
+    if (difference.inDays == 0) {
+      if (difference.inHours == 0) {
+        return '${difference.inMinutes}m ago';
+      }
+      return '${difference.inHours}h ago';
+    } else if (difference.inDays == 1) {
+      return 'Yesterday';
+    } else if (difference.inDays < 7) {
+      return '${difference.inDays}d ago';
+    } else {
+      return '${date.day}/${date.month}/${date.year}';
     }
   }
 

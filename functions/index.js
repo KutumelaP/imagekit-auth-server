@@ -3346,10 +3346,10 @@ exports.adminUpdatePayoutStatus = functions.https.onCall(async (data, context) =
     }
 
     if (status === 'failed' || status === 'cancelled') {
-      // 🚨 AUTOMATIC PAYOUT REVERSAL: When marked as failed/cancelled, funds are automatically returned
+      // 🚨 AUTOMATIC PAYOUT REVERSAL: When marked as failed/cancelled, funds are automatically returned to seller's wallet
       // - Orders are unlocked for new payout requests
       // - Platform receivables are unlocked and available for new payouts
-      // - No money is actually sent to seller (funds stay in admin account)
+      // - Money returns to seller's available balance (not admin account)
       
       const orderIds = Array.isArray(pdata.orderIds) ? pdata.orderIds : [];
       const entryIds = Array.isArray(pdata.entryIds) ? pdata.entryIds : [];
@@ -3360,11 +3360,19 @@ exports.adminUpdatePayoutStatus = functions.https.onCall(async (data, context) =
         tx.set(oref, { payoutRequestId: admin.firestore.FieldValue.delete(), updatedAt: now }, { merge: true });
       });
       
-      // Unlock platform receivables for new payouts
+      // Unlock platform receivables for new payouts (this makes money available in seller's wallet again)
       if (sellerId && entryIds.length > 0) {
         entryIds.forEach((eid) => {
           const eref = db.collection('platform_receivables').doc(sellerId).collection('entries').doc(eid);
-          tx.set(eref, { status: 'available', payoutLockId: admin.firestore.FieldValue.delete(), updatedAt: now }, { merge: true });
+          tx.set(eref, { 
+            status: 'available', 
+            payoutLockId: admin.firestore.FieldValue.delete(), 
+            updatedAt: now,
+            // Add failure tracking for seller visibility
+            lastFailureReason: status === 'failed' ? failureReason : null,
+            lastFailureNotes: status === 'failed' ? failureNotes : null,
+            lastFailedAt: status === 'failed' ? now : null
+          }, { merge: true });
         });
       }
     }

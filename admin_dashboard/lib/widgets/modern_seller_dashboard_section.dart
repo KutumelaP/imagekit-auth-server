@@ -2118,12 +2118,66 @@ class _ModernSellerDashboardSectionState extends State<ModernSellerDashboardSect
                         final amount = (p['amount'] ?? 0).toDouble();
                         final status = (p['status'] ?? 'requested').toString();
                         final ref = (p['reference'] ?? '').toString();
+                        final failureReason = (p['failureReason'] ?? '').toString();
+                        final failureNotes = (p['failureNotes'] ?? '').toString();
+                        
+                        // Get status color and icon
+                        Color statusColor = Colors.blue;
+                        IconData statusIcon = Icons.receipt_long;
+                        
+                        switch (status) {
+                          case 'paid':
+                            statusColor = Colors.green;
+                            statusIcon = Icons.check_circle;
+                            break;
+                          case 'failed':
+                            statusColor = Colors.red;
+                            statusIcon = Icons.error;
+                            break;
+                          case 'cancelled':
+                            statusColor = Colors.orange;
+                            statusIcon = Icons.cancel;
+                            break;
+                          case 'processing':
+                            statusColor = Colors.blue;
+                            statusIcon = Icons.sync;
+                            break;
+                          default:
+                            statusColor = Colors.grey;
+                            statusIcon = Icons.pending;
+                        }
+                        
                         return ListTile(
                           dense: true,
                           contentPadding: EdgeInsets.zero,
-                          leading: const Icon(Icons.receipt_long),
+                          leading: Icon(statusIcon, color: statusColor),
                           title: Text('R ${amount.toStringAsFixed(2)}  •  ${status.toUpperCase()}'),
-                          subtitle: ref.isNotEmpty ? Text(ref) : null,
+                          subtitle: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              if (ref.isNotEmpty) Text(ref),
+                              // Show failure reason if payout failed
+                              if (status == 'failed' && failureReason.isNotEmpty) ...[
+                                const SizedBox(height: 4),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: Colors.red.shade50,
+                                    borderRadius: BorderRadius.circular(6),
+                                    border: Border.all(color: Colors.red.shade200),
+                                  ),
+                                  child: Text(
+                                    _getFailureReasonLabel(failureReason),
+                                    style: TextStyle(
+                                      color: Colors.red.shade700,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
                         );
                       }).toList(),
                 ),
@@ -3517,6 +3571,29 @@ class _ModernSellerDashboardSectionState extends State<ModernSellerDashboardSect
       }
     } finally {
       if (mounted) setState(() { _requestingPayout = false; });
+    }
+  }
+
+  String _getFailureReasonLabel(String reason) {
+    switch (reason) {
+      case 'bank_account_closed':
+        return 'Bank account closed';
+      case 'invalid_account_number':
+        return 'Invalid account number';
+      case 'insufficient_funds':
+        return 'Insufficient funds';
+      case 'bank_rejected_compliance':
+        return 'Bank rejected (compliance)';
+      case 'expired_payout_request':
+        return 'Expired payout request';
+      case 'wrong_account_details':
+        return 'Wrong account details';
+      case 'technical_error':
+        return 'Technical error';
+      case 'other':
+        return 'Other';
+      default:
+        return reason;
     }
   }
   // ===== Placeholder implementations to restore build for missing sections =====

@@ -583,24 +583,98 @@ class _SellerPayoutsScreenState extends State<SellerPayoutsScreen> {
                     final amount = (p['amount'] ?? 0).toDouble();
                     final status = (p['status'] ?? 'requested').toString();
                     final ref = (p['reference'] ?? '').toString();
+                    final failureReason = (p['failureReason'] ?? '').toString();
+                    final failureNotes = (p['failureNotes'] ?? '').toString();
                     final ts = p['createdAt'];
                     String date = '';
                     try {
                       if (ts is Timestamp) date = ts.toDate().toLocal().toString();
                     } catch (_) {}
+                    
+                    // Get status color and icon
+                    Color statusColor = Colors.blue;
+                    IconData statusIcon = Icons.payments_outlined;
+                    
+                    switch (status) {
+                      case 'paid':
+                        statusColor = Colors.green;
+                        statusIcon = Icons.check_circle;
+                        break;
+                      case 'failed':
+                        statusColor = Colors.red;
+                        statusIcon = Icons.error;
+                        break;
+                      case 'cancelled':
+                        statusColor = Colors.orange;
+                        statusIcon = Icons.cancel;
+                        break;
+                      case 'processing':
+                        statusColor = Colors.blue;
+                        statusIcon = Icons.sync;
+                        break;
+                      default:
+                        statusColor = Colors.grey;
+                        statusIcon = Icons.pending;
+                    }
+                    
                     return ListTile(
                       dense: MediaQuery.of(context).size.width < 360,
                       contentPadding: EdgeInsets.zero,
-                      leading: const Icon(Icons.payments_outlined),
+                      leading: Icon(statusIcon, color: statusColor),
                       title: FittedBox(
                         fit: BoxFit.scaleDown,
                         alignment: Alignment.centerLeft,
                         child: Text('R ${amount.toStringAsFixed(2)}  •  ${status.toUpperCase()}'),
                       ),
-                      subtitle: Text(
-                        [if (date.isNotEmpty) date, if (ref.isNotEmpty) 'Ref: $ref'].join('  \u2022  '),
-                        overflow: TextOverflow.ellipsis,
-                        maxLines: 1,
+                      subtitle: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            [if (date.isNotEmpty) date, if (ref.isNotEmpty) 'Ref: $ref'].join('  \u2022  '),
+                            overflow: TextOverflow.ellipsis,
+                            maxLines: 1,
+                          ),
+                          // Show failure reason if payout failed
+                          if (status == 'failed' && failureReason.isNotEmpty) ...[
+                            const SizedBox(height: 4),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: Colors.red.shade50,
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: Colors.red.shade200),
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(Icons.info_outline, color: Colors.red.shade700, size: 16),
+                                  const SizedBox(width: 4),
+                                  Expanded(
+                                    child: Text(
+                                      _getFailureReasonLabel(failureReason),
+                                      style: TextStyle(
+                                        color: Colors.red.shade700,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                          // Show failure notes if available
+                          if (status == 'failed' && failureNotes.isNotEmpty) ...[
+                            const SizedBox(height: 2),
+                            Text(
+                              'Note: $failureNotes',
+                              style: TextStyle(
+                                color: Colors.red.shade600,
+                                fontSize: 11,
+                                fontStyle: FontStyle.italic,
+                              ),
+                            ),
+                          ],
+                        ],
                       ),
                     );
                   }).toList(),
@@ -626,5 +700,28 @@ class _SellerPayoutsScreenState extends State<SellerPayoutsScreen> {
       'prefilledAmount': _outstandingAmount,
       'paymentReason': 'outstanding_fees',
     });
+  }
+
+  String _getFailureReasonLabel(String reason) {
+    switch (reason) {
+      case 'bank_account_closed':
+        return 'Bank account closed';
+      case 'invalid_account_number':
+        return 'Invalid account number';
+      case 'insufficient_funds':
+        return 'Insufficient funds';
+      case 'bank_rejected_compliance':
+        return 'Bank rejected (compliance)';
+      case 'expired_payout_request':
+        return 'Expired payout request';
+      case 'wrong_account_details':
+        return 'Wrong account details';
+      case 'technical_error':
+        return 'Technical error';
+      case 'other':
+        return 'Other';
+      default:
+        return reason;
+    }
   }
 }
