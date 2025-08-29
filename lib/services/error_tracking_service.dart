@@ -14,7 +14,7 @@ class ErrorTrackingService {
       // Check if Firebase Crashlytics is available
       if (kIsWeb) {
         // On web, Crashlytics might not be available
-        print('🔍 DEBUG: Running on web, Crashlytics may not be available');
+        if (kDebugMode) print('🔍 DEBUG: Running on web, Crashlytics may not be available');
         return;
       }
       
@@ -24,22 +24,24 @@ class ErrorTrackingService {
       try {
         await _crashlytics!.setCrashlyticsCollectionEnabled(false);
       } catch (e) {
-        print('🔍 DEBUG: Could not set Crashlytics collection enabled: $e');
+        if (kDebugMode) print('🔍 DEBUG: Could not set Crashlytics collection enabled: $e');
       }
       
       _isInitialized = true;
-      print('🔍 DEBUG: ErrorTrackingService initialized successfully');
+      if (kDebugMode) print('🔍 DEBUG: ErrorTrackingService initialized successfully');
     } catch (e) {
-      print('🔍 DEBUG: Error initializing ErrorTrackingService: $e');
+      if (kDebugMode) print('🔍 DEBUG: Error initializing ErrorTrackingService: $e');
     }
   }
 
   static void logError(dynamic error, StackTrace? stackTrace) {
     try {
-      // Log to console
-      print('🚨 Error: $error');
-      if (stackTrace != null) {
-        print('🚨 Stack trace: $stackTrace');
+      // Log to console only in debug mode
+      if (kDebugMode) {
+        print('🚨 Error: $error');
+        if (stackTrace != null) {
+          print('🚨 Stack trace: $stackTrace');
+        }
       }
 
       // Log to Crashlytics if available and not on web
@@ -50,11 +52,11 @@ class ErrorTrackingService {
             _crashlytics!.recordError(error, stackTrace);
       }
     } catch (e) {
-          print('🔍 DEBUG: Could not log to Crashlytics: $e');
+          if (kDebugMode) print('🔍 DEBUG: Could not log to Crashlytics: $e');
         }
       }
     } catch (e) {
-      print('🔍 DEBUG: Error in logError: $e');
+      if (kDebugMode) print('🔍 DEBUG: Error in logError: $e');
     }
   }
 

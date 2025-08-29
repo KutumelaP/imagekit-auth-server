@@ -52,7 +52,7 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
     final orderRef = FirebaseFirestore.instance.collection('orders').doc(widget.orderId);
     final snapshot = await orderRef.get();
     if (snapshot.exists) {
-      final data = snapshot.data()! as Map<String, dynamic>;
+      final data = snapshot.data()!;
       setState(() {
         _orderData = data;
         
@@ -174,21 +174,29 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
     final orderRef = FirebaseFirestore.instance.collection('orders').doc(widget.orderId);
 
     return Scaffold(
-      backgroundColor: AppTheme.whisper,
-      body: FadeTransition(
-        opacity: _fadeAnimation,
-        child: StreamBuilder<DocumentSnapshot>(
+      backgroundColor: Colors.transparent,
+      body: Container(
+        width: double.infinity,
+        height: double.infinity,
+        decoration: BoxDecoration(
+          gradient: AppTheme.screenBackgroundGradient,
+          color: AppTheme.whisper, // Fallback color
+        ),
+        child: FadeTransition(
+          opacity: _fadeAnimation,
+          child: StreamBuilder<DocumentSnapshot>(
           stream: orderRef.snapshots(),
           builder: (context, snapshot) {
             if (snapshot.hasError) return _buildErrorState();
             if (!snapshot.hasData || snapshot.data == null) return _buildLoadingState();
 
-            final data = snapshot.data!.data()! as Map<String, dynamic>;
+            final data = snapshot.data?.data() as Map<String, dynamic>?;
+            if (data == null) return _buildErrorState();
             
-            final currentStatus = data['status'] ?? 'pending';
+            final currentStatus = (data['status'] as String?) ?? 'pending';
             final updates = List<Map<String, dynamic>>.from(data['trackingUpdates'] ?? []);
             final orderItems = (data['items'] as List?) ?? [];
-            final total = data['totalPrice'] ?? data['total'] ?? 0.0;
+            final total = (data['totalPrice'] ?? data['total'] ?? 0.0) as double;
             final timestamp = _parseTimestamp(data['timestamp']);
 
             updates.sort((a, b) {
@@ -204,7 +212,7 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
             return CustomScrollView(
               slivers: [
                 // Beautiful App Bar
-                _buildSliverAppBar(currentStatus),
+                _buildSliverAppBar(currentStatus, data),
                 
                 // Order Summary Card
                 SliverToBoxAdapter(
@@ -220,10 +228,10 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
                 ),
                 
                 // Driver Status Card (if driver is assigned)
-                if (data['driverAssigned'] == true && data['assignedDriverId'] != null)
+                if ((data['driverAssigned'] as bool?) == true && data['assignedDriverId'] != null)
                   SliverToBoxAdapter(
                     child: FutureBuilder<Widget>(
-                      future: _buildDriverStatusCard(data['assignedDriverId']),
+                      future: _buildDriverStatusCard(data['assignedDriverId'] as String),
                       builder: (context, snapshot) {
                         if (snapshot.connectionState == ConnectionState.waiting) {
                           return const Center(child: CircularProgressIndicator());
@@ -260,12 +268,13 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
                 ),
                 
                 SliverToBoxAdapter(
-                  child: const SizedBox(height: 100), // Bottom padding
+                  child: const SizedBox(height: 20), // Minimal bottom padding
                 ),
               ],
             );
           },
         ),
+      ),
       ),
     );
   }
@@ -313,23 +322,27 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
       e164 = '+27$e164';
     }
     final orderNo = (data['orderNumber'] as String?) ?? (data['orderId'] as String?) ?? widget.orderId;
+    final formattedOrderNo = OrderUtils.formatOrderNumber(orderNo);
     final ok = await WhatsAppCloudService.instance.sendTemplate(
       toE164: e164,
       templateName: const String.fromEnvironment('WA_TMPL_ORDER_CONFIRMED', defaultValue: 'order_confirmed'),
       language: 'en',
-      parameters: [orderNo],
+      parameters: [formattedOrderNo],
     );
     if (ok) {
       _waNotified = true;
     }
   }
 
-  Widget _buildSliverAppBar(String status) {
+  Widget _buildSliverAppBar(String status, Map<String, dynamic> orderData) {
     final color = _statusColor(status);
+    // Get proper order number from order data, fallback to orderId if not available
+    final orderNumber = orderData['orderNumber'] ?? widget.orderId;
+    print('🔍 DEBUG: Order number for app bar: $orderNumber');
     
     return SliverSafeArea(
       top: true,
-      child: SliverAppBar(
+      sliver: SliverAppBar(
         expandedHeight: 180,
         floating: false,
         pinned: true,
@@ -406,7 +419,7 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
                   ),
                   const SizedBox(height: 8),
                   Text(
-                      'Order ${OrderUtils.formatShortOrderNumber(widget.orderId)}',
+                      'Order ${OrderUtils.formatShortOrderNumber(orderNumber)}',
                       style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                         color: Colors.white,
                         fontWeight: FontWeight.bold,

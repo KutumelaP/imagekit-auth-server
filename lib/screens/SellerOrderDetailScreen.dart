@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
@@ -18,6 +19,25 @@ class SellerOrderDetailScreen extends StatefulWidget {
 
 class _SellerOrderDetailScreenState extends State<SellerOrderDetailScreen>
     with TickerProviderStateMixin {
+  
+  /// Helper function to safely parse timestamps from different formats
+  DateTime? _parseTimestamp(dynamic timestamp) {
+    if (timestamp == null) return null;
+    
+    if (timestamp is Timestamp) {
+      return timestamp.toDate();
+    } else if (timestamp is String) {
+      try {
+        return DateTime.parse(timestamp);
+      } catch (e) {
+        return null;
+      }
+    } else if (timestamp is DateTime) {
+      return timestamp;
+    }
+    return null;
+  }
+  
   final _driverNameController = TextEditingController();
   final _driverPhoneController = TextEditingController();
   final _statusNoteController = TextEditingController();
@@ -260,7 +280,7 @@ class _SellerOrderDetailScreenState extends State<SellerOrderDetailScreen>
                       _buildOrderItemsCard(items, total),
                       
                       // Payment Information Card
-                      _buildPaymentInfoCard(paymentMethod, paymentStatus, total),
+                      _buildPaymentInfoCard(orderRef, order, paymentMethod, paymentStatus, total),
                       
                       // Status Management Card
                       _buildStatusManagementCard(orderRef, status, sellerName),
@@ -283,7 +303,7 @@ class _SellerOrderDetailScreenState extends State<SellerOrderDetailScreen>
   Widget _buildSliverAppBar(String status) {
     return SliverSafeArea(
       top: true,
-      child: SliverAppBar(
+      sliver: SliverAppBar(
         expandedHeight: 180,
         floating: false,
         pinned: true,
@@ -623,8 +643,10 @@ class _SellerOrderDetailScreenState extends State<SellerOrderDetailScreen>
     );
   }
 
-  Widget _buildPaymentInfoCard(String paymentMethod, String paymentStatus, dynamic total) {
-    final isPaid = paymentStatus.toLowerCase() == 'paid';
+  Widget _buildPaymentInfoCard(DocumentReference orderRef, Map<String, dynamic> order, String paymentMethod, String paymentStatus, dynamic total) {
+    final isPaid = paymentStatus.toLowerCase() == 'paid' || paymentStatus.toLowerCase() == 'completed';
+    final methods = (order['paymentMethods'] as List?)?.map((e) => e.toString().toLowerCase()).toList() ?? [];
+    final isCOD = methods.any((m) => m.contains('cash')) || (order['paymentMethod']?.toString().toLowerCase().contains('cash') ?? false);
     
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -697,9 +719,80 @@ class _SellerOrderDetailScreenState extends State<SellerOrderDetailScreen>
           ),
           const SizedBox(height: 8),
           _buildInfoRow(Icons.receipt, 'Total Amount', 'R${(total is num ? total.toDouble() : 0.0).toStringAsFixed(2)}'),
+          const SizedBox(height: 12),
+          if (isCOD && !isPaid)
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: _updating ? null : () => _markCashAsPaid(orderRef),
+                icon: _updating
+                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                    : const Icon(Icons.check_circle),
+                label: Text(_updating ? 'Updating...' : 'Mark as Paid (Cash)'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.primaryGreen,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+            ),
         ],
       ),
     );
+  }
+
+  Future<void> _markCashAsPaid(DocumentReference orderRef) async {
+    setState(() => _updating = true);
+    try {
+      await orderRef.update({
+        'paymentStatus': 'completed',
+        'codPaid': true,
+        'paidAt': FieldValue.serverTimestamp(),
+      });
+
+      // Credit receivable ledger for COD so earnings reflect immediately
+      try {
+        await FirebaseFunctions.instance.httpsCallable('markCodPaid').call({ 'orderId': orderRef.id });
+      } catch (e) {
+        // Non-fatal: UI will still show paid; balance may refresh on finalize
+        print('markCodPaid failed: $e');
+      }
+
+      // Optional: add a timeline update for transparency
+      final currentUser = FirebaseAuth.instance.currentUser;
+      String sellerName = 'Seller';
+      if (currentUser != null) {
+        final userDoc = await FirebaseFirestore.instance.collection('users').doc(currentUser.uid).get();
+        if (userDoc.exists) {
+          final data = userDoc.data() as Map<String, dynamic>;
+          sellerName = data['displayName'] ?? data['storeName'] ?? data['email']?.split('@')[0] ?? 'Seller';
+        }
+      }
+      await orderRef.update({
+        'trackingUpdates': FieldValue.arrayUnion([
+          {
+            'description': 'Cash payment received. Marked PAID.',
+            'timestamp': Timestamp.now(),
+            'by': sellerName,
+          }
+        ]),
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: const Text('Marked as paid (cash)'), backgroundColor: AppTheme.success),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to mark as paid: $e'), backgroundColor: AppTheme.error),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _updating = false);
+    }
   }
 
   Widget _buildStatusManagementCard(DocumentReference orderRef, String currentStatus, String sellerName) {
@@ -903,8 +996,9 @@ class _SellerOrderDetailScreenState extends State<SellerOrderDetailScreen>
               final index = entry.key;
               final update = entry.value;
               final timestamp = update['timestamp'];
-              final formattedTime = timestamp != null 
-                  ? DateFormat('MMM dd, yyyy • HH:mm').format(timestamp is Timestamp ? timestamp.toDate() : timestamp)
+              final parsedTimestamp = _parseTimestamp(timestamp);
+              final formattedTime = parsedTimestamp != null 
+                  ? DateFormat('MMM dd, yyyy • HH:mm').format(parsedTimestamp)
                   : 'Unknown time';
               
               return Container(
@@ -1123,6 +1217,33 @@ class _SellerOrderDetailScreenState extends State<SellerOrderDetailScreen>
         }
       }
       
+      // 🚫 STATUS FLOW VALIDATION - Always validate status transitions BEFORE updating
+      final currentStatus = orderDoc['status'] as String? ?? 'pending';
+      final validTransitions = {
+        'pending': ['confirmed', 'cancelled'],
+        'confirmed': ['preparing', 'cancelled'],
+        'preparing': ['ready', 'cancelled'],
+        'ready': ['shipped', 'delivered', 'cancelled'],
+        'shipped': ['delivered', 'cancelled'],
+      };
+      
+      if (validTransitions.containsKey(currentStatus) && 
+          !validTransitions[currentStatus]!.contains(newStatus.toLowerCase())) {
+        final errorMessage = 'Invalid status transition: $currentStatus → $newStatus. Valid transitions: ${validTransitions[currentStatus]}';
+        print('❌ $errorMessage');
+        
+        // Show error to user without updating the database
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(errorMessage),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 5),
+          ),
+        );
+        
+        throw Exception(errorMessage);
+      }
+      
       // Create tracking update
       final trackingUpdate = {
         'description': 'Order status updated to ${newStatus.toUpperCase()}',
@@ -1136,6 +1257,164 @@ class _SellerOrderDetailScreenState extends State<SellerOrderDetailScreen>
         'status': newStatus,
         'trackingUpdates': FieldValue.arrayUnion([trackingUpdate])
       });
+      
+      // 🔔 STOCK REDUCTION LOGIC - Only reduce stock when seller confirms order fulfillment
+      if (['confirmed'].contains(newStatus.toLowerCase())) {
+        try {
+          final items = orderDoc['items'] as List<dynamic>?;
+          if (items != null && items.isNotEmpty) {
+            print('📦 Processing stock reduction for ${items.length} items');
+            
+            // INVENTORY VALIDATION - Check if we have enough stock before reducing
+            bool hasInsufficientStock = false;
+            List<String> insufficientProducts = [];
+            
+            for (var item in items) {
+              final itemData = item as Map<String, dynamic>;
+              final String? productId = (itemData['id'] ?? itemData['productId'])?.toString();
+              if (productId == null || productId.isEmpty) continue;
+              
+              final int qty = ((itemData['quantity'] ?? 1) as num).toInt();
+              final productRef = FirebaseFirestore.instance.collection('products').doc(productId);
+              
+              // Get current product data to check stock fields
+              final productDoc = await productRef.get();
+              if (!productDoc.exists) {
+                print('⚠️ Product $productId not found, skipping stock reduction');
+                continue;
+              }
+              
+              final productData = productDoc.data() as Map<String, dynamic>;
+              
+              // Check if product has stock tracking enabled
+              final bool hasExplicitStock = productData.containsKey('stock') || productData.containsKey('quantity');
+              if (!hasExplicitStock) {
+                print('ℹ️ Product ${productData['name'] ?? productId} has no stock tracking, skipping');
+                continue;
+              }
+              
+              // Determine which stock field to use and current value
+              int resolveStock(dynamic value) {
+                if (value is int) return value;
+                if (value is num) return value.toInt();
+                if (value is String) return int.tryParse(value) ?? 0;
+                return 0;
+              }
+              
+              final int current = productData.containsKey('stock')
+                ? resolveStock(productData['stock'])
+                : resolveStock(productData['quantity']);
+              
+              // Check if we have enough stock
+              if (current < qty) {
+                hasInsufficientStock = true;
+                insufficientProducts.add('${productData['name'] ?? productId} (needs: $qty, available: $current)');
+                print('❌ Insufficient stock for ${productData['name'] ?? productId}: needs $qty, available $current');
+              }
+            }
+            
+            // If insufficient stock, prevent status update and notify seller
+            if (hasInsufficientStock) {
+              final errorMessage = 'Cannot update status to $newStatus: Insufficient stock for:\n${insufficientProducts.join('\n')}';
+              print('❌ $errorMessage');
+              
+              // Revert the status update
+              await orderRef.update({
+                'status': orderDoc['status'], // Revert to previous status
+                'trackingUpdates': FieldValue.arrayUnion([{
+                  'description': 'Status update failed: Insufficient stock',
+                  'timestamp': Timestamp.now(),
+                  'status': 'update_failed',
+                  'by': sellerName,
+                  'error': errorMessage,
+                }])
+              });
+              
+              throw Exception(errorMessage);
+            }
+            
+            // STOCK REDUCTION - Proceed with reducing stock
+            final batch = FirebaseFirestore.instance.batch();
+            int reducedItems = 0;
+            
+            for (var item in items) {
+              final itemData = item as Map<String, dynamic>;
+              final String? productId = (itemData['id'] ?? itemData['productId'])?.toString();
+              if (productId == null || productId.isEmpty) continue;
+              
+              final int qty = ((itemData['quantity'] ?? 1) as num).toInt();
+              final productRef = FirebaseFirestore.instance.collection('products').doc(productId);
+              
+              // Get current product data to check stock fields
+              final productDoc = await productRef.get();
+              if (!productDoc.exists) {
+                print('⚠️ Product $productId not found, skipping stock reduction');
+                continue;
+              }
+              
+              final productData = productDoc.data() as Map<String, dynamic>;
+              
+              // Check if product has stock tracking enabled
+              final bool hasExplicitStock = productData.containsKey('stock') || productData.containsKey('quantity');
+              if (!hasExplicitStock) {
+                print('ℹ️ Product ${productData['name'] ?? productId} has no stock tracking, skipping');
+                continue;
+              }
+              
+              // Determine which stock field to use and current value
+              int resolveStock(dynamic value) {
+                if (value is int) return value;
+                if (value is num) return value.toInt();
+                if (value is String) return int.tryParse(value) ?? 0;
+                return 0;
+              }
+              
+              final int current = productData.containsKey('stock')
+                ? resolveStock(productData['stock'])
+                : resolveStock(productData['quantity']);
+              
+              final int next = (current - qty).clamp(0, 1 << 31);
+              
+              // Update the appropriate stock field
+              if (productData.containsKey('stock')) {
+                batch.update(productRef, {'stock': next});
+                print('📦 Reducing stock for ${productData['name'] ?? productId}: $current → $next (qty: $qty)');
+              } else if (productData.containsKey('quantity')) {
+                batch.update(productRef, {'quantity': next});
+                print('📦 Reducing quantity for ${productData['name'] ?? productId}: $current → $next (qty: $qty)');
+              }
+              
+              reducedItems++;
+            }
+            
+            // Commit all stock reductions atomically
+            if (reducedItems > 0) {
+              await batch.commit();
+              print('✅ Stock reduced for $reducedItems products in order $orderNumber');
+              
+              // Add stock reduction note to tracking
+              final stockUpdate = {
+                'description': 'Stock reduced for $reducedItems products',
+                'timestamp': Timestamp.now(),
+                'status': 'stock_reduced',
+                'by': sellerName,
+                'previousStatus': currentStatus,
+                'newStatus': newStatus,
+              };
+              
+              await orderRef.update({
+                'trackingUpdates': FieldValue.arrayUnion([stockUpdate])
+              });
+            } else {
+              print('ℹ️ No products required stock reduction');
+            }
+          }
+        } catch (stockError) {
+          print('❌ Error reducing stock: $stockError');
+          // Don't fail the entire status update if stock reduction fails
+          // Just log the error and continue
+        }
+      }
       
       // Send notification to buyer about status update
       try {

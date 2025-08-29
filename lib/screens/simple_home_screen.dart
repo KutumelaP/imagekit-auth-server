@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
@@ -21,9 +22,10 @@ import 'seller_product_management.dart';
 import 'dart:async'; // Added import for StreamSubscription
 import '../services/global_message_listener.dart';
 import '../widgets/notification_badge.dart';
-import '../widgets/chat_badge.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:flutter/services.dart'; // Added import for SystemUiOverlayStyle
+import '../widgets/embedded_support_chat.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
 class SimpleHomeScreen extends StatefulWidget {
   const SimpleHomeScreen({super.key});
@@ -34,6 +36,7 @@ class SimpleHomeScreen extends StatefulWidget {
 
 class _SimpleHomeScreenState extends State<SimpleHomeScreen> 
     with TickerProviderStateMixin {
+
   List<Map<String, dynamic>> _categories = [];
   bool _isLoading = true;
   String? _error;
@@ -45,27 +48,33 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
   late Animation<double> _fadeAnimation;
 
   bool _isDriver = false;
+  bool _showSupportChat = false; // Add state to control support chat visibility
 
   @override
   void initState() {
     super.initState();
+    // ⚡ FAST LOAD: Initialize only essential animations and data
     _initializeAnimations();
     _initializeScreen();
-    _setupMessageListener();
-    _checkDriverStatus();
     
-    // Start global message listener for chat notifications
-    GlobalMessageListener().startListening();
-    
-    // Initialize user provider data
+    // Defer non-essential operations to post-frame callback
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      _setupMessageListener();
+      _checkDriverStatus();
+      
+      // Start global message listener for chat notifications
+      GlobalMessageListener().startListening();
+      
+      // Initialize user provider data
       final userProvider = Provider.of<UserProvider>(context, listen: false);
       userProvider.loadUserData();
+      
+      // Request location permission after UI is ready
+      _requestLocationPermission();
     });
-    
-    // Request location permission when app starts
-    _requestLocationPermission();
   }
+
+
   
   Future<void> _requestLocationPermission() async {
     try {
@@ -96,7 +105,14 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
         });
       }
     } catch (e) {
-      print('Error checking driver status: $e');
+      // Permission denied is expected for non-drivers - not an actual error
+      if (e.toString().contains('permission-denied')) {
+        setState(() {
+          _isDriver = false; // User is not a driver
+        });
+      } else {
+        print('Error checking driver status: $e');
+      }
     }
   }
 
@@ -292,21 +308,21 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
       
       if (mounted) {
         setState(() {
-          _categories = snapshot.docs.map((doc) {
-            final data = doc.data();
-            String imageUrl = data['imageUrl'] ?? '';
-            
-            // If no image URL is provided, use a default image based on category name
-            if (imageUrl.isEmpty) {
-              imageUrl = _getDefaultCategoryImage(data['name'] ?? '');
-            }
-            
-            return {
-              'id': doc.id,
-              'name': data['name'] ?? '',
-              'imageUrl': imageUrl,
-            };
-          }).toList();
+          if (snapshot.docs.isEmpty) {
+            // If no categories in database, show default categories
+            _categories = _getDefaultCategories();
+            print('🔍 No categories in database, using defaults: ${_categories.length} categories');
+          } else {
+            _categories = snapshot.docs.map((doc) {
+              final data = doc.data();
+              
+              return {
+                'id': doc.id,
+                'name': data['name'] ?? '',
+                'imageUrl': data['imageUrl'] ?? '', // Use actual image URL if available
+              };
+            }).toList();
+          }
           _isLoading = false;
         });
       }
@@ -314,11 +330,38 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
       print('❌ Error loading categories: $e');
       if (mounted) {
         setState(() {
-          _error = 'Failed to load categories. Please check your connection.';
+          // On error, also show default categories for better UX
+          _categories = _getDefaultCategories();
+          print('🔍 Error loading categories, using defaults: ${_categories.length} categories');
           _isLoading = false;
         });
       }
     }
+  }
+
+  List<Map<String, dynamic>> _getDefaultCategories() {
+    return [
+      {
+        'id': 'clothing',
+        'name': 'Clothing',
+        'imageUrl': 'assets/images/clothing.jpg', // LOCAL ASSETS: Use local images
+      },
+      {
+        'id': 'electronics',
+        'name': 'Electronics',
+        'imageUrl': 'assets/images/electronics.jpg', // LOCAL ASSETS: Use local images
+      },
+      {
+        'id': 'food',
+        'name': 'Food',
+        'imageUrl': 'assets/images/food.jpg', // LOCAL ASSETS: Use local images
+      },
+      {
+        'id': 'other',
+        'name': 'Other',
+        'imageUrl': 'assets/images/other.jpg', // LOCAL ASSETS: Use local images
+      },
+    ];
   }
 
   void _goToCategory(String category) {
@@ -333,6 +376,8 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
         const SnackBar(
           content: Text('Navigation failed. Please try again.'),
           backgroundColor: AppTheme.primaryRed,
+          behavior: SnackBarBehavior.floating,
+          margin: EdgeInsets.only(bottom: 100.0), // Position above FAB
         ),
       );
     }
@@ -345,28 +390,35 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
     return Consumer<UserProvider>(
       builder: (context, userProvider, child) {
     return Scaffold(
-      backgroundColor: AppTheme.angel,
+      backgroundColor: Colors.transparent, // Remove background to allow gradient
           floatingActionButton: userProvider.isSeller ? FloatingActionButton(
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const StunningProductUpload(
-                        storeId: 'all',
-                        storeName: 'My Store',
-                      )),
-              );
-            },
-            backgroundColor: AppTheme.deepTeal,
-            foregroundColor: Colors.white,
-            child: const Icon(Icons.add_shopping_cart),
-            tooltip: 'Upload Product',
-          ) : null,
-      body: SafeArea(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const StunningProductUpload(
+                          storeId: 'all',
+                          storeName: 'My Store',
+                        )),
+                );
+              },
+              backgroundColor: AppTheme.deepTeal,
+              foregroundColor: Colors.white,
+              child: const Icon(Icons.add_shopping_cart),
+              tooltip: 'Upload Product',
+            ) : null,
+      body: Container(
+        width: double.infinity,
+        height: double.infinity,
+        decoration: BoxDecoration(
+          gradient: AppTheme.screenBackgroundGradient,
+          color: AppTheme.angel, // Fallback color
+        ),
         child: FadeTransition(
           opacity: _fadeAnimation,
           child: _buildBody(),
         ),
       ),
+
         );
       },
     );
@@ -420,20 +472,23 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
                     ),
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(25),
-                                              child: Image.asset(
-                          'assets/logo.png',
-                          width: 100,
-                          height: 100,
-                          fit: BoxFit.cover,
-                          errorBuilder: (context, error, stackTrace) {
-                            print('🔍 DEBUG: Loading screen logo failed to load: $error');
-                            return const Icon(
-                      Icons.shopping_bag,
-                      color: AppTheme.deepTeal,
-                      size: 50,
-                            );
-                          },
-                        ),
+                                                          // SUPER LIGHT: Compressed logo with fallback
+            child: Image.asset(
+              'assets/logo.png',
+              width: 100,
+              height: 100,
+              fit: BoxFit.cover,
+              // SUPER LIGHT: Aggressive optimization
+              filterQuality: FilterQuality.low,
+              errorBuilder: (context, error, stackTrace) {
+                print('🔍 DEBUG: Loading screen logo failed to load: $error');
+                return const Icon(
+                  Icons.shopping_bag,
+                  color: AppTheme.deepTeal,
+                  size: 50,
+                );
+              },
+            ),
                     ),
                   ),
                 );
@@ -562,8 +617,17 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
               _buildCategoriesHeaderSliver(),
               _buildCategoriesGridSliver(),
               _buildMyPurchasesSection(),
+              // Chatbot widget as regular content - only show when loaded
+              if (!_isLoading)
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 20, 16, 10), // Reduced bottom padding
+                    child: _buildInlineChatbot(),
+                  ),
+                ),
+              // Bottom padding for FAB clearance and proper spacing
               SliverToBoxAdapter(
-                child: SizedBox(height: MediaQuery.of(context).size.height * 0.05),
+                child: SizedBox(height: MediaQuery.of(context).size.height * 0.08), // Increased to 8% to compensate for reduced SafeArea
               ),
             ],
           ),
@@ -572,10 +636,174 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
     );
   }
 
+  Widget _buildInlineChatbot() {
+    return Column(
+      children: [
+        // Support section - tappable
+        if (!_showSupportChat)
+          GestureDetector(
+            onTap: _startSupportChat,
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.1),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        width: 50,
+                        height: 50,
+                        decoration: BoxDecoration(
+                          color: AppTheme.deepTeal,
+                          borderRadius: BorderRadius.circular(25),
+                        ),
+                        child: const Icon(
+                          Icons.support_agent,
+                          color: Colors.white,
+                          size: 24,
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      const Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Need Help?',
+                              style: TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.black87,
+                              ),
+                            ),
+                            Text(
+                              'Get support via chat, email, or phone',
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Colors.grey,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: AppTheme.deepTeal.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Icon(
+                          Icons.arrow_forward_ios,
+                          color: AppTheme.deepTeal,
+                          size: 16,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Our support team is ready to help with orders, products, payments, delivery, and any questions you might have. Choose your preferred way to get in touch!',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.black54,
+                      height: 1.4,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  // Quick support stats
+                  Row(
+                    children: [
+                      _buildSupportStat(
+                        icon: Icons.flash_on,
+                        label: 'Instant Chat',
+                        color: Colors.orange,
+                      ),
+                      const SizedBox(width: 16),
+                      _buildSupportStat(
+                        icon: Icons.schedule,
+                        label: '24/7 Available',
+                        color: Colors.green,
+                      ),
+                      const SizedBox(width: 16),
+                      _buildSupportStat(
+                        icon: Icons.phone,
+                        label: 'Direct Call',
+                        color: Colors.blue,
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        
+        // Show embedded support chat when enabled
+        if (_showSupportChat) ...[
+          EmbeddedSupportChat(
+            onClose: () {
+              setState(() {
+                _showSupportChat = false;
+              });
+            },
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildSupportStat({
+    required IconData icon,
+    required String label,
+    required Color color,
+  }) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              color: color,
+              size: 16,
+            ),
+            const SizedBox(width: 6),
+            Flexible(
+              child: Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: color,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildStunningAppBar() {
     return SliverSafeArea(
       top: true,
-      child: SliverAppBar(
+      sliver: SliverAppBar(
         pinned: true,
         backgroundColor: AppTheme.deepTeal,
         automaticallyImplyLeading: false,
@@ -600,9 +828,12 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
           ),
           child: ClipRRect(
             borderRadius: BorderRadius.circular(8),
+            // SUPER LIGHT: Compressed header logo
             child: Image.asset(
               'assets/logo.png',
               fit: BoxFit.cover,
+              // SUPER LIGHT: Aggressive optimization
+              filterQuality: FilterQuality.low,
               errorBuilder: (context, error, stackTrace) {
                 return const Icon(Icons.shopping_bag, color: Colors.white, size: 18);
               },
@@ -628,49 +859,53 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
 
   Widget _buildAccountMenu() {
     final screenWidth = MediaQuery.of(context).size.width;
-    final iconSize = screenWidth < 600 ? 24.0 : screenWidth < 900 ? 26.0 : 28.0;
+    final iconSize = screenWidth < 600 ? 20.0 : 22.0;
     
     return Consumer<UserProvider>(
       builder: (context, userProvider, child) {
         return Container(
-          margin: EdgeInsets.only(right: screenWidth < 600 ? 4.0 : screenWidth < 900 ? 6.0 : 8.0),
+          margin: EdgeInsets.only(right: screenWidth < 600 ? 8.0 : 16.0),
           decoration: BoxDecoration(
             color: Colors.white,
-            borderRadius: BorderRadius.circular(screenWidth < 600 ? 10.0 : 12.0),
+            borderRadius: BorderRadius.circular(20),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.1),
-                blurRadius: 8,
+                color: Colors.black.withOpacity(0.08),
+                blurRadius: 6,
                 offset: const Offset(0, 2),
               ),
             ],
           ),
           child: PopupMenuButton<String>(
             tooltip: 'Account',
-            elevation: 12,
+            elevation: 8,
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: BorderRadius.circular(12),
             ),
-            color: AppTheme.angel,
-            offset: const Offset(0, 8),
+            color: Colors.white,
+            offset: const Offset(-120, 8),
+            constraints: const BoxConstraints(
+              minWidth: 200,
+              maxWidth: 220,
+            ),
             child: Padding(
-              padding: EdgeInsets.all(screenWidth < 600 ? 8.0 : 10.0),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               child: Stack(
               clipBehavior: Clip.none,
               children: [
-                Icon(Icons.account_circle, color: AppTheme.deepTeal, size: iconSize),
+                Icon(Icons.account_circle_outlined, color: AppTheme.deepTeal, size: iconSize),
                 Positioned(
-                  right: 0,
-                  top: 0,
+                  right: -2,
+                  top: -2,
                   child: Container(
                     decoration: BoxDecoration(
                       color: Colors.white,
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: BorderRadius.circular(8),
                       boxShadow: [
                         BoxShadow(
                           color: Colors.black.withOpacity(0.1),
-                          blurRadius: 4,
-                          offset: const Offset(0, 2),
+                          blurRadius: 2,
+                          offset: const Offset(0, 1),
                         ),
                       ],
                     ),
@@ -690,6 +925,8 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
                     const SnackBar(
                       content: Text('Please wait while we load your account...'),
                       backgroundColor: AppTheme.deepTeal,
+                      behavior: SnackBarBehavior.floating,
+                      margin: EdgeInsets.only(bottom: 100.0), // Position above FAB
                     ),
                   );
                   return;
@@ -718,6 +955,8 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
                       const SnackBar(
                         content: Text('Logged out successfully'),
                         backgroundColor: AppTheme.primaryGreen,
+                        behavior: SnackBarBehavior.floating,
+                        margin: EdgeInsets.only(bottom: 100.0), // Position above FAB
                       ),
                     );
                   }
@@ -727,12 +966,16 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
                       SnackBar(
                         content: Text('Failed to logout: $e'),
                         backgroundColor: AppTheme.primaryRed,
+                        behavior: SnackBarBehavior.floating,
+                        margin: EdgeInsets.only(bottom: 100.0), // Position above FAB
                       ),
                     );
                   }
                 }
               } else if (value == 'profile') {
                 Navigator.push(context, MaterialPageRoute(builder: (_) => const ProfileEditScreen()));
+              } else if (value == 'seller_payouts') {
+                Navigator.pushNamed(context, '/seller-payouts');
               } else if (value == 'register') {
                 print('🔍 DEBUG: Start Selling button pressed');
                 print('🔍 DEBUG: Navigating to SellerRegistrationScreen');
@@ -745,6 +988,8 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
                     SnackBar(
                       content: Text('Navigation error: $e'),
                       backgroundColor: AppTheme.primaryRed,
+                      behavior: SnackBarBehavior.floating,
+                      margin: EdgeInsets.only(bottom: 100.0), // Position above FAB
                     ),
                   );
                 }
@@ -773,7 +1018,11 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
               } else if (value == 'fcm_test') {
                 // FCMTestScreen removed - test functionality no longer needed
                 ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('FCM Test screen removed during cleanup')),
+                  SnackBar(
+                    content: Text('FCM Test screen removed during cleanup'),
+                    behavior: SnackBarBehavior.floating,
+                    margin: EdgeInsets.only(bottom: 100.0), // Position above FAB
+                  ),
                 );
               }
             },
@@ -816,190 +1065,148 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
               ] else if (userProvider.user == null) ...[
                 PopupMenuItem(
                   value: 'login',
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(vertical: 4),
-                    child: Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: AppTheme.deepTeal.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Icon(Icons.login, size: 18, color: AppTheme.deepTeal),
+                  height: 40,
+                  child: Row(
+                    children: [
+                      Icon(Icons.login, size: 16, color: AppTheme.deepTeal),
+                      const SizedBox(width: 10),
+                      Text(
+                        'Login',
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.w500,
+                          fontSize: 14,
                         ),
-                        const SizedBox(width: 12),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Login',
-                              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            Text(
-                              'Access your account',
-                              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                color: AppTheme.cloud,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ),
               ] else ...[
                 PopupMenuItem(
                   value: 'notifications',
+                  height: 40,
                   child: Row(
                     children: [
                       NotificationBadge(
-                        child: Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: AppTheme.deepTeal.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Icon(Icons.notifications, size: 18, color: AppTheme.deepTeal),
+                        child: Icon(Icons.notifications_outlined, size: 16, color: AppTheme.deepTeal),
+                      ),
+                      const SizedBox(width: 10),
+                      Text(
+                        'Notifications',
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.w500,
+                          fontSize: 14,
                         ),
                       ),
-                      const SizedBox(width: 12),
-                      const Text('Notifications'),
                     ],
                   ),
                 ),
                 PopupMenuItem(
                   value: 'my_stores',
+                  height: 40,
                   child: Row(
                     children: [
-                      Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: AppTheme.deepTeal.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(8),
+                      Icon(Icons.favorite_outline, size: 16, color: AppTheme.deepTeal),
+                      const SizedBox(width: 10),
+                      Text(
+                        'My Stores',
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.w500,
+                          fontSize: 14,
                         ),
-                        child: Icon(Icons.favorite, size: 18, color: AppTheme.deepTeal),
                       ),
-                      const SizedBox(width: 12),
-                      const Text('My Stores'),
                     ],
                   ),
                 ),
                 PopupMenuItem(
                   value: 'chat',
+                  height: 40,
                   child: Row(
                     children: [
-                      ChatBadge(
-                        child: Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: AppTheme.deepTeal.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Icon(Icons.chat_outlined, size: 18, color: AppTheme.deepTeal),
+                      Icon(Icons.chat_outlined, size: 16, color: AppTheme.deepTeal),
+                      const SizedBox(width: 10),
+                      Text(
+                        'Chat',
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.w500,
+                          fontSize: 14,
                         ),
                       ),
-                      const SizedBox(width: 12),
-                      const Text('Chat'),
                     ],
                   ),
                 ),
                 PopupMenuItem(
                   value: 'notification_settings',
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(vertical: 4),
-                    child: Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: AppTheme.deepTeal.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Icon(Icons.settings, size: 18, color: AppTheme.deepTeal),
+                  height: 40,
+                  child: Row(
+                    children: [
+                      Icon(Icons.settings_outlined, size: 16, color: AppTheme.deepTeal),
+                      const SizedBox(width: 10),
+                      Text(
+                        'Settings',
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.w500,
+                          fontSize: 14,
                         ),
-                        const SizedBox(width: 12),
-                        const Text('Notification Settings'),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ),
                 // Edit Profile
                 PopupMenuItem(
                   value: 'profile',
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(vertical: 4),
+                  height: 40,
+                  child: Row(
+                    children: [
+                      Icon(Icons.edit_outlined, size: 16, color: AppTheme.deepTeal),
+                      const SizedBox(width: 10),
+                      Text(
+                        'Edit Profile',
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.w500,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                
+                // Earnings (for sellers only)
+                if (userProvider.isSeller)
+                  PopupMenuItem(
+                    value: 'seller_payouts',
+                    height: 40,
                     child: Row(
                       children: [
-                        Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: AppTheme.deepTeal.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(8),
+                        Icon(Icons.account_balance_wallet_outlined, size: 16, color: AppTheme.deepTeal),
+                        const SizedBox(width: 10),
+                        Text(
+                          'Earnings',
+                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            fontWeight: FontWeight.w500,
+                            fontSize: 14,
                           ),
-                          child: Icon(Icons.edit, size: 18, color: AppTheme.deepTeal),
-                        ),
-                        const SizedBox(width: 12),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Edit Profile',
-                              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            Text(
-                              'Update your information',
-                              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                color: AppTheme.cloud,
-                              ),
-                            ),
-                          ],
                         ),
                       ],
                     ),
                   ),
-                ),
                 
                 // Order History (for buyers)
                 if (!userProvider.isSeller)
                   PopupMenuItem(
                     value: 'order_history',
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(vertical: 4),
-                      child: Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: AppTheme.primaryGreen.withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Icon(Icons.history, size: 18, color: AppTheme.primaryGreen),
+                    height: 40,
+                    child: Row(
+                      children: [
+                        Icon(Icons.history, size: 16, color: AppTheme.primaryGreen),
+                        const SizedBox(width: 10),
+                        Text(
+                          'Order History',
+                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            fontWeight: FontWeight.w500,
+                            fontSize: 14,
                           ),
-                          const SizedBox(width: 12),
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Order History',
-                                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              Text(
-                                'View past orders',
-                                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                  color: AppTheme.cloud,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
                   ),
                 
@@ -1007,38 +1214,19 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
                 if (!userProvider.isSeller)
                   PopupMenuItem(
                     value: 'register',
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(vertical: 4),
-                      child: Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: AppTheme.primaryOrange.withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Icon(Icons.store, size: 18, color: AppTheme.primaryOrange),
+                    height: 40,
+                    child: Row(
+                      children: [
+                        Icon(Icons.store_outlined, size: 16, color: AppTheme.primaryOrange),
+                        const SizedBox(width: 10),
+                        Text(
+                          'Become a Seller',
+                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            fontWeight: FontWeight.w500,
+                            fontSize: 14,
                           ),
-                          const SizedBox(width: 12),
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Become a Seller',
-                                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              Text(
-                                'Start selling on Mzansi',
-                                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                  color: AppTheme.cloud,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
                   ),
                 
@@ -1046,38 +1234,19 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
                 if (userProvider.isSeller)
                   PopupMenuItem(
                     value: 'orders',
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(vertical: 4),
-                      child: Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: AppTheme.primaryGreen.withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Icon(Icons.list_alt, size: 18, color: AppTheme.primaryGreen),
+                    height: 40,
+                    child: Row(
+                      children: [
+                        Icon(Icons.list_alt, size: 16, color: AppTheme.primaryGreen),
+                        const SizedBox(width: 10),
+                        Text(
+                          'Orders',
+                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            fontWeight: FontWeight.w500,
+                            fontSize: 14,
                           ),
-                          const SizedBox(width: 12),
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Manage Orders',
-                                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              Text(
-                                'Handle customer orders',
-                                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                  color: AppTheme.cloud,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
                   ),
                 
@@ -1085,38 +1254,19 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
                 if (userProvider.isSeller)
                   PopupMenuItem(
                     value: 'my_products',
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(vertical: 4),
-                      child: Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: AppTheme.deepTeal.withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Icon(Icons.inventory, size: 18, color: AppTheme.deepTeal),
+                    height: 40,
+                    child: Row(
+                      children: [
+                        Icon(Icons.inventory_outlined, size: 16, color: AppTheme.deepTeal),
+                        const SizedBox(width: 10),
+                        Text(
+                          'My Products',
+                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            fontWeight: FontWeight.w500,
+                            fontSize: 14,
                           ),
-                          const SizedBox(width: 12),
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'My Products',
-                                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              Text(
-                                'Manage your products',
-                                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                  color: AppTheme.cloud,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
                   ),
                 
@@ -1124,38 +1274,19 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
                 if (userProvider.isSeller)
                   PopupMenuItem(
                     value: 'upload_product',
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(vertical: 4),
-                      child: Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: AppTheme.deepTeal.withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Icon(Icons.add_shopping_cart, size: 18, color: AppTheme.deepTeal),
+                    height: 40,
+                    child: Row(
+                      children: [
+                        Icon(Icons.add_box_outlined, size: 16, color: AppTheme.deepTeal),
+                        const SizedBox(width: 10),
+                        Text(
+                          'Upload Product',
+                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            fontWeight: FontWeight.w500,
+                            fontSize: 14,
                           ),
-                          const SizedBox(width: 12),
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Upload Product',
-                                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              Text(
-                                'Add new products to sell',
-                                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                  color: AppTheme.cloud,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
                   ),
                 
@@ -1169,76 +1300,40 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
                 if (_isDriver)
                   PopupMenuItem(
                     value: 'driver_app',
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(vertical: 4),
-                      child: Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: AppTheme.warning.withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Icon(Icons.delivery_dining, size: 18, color: AppTheme.warning),
+                    height: 40,
+                    child: Row(
+                      children: [
+                        Icon(Icons.delivery_dining, size: 16, color: AppTheme.warning),
+                        const SizedBox(width: 10),
+                        Text(
+                          'Driver App',
+                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            fontWeight: FontWeight.w500,
+                            fontSize: 14,
                           ),
-                          const SizedBox(width: 12),
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Driver App',
-                                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              Text(
-                                'Manage deliveries',
-                                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                  color: AppTheme.cloud,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
                   ),
 
                 // Logout
+                const PopupMenuDivider(),
                 PopupMenuItem(
                   value: 'logout',
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(vertical: 4),
-                    child: Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: AppTheme.primaryRed.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Icon(Icons.logout, size: 18, color: AppTheme.primaryRed),
+                  height: 40,
+                  child: Row(
+                    children: [
+                      Icon(Icons.logout, size: 16, color: AppTheme.primaryRed),
+                      const SizedBox(width: 10),
+                      Text(
+                        'Logout',
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.w500,
+                          fontSize: 14,
+                          color: AppTheme.primaryRed,
                         ),
-                        const SizedBox(width: 12),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Logout',
-                              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            Text(
-                              'Sign out of your account',
-                              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                color: AppTheme.cloud,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ),
               ],
@@ -1366,6 +1461,7 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
                 color: AppTheme.deepTeal,
               ),
             ),
+            const Spacer(),
           ],
         ),
       ),
@@ -1373,58 +1469,37 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
   }
 
   Widget _buildCategoriesGridSliver() {
-    if (_categories.isEmpty) {
-      return const SliverToBoxAdapter(
-        child: Padding(
-          padding: EdgeInsets.all(32),
-          child: Center(
-            child: Column(
-              children: [
-                Icon(
-                  Icons.category_outlined,
-                  color: AppTheme.deepTeal,
-                  size: 48,
-                ),
-                SizedBox(height: 16),
-                Text(
-                  'No categories available',
-                  style: TextStyle(
-                    color: AppTheme.deepTeal,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                SizedBox(height: 8),
-                Text(
-                  'Categories will appear here once added',
-                  style: TextStyle(
-                    color: AppTheme.cloud,
-                    fontSize: 14,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      );
-    }
-
+    // Categories should always display now with default fallback
     final screenWidth = MediaQuery.of(context).size.width;
     int crossAxisCount = 2;
-    if (screenWidth >= 900) {
+    double childAspectRatio = 0.85;
+    
+    // Better responsive layout for web/PWA
+    if (screenWidth >= 1200) {
       crossAxisCount = 4;
+      childAspectRatio = 0.9;
+    } else if (screenWidth >= 900) {
+      crossAxisCount = 4;
+      childAspectRatio = 0.8;
     } else if (screenWidth >= 600) {
       crossAxisCount = 3;
+      childAspectRatio = 0.85;
+    } else {
+      crossAxisCount = 2;
+      childAspectRatio = 0.9;
     }
 
     return SliverPadding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: EdgeInsets.symmetric(
+        horizontal: screenWidth >= 600 ? 24 : 16,
+        vertical: 8,
+      ),
       sliver: SliverGrid(
         gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: crossAxisCount,
-          mainAxisSpacing: 16,
-          crossAxisSpacing: 16,
-          childAspectRatio: 0.78,
+          mainAxisSpacing: screenWidth >= 600 ? 20 : 16,
+          crossAxisSpacing: screenWidth >= 600 ? 20 : 16,
+          childAspectRatio: childAspectRatio,
         ),
         delegate: SliverChildBuilderDelegate(
           (context, index) {
@@ -1604,184 +1679,164 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
 
   Widget _buildCategoryImage(Map<String, dynamic> category) {
     final categoryName = category['name'] ?? '';
-    final imageUrl = category['imageUrl'];
     
-    print('🔍 DEBUG: Building image for category: "$categoryName" with URL: "$imageUrl"');
+    print('🔍 DEBUG: Building SVG for category: "$categoryName"');
     
-    // If no image URL or empty, use default image
-    if (imageUrl == null || imageUrl.toString().isEmpty) {
-      print('🔍 DEBUG: No image URL for category: $categoryName, using default');
-      return _buildDefaultCategoryImage(categoryName);
-    }
-    
-    // Try to load the original image first
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(8),
-      child: Image.network(
-        imageUrl.toString(),
-        width: double.infinity,
-        height: double.infinity,
-        fit: BoxFit.cover,
-        errorBuilder: (context, error, stackTrace) {
-          print('🔍 DEBUG: Category image failed to load: $categoryName - $error');
-          // Try to use default image for specific categories
-          return _buildDefaultCategoryImage(categoryName);
-        },
-        loadingBuilder: (context, child, loadingProgress) {
-          if (loadingProgress == null) return child;
-          return Container(
-            width: double.infinity,
-            height: double.infinity,
-            decoration: BoxDecoration(
-              color: AppTheme.breeze.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Center(
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                valueColor: AlwaysStoppedAnimation<Color>(AppTheme.deepTeal),
-              ),
-            ),
-          );
-        },
-        // Add cache headers for better performance
-        headers: const {
-          'Cache-Control': 'max-age=3600',
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        },
-        // Add frameBuilder for better loading experience
-        frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
-          if (wasSynchronouslyLoaded) return child;
-          return AnimatedOpacity(
-            opacity: frame == null ? 0 : 1,
-            duration: const Duration(milliseconds: 300),
-            child: child,
-          );
-        },
-        // Add retry mechanism for mobile
-        gaplessPlayback: true,
-      ),
-    );
-  }
-
-  Widget _buildDefaultCategoryImage(String categoryName) {
-    final defaultImageUrl = _getDefaultCategoryImage(categoryName);
-    print('🔍 DEBUG: Loading default image for category: $categoryName - URL: $defaultImageUrl');
-    
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(8),
-      child: Image.network(
-        defaultImageUrl,
-        width: double.infinity,
-        height: double.infinity,
-        fit: BoxFit.cover,
-        errorBuilder: (context, error, stackTrace) {
-          print('🔍 DEBUG: Default image also failed for category: $categoryName - $error');
-          return _buildCategoryIconFallback(categoryName);
-        },
-        loadingBuilder: (context, child, loadingProgress) {
-          if (loadingProgress == null) return child;
-          return Container(
-            width: double.infinity,
-            height: double.infinity,
-            decoration: BoxDecoration(
-              color: AppTheme.breeze.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Center(
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                valueColor: AlwaysStoppedAnimation<Color>(AppTheme.deepTeal),
-              ),
-            ),
-          );
-        },
-        headers: const {
-          'Cache-Control': 'max-age=3600',
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        },
-        frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
-          if (wasSynchronouslyLoaded) return child;
-          return AnimatedOpacity(
-            opacity: frame == null ? 0 : 1,
-            duration: const Duration(milliseconds: 300),
-            child: child,
-          );
-        },
-        gaplessPlayback: true,
-      ),
-    );
-  }
-
-  String _getDefaultCategoryImage(String categoryName) {
-    final name = categoryName.toLowerCase();
-    print('🔍 DEBUG: Getting default image for category: "$categoryName" (normalized: "$name")');
-    
-    // Return placeholder images for common categories
-    if (name.contains('food') || name.contains('restaurant') || name.contains('cafe')) {
-      return 'https://images.unsplash.com/photo-1504674900240-9f883e8a6c3d?w=400&h=300&fit=crop';
-    } else if (name.contains('clothes') || name.contains('fashion') || name.contains('apparel') || name.contains('clothing')) {
-      print('🔍 DEBUG: Using clothing image for category: $categoryName');
-      return 'https://picsum.photos/400/300?random=1';
-    } else if (name.contains('electronics') || name.contains('tech') || name.contains('gadgets') || name.contains('electronic')) {
-      print('🔍 DEBUG: Using electronics image for category: $categoryName');
-      return 'https://picsum.photos/400/300?random=2';
-    } else if (name.contains('home') || name.contains('furniture') || name.contains('decor')) {
-      return 'https://images.unsplash.com/photo-1586023492125-27b2c045efd7?w=400&h=300&fit=crop';
-    } else if (name.contains('beauty') || name.contains('cosmetics') || name.contains('skincare')) {
-      return 'https://images.unsplash.com/photo-1596462502278-27bfdc403348?w=400&h=300&fit=crop';
-    } else if (name.contains('sports') || name.contains('fitness') || name.contains('athletic')) {
-      return 'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=400&h=300&fit=crop';
-    } else if (name.contains('books') || name.contains('education') || name.contains('learning')) {
-      return 'https://images.unsplash.com/photo-1481627834876-b7833e8f5570?w=400&h=300&fit=crop';
-    } else if (name.contains('automotive') || name.contains('car') || name.contains('vehicle')) {
-      return 'https://images.unsplash.com/photo-1549317661-bd32c8ce0db2?w=400&h=300&fit=crop';
-    } else if (name.contains('health') || name.contains('medical') || name.contains('pharmacy')) {
-      return 'https://images.unsplash.com/photo-1576091160399-112ba8d25d1f?w=400&h=300&fit=crop';
-    } else {
-      print('🔍 DEBUG: Using generic image for category: $categoryName');
-      // Generic category image
-      return 'https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?w=400&h=300&fit=crop';
-    }
-  }
-
-  Widget _buildCategoryIconFallback(String categoryName) {
-    return Container(
-      width: double.infinity,
-      height: double.infinity,
-      decoration: BoxDecoration(
+    // SVG: Use vector graphics - lightweight, no memory issues
+    final svgPath = _getCategorySvg(categoryName);
+    if (svgPath != null) {
+      return ClipRRect(
         borderRadius: BorderRadius.circular(8),
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            AppTheme.deepTeal.withOpacity(0.1),
-            AppTheme.cloud.withOpacity(0.05),
-          ],
+        child: SvgPicture.asset(
+          svgPath,
+          width: double.infinity,
+          height: double.infinity,
+          fit: BoxFit.cover,
+          placeholderBuilder: (context) => _buildStableCategoryDisplay(categoryName),
         ),
-        border: Border.all(
-          color: AppTheme.deepTeal.withOpacity(0.2),
-          width: 1,
+      );
+    } else {
+      // Fallback to stable icon display
+      return _buildStableCategoryDisplay(categoryName);
+    }
+  }
+
+  // REMOVED: No longer needed since we use hardcoded local assets
+
+  // REMOVED: No longer needed since we use hardcoded local assets
+
+  // REMOVED: No longer needed since we use SafeNetworkImage
+
+  // SVG: Get vector graphics path for each category
+  String? _getCategorySvg(String categoryName) {
+    final name = categoryName.toLowerCase();
+    
+    if (name.contains('food') || name.contains('restaurant') || name.contains('cafe')) {
+      return 'assets/svg/food.svg';
+    } else if (name.contains('clothes') || name.contains('fashion') || name.contains('apparel') || name.contains('clothing')) {
+      return 'assets/svg/clothing.svg';
+    } else if (name.contains('electronics') || name.contains('tech') || name.contains('gadgets')) {
+      return 'assets/svg/electronics.svg';
+    } else if (name.contains('other')) {
+      return 'assets/svg/other.svg';
+    }
+    
+    return null; // No SVG found
+  }
+
+  // SIMPLE: Use simple, stable approach like other pages
+  Widget _buildStableCategoryDisplay(String categoryName) {
+    // Simple, stable approach - no complex logic that can cause refreshes
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        width: double.infinity,
+        height: double.infinity,
+        decoration: BoxDecoration(
+          gradient: _getCategoryGradient(categoryName),
+          borderRadius: BorderRadius.circular(8),
         ),
-      ),
-      child: Center(
-        child: Icon(
-          _getCategoryIcon(categoryName),
-          color: AppTheme.deepTeal,
-          size: 32,
+        child: Center(
+          child: Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(25),
+              border: Border.all(
+                color: Colors.white.withOpacity(0.2),
+                width: 1,
+              ),
+            ),
+            child: Icon(
+              _getCategoryIcon(categoryName),
+              color: Colors.white,
+              size: 56,
+            ),
+          ),
         ),
       ),
     );
   }
+
+  // REMOVED: No longer needed since we use SafeNetworkImage
+
+  // HARDCODED: Get beautiful gradient for each category
+  LinearGradient _getCategoryGradient(String categoryName) {
+    final name = categoryName.toLowerCase();
+    
+    if (name.contains('food') || name.contains('restaurant') || name.contains('cafe')) {
+      return const LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [Color(0xFFFF6B6B), Color(0xFFFF8E53)],
+      );
+    } else if (name.contains('clothes') || name.contains('fashion') || name.contains('apparel') || name.contains('clothing')) {
+      return const LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [Color(0xFF667eea), Color(0xFF764ba2)],
+      );
+    } else if (name.contains('electronics') || name.contains('tech') || name.contains('gadgets') || name.contains('electronic')) {
+      return const LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [Color(0xFF11998e), Color(0xFF38ef7d)],
+      );
+    } else if (name.contains('home') || name.contains('furniture') || name.contains('decor')) {
+      return const LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [Color(0xFFf093fb), Color(0xFFf5576c)],
+      );
+    } else if (name.contains('beauty') || name.contains('cosmetics') || name.contains('skincare')) {
+      return const LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [Color(0xFFff9a9e), Color(0xFFfecfef)],
+      );
+    } else if (name.contains('sports') || name.contains('fitness') || name.contains('athletic')) {
+      return const LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [Color(0xFF4facfe), Color(0xFF00f2fe)],
+      );
+    } else if (name.contains('books') || name.contains('education') || name.contains('learning')) {
+      return const LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [Color(0xFFa8edea), Color(0xFFfed6e3)],
+      );
+    } else if (name.contains('automotive') || name.contains('car') || name.contains('vehicle')) {
+      return const LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [Color(0xFFffecd2), Color(0xFFfcb69f)],
+      );
+    } else if (name.contains('health') || name.contains('medical') || name.contains('pharmacy')) {
+      return const LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [Color(0xFFa8caba), Color(0xFF5d4e75)],
+      );
+    } else {
+      return const LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [Color(0xFF667eea), Color(0xFF764ba2)],
+      );
+    }
+  }
+
+  // REMOVED: No longer needed since we use SafeNetworkImage
 
   IconData _getCategoryIcon(String categoryName) {
     final name = categoryName.toLowerCase();
-    if (name.contains('food') || name.contains('restaurant')) {
-      return Icons.restaurant;
-    } else if (name.contains('clothes') || name.contains('fashion')) {
+    if (name.contains('food') || name.contains('restaurant') || name.contains('cafe')) {
+      return Icons.restaurant_menu;
+    } else if (name.contains('clothes') || name.contains('fashion') || name.contains('apparel') || name.contains('clothing')) {
       return Icons.checkroom;
-    } else if (name.contains('electronics')) {
-      return Icons.devices;
+    } else if (name.contains('electronics') || name.contains('tech') || name.contains('gadgets')) {
+      return Icons.phone_android;
     } else if (name.contains('home') || name.contains('furniture')) {
       return Icons.home;
     } else if (name.contains('beauty') || name.contains('cosmetics')) {
@@ -1790,13 +1845,49 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
       return Icons.sports_soccer;
     } else if (name.contains('books') || name.contains('education')) {
       return Icons.book;
+    } else if (name.contains('other')) {
+      return Icons.more_horiz;
     } else {
       return Icons.category;
     }
   }
 
   // Removed unused _buildQuickActionCard to fix lints
-} 
+
+  // Method to start support chat
+  void _startSupportChat() {
+    setState(() {
+      _showSupportChat = true;
+    });
+    
+    // Add haptic feedback
+    HapticFeedback.lightImpact();
+    
+    // Show success message
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const Row(
+          children: [
+            Icon(
+              Icons.support_agent,
+              color: Colors.white,
+              size: 20,
+            ),
+            SizedBox(width: 8),
+            Text('Support options ready! Choose your preferred method.'),
+          ],
+        ),
+        backgroundColor: AppTheme.deepTeal,
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 3),
+      ),
+    );
+  }
+}
+
+// REMOVED: No longer needed since we use SafeNetworkImage
+
+// REMOVED: No longer needed since we use SafeNetworkImage
 
 class _AccountUnreadCounter extends StatefulWidget {
   const _AccountUnreadCounter();
@@ -1848,7 +1939,7 @@ class _AccountUnreadCounterState extends State<_AccountUnreadCounter> {
         .listen((snapshot) {
       int unread = 0;
       for (final chat in snapshot.docs) {
-        final data = chat.data() as Map<String, dynamic>;
+        final data = chat.data();
         final chatUnreadCount = data['unreadCount'] as int? ?? 0;
         final lastMessageBy = data['lastMessageBy'] as String?;
         final lastMessageTime = data['timestamp'] as Timestamp? ?? data['lastMessageTime'] as Timestamp?;

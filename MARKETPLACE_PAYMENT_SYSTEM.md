@@ -1,97 +1,107 @@
-# 🏪 Marketplace Payment System Documentation
+# 🏪 Marketplace Payment System Documentation (Updated 2024)
 
 ## **Overview**
 
-This document outlines the enhanced PayFast integration for the South African marketplace, including **escrow management**, **platform fees**, **returns handling**, and **seller payment protection**.
+This document outlines the **current marketplace payment system** for the South African marketplace, including **ledger-based payouts**, **platform fees**, **returns handling**, and **seller payment management**. The old escrow/holdback system has been completely replaced with a more transparent approach.
 
-## **💰 Payment Flow**
+## **💰 Current Payment Flow (2024)**
 
 ### **1. Customer Payment Process**
 ```
-Customer → Pays via PayFast → Platform Escrow → Seller Gets Paid → Platform Takes Cut
+Customer → Pays via PayFast → Platform Processes → Order Completed → 
+Money Available for Payout → Seller Requests Payout → Admin Approves → 
+Money Sent to Seller's Bank
 ```
 
 ### **2. Fee Structure**
-- **Platform Fee**: Configurable via admin dashboard (default: 5% of order total)
-- **PayFast Fee**: Configurable via admin dashboard (default: 3.5% + R2.00 per transaction)
-- **Delivery Fee**: Variable based on distance/zone
-- **Holdback**: Configurable via admin dashboard (default: 10% of seller payment for 30 days)
+- **Platform Fee**: Handled separately by admin (not deducted from seller earnings)
+- **PayFast Fee**: 3.5% + R2.00 per transaction (handled by admin)
+- **Delivery Fee**: Variable based on distance/zone (goes to delivery service)
+- **Seller Earnings**: 100% of order total (minus any returns)
 
 ### **3. Payment Breakdown Example**
 ```
 Order Total: R150.00
-Delivery Fee: R25.00
-Platform Fee (5%): R7.50
-PayFast Fee (3.5% + R2): R7.25
-Total Fees: R14.75
+Delivery Fee: R25.00 (goes to delivery service)
+Platform Fee: Handled separately by admin
+PayFast Fee: Handled separately by admin
 
 Customer Pays: R175.00 (R150 + R25 delivery)
-Seller Receives: R135.25 (R150 - R14.75)
-Immediate Payment: R121.73 (90% of seller payment)
-Holdback: R13.52 (10% for 30 days)
+Seller Receives: R150.00 (full order amount)
+Available for Payout: R150.00 (immediately after order completion)
 ```
 
-## **🏦 Escrow System**
+## **💳 Current Payout System**
 
-### **Escrow Collections in Firestore**
+### **Payout Collections in Firestore**
 
-#### **1. escrow_payments**
+#### **1. platform_receivables**
 ```javascript
 {
-  orderId: "order_123",
   sellerId: "seller_456",
-  customerId: "customer_789",
-  orderTotal: 150.00,
-  deliveryFee: 25.00,
-  platformFee: 7.50,
-  payfastFee: 7.25,
-  sellerPayment: 135.25,
-  holdbackAmount: 13.52,
-  immediatePayment: 121.73,
-  paymentStatus: "pending", // pending, completed, failed
-  escrowStatus: "created", // created, funds_received, return_processed
+  entries: [
+    {
+      orderId: "order_123",
+      amount: 150.00,
+      status: "available", // available, locked, settled
+      createdAt: Timestamp,
+      availableAt: Timestamp,
+      orderCompletedAt: Timestamp
+    }
+  ],
+  settlements: [
+    {
+      payoutId: "payout_789",
+      amount: 150.00,
+      status: "paid",
+      createdAt: Timestamp,
+      paidAt: Timestamp
+    }
+  ],
+  balances: {
+    totalEarnings: 1500.00,
+    availableBalance: 300.00,
+    totalPaidOut: 1200.00
+  }
+}
+```
+
+#### **2. payouts**
+```javascript
+{
+  payoutId: "payout_789",
+  sellerId: "seller_456",
+  amount: 300.00,
+  status: "requested", // requested, processing, paid, failed, cancelled
   createdAt: Timestamp,
+  approvedAt: Timestamp,
   paidAt: Timestamp,
-  returnWindow: 7, // days
-  holdbackReleaseDate: Timestamp,
-  paymentData: {...} // PayFast payment data
+  bankDetails: {
+    accountNumber: "1234567890",
+    bankName: "Standard Bank",
+    accountType: "savings"
+  }
 }
 ```
 
-#### **2. seller_payments**
+#### **3. payout_locks**
 ```javascript
 {
   sellerId: "seller_456",
-  orderId: "order_123",
-  amount: 121.73,
-  paymentType: "immediate", // immediate, holdback
-  status: "pending", // pending, completed, failed
-  createdAt: Timestamp,
-  scheduledFor: Timestamp,
-  completedAt: Timestamp
+  lockedAmount: 300.00,
+  lockedBy: "payout_789",
+  lockedAt: Timestamp,
+  expiresAt: Timestamp
 }
 ```
 
-#### **3. holdback_schedules**
-```javascript
-{
-  orderId: "order_123",
-  sellerId: "seller_456",
-  holdbackAmount: 13.52,
-  releaseDate: Timestamp,
-  status: "scheduled", // scheduled, released, cancelled
-  createdAt: Timestamp,
-  releasedAt: Timestamp
-}
-```
-
-## **🔄 Returns Management**
+## **🔄 Returns Management (Current)**
 
 ### **Return Process Flow**
 ```
-Customer Requests Return → Platform Approves → Seller Accepts → 
-Platform Refunds Customer → Platform Deducts from Seller → 
-Seller Arranges Pickup → Product Returned
+Customer Requests Return → Admin Reviews → If Valid: Return Approved → 
+Customer Gets Refund → Seller's Available Balance Reduced → 
+Product Returned
 ```
 
 ### **Return Collections**
@@ -99,293 +109,161 @@ Seller Arranges Pickup → Product Returned
 #### **1. returns**
 ```javascript
 {
+  returnId: "return_123",
   orderId: "order_123",
   customerId: "customer_789",
   sellerId: "seller_456",
   refundAmount: 150.00,
-  platformFeeRefund: 7.50,
-  sellerRefund: 142.50,
   reason: "defective_product",
   returnNotes: "Product arrived damaged",
-  status: "pending", // pending, approved, rejected, completed
+  status: "approved", // requested, pending, approved, rejected, completed
   createdAt: Timestamp,
   approvedAt: Timestamp,
   completedAt: Timestamp
 }
 ```
 
-#### **2. customer_refunds**
-```javascript
-{
-  customerId: "customer_789",
-  orderId: "order_123",
-  refundAmount: 150.00,
-  status: "pending", // pending, processed, completed
-  createdAt: Timestamp,
-  processedAt: Timestamp
-}
+#### **2. Return Impact on Payouts**
+- **Valid Returns**: Reduce seller's available balance
+- **Invalid Returns**: No impact on seller earnings
+- **Admin Review**: All returns reviewed for fairness
+- **Balance Adjustment**: Automatic balance updates
+
+## **📊 Seller Financial Dashboard**
+
+### **What Sellers See**
+- **Available Balance**: Money ready for payout
+- **Total Earnings**: All-time earnings from completed orders
+- **Pending Payouts**: Payouts waiting for admin approval
+- **Payout History**: All payout requests and their status
+
+### **Balance Calculation**
+```
+Available Balance = Sum of all completed orders - Sum of all paid out amounts - Sum of all returns
 ```
 
-#### **3. holdback_deductions**
-```javascript
-{
-  sellerId: "seller_456",
-  orderId: "order_123",
-  amount: 142.50,
-  reason: "return_refund",
-  createdAt: Timestamp
-}
-```
+### **When Money Becomes Available**
+- **Immediately**: After order status becomes 'delivered', 'completed', or 'confirmed'
+- **No Waiting**: No holdback period
+- **Full Amount**: 100% of order total (minus any returns)
 
-## **📊 Seller Payment Management**
+## **🎯 Payout Process**
 
-### **Seller Financial Dashboard**
+### **1. Payout Request**
+1. Seller checks available balance
+2. Seller requests payout (minimum R100)
+3. System locks available amount
+4. Payout status becomes 'requested'
 
-#### **Seller Document Structure**
-```javascript
-{
-  sellerId: "seller_456",
-  totalEarnings: 5000.00,
-  pendingPayments: 250.00,
-  holdbackAmount: 500.00,
-  totalRefunds: 150.00,
-  lastPaymentDate: Timestamp,
-  paymentSchedule: "weekly", // weekly, bi-weekly, monthly
-  bankDetails: {
-    accountNumber: "1234567890",
-    accountHolder: "John Doe",
-    bankName: "Standard Bank",
-    branchCode: "051001"
-  }
-}
-```
+### **2. Admin Review**
+1. Admin sees payout request in dashboard
+2. Admin reviews seller details and amount
+3. Admin approves or rejects payout
+4. If approved: status becomes 'processing'
+5. If rejected: amount unlocked, status becomes 'cancelled'
 
-### **Payment Schedule Options**
-- **Weekly**: Every Monday
-- **Bi-weekly**: Every other Monday
-- **Monthly**: First Monday of each month
+### **3. Payment Processing**
+1. Approved payouts processed by admin
+2. Money sent to seller's bank account
+3. Payout status becomes 'paid'
+4. Locked amount becomes 'settled'
 
-## **🛡️ Risk Management**
+## **🔐 Security Features**
 
-### **1. Holdback System**
-- **10% holdback** on all seller payments
-- **30-day hold** period for returns/disputes
-- **Automatic release** after hold period
-- **Manual release** for trusted sellers
+### **Admin Controls**
+- **Payout Approval**: Only admins can approve payouts
+- **Return Review**: All returns reviewed by admin
+- **User Management**: Admin control over seller accounts
+- **Audit Trail**: All actions logged and tracked
 
-### **2. Seller Vetting**
-- **Business verification** required
-- **Bank account** verification
-- **Performance monitoring**
-- **Credit checks** for large sellers
+### **Data Protection**
+- **Bank Details**: Encrypted and secure storage
+- **Access Control**: Role-based permissions
+- **Validation**: Input sanitization and verification
+- **Secure Deletion**: Proper data cleanup procedures
 
-### **3. Dispute Resolution**
-- **Platform mediation** for disputes
-- **Photo documentation** required
-- **Seller response** within 24 hours
-- **Automatic refund** for valid claims
-
-## **💻 API Methods**
-
-### **PayFastService Class Methods**
-
-#### **1. calculateMarketplaceFees()**
-```dart
-Map<String, dynamic> fees = await PayFastService.calculateMarketplaceFees(
-  orderTotal: 150.00,
-  deliveryFee: 25.00,
-  sellerId: "seller_456",
-  orderId: "order_123",
-  customerId: "customer_789",
-);
-```
-
-#### **2. createMarketplacePayment()**
-```dart
-Map<String, dynamic> payment = await PayFastService.createMarketplacePayment(
-  orderId: "order_123",
-  sellerId: "seller_456",
-  customerId: "customer_789",
-  orderTotal: 150.00,
-  deliveryFee: 25.00,
-  customerEmail: "customer@email.com",
-  customerName: "John Doe",
-  customerPhone: "+27123456789",
-  deliveryAddress: "123 Main St, Johannesburg",
-);
-```
-
-#### **3. processSuccessfulPayment()**
-```dart
-Map<String, dynamic> result = await PayFastService.processSuccessfulPayment(
-  orderId: "order_123",
-  paymentId: "pay_789",
-  paymentStatus: "COMPLETE",
-);
-```
-
-#### **4. processReturn()**
-```dart
-Map<String, dynamic> returnResult = await PayFastService.processReturn(
-  orderId: "order_123",
-  customerId: "customer_789",
-  reason: "defective_product",
-  refundAmount: 150.00,
-  returnNotes: "Product arrived damaged",
-);
-```
-
-#### **5. getSellerPaymentSummary()**
-```dart
-Map<String, dynamic> summary = await PayFastService.getSellerPaymentSummary("seller_456");
-```
-
-## **📱 Integration with CheckoutScreen**
-
-### **Enhanced Checkout Process**
-```dart
-// In CheckoutScreen.dart
-Future<void> _processMarketplacePayment() async {
-  // Calculate marketplace fees
-  Map<String, dynamic> feeCalculation = await PayFastService.calculateMarketplaceFees(
-    orderTotal: _orderTotal,
-    deliveryFee: _deliveryFee,
-    sellerId: sellerId,
-    orderId: orderId,
-    customerId: customerId,
-  );
-
-  // Create marketplace payment
-  Map<String, dynamic> paymentResult = await PayFastService.createMarketplacePayment(
-    orderId: orderId,
-    sellerId: sellerId,
-    customerId: customerId,
-    orderTotal: _orderTotal,
-    deliveryFee: _deliveryFee,
-    customerEmail: customerEmail,
-    customerName: customerName,
-    customerPhone: customerPhone,
-    deliveryAddress: deliveryAddress,
-  );
-
-  if (paymentResult['success']) {
-    // Launch PayFast payment
-    await _launchPayFastPayment(paymentResult['paymentUrl'], orderId);
-  }
-}
-```
-
-## **🔧 Admin Dashboard Integration**
-
-### **Payment Management Sections**
-
-#### **1. Escrow Management**
-- View all escrow payments
-- Monitor holdback schedules
-- Process manual releases
-- Handle disputes
-
-#### **2. Seller Payments**
-- View seller payment summaries
-- Process manual payments
-- Monitor payment schedules
-- Handle payment disputes
-
-#### **3. Returns Management**
-- View all return requests
-- Approve/reject returns
-- Process refunds
-- Monitor return trends
-
-## **📈 Business Benefits**
-
-### **For Platform Owner (You)**
-- ✅ **Guaranteed platform fees** (5% on all orders)
-- ✅ **Full payment control** (escrow system)
-- ✅ **Risk protection** (holdback system)
-- ✅ **Dispute resolution** capability
-- ✅ **Transparent fee structure**
+## **📱 User Experience**
 
 ### **For Sellers**
-- ✅ **Reliable payments** (platform managed)
-- ✅ **No payment processing** headaches
-- ✅ **Clear payment schedules**
-- ✅ **Financial dashboard**
-- ✅ **Support for disputes**
+- **Transparent**: See exactly where money is
+- **Control**: Request payouts when you want
+- **No Surprises**: Clear balance and payout status
+- **Support**: 24/7 platform assistance
 
-### **For Customers**
-- ✅ **Secure payments** (PayFast trusted)
-- ✅ **Easy returns** process
-- ✅ **Multiple payment** methods
-- ✅ **Dispute protection**
-- ✅ **Transparent pricing**
+### **For Admins**
+- **Full Control**: Manage all payouts and returns
+- **Efficiency**: Batch processing capabilities
+- **Monitoring**: Real-time financial oversight
+- **Automation**: Scheduled payout processing
 
-## **🚀 Implementation Timeline**
+## **🚀 Benefits of New System**
 
-### **Phase 1 (Week 1-2): Basic Escrow**
-- [x] Enhanced PayFast service
-- [x] Escrow collections setup
-- [x] Basic payment processing
-- [x] Fee calculations
+### **Transparency**
+- **Clear Balances**: Sellers see exact available amounts
+- **No Hidden Fees**: Platform fees handled separately
+- **Real-time Updates**: Instant balance adjustments
+- **Full Control**: Sellers decide when to get paid
 
-### **Phase 2 (Week 3-4): Returns System**
-- [ ] Returns management UI
-- [ ] Refund processing
-- [ ] Holdback deductions
-- [ ] Dispute resolution
+### **Efficiency**
+- **No Holdbacks**: Money available immediately
+- **Simplified Process**: Direct payout requests
+- **Admin Oversight**: Centralized financial management
+- **Automated Processing**: Scheduled batch payouts
 
-### **Phase 3 (Week 5-6): Seller Dashboard**
-- [ ] Seller payment dashboard
-- [ ] Payment schedules
-- [ ] Financial reporting
-- [ ] Bank integration
+### **Security**
+- **Admin Approval**: All payouts reviewed
+- **Return Protection**: Fair return handling
+- **Audit Trail**: Complete transaction history
+- **Secure Banking**: Encrypted financial data
 
-### **Phase 4 (Week 7-8): Admin Tools**
-- [ ] Admin payment management
-- [ ] Escrow monitoring
-- [ ] Dispute resolution tools
-- [ ] Financial analytics
+## **📋 Implementation Status**
 
-## **🔐 Security Considerations**
+| Component | Status | Details |
+|-----------|--------|---------|
+| **Payout System** | ✅ Complete | Ledger-based with admin approval |
+| **Return System** | ✅ Complete | Admin-reviewed returns |
+| **Financial Dashboard** | ✅ Complete | Real-time balance tracking |
+| **Admin Interface** | ✅ Complete | Comprehensive payout management |
+| **Cloud Functions** | ✅ Complete | Automated processing |
+| **Security Rules** | ✅ Complete | Role-based access control |
 
-### **1. Data Protection**
-- All payment data encrypted
-- PCI DSS compliance
-- Secure API communications
-- Regular security audits
+## **🔄 Migration from Old System**
 
-### **2. Access Control**
-- Role-based permissions
-- Audit logging
-- Two-factor authentication
-- Secure admin access
+### **What Changed**
+- **Old**: 90% immediate + 10% holdback for 30 days
+- **New**: 100% available after order completion
 
-### **3. Compliance**
-- POPIA compliance (South Africa)
-- Financial services regulations
-- Tax reporting requirements
-- Business verification
+- **Old**: Complex escrow calculations
+- **New**: Simple ledger system
 
-## **📞 Support & Maintenance**
+- **Old**: Automatic payments
+- **New**: Manual payout requests
 
-### **1. Customer Support**
-- Payment dispute resolution
-- Return processing assistance
-- Technical payment support
-- Seller onboarding help
+- **Old**: Returns affect holdback
+- **New**: Returns affect available balance
 
-### **2. System Monitoring**
-- Payment success rates
-- Escrow balance monitoring
-- Holdback release scheduling
-- Dispute resolution times
+### **Benefits of Migration**
+- **Simpler**: Easier to understand and manage
+- **Transparent**: Clear financial visibility
+- **Flexible**: Sellers control payout timing
+- **Secure**: Admin oversight and approval
 
-### **3. Regular Maintenance**
-- Fee structure reviews
-- Payment method updates
-- Security updates
-- Performance optimization
+## **📞 Support & Documentation**
+
+### **For Sellers**
+- **SELLER_RETURN_GUIDE.md**: Complete payout and return guide
+- **Onboarding**: Step-by-step platform introduction
+- **Dashboard**: Real-time financial information
+- **Support**: 24/7 platform assistance
+
+### **For Admins**
+- **Admin Dashboard**: Comprehensive management interface
+- **Cloud Functions**: Backend automation tools
+- **Security Rules**: Firestore access control
+- **Monitoring**: Performance and error tracking
 
 ---
 
-**This enhanced PayFast integration provides a complete marketplace payment solution with escrow protection, automated fee management, and comprehensive returns handling for your South African marketplace!** 🇿🇦 
+**This document reflects the current marketplace payment system as of 2024. The old escrow/holdback system has been completely replaced with a more transparent, efficient, and user-friendly ledger-based approach.**
+
+*For technical implementation details, see the Cloud Functions and Firestore security rules documentation.* 

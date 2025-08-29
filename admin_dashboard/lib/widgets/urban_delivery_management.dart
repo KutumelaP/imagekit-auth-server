@@ -29,11 +29,18 @@ class _UrbanDeliveryManagementState extends State<UrbanDeliveryManagement> {
     });
 
     try {
-      // Load urban zones info
-      _urbanZones = UrbanDeliveryService.getUrbanZonesInfo();
-      
-      // Load delivery statistics
-      _deliveryStats = UrbanDeliveryService.getUrbanDeliveryStats();
+      // Try Firestore-backed config first
+      final zonesDoc = await _firestore.collection('platform_settings').doc('urban_delivery').get();
+      if (zonesDoc.exists) {
+        final data = zonesDoc.data() as Map<String, dynamic>;
+        final zones = (data['zonesByProvince'] as Map<String, dynamic>?) ?? {};
+        _urbanZones = zones.map((k, v) => MapEntry(k, List<Map<String, dynamic>>.from(v as List)));
+        _deliveryStats = (data['stats'] as Map<String, dynamic>?) ?? {};
+      } else {
+        // Fallback to static service
+        _urbanZones = UrbanDeliveryService.getUrbanZonesInfo();
+        _deliveryStats = UrbanDeliveryService.getUrbanDeliveryStats();
+      }
       
       setState(() {
         _isLoading = false;
@@ -41,6 +48,9 @@ class _UrbanDeliveryManagementState extends State<UrbanDeliveryManagement> {
     } catch (e) {
       print('Error loading urban delivery data: $e');
       setState(() {
+        // Fallback on error too
+        _urbanZones = UrbanDeliveryService.getUrbanZonesInfo();
+        _deliveryStats = UrbanDeliveryService.getUrbanDeliveryStats();
         _isLoading = false;
       });
     }

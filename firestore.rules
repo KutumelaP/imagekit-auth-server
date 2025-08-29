@@ -1,327 +1,613 @@
-// Removed duplicate block
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Helper functions
-    function isAuthenticated() {
-      return request.auth != null;
-    }
-    
+
+    // Helper function to check if user is admin
     function isAdmin() {
-      return isAuthenticated() && 
+      return request.auth != null &&
         exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
     }
-    
-    function isOwner(userId) {
-      return isAuthenticated() && request.auth.uid == userId;
-    }
-    
-    // Sellers must be approved to be publicly visible and followable
-    function isSellerApproved(data) {
-      return data.role == 'seller' && data.status == 'approved';
+
+    // Helper function to check if user is seller
+    function isSeller() {
+      return request.auth != null &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'seller';
     }
 
-    // Only allow follower field to change during public follower updates
-    function onlyFollowersChanged() {
-      return resource.data.diff(request.resource.data).changedKeys().hasOnly(['followers']);
+    // Helper function to check if user is buyer
+    function isBuyer() {
+      return request.auth != null &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'user';
     }
 
-    // Compute follower delta: +1 for follow, -1 for unfollow
-    function followersDelta() {
-      return request.resource.data.followers - resource.data.followers;
-    }
-
-    // The follow doc for the acting user and a seller, after the current write
-    function followDoc(sellerId) {
-      return getAfter(/databases/$(database)/documents/users/$(request.auth.uid)/follows/$(sellerId));
-    }
-    
-    function isParticipant(chatData) {
-      return isAuthenticated() && (
-        chatData.buyerId == request.auth.uid || 
-        chatData.sellerId == request.auth.uid
-      );
-    }
-
-    // USERS - Allow users to read/write their own data
-    // Also allow public read access for store browsing (sellers' data)
+    // USERS
     match /users/{userId} {
-      allow read: if isOwner(userId) || isAdmin() || 
-        (resource.data.role == 'seller') || true; // Allow public read for store browsing
-      allow write: if isOwner(userId) || isAdmin();
-
-      // Allow safe public follower count updates with proper follow/unfollow doc in same commit
-      allow update: if isAuthenticated()
-                    && isSellerApproved(resource.data)
-                    && onlyFollowersChanged()
-                    && (
-                      (followersDelta() == 1 && followDoc(userId).exists == true) ||
-                      (followersDelta() == -1 && followDoc(userId).exists == false)
-                    );
+      // Allow unauthenticated read access for browsing stores/sellers (public info only)
+      // This enables browsing without login
+      allow read: if true;
       
-      // FAVORITES subcollection - Allow users to manage their favorites
-      match /favorites/{favoriteId} {
-        allow read, write: if isOwner(userId);
-      }
-      
-      // FAVORITE STORES subcollection - Allow users to manage their favorite stores
-      match /favoriteStores/{storeId} {
-        allow read, write: if isOwner(userId);
-      }
-
-      // DRIVERS subcollection under users - Only the owner (seller) or admin
-      match /drivers/{driverId} {
-        allow read, write: if isOwner(userId) || isAdmin();
-      }
-      
-      // WISHLIST subcollection - Allow users to manage their wishlist
-      match /wishlist/{itemId} {
-        allow read, write: if isOwner(userId);
-      }
-      
-      // CART subcollection - Allow users to manage their cart
-      match /cart/{itemId} {
-        allow read, write: if isOwner(userId);
-      }
-      
-      // SEARCH HISTORY subcollection - Allow users to manage their search history
-      match /search_history/{searchId} {
-        allow read, write: if isOwner(userId);
-      }
-      
-      // ANALYTICS subcollection - Allow users to manage their analytics
-      match /analytics/{analyticsId} {
-        allow read, write: if isOwner(userId);
-      }
-      
-      // CHAT ANALYTICS subcollection - Allow users to manage their chat analytics
-      match /chat_analytics/{analyticsId} {
-        allow read, write: if isOwner(userId);
-      }
-
-      // FOLLOWS subcollection - users/{uid}/follows/{storeId}
-      match /follows/{storeId} {
-        // Only the owner can read their own follows
-        allow get, list, read: if isOwner(userId);
-
-        // Owner can create a follow doc
-        allow create: if isOwner(userId)
-                      && request.resource.data.storeId == storeId
-                      && request.resource.data.createdAt is timestamp
-                      && request.resource.data.notify is bool;
-
-        // Owner can toggle notify only
-        allow update: if isOwner(userId)
-                      && request.resource.data.diff(resource.data).changedKeys().hasOnly(['notify'])
-                      && request.resource.data.notify is bool;
-
-        // Owner can unfollow
-        allow delete: if isOwner(userId);
-      }
-    }
-
-    // DRIVERS - Allow drivers to manage their own data, and allow reading for delivery assignment
-    match /drivers/{driverId} {
-      allow read: if isAuthenticated(); // Allow reading for delivery assignment
-      allow write: if isOwner(driverId) || isAdmin();
-    }
-
-    // STORES - Allow sellers to manage their stores
-    match /stores/{storeId} {
-      allow read: if true; // Anyone can read store info
-      allow create: if isAuthenticated() && 
-        request.resource.data.sellerId == request.auth.uid;
-      allow update: if isAuthenticated() && 
-        resource.data.sellerId == request.auth.uid;
-      allow delete: if isAdmin();
-    }
-
-    // PRODUCTS - Allow sellers to manage their products
-    match /products/{productId} {
-      allow read: if true; // Anyone can read product info
-      allow create: if isAuthenticated() && 
-        request.resource.data.ownerId == request.auth.uid;
-      allow update: if isAuthenticated() && 
-        (resource.data.ownerId == request.auth.uid || 
-         request.resource.data.ownerId == request.auth.uid);
-      allow delete: if isAuthenticated() && 
-        (resource.data.ownerId == request.auth.uid || isAdmin());
-    }
-
-    // ORDERS - Allow buyers and sellers to access their orders
-    match /orders/{orderId} {
-      allow create: if isAuthenticated() && (
-        request.resource.data.buyerId == request.auth.uid ||
-        request.resource.data.sellerId == request.auth.uid ||
-        isAdmin()
+      // Write access requires authentication and proper authorization
+      allow create: if request.auth != null && (
+        request.auth.uid == userId ||
+        isAdmin() ||
+        // Allow sellers to create basic user documents for buyers during order processing
+        (isSeller() && request.resource.data.role == 'user')
       );
-      allow read, update, delete: if isAuthenticated() && (
-        resource.data.buyerId == request.auth.uid ||
-        resource.data.sellerId == request.auth.uid ||
-        isAdmin()
-      );
-    }
-
-    // CHATS - Allow participants to access their chats
-    match /chats/{chatId} {
-      allow create: if isAuthenticated() && (
-        request.resource.data.buyerId == request.auth.uid ||
-        request.resource.data.sellerId == request.auth.uid ||
-        isAdmin()
-      );
-      allow read, update, delete: if isAuthenticated() && (
-        resource.data.buyerId == request.auth.uid ||
-        resource.data.sellerId == request.auth.uid ||
-        // Allow user to update only their own lastViewed_* field even if participant check fails
-        (request.method == 'update' &&
-          request.resource.data.diff(resource.data).changedKeys().hasOnly(['lastViewed_' + request.auth.uid]) &&
-          request.resource.data['lastViewed_' + request.auth.uid] is timestamp
+      
+      allow update: if request.auth != null && (
+        (
+          request.auth.uid == userId &&
+          // Allow users to set KYC status to 'pending' for verification
+          (
+            !('kycStatus' in request.resource.data.diff(resource.data).affectedKeys()) ||
+            (request.resource.data.kycStatus == 'pending')
+          ) &&
+          // Allow users to set their own role during registration (but not admin)
+          (
+            !('role' in request.resource.data.diff(resource.data).affectedKeys()) ||
+            (request.resource.data.role != 'admin')
+          ) &&
+          // Prevent users from modifying other critical fields that should only be admin-controlled
+          !('kycApprovedAt' in request.resource.data.diff(resource.data).affectedKeys()) &&
+          !('approvedAt' in request.resource.data.diff(resource.data).affectedKeys()) &&
+          !('approvedBy' in request.resource.data.diff(resource.data).affectedKeys()) &&
+          // Allow setting status to 'pending' during seller registration
+          (
+            !('status' in request.resource.data.diff(resource.data).affectedKeys()) ||
+            (
+              request.resource.data.status == 'pending' ||
+              resource.data.status == request.resource.data.status // Allow keeping same status
+            )
+          ) &&
+          // Allow users to write verified=false (but not true)
+          (
+            !('verified' in request.resource.data.diff(resource.data).affectedKeys()) ||
+            (request.resource.data.verified == false)
+          )
         ) ||
         isAdmin()
       );
       
-      // Messages subcollection
-      match /messages/{messageId} {
-        allow create: if isAuthenticated() && (
-          get(/databases/$(database)/documents/chats/$(chatId)).data.buyerId == request.auth.uid ||
-          get(/databases/$(database)/documents/chats/$(chatId)).data.sellerId == request.auth.uid ||
+      allow delete: if isAdmin();
+      
+      // Personal subcollections still require authentication
+      // Favorites subcollection
+      match /favorites/{productId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+      // Favorite Stores subcollection
+      match /favoriteStores/{storeId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+      // Cart subcollection
+      match /cart/{productId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+
+      // KYC subcollection - Allow users to upload documents but not approve status
+      match /kyc/{kycId} {
+        // Users can read their own KYC documents
+        allow read: if request.auth != null && request.auth.uid == userId;
+        // Users can create/upload KYC documents with 'pending' status
+        allow create: if request.auth != null && request.auth.uid == userId && 
+          (request.resource.data.status == 'pending' || !('status' in request.resource.data));
+        // Users can update their own documents but cannot change status to 'approved'
+        allow update: if request.auth != null && request.auth.uid == userId && 
+          (resource.data.status != 'approved' && request.resource.data.status != 'approved');
+        // Only admins can read all and approve/reject KYC
+        allow read, write: if isAdmin();
+      }
+
+      // Payout subcollection - Allow users to manage their own payout settings
+      match /payout/{payoutDocId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+        // Allow admin to read for verification
+        allow read: if isAdmin();
+      }
+
+      // Payouts subcollection - Allow users to read their own payout history
+      match /payouts/{payoutId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+        // Allow admin to manage all payouts
+        allow read, write: if isAdmin();
+      }
+    }
+
+    // CONFIG - Allow unauthenticated access for app initialization
+    match /config/{docId} {
+      allow read: if true;
+    }
+
+    // CATEGORIES - Allow unauthenticated read for browsing
+    match /categories/{categoryId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // PRODUCTS - Allow unauthenticated read for browsing
+    match /products/{productId} {
+      allow read: if true;
+      allow create, update: if request.auth != null && request.resource.data.ownerId == request.auth.uid;
+      allow delete: if request.auth != null && (
+        request.resource.data.ownerId == request.auth.uid || // Sellers can delete their own products
+        isAdmin() // Admins can delete any product
+      );
+    }
+
+    // REVIEWS - Allow unauthenticated read for browsing
+    match /reviews/{reviewId} {
+      allow read: if true;
+      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
+      allow update: if request.auth != null && resource.data.userId == request.auth.uid;
+      allow delete: if isAdmin();
+    }
+
+    // ORDERS - Allow public read for store stats, but require auth for personal data
+    match /orders/{orderId} {
+      allow read: if true; // Allow public read for store statistics
+      allow create: if request.auth != null && request.resource.data.buyerId == request.auth.uid;
+      allow update: if request.auth != null && (
+        resource.data.buyerId == request.auth.uid ||
+        resource.data.sellerId == request.auth.uid
+      );
+      allow delete: if isAdmin();
+      // Order timeline subcollection - visible to buyer, seller, or admin
+      match /timeline/{eventId} {
+        allow read: if request.auth != null && (
+          get(/databases/$(database)/documents/orders/$(orderId)).data.buyerId == request.auth.uid ||
+          get(/databases/$(database)/documents/orders/$(orderId)).data.sellerId == request.auth.uid ||
           isAdmin()
         );
-        allow read, update, delete: if isAuthenticated() && (
+        allow write: if isAdmin();
+      }
+    }
+
+    // CHATS - Require authentication for messaging
+    match /chats/{chatId} {
+      allow create: if request.auth != null && (
+        request.resource.data.buyerId == request.auth.uid ||
+        request.resource.data.sellerId == request.auth.uid
+      );
+      allow read, update: if isAdmin() || (request.auth != null && (
+        resource.data.buyerId == request.auth.uid ||
+        resource.data.sellerId == request.auth.uid
+      ));
+      allow delete: if isAdmin();
+      // Messages subcollection
+      match /messages/{messageId} {
+        allow read, write: if isAdmin() || (request.auth != null && (
           get(/databases/$(database)/documents/chats/$(chatId)).data.buyerId == request.auth.uid ||
-          get(/databases/$(database)/documents/chats/$(chatId)).data.sellerId == request.auth.uid ||
+          get(/databases/$(database)/documents/chats/$(chatId)).data.sellerId == request.auth.uid
+        ));
+        allow delete: if isAdmin();
+      }
+    }
+
+    // RETURNS
+    match /returns/{returnId} {
+      allow read: if isAdmin() || (request.auth != null && resource.data.sellerId == request.auth.uid);
+      allow write: if request.auth != null && resource.data.sellerId == request.auth.uid;
+      allow delete: if isAdmin();
+    }
+
+    // TOTALS & IMPACT - Allow unauthenticated read
+    match /totals/{docId} {
+      allow read: if true;
+    }
+    match /impact/{docId} {
+      allow read: if true;
+    }
+
+    // NOTIFICATIONS - For FreeFCMService push notifications
+    match /notifications/{notificationId} {
+      // Allow authenticated users to create notifications (for FCM testing)
+      allow create: if request.auth != null;
+      // Allow users to read notifications they created
+      allow read: if request.auth != null;
+      // Allow users to update/delete their own notifications
+      allow update, delete: if request.auth != null;
+    }
+
+    // IN_APP_NOTIFICATIONS - For FreeFCMService in-app notifications
+    match /in_app_notifications/{notificationId} {
+      // Allow authenticated users to create in-app notifications
+      allow create: if request.auth != null;
+      // Allow users to read their own in-app notifications
+      allow read: if request.auth != null && (
+        resource.data.userId == request.auth.uid ||
+        isAdmin()
+      );
+      // Allow users to update/delete their own notifications
+      allow update, delete: if request.auth != null && (
+        resource.data.userId == request.auth.uid ||
+        isAdmin()
+      );
+    }
+
+    // USER_NOTIFICATIONS - Enhanced permissions for system-generated notifications
+    match /user_notifications/{notificationId} {
+      // Allow users to read their own notifications
+      allow read: if request.auth != null && (
+        resource.data.userId == request.auth.uid ||
+        isAdmin()
+      );
+      
+      // Allow users to create their own notifications
+      allow create: if request.auth != null && (
+        request.resource.data.userId == request.auth.uid ||
+        isAdmin()
+      );
+      
+      // Allow sellers to create notifications for buyers (for order status updates)
+      allow create: if request.auth != null && (
+        request.resource.data.userId == request.auth.uid ||
+        isAdmin() ||
+        (isSeller() && request.resource.data.type in ['order_status', 'order_update'])
+      );
+      
+      // Allow users to update their own notifications
+      allow update: if request.auth != null && (
+        resource.data.userId == request.auth.uid ||
+        isAdmin()
+      );
+      
+      // Allow users to delete their own notifications
+      allow delete: if request.auth != null && (
+        resource.data.userId == request.auth.uid ||
+        isAdmin()
+      );
+    }
+
+    // KYC_SUBMISSIONS - Central collection for admin review
+    match /kyc_submissions/{submissionId} {
+      // Only admins can read all submissions for review
+      allow read, write: if isAdmin();
+      // Users can only create their own submissions with pending status
+      allow create: if request.auth != null && 
+        request.resource.data.userId == request.auth.uid && 
+        request.resource.data.status == 'pending';
+      // Users cannot update or delete submissions - admin only
+    }
+
+    // UPLOAD_LOGS - For tracking file uploads
+    match /upload_logs/{logId} {
+      allow read, write: if isAdmin();
+    }
+
+    // Admin-only collections
+    match /emails/{emailId} {
+      allow read, write: if isAdmin();
+    }
+    match /kanban_tasks/{taskId} {
+      allow read, write: if isAdmin();
+    }
+    match /auditLogs/{logId} {
+      allow read, write: if isAdmin();
+    }
+    match /announcements/{announcementId} {
+      allow read, write: if isAdmin();
+    }
+
+    // Admin dashboard specific collections
+    match /admin_notifications/{notificationId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /analytics/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /dashboard_cache/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    // CART - Top-level cart collection (if used)
+    match /cart/{cartId} {
+      allow read, write: if request.auth != null && (
+        resource.data.userId == request.auth.uid ||
+        isAdmin()
+      );
+    }
+
+    // ORDER_REVIEWS - For high-risk order manual reviews
+    match /order_reviews/{reviewId} {
+      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
+      allow read, write: if isAdmin();
+    }
+
+    // WEBAUTHN_CREDENTIALS - For passkey authentication
+    match /users/{userId}/webauthn_credentials/{credId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // WEBAUTHN_CHALLENGES - For passkey challenges
+    match /webauthn_challenges/{challengeId} {
+      allow read, write: if request.auth != null;
+    }
+
+    // PLATFORM_RECEIVABLES - For seller payout tracking
+    match /platform_receivables/{sellerId} {
+      // Sellers can read their own receivables, buyers can read for COD gating
+      allow read: if request.auth != null;
+      // Only system functions can write (via admin functions)
+      allow write: if isAdmin();
+      
+      // Entries subcollection
+      match /entries/{entryId} {
+        allow read: if request.auth != null;
+        allow write: if isAdmin();
+      }
+    }
+
+    // RECEIVABLES - General receivables collection for admin dashboard
+    match /receivables/{receivableId} {
+      allow read, write: if isAdmin();
+    }
+
+    // DRIVERS - Allow driver to read their own doc; admin full control
+    match /drivers/{driverId} {
+      allow read: if request.auth != null && request.auth.uid == driverId;
+      allow read, write: if isAdmin();
+    }
+
+    match /rural_drivers/{driverId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /payment_settings/{settingId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /ledger_stats/{statId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /paxi_pricing/{pricingId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /storage_stats/{statId} {
+      allow read, write: if isAdmin();
+    }
+
+    // CHATBOT COLLECTIONS - For customer support automation
+    match /chatbot_conversations/{conversationId} {
+      // Users can read/write their own conversations
+      allow read, write: if request.auth != null && resource.data.userId == request.auth.uid;
+      // Allow creating new conversations for authenticated users
+      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
+      // Admins can read all conversations for support
+      allow read, write: if isAdmin();
+      
+      // Messages subcollection
+      match /messages/{messageId} {
+        allow read, write: if request.auth != null && (
+          get(/databases/$(database)/documents/chatbot_conversations/$(conversationId)).data.userId == request.auth.uid ||
           isAdmin()
         );
       }
     }
 
-    // NOTIFICATIONS - Allow users to access their notifications
-    match /notifications/{notificationId} {
-      allow create: if isAuthenticated() && (
-        request.resource.data.userId == request.auth.uid ||
-        // Allow creating notifications for sellers when buyer places order
-        (request.resource.data.type == 'new_order_seller' && 
-         request.resource.data.data.buyerName != null) ||
-        // Allow creating notifications for buyers when seller updates order
-        (request.resource.data.type == 'order_status' && 
-         request.resource.data.data.status != null)
-      );
-      allow read, update, delete: if isAuthenticated() && 
-        resource.data.userId == request.auth.uid;
-    }
-
-    // CART - Allow users to manage their cart (top-level collection)
-    match /cart/{userId} {
-      allow read, write: if isOwner(userId);
-    }
-
-    // CATEGORIES - Allow admin to manage categories
-    match /categories/{categoryId} {
-      allow read: if true; // Anyone can read categories
+    match /chatbot_knowledge/{docId} {
+      // Public read for chatbot responses
+      allow read: if true;
+      // Only admins can update knowledge base
       allow write: if isAdmin();
     }
 
-    // REVIEWS - Allow users to read reviews, buyers to write reviews
-    match /reviews/{reviewId} {
-      allow read: if true; // Anyone can read reviews
-      allow create: if isAuthenticated() && 
-        request.resource.data.userId == request.auth.uid;
-      allow update, delete: if isAuthenticated() && 
-        resource.data.userId == request.auth.uid;
-    }
-
-    // RETURNS - Allow users to manage their returns
-    match /returns/{returnId} {
-      allow read, write: if isAuthenticated() && (
-        resource.data.userId == request.auth.uid ||
-        resource.data.sellerId == request.auth.uid ||
-        isAdmin()
-      );
-    }
-
-    // FAVORITES - Allow users to manage their favorites (top-level collection)
-    match /favorites/{favoriteId} {
-      allow read, write: if isAuthenticated() && 
-        resource.data.userId == request.auth.uid;
-    }
-
-    // WISHLIST - Allow users to manage their wishlist (top-level collection)
-    match /wishlist/{itemId} {
-      allow read, write: if isAuthenticated() && 
-        resource.data.userId == request.auth.uid;
-    }
-
-    // SHARED WISHLISTS - Allow users to manage shared wishlists
-    match /shared_wishlists/{wishlistId} {
-      allow read, write: if isAuthenticated() && (
-        resource.data.ownerId == request.auth.uid ||
-        resource.data.sharedWith == request.auth.uid ||
-        isAdmin()
-      );
-    }
-
-    // SEARCH HISTORY - Allow users to manage their search history (top-level collection)
-    match /search_history/{searchId} {
-      allow read, write: if isAuthenticated() && 
-        resource.data.userId == request.auth.uid;
-    }
-
-    // ANALYTICS - Allow admin to manage analytics (top-level collection)
-    match /analytics/{analyticsId} {
+    match /chatbot_analytics/{docId} {
       allow read, write: if isAdmin();
     }
 
-    // CHAT ANALYTICS - Allow admin to manage chat analytics (top-level collection)
-    match /chat_analytics/{analyticsId} {
+    // ADDITIONAL ADMIN COLLECTIONS - Complete coverage for admin dashboard
+    match /statistics/{statId} {
       allow read, write: if isAdmin();
     }
 
-    // CONFIG - Allow admin to manage configuration
-    match /config/{configId} {
-      allow read: if true; // Anyone can read config
+    match /reports/{reportId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /advanced_analytics/{analyticsId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /moderation/{moderationId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /platform_config/{configId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /admin_roles/{roleId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /escrow/{escrowId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /return_requests/{returnId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /developer_tools/{toolId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /data_exports/{exportId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /order_migrations/{migrationId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /system_logs/{logId} {
+      allow read, write: if isAdmin();
+    }
+
+    // Publicly readable payment settings (non-sensitive)
+    match /admin_settings/payment_settings {
+      allow read: if true; // or restrict to auth only: request.auth != null
       allow write: if isAdmin();
     }
 
-    // IMPACT - Allow admin to manage impact data
-    match /impact/{impactId} {
-      allow read: if true; // Anyone can read impact data
-      allow write: if isAdmin();
-    }
-
-    // AUDIT LOGS - Allow admin to manage audit logs
-    match /auditLogs/{logId} {
-      allow read, write: if isAdmin();
-    }
-
-    // KANBAN TASKS - Allow admin to manage kanban tasks
-    match /kanban_tasks/{taskId} {
-      allow read, write: if isAdmin();
-    }
-
-    // PAYMENT WEBHOOKS - Allow admin to manage payment webhooks
-    match /payment_webhooks/{webhookId} {
-      allow read, write: if isAdmin();
-    }
-
-    // PAYMENT STATUS UPDATES - Allow admin to manage payment status updates
-    match /payment_status_updates/{updateId} {
-      allow read, write: if isAdmin();
-    }
-
-    // ESCROW PAYMENTS - Allow admin and participants to manage escrow payments
-    match /escrow_payments/{paymentId} {
-      allow read, write: if isAuthenticated() && (
-        resource.data.buyerId == request.auth.uid ||
-        resource.data.sellerId == request.auth.uid ||
-        isAdmin()
-      );
-    }
-
-    // ADMIN SETTINGS - Allow admin to manage admin settings
+    // Other admin_settings remain admin-only
     match /admin_settings/{settingId} {
-      allow read: if true; // Anyone can read admin settings
+      allow read, write: if isAdmin();
+    }
+
+    match /delivery_zones/{zoneId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /courier_settings/{settingId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /pricing_models/{modelId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /risk_assessments/{assessmentId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /admin_cache/{cacheId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /system_metrics/{metricId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /performance_logs/{logId} {
+      allow read, write: if isAdmin();
+    }
+
+    // Additional specific collections based on error logs
+    match /ledger_analytics/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /storage_analytics/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /delivery_analytics/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    // Specific collections causing permission errors
+    match /ledger_stats/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /storage_stats/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    // Additional admin collections for complete coverage
+    match /admin_storage_stats/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /dashboard_stats/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /admin_metrics/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /system_performance/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    // Catch remaining admin collections with simple pattern matching
+    match /admin_dashboard_stats/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /firestore_stats/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /collection_stats/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    // IMAGE_ASSETS - For ImageKit image management and storage stats
+    match /image_assets/{assetId} {
+      allow read, write: if isAdmin();
+      // Allow authenticated users to read their own image assets
+      allow read: if request.auth != null && resource.data.ownerId == request.auth.uid;
+      // Allow authenticated users to create/update/delete their own image assets
+      allow create, update, delete: if request.auth != null && request.resource.data.ownerId == request.auth.uid;
+    }
+
+    // PAYOUTS - For seller payout management
+    match /payouts/{payoutId} {
+      allow read, write: if isAdmin();
+      // Allow sellers to read their own payouts
+      allow read: if request.auth != null && resource.data.sellerId == request.auth.uid;
+      // Allow sellers to create payout requests
+      allow create: if request.auth != null && request.resource.data.sellerId == request.auth.uid;
+    }
+
+    // SETTLEMENTS - For transaction settlement tracking (top-level collection)
+    match /settlements/{settlementId} {
+      allow read, write: if isAdmin();
+      // Allow users to read settlements they're involved in
+      allow read: if request.auth != null && (
+        resource.data.sellerId == request.auth.uid ||
+        resource.data.buyerId == request.auth.uid
+      );
+    }
+
+    // ENTRIES - For ledger entries (top-level collection for collectionGroup queries)
+    match /entries/{entryId} {
+      allow read, write: if isAdmin();
+      // Allow users to read their own entries
+      allow read: if request.auth != null && resource.data.ownerId == request.auth.uid;
+    }
+
+    // ADDITIONAL COLLECTIONS - For app functionality
+    // STORE_FOLLOWERS - Allow users to follow stores
+    match /store_followers/{followerId} {
+      allow read, write: if request.auth != null && request.auth.uid == followerId;
+      allow read: if isAdmin();
+    }
+
+    // STORE_REVIEWS - Allow users to review stores
+    match /store_reviews/{reviewId} {
+      allow read: if true;
+      allow create, update: if request.auth != null && request.resource.data.userId == request.auth.uid;
+      allow delete: if request.auth != null && (
+        request.resource.data.userId == request.auth.uid || // Users can delete their own reviews
+        isAdmin() // Admins can delete any review
+      );
+    }
+
+    // PRODUCT_CATEGORIES - Allow browsing
+    match /product_categories/{categoryId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // DELIVERY_ZONES - Allow reading delivery zones
+    match /delivery_zones/{zoneId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // PAYMENT_METHODS - Allow reading payment methods
+    match /payment_methods/{methodId} {
+      allow read: if true;
       allow write: if isAdmin();
     }
   }
-}
+} 

@@ -239,21 +239,40 @@ class _NotificationListScreenState extends State<NotificationListScreen> with Wi
   Future<void> _markAsRead(String notificationId) async {
     try {
       await _notificationService.markNotificationAsRead(notificationId);
+      print('✅ Notification marked as read: $notificationId');
+      
+      // Wait a moment for Firestore to propagate the change
+      await Future.delayed(const Duration(milliseconds: 200));
+      
       // Recalculate badge after marking as read
       await NotificationService().recalcBadge();
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Notification marked as read'),
-          backgroundColor: AppTheme.primaryGreen,
-        ),
-      );
+      print('✅ Badge recalculated after marking notification as read');
+      
+      // Refresh the notification list to show updated status
+      if (mounted) {
+        await _refreshNotifications();
+      }
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Notification marked as read'),
+            backgroundColor: AppTheme.primaryGreen,
+            duration: Duration(seconds: 1),
+          ),
+        );
+      }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error marking notification as read: $e'),
-          backgroundColor: AppTheme.primaryRed,
-        ),
-      );
+      print('❌ Error marking notification as read: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error marking notification as read: $e'),
+            backgroundColor: AppTheme.primaryRed,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
     }
   }
 
@@ -272,10 +291,23 @@ class _NotificationListScreenState extends State<NotificationListScreen> with Wi
     print('🔍 DEBUG: Notification tap - Data: $data');
     print('🔍 DEBUG: Full notification data: $notificationData');
 
-    // Mark as read
-    await _markAsRead(notificationData['id']);
-    // best-effort badge refresh through service recalc
-    try { await NotificationService().refreshNotifications(); } catch (_) {}
+    // Mark as read and recalculate badge
+    try {
+      await _notificationService.markNotificationAsRead(notificationData['id']);
+      print('✅ Notification marked as read: ${notificationData['id']}');
+      
+      // Force badge recalculation with a small delay to ensure Firestore update is complete
+      await Future.delayed(const Duration(milliseconds: 300));
+      await NotificationService().recalcBadge();
+      print('✅ Badge recalculated after notification read');
+      
+      // Refresh the notification list to show the updated read status
+      if (mounted) {
+        await _refreshNotifications();
+      }
+    } catch (e) {
+      print('❌ Error marking notification as read: $e');
+    }
 
     // Navigate based on notification type
     print('🔍 DEBUG: Navigation logic - Type: $type, ChatId: $chatId, OrderId: $orderId');

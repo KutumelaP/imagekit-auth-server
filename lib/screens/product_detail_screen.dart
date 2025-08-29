@@ -304,13 +304,7 @@ class ProductDetailScreen extends StatelessWidget {
                       height: 50,
                       child: ElevatedButton(
                         onPressed: () {
-                          // TODO: Add to cart functionality
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Added to cart!'),
-                              backgroundColor: Colors.green,
-                            ),
-                          );
+                          // TODO: Implement add-to-cart without success toast
                         },
                             style: ElevatedButton.styleFrom(
                               backgroundColor: AppTheme.deepTeal,

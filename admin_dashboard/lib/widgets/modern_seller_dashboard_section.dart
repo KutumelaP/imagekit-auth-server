@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fl_chart/fl_chart.dart';
@@ -7,6 +8,7 @@ import 'dart:io';
 import 'package:image_picker/image_picker.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:path/path.dart' as path;
 import 'package:url_launcher/url_launcher.dart';
 import '../utils/order_utils.dart';
@@ -53,9 +55,23 @@ class _ModernSellerDashboardSectionState extends State<ModernSellerDashboardSect
   final TextEditingController _payoutBankNameController = TextEditingController();
   final TextEditingController _payoutAccountNumberController = TextEditingController();
   final TextEditingController _payoutBranchCodeController = TextEditingController();
-  String _payoutAccountType = 'Cheque/Current';
+  // Canonical account type keys used across app: 'cheque','savings','business'
+  String _payoutAccountType = 'cheque';
   bool _loadingPayout = false;
   bool _savingPayout = false;
+  // Payout balance state
+  bool _loadingAvailable = false;
+  bool _requestingPayout = false;
+  double _availableGross = 0.0;
+  double _availableCommission = 0.0;
+  double _availableNet = 0.0;
+  double _minPayoutAmount = 0.0;
+  double _commissionPct = 0.0;
+  List<Map<String, dynamic>> _payoutHistory = [];
+  // Compliance & COD
+  double _codOutstanding = 0.0;
+  String _kycStatus = 'none';
+  bool _codDisabled = false;
   
   // Subscription for auth changes
   late Stream<User?> _authStateChanges;
@@ -113,9 +129,12 @@ class _ModernSellerDashboardSectionState extends State<ModernSellerDashboardSect
         _loadCustomerReviews(),
         _loadStoreSettings(),
         _loadPayoutDetails(),
+        _loadAvailableBalance(),
+        _loadPayoutHistory(),
+        _loadComplianceAndCOD(),
       ]);
     } catch (e) {
-      print('Error loading dashboard data: $e');
+      if (kDebugMode) print('Error loading dashboard data: $e');
     }
   }
 
@@ -132,7 +151,7 @@ class _ModernSellerDashboardSectionState extends State<ModernSellerDashboardSect
         });
       }
     } catch (e) {
-      print('Error loading seller data: $e');
+      if (kDebugMode) print('Error loading seller data: $e');
     }
   }
 
@@ -183,7 +202,7 @@ class _ModernSellerDashboardSectionState extends State<ModernSellerDashboardSect
         });
       }
     } catch (e) {
-      print('Error loading metrics: $e');
+      if (kDebugMode) print('Error loading metrics: $e');
     }
   }
 
@@ -228,7 +247,7 @@ class _ModernSellerDashboardSectionState extends State<ModernSellerDashboardSect
                               'Unknown Customer';
               }
             } catch (e) {
-              print('Error loading customer name: $e');
+              if (kDebugMode) print('Error loading customer name: $e');
             }
           }
         }
@@ -249,7 +268,7 @@ class _ModernSellerDashboardSectionState extends State<ModernSellerDashboardSect
         });
       }
     } catch (e) {
-      print('Error loading recent orders: $e');
+      if (kDebugMode) print('Error loading recent orders: $e');
       // Set empty list on error
       if (mounted) {
         setState(() {
@@ -289,7 +308,7 @@ class _ModernSellerDashboardSectionState extends State<ModernSellerDashboardSect
         });
       }
     } catch (e) {
-      print('Error loading top products: $e');
+      if (kDebugMode) print('Error loading top products: $e');
       // Set empty list on error
       if (mounted) {
         setState(() {
@@ -341,7 +360,7 @@ class _ModernSellerDashboardSectionState extends State<ModernSellerDashboardSect
         });
       }
     } catch (e) {
-      print('Error loading recent activity: $e');
+      if (kDebugMode) print('Error loading recent activity: $e');
     }
   }
 
@@ -384,7 +403,7 @@ class _ModernSellerDashboardSectionState extends State<ModernSellerDashboardSect
         });
       }
     } catch (e) {
-      print('Error loading sales chart data: $e');
+      if (kDebugMode) print('Error loading sales chart data: $e');
     }
   }
 
@@ -416,7 +435,7 @@ class _ModernSellerDashboardSectionState extends State<ModernSellerDashboardSect
         });
       }
     } catch (e) {
-      print('Error loading all products: $e');
+      if (kDebugMode) print('Error loading all products: $e');
     }
   }
 
@@ -520,7 +539,24 @@ class _ModernSellerDashboardSectionState extends State<ModernSellerDashboardSect
           _payoutBankNameController.text = (d['bankName'] ?? '').toString();
           _payoutAccountNumberController.text = (d['accountNumber'] ?? '').toString();
           _payoutBranchCodeController.text = (d['branchCode'] ?? '').toString();
-          _payoutAccountType = (d['accountType'] ?? _payoutAccountType).toString();
+          // Normalize stored/display values to canonical keys
+          final at = (d['accountType'] ?? _payoutAccountType).toString().toLowerCase();
+          switch (at) {
+            case 'cheque/current':
+            case 'cheque':
+            case 'current':
+              _payoutAccountType = 'cheque';
+              break;
+            case 'savings':
+              _payoutAccountType = 'savings';
+              break;
+            case 'business cheque':
+            case 'business':
+              _payoutAccountType = 'business';
+              break;
+            default:
+              _payoutAccountType = 'cheque';
+          }
         }
       }
     } catch (e) {
@@ -1116,23 +1152,22 @@ class _ModernSellerDashboardSectionState extends State<ModernSellerDashboardSect
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // COD receivables summary (dues)
-          FutureBuilder<QuerySnapshot<Map<String, dynamic>>>(
-            future: _sellerId == null
-                ? null
-                : FirebaseFirestore.instance
-                    .collection('users')
-                    .doc(_sellerId)
-                    .collection('platform_receivables')
-                    .where('status', isEqualTo: 'outstanding')
-                    .get(),
+          _buildCodKycPanel(),
+          const SizedBox(height: 16),
+          // COD receivables summary (dues) - updated structure
+          if (_sellerId != null) FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+            future: FirebaseFirestore.instance
+                .collection('platform_receivables')
+                .doc(_sellerId)
+                .get(),
             builder: (context, snapshot) {
-              if (!snapshot.hasData) return const SizedBox.shrink();
-              double totalDue = 0;
-              for (final d in snapshot.data!.docs) {
-                totalDue += (d.data()['amount'] ?? 0.0).toDouble();
-              }
+              if (!snapshot.hasData || !snapshot.data!.exists) return const SizedBox.shrink();
+              
+              final data = snapshot.data!.data()!;
+              final totalDue = (data['amount'] ?? 0.0).toDouble();
+              
               if (totalDue <= 0) return const SizedBox.shrink();
+              
               return Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(12),
@@ -1147,66 +1182,21 @@ class _ModernSellerDashboardSectionState extends State<ModernSellerDashboardSect
                     const Icon(Icons.account_balance_wallet, color: Colors.red),
                     const SizedBox(width: 10),
                     Expanded(
-                      child: Text('COD fees outstanding: R${totalDue.toStringAsFixed(2)}. Settle to re-enable features.'),
+                      child: Text('COD commission outstanding: R${totalDue.toStringAsFixed(2)}. Seller owes platform for cash orders.'),
                     ),
                     TextButton.icon(
                       onPressed: () {
-                        // For now, push to settings where wallet top-up is typically surfaced in the buyer app; here we just inform
-                        setState(() { _selectedIndex = 8; });
+                        setState(() { _selectedIndex = 6; }); // Go to Financial Reports
                       },
                       icon: const Icon(Icons.arrow_forward),
-                      label: const Text('View'),
+                      label: const Text('View Details'),
                     ),
                   ],
                 ),
               );
             },
           ),
-          if ((_sellerData?['kycStatus'] ?? 'none') != 'approved') ...[
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(12),
-              margin: const EdgeInsets.only(bottom: 12),
-              decoration: BoxDecoration(
-                color: Colors.orange.withOpacity(0.08),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.orange.withOpacity(0.2)),
-              ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Icon(Icons.verified_user, color: Colors.orange),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Identity verification required',
-                          style: TextStyle(fontWeight: FontWeight.w700, color: Colors.orange[800]),
-                        ),
-                        const SizedBox(height: 4),
-                        const Text('To accept Cash on Delivery and payouts, please complete KYC.'),
-                        const SizedBox(height: 8),
-                        Wrap(
-                          spacing: 8,
-                          children: [
-                            ElevatedButton.icon(
-                              onPressed: () {
-                                Navigator.of(context).pushNamed('/kyc');
-                              },
-                              icon: const Icon(Icons.upload),
-                              label: const Text('Complete KYC'),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
+
           // Header
           Row(
             children: [
@@ -1885,6 +1875,145 @@ class _ModernSellerDashboardSectionState extends State<ModernSellerDashboardSect
           ),
           const SizedBox(height: 24),
           
+          // COD Wallet Section
+          if (_sellerId != null) FutureBuilder<Map<String, dynamic>>(
+            future: _loadCodWalletData(),
+            builder: (context, snapshot) {
+              if (!snapshot.hasData) return const SizedBox.shrink();
+              
+              final codWallet = snapshot.data!;
+              final cashCollected = (codWallet['cashCollected'] ?? 0.0).toDouble();
+              final commissionOwed = (codWallet['commissionOwed'] ?? 0.0).toDouble();
+              final yourShare = cashCollected - commissionOwed;
+              
+              if (cashCollected <= 0) return const SizedBox.shrink();
+              
+              return Column(
+                children: [
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.05),
+                          blurRadius: 10,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                      border: Border.all(color: Colors.green.withOpacity(0.3), width: 1),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.all(20),
+                          child: Row(
+                            children: [
+                              Icon(Icons.account_balance_wallet, color: Colors.green[700], size: 24),
+                              const SizedBox(width: 8),
+                              Text('COD Wallet', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                              const Spacer(),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: Colors.green.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Text('${(codWallet['orderCount'] ?? 0)} orders', 
+                                     style: TextStyle(color: Colors.green[700], fontSize: 12, fontWeight: FontWeight.w600)),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 20),
+                          child: Text(
+                            'Cash collected from customers vs commission owed to platform',
+                            style: TextStyle(color: Colors.grey[600], fontSize: 14),
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+                        
+                        // COD Summary Row
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 20),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text('Cash Collected', style: TextStyle(fontSize: 12, color: Colors.grey[600], fontWeight: FontWeight.w500)),
+                                    const SizedBox(height: 4),
+                                    Text('R${cashCollected.toStringAsFixed(2)}', 
+                                         style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.green)),
+                                  ],
+                                ),
+                              ),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text('Commission Owed', style: TextStyle(fontSize: 12, color: Colors.grey[600], fontWeight: FontWeight.w500)),
+                                    const SizedBox(height: 4),
+                                    Text('R${commissionOwed.toStringAsFixed(2)}', 
+                                         style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.orange)),
+                                  ],
+                                ),
+                              ),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text('Seller Share', style: TextStyle(fontSize: 12, color: Colors.grey[600], fontWeight: FontWeight.w500)),
+                                    const SizedBox(height: 4),
+                                    Text('R${yourShare.toStringAsFixed(2)}', 
+                                         style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.blue)),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        
+                        if (commissionOwed > 0) ...[
+                          const SizedBox(height: 20),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 20),
+                            child: Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: Colors.orange.withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: Colors.orange.withOpacity(0.3)),
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(Icons.warning_amber, color: Colors.orange[700], size: 20),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      'R${commissionOwed.toStringAsFixed(2)} commission payment pending from seller',
+                                      style: TextStyle(color: Colors.orange[700], fontWeight: FontWeight.w500, fontSize: 14),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                        
+                        const SizedBox(height: 20),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                ],
+              );
+            },
+          ),
+          
           // Recent Transactions placeholder
             Container(
               decoration: BoxDecoration(
@@ -1927,1420 +2056,281 @@ class _ModernSellerDashboardSectionState extends State<ModernSellerDashboardSect
               ],
             ),
           ),
-        ],
-      ),
-    );
-  }
-
-  // Add missing metrics grid method
-  Widget _buildMetricsGrid() {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        int crossAxisCount;
-        double childAspectRatio;
-        
-        if (constraints.maxWidth > 1200) {
-          crossAxisCount = 4;
-          childAspectRatio = 1.8;
-        } else if (constraints.maxWidth > 800) {
-          crossAxisCount = 3;
-          childAspectRatio = 1.6;
-        } else if (constraints.maxWidth > 600) {
-          crossAxisCount = 2;
-          childAspectRatio = 1.4;
-        } else {
-          crossAxisCount = 1;
-          childAspectRatio = 1.2;
-        }
-        
-        return GridView.count(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          crossAxisCount: crossAxisCount,
-          crossAxisSpacing: 16,
-          mainAxisSpacing: 16,
-          childAspectRatio: childAspectRatio,
-          children: [
-            _buildMetricCard('Total Orders', '$_totalOrders', Icons.shopping_cart, Colors.blue),
-            _buildMetricCard('Total Revenue', 'R${_totalRevenue.toStringAsFixed(2)}', Icons.receipt, AdminTheme.success),
-            _buildMetricCard('Today\'s Sales', 'R${_todaysSales.toStringAsFixed(2)}', Icons.trending_up, AdminTheme.indigo),
-            _buildMetricCard('Total Products', '$_totalProducts', Icons.inventory_2, AdminTheme.warning),
-            _buildMetricCard('Total Customers', '$_totalCustomers', Icons.people, AdminTheme.deepTeal),
-            _buildMetricCard('Low Stock', '${_lowStockProducts.length}', Icons.warning, AdminTheme.error),
-          ],
-        );
-      },
-    );
-  }
-
-  // Add missing metric card method
-  Widget _buildMetricCard(String title, String value, IconData icon, Color color) {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(icon, color: color, size: 24),
-              const SizedBox(width: 12),
-              Text(
-                title,
-                style: TextStyle(color: Colors.grey[600], fontSize: 14),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
-              color: color,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // Add missing sales chart method
-  Widget _buildSalesChart() {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Sales Trend',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 16),
+          // Earnings & Payouts
           Container(
-            height: 200,
-            child: _salesChartData.isEmpty 
-                ? Center(child: Text('No sales data available', style: TextStyle(color: Colors.grey[600])))
-                : LineChart(
-                    LineChartData(
-                      gridData: FlGridData(show: true, drawVerticalLine: false),
-                      titlesData: FlTitlesData(show: false),
-                      borderData: FlBorderData(show: false),
-                      lineBarsData: [
-                        LineChartBarData(
-                          spots: _salesChartData,
-                          isCurved: true,
-                          color: Colors.blue,
-                          barWidth: 3,
-                          isStrokeCapRound: true,
-                          dotData: FlDotData(show: false),
-                          belowBarData: BarAreaData(
-                            show: true,
-                            color: Colors.blue.withOpacity(0.1),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: Offset(0, 2))],
+            ),
+            margin: const EdgeInsets.only(bottom: 24),
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                  const Text('💰 Your Money Breakdown', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Clear breakdown of what you\'ve earned and what you can withdraw',
+                    style: TextStyle(color: Colors.grey[600], fontSize: 12, fontStyle: FontStyle.italic),
+                  ),
+                  const SizedBox(height: 16),
+                  
+                  // Main Available Balance
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.green.shade50,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.green.shade200),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(Icons.account_balance_wallet, color: Colors.green.shade700, size: 20),
+                            const SizedBox(width: 8),
+                            Text(
+                              '💰 AVAILABLE TO WITHDRAW',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.green.shade700,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'R ${_availableNet.toStringAsFixed(2)}',
+                          style: TextStyle(
+                            fontSize: 28,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.green.shade700,
+                          ),
+                        ),
+                        Text(
+                          'This is your money after platform fees - ready to withdraw!',
+                          style: TextStyle(
+                            color: Colors.green.shade600,
+                            fontSize: 12,
+                            fontStyle: FontStyle.italic,
                           ),
                         ),
                       ],
                     ),
                   ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // Add missing recent activity method
-  Widget _buildRecentActivity() {
-    return SingleChildScrollView(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Header
-          Text(
-            'Recent Activity',
-            style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'What\'s happening in your store?',
-            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-              color: Colors.grey[600],
-            ),
-          ),
-                  const SizedBox(height: 24),
-          
-          // Activity List
-          if (_recentActivity.isEmpty)
-                  Container(
-              height: 200,
-              child: Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.notifications_outlined, size: 64, color: Colors.grey[300]),
-                    const SizedBox(height: 16),
-                    Text('No recent activity', style: TextStyle(color: Colors.grey[600])),
-                  ],
-                ),
-              ),
-            )
-          else
-            Column(
-              children: List.generate(_recentActivity.length, (index) {
-                final activity = _recentActivity[index];
-                return Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  child: Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: Colors.grey[50],
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: Colors.grey[200]!),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(activity['icon'], color: activity['color'], size: 24),
-                        const SizedBox(width: 16),
-                        Expanded(
+                  
+                  const SizedBox(height: 16),
+                  
+                  // Detailed Breakdown
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: Colors.blue.shade50,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.blue.shade200),
+                          ),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(
-                                activity['title'],
-                                style: TextStyle(fontWeight: FontWeight.w600),
+                              Row(
+                                children: [
+                                  Icon(Icons.receipt_long, color: Colors.blue.shade700, size: 16),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    'Total Sales',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.blue.shade700,
+                                    ),
+                                  ),
+                                ],
                               ),
                               const SizedBox(height: 4),
                               Text(
-                                activity['subtitle'],
-                                style: TextStyle(color: Colors.grey[600], fontSize: 12),
+                                'R ${_availableGross.toStringAsFixed(2)}',
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.blue.shade700,
+                                ),
+                              ),
+                              Text(
+                                'What customers paid',
+                                style: TextStyle(
+                                  color: Colors.blue.shade600,
+                                  fontSize: 10,
+                                ),
                               ),
                             ],
                           ),
                         ),
-                        Text(
-                          _formatTimeAgo(activity['timestamp']),
-                          style: TextStyle(color: Colors.grey[600], fontSize: 12),
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-              }),
-            ),
-        ],
-      ),
-    );
-  }
-
-  // Add missing top products method
-  Widget _buildTopProducts() {
-    return SingleChildScrollView(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Header
-          Text(
-            'Top Selling Products',
-            style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'Discover your best-performing products',
-            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-              color: Colors.grey[600],
-            ),
-          ),
-          const SizedBox(height: 24),
-          
-          // Products List
-          if (_topProducts.isEmpty)
-            Container(
-              height: 200,
-              child: Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.shopping_bag_outlined, size: 64, color: Colors.grey[300]),
-                    const SizedBox(height: 16),
-                    Text('No top products yet', style: TextStyle(color: Colors.grey[600])),
-                  ],
-                ),
-              ),
-            )
-          else
-            Column(
-              children: List.generate(
-                _topProducts.length > 5 ? 5 : _topProducts.length,
-                (index) {
-                  final product = _topProducts[index];
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                      child: Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(12),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.05),
-                            blurRadius: 10,
-                            offset: const Offset(0, 2),
-                          ),
-                        ],
                       ),
-                      child: Row(
-                        children: [
-                          Container(
-                            width: 40,
-                            height: 40,
-                            decoration: BoxDecoration(
-                              color: Colors.blue.withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: Center(
-                              child: Text(
-                                '${index + 1}',
-                                style: TextStyle(color: Colors.blue, fontWeight: FontWeight.bold),
-                              ),
-                            ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: Colors.orange.shade50,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.orange.shade200),
                           ),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  product['name'] ?? 'Product',
-                                  style: TextStyle(fontWeight: FontWeight.w600),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Icon(Icons.percent, color: Colors.orange.shade700, size: 16),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    'Platform Fee',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.orange.shade700,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'R ${_availableCommission.toStringAsFixed(2)}',
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.orange.shade700,
                                 ),
-                                Text(
-                                  'Sold: ${product['soldCount'] ?? 0}',
-                                  style: TextStyle(color: Colors.grey[600], fontSize: 12),
+                              ),
+                              Text(
+                                '${(_commissionPct * 100).toStringAsFixed(0)}% of sales',
+                                style: TextStyle(
+                                  color: Colors.orange.shade600,
+                                  fontSize: 10,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  
+                  // Payout Button
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: (_requestingPayout || _availableNet < _minPayoutAmount) ? null : _onRequestPayout,
+                          icon: _requestingPayout
+                              ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                              : const Icon(Icons.payments),
+                          label: Text(_requestingPayout
+                              ? 'Requesting...'
+                              : (_availableNet < _minPayoutAmount
+                                  ? 'Min R ${_minPayoutAmount.toStringAsFixed(0)}'
+                                  : 'Request Payout')),
+                          style: ElevatedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                            backgroundColor: Colors.green.shade600,
+                            foregroundColor: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                          const SizedBox(height: 16),
+                Row(
+                  children: [
+                      TextButton.icon(onPressed: _loadAvailableBalance, icon: const Icon(Icons.refresh), label: const Text('Refresh balance')),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Divider(),
+                  const SizedBox(height: 12),
+                  Text('Recent Payouts', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                      const SizedBox(height: 8),
+                  if (_payoutHistory.isEmpty) Text('No payouts yet', style: TextStyle(color: Colors.grey[600])),
+                  if (_payoutHistory.isNotEmpty)
+                  Column(
+                      children: _payoutHistory.take(5).map((p) {
+                        final amount = (p['amount'] ?? 0).toDouble();
+                        final status = (p['status'] ?? 'requested').toString();
+                        final ref = (p['reference'] ?? '').toString();
+                        final failureReason = (p['failureReason'] ?? '').toString();
+                        final failureNotes = (p['failureNotes'] ?? '').toString();
+                        
+                        // Get status color and icon
+                        Color statusColor = Colors.blue;
+                        IconData statusIcon = Icons.receipt_long;
+                        
+                        switch (status) {
+                          case 'paid':
+                            statusColor = Colors.green;
+                            statusIcon = Icons.check_circle;
+                            break;
+                          case 'failed':
+                            statusColor = Colors.red;
+                            statusIcon = Icons.error;
+                            break;
+                          case 'cancelled':
+                            statusColor = Colors.orange;
+                            statusIcon = Icons.cancel;
+                            break;
+                          case 'processing':
+                            statusColor = Colors.blue;
+                            statusIcon = Icons.sync;
+                            break;
+                          default:
+                            statusColor = Colors.grey;
+                            statusIcon = Icons.pending;
+                        }
+                        
+                        return ListTile(
+                          dense: true,
+                          contentPadding: EdgeInsets.zero,
+                          leading: Icon(statusIcon, color: statusColor),
+                          title: Text('R ${amount.toStringAsFixed(2)}  •  ${status.toUpperCase()}'),
+                          subtitle: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              if (ref.isNotEmpty) Text(ref),
+                              // Show failure reason if payout failed
+                              if (status == 'failed' && failureReason.isNotEmpty) ...[
+                                const SizedBox(height: 4),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: Colors.red.shade50,
+                                    borderRadius: BorderRadius.circular(6),
+                                    border: Border.all(color: Colors.red.shade200),
+                                  ),
+                                  child: Text(
+                                    _getFailureReasonLabel(failureReason),
+                                    style: TextStyle(
+                                      color: Colors.red.shade700,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
                                 ),
                               ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  // Add missing status card method
-  Widget _buildStatusCard(String title, int count, Color color, IconData icon) {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(icon, color: color, size: 24),
-              const SizedBox(width: 12),
-              Text(
-                title,
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-              ),
-            ],
-          ),
-                    const SizedBox(height: 8),
-                    Text(
-            '$count',
-            style: TextStyle(
-              fontSize: 28,
-              fontWeight: FontWeight.bold,
-              color: color,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // Add missing analytics card method
-  Widget _buildAnalyticsCard(String title, String value, IconData icon, Color color) {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(icon, color: color, size: 24),
-              const SizedBox(width: 12),
-              Text(
-                title,
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-              ),
-            ],
-                    ),
-                    const SizedBox(height: 8),
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: 28,
-              fontWeight: FontWeight.bold,
-              color: color,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // Add missing profile stat card method
-  Widget _buildProfileStatCard(String title, String value, IconData icon, Color color) {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(icon, color: color, size: 24),
-              const SizedBox(width: 12),
-              Text(
-                title,
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: 28,
-              fontWeight: FontWeight.bold,
-              color: color,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // Add missing handle logout method
-  Future<void> _handleLogout() async {
-    final shouldLogout = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Confirm Logout'),
-        content: const Text('Are you sure you want to logout?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Logout'),
-          ),
-        ],
-      ),
-    );
-
-    if (shouldLogout == true) {
-                          await FirebaseAuth.instance.signOut();
-                          if (mounted) {
-        Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
-      }
-    }
-  }
-
-  // Add missing recent orders method
-  Widget _buildRecentOrders() {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(20),
-            child: Text(
-              'Recent Orders',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-          ),
-          if (_recentOrders.isEmpty)
-            Container(
-              height: 200,
-              child: Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.receipt_long_outlined, size: 64, color: Colors.grey[300]),
-                    const SizedBox(height: 16),
-                    Text('No recent orders', style: TextStyle(color: Colors.grey[600])),
-                  ],
-                ),
-              ),
-            )
-          else
-            Column(
-              children: List.generate(
-                _recentOrders.length > 5 ? 5 : _recentOrders.length,
-                (index) {
-                  final order = _recentOrders[index];
-                  return _buildOrderListItem(order);
-                },
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  // Add missing get status color method
-  Color _getStatusColor(String? status) {
-    switch (status?.toLowerCase()) {
-      case 'pending': return AdminTheme.warning;
-      case 'processing': return AdminTheme.info;
-      case 'completed': return AdminTheme.success;
-      case 'cancelled': return AdminTheme.error;
-      default: return AdminTheme.mediumGrey;
-    }
-  }
-
-  // Enhanced my products method with full functionality
-  Widget _buildMyProducts() {
-    return SingleChildScrollView(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Header with Add Product button
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'My Products',
-                      style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Manage your product catalog and inventory',
-                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                        color: Colors.grey[600],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              ElevatedButton.icon(
-                onPressed: () => _showAddProductDialog(),
-                icon: const Icon(Icons.add),
-                label: const Text('Add Product'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Theme.of(context).colorScheme.primary,
-                  foregroundColor: Colors.white,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 24),
-          
-          // Product Statistics
-          Row(
-            children: [
-              Expanded(
-                child: Container(
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.05),
-                        blurRadius: 10,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Icon(Icons.inventory_2, color: Colors.blue, size: 24),
-                          const SizedBox(width: 8),
-                          Text('Total Products', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Text('$_totalProducts', style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: Colors.blue)),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(width: 16),
-            Expanded(
-              child: Container(
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.05),
-                        blurRadius: 10,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Icon(Icons.trending_up, color: Colors.green, size: 24),
-                          const SizedBox(width: 8),
-                          Text('Active Products', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Text('${_allProducts.where((p) => p['status'] == 'active').length}', style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: Colors.green)),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 24),
-          
-          // Products List
-          Container(
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
-                  blurRadius: 10,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.all(20),
-                  child: Row(
-                    children: [
-                      Text(
-                        'Product List',
-                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                      ),
-                      const Spacer(),
-                      IconButton(
-                        icon: const Icon(Icons.refresh),
-                        onPressed: () => _loadAllProducts(),
-                      ),
-                    ],
-                  ),
-                ),
-                if (_allProducts.isEmpty)
-                  Container(
-                    height: 200,
-                    child: Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.shopping_bag_outlined, size: 64, color: Colors.grey[300]),
-                          const SizedBox(height: 16),
-                          Text('No products yet', style: TextStyle(color: Colors.grey[600])),
-                          const SizedBox(height: 8),
-                          Text('Add your first product to get started', style: TextStyle(color: Colors.grey[500], fontSize: 12)),
-                        ],
-                      ),
-                    ),
-                  )
-                else
-                  Column(
-                    children: List.generate(_allProducts.length, (index) {
-                      final product = _allProducts[index];
-                      return _buildProductListItem(product);
-                    }),
-                  ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildProductListItem(Map<String, dynamic> product) {
-    final isActive = product['status'] == 'active';
-    final stock = product['quantity'] ?? 0;
-    final isLowStock = stock < 10;
-    
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: isActive ? Colors.white : Colors.grey[50],
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.grey[200]!),
-      ),
-      child: Row(
-        children: [
-          // Product Image
-          Container(
-            width: 60,
-            height: 60,
-            decoration: BoxDecoration(
-              color: Colors.grey[100],
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: product['imageUrl'] != null && product['imageUrl'].toString().isNotEmpty
-                ? ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child: Image.network(
-                      product['imageUrl'],
-                      fit: BoxFit.cover,
-                      errorBuilder: (context, error, stackTrace) {
-                        print('Error loading product image: $error');
-                        return Container(
-                          decoration: BoxDecoration(
-                            color: Colors.grey[200],
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Icon(Icons.image, color: Colors.grey[400]),
-                        );
-                      },
-                      loadingBuilder: (context, child, loadingProgress) {
-                        if (loadingProgress == null) return child;
-                        return Container(
-                          decoration: BoxDecoration(
-                            color: Colors.grey[200],
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Center(
-                            child: CircularProgressIndicator(
-                              value: loadingProgress.expectedTotalBytes != null
-                                  ? loadingProgress.cumulativeBytesLoaded / loadingProgress.expectedTotalBytes!
-                                  : null,
-                            ),
+                            ],
                           ),
                         );
-                      },
-                    ),
-                  )
-                : Container(
-                    decoration: BoxDecoration(
-                      color: Colors.grey[200],
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Icon(Icons.image, color: Colors.grey[400]),
-                  ),
-          ),
-          const SizedBox(width: 16),
-          
-          // Product Info
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  product['name'] ?? 'Unknown Product',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 16,
-                    color: isActive ? Colors.black : Colors.grey[600],
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'R ${(product['price'] ?? 0.0).toStringAsFixed(2)}',
-                  style: TextStyle(
-                    color: Colors.green,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 14,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  '${product['category'] ?? 'Uncategorized'}${product['subcategory'] != null ? ' > ${product['subcategory']}' : ''}',
-                  style: TextStyle(
-                    color: Colors.grey[600],
-                    fontSize: 12,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 4),
-                Row(
-                  children: [
-                    Text(
-                      'Stock: $stock',
-                      style: TextStyle(
-                        color: isLowStock ? AdminTheme.error : AdminTheme.mediumGrey,
-                        fontSize: 12,
-                        fontWeight: isLowStock ? FontWeight.bold : FontWeight.normal,
-                      ),
-                    ),
-                    if (isLowStock) ...[
-                      const SizedBox(width: 8),
-                      Icon(Icons.warning, color: AdminTheme.error, size: 16),
-                    ],
-                  ],
+                      }).toList(),
                 ),
               ],
             ),
           ),
-          
-          // Actions
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Status Switch
-              Switch(
-                value: isActive,
-                onChanged: (value) => _toggleProductStatus(product['id'], product['status'] ?? 'active'),
-                activeColor: Colors.green,
-              ),
-              const SizedBox(width: 8),
-              
-              // Edit Button
-              IconButton(
-                onPressed: () => _showEditProductDialog(product),
-                icon: Icon(Icons.edit, color: Colors.blue, size: 20),
-                tooltip: 'Edit Product',
-              ),
-              
-              // Delete Button
-              IconButton(
-                onPressed: () => _showDeleteProductDialog(product),
-                icon: Icon(Icons.delete, color: AdminTheme.error, size: 20),
-                tooltip: 'Delete Product',
-              ),
-              
-              // Stock Update Button
-              TextButton(
-                onPressed: () => _showStockUpdateDialog(product),
-                child: Text('Stock', style: TextStyle(fontSize: 10)),
-              ),
-            ],
           ),
-        ],
-      ),
-    );
-  }
-
-  void _showStockUpdateDialog(Map<String, dynamic> product) {
-    final controller = TextEditingController(text: product['stock'].toString());
-    
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Update Stock'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text('Product: ${product['name']}'),
-            const SizedBox(height: 16),
-            TextField(
-              controller: controller,
-              keyboardType: TextInputType.number,
-              decoration: InputDecoration(
-                labelText: 'Stock Quantity',
-                border: OutlineInputBorder(),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              final newStock = int.tryParse(controller.text) ?? 0;
-              _updateProductStock(product['id'], newStock);
-              Navigator.pop(context);
-            },
-            child: Text('Update'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // Add missing inventory method
-  Widget _buildInventory() {
-    return SingleChildScrollView(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Header
-          Text(
-            'Inventory Management',
-            style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'Track stock levels and manage inventory',
-            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-              color: Colors.grey[600],
-            ),
-          ),
-          const SizedBox(height: 24),
-          
-          // Inventory Overview Cards
-          Row(
-            children: [
-              Expanded(
-      child: Container(
-                  padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.05),
-                        blurRadius: 10,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-                      Row(
-                        children: [
-                          Icon(Icons.warning, color: AdminTheme.error, size: 24),
-                          const SizedBox(width: 8),
-                          Text('Low Stock Items', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Text('${_lowStockProducts.length}', style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: AdminTheme.error)),
-                      Text('Items need restocking', style: TextStyle(color: Colors.grey[600], fontSize: 12)),
-                    ],
-                  ),
-                ),
-              ),
-            const SizedBox(width: 16),
-              Expanded(
-                child: Container(
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.05),
-                        blurRadius: 10,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Icon(Icons.check_circle, color: Colors.green, size: 24),
-                          const SizedBox(width: 8),
-                          Text('In Stock', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Text('${_allProducts.where((p) => (p['stock'] ?? 0) >= 10).length}', style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: Colors.green)),
-                      Text('Items well stocked', style: TextStyle(color: Colors.grey[600], fontSize: 12)),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Container(
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.05),
-                        blurRadius: 10,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Icon(Icons.block, color: Colors.orange, size: 24),
-                          const SizedBox(width: 8),
-                          Text('Out of Stock', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Text('${_allProducts.where((p) => (p['stock'] ?? 0) == 0).length}', style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: Colors.orange)),
-                      Text('Items unavailable', style: TextStyle(color: Colors.grey[600], fontSize: 12)),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 24),
-          
-          // Low Stock Alert
-          Container(
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
-                  blurRadius: 10,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Icon(Icons.warning_amber, color: Colors.red, size: 24),
-                    const SizedBox(width: 8),
-                    Text('Low Stock Alerts', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                if (_lowStockProducts.isEmpty)
-                  Container(
-                    height: 200,
-                    child: Center(
-                      child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                          Icon(Icons.check_circle, size: 64, color: Colors.green[300]),
-                          const SizedBox(height: 16),
-                          Text('All products are well stocked!', style: TextStyle(color: Colors.green[600])),
-                        ],
-                      ),
-                    ),
-                  )
-                else
-                  Column(
-                    children: List.generate(_lowStockProducts.length, (index) {
-                      final product = _lowStockProducts[index];
-                      return _buildLowStockItem(product);
-                    }),
-            ),
-          ],
-        ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildLowStockItem(Map<String, dynamic> product) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.red[50],
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.red[200]!),
-      ),
-      child: Row(
-        children: [
-          Icon(Icons.warning, color: Colors.red, size: 24),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  product['name'] ?? 'Unknown Product',
-                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'Only ${product['stock']} left in stock',
-                  style: TextStyle(color: Colors.red[700], fontSize: 14),
-                ),
-              ],
-            ),
-          ),
-          ElevatedButton(
-            onPressed: () => _showStockUpdateDialog(product),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-              foregroundColor: Colors.white,
-            ),
-            child: Text('Restock'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // Add missing customer reviews method
-  Widget _buildCustomerReviews() {
-    return SingleChildScrollView(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Header
-          Text(
-            'Customer Reviews',
-            style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'View and respond to customer feedback',
-            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-              color: Colors.grey[600],
-            ),
-          ),
-          const SizedBox(height: 24),
-          
-          // Review Overview
-          Row(
-            children: [
-              Expanded(
-                child: Container(
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.05),
-                        blurRadius: 10,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    children: [
-                      Text(
-                        _customerReviews.isEmpty 
-                            ? '0.0'
-                            : (_customerReviews.map((r) => r['rating'] ?? 0).reduce((a, b) => a + b) / _customerReviews.length).toStringAsFixed(1),
-                        style: TextStyle(fontSize: 48, fontWeight: FontWeight.bold, color: Colors.orange),
-                      ),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: List.generate(5, (index) => Icon(Icons.star, color: Colors.orange, size: 20)),
-                      ),
-                      const SizedBox(height: 8),
-                      Text('Average Rating', style: TextStyle(color: Colors.grey[600])),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Container(
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.05),
-                        blurRadius: 10,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    children: [
-                      Text('${_customerReviews.length}', style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: Colors.blue)),
-                      const SizedBox(height: 8),
-                      Text('Total Reviews', style: TextStyle(color: Colors.grey[600])),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Container(
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.05),
-                        blurRadius: 10,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    children: [
-                      Text('${_customerReviews.where((r) => (r['rating'] ?? 0) >= 4).length}', style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: Colors.green)),
-                      const SizedBox(height: 8),
-                      Text('Positive Reviews', style: TextStyle(color: Colors.grey[600])),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 24),
-          
-          // Recent Reviews
-          Container(
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
-                  blurRadius: 10,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.all(20),
-            child: Text(
-                    'Recent Reviews',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                  ),
-                ),
-                if (_customerReviews.isEmpty)
-                  Container(
-                    height: 200,
-                    child: Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.rate_review_outlined, size: 64, color: Colors.grey[300]),
-                          const SizedBox(height: 16),
-                          Text('No reviews yet', style: TextStyle(color: Colors.grey[600])),
-                          const SizedBox(height: 8),
-                          Text('Customer reviews will appear here', style: TextStyle(color: Colors.grey[500], fontSize: 12)),
-                        ],
-                      ),
-                    ),
-                  )
-                else
-                  Column(
-                    children: List.generate(_customerReviews.length, (index) {
-                      final review = _customerReviews[index];
-                      return _buildReviewItem(review);
-                    }),
-                  ),
-              ],
-            ),
-          ),
-        ],
-            ),
-          );
-        }
-
-  Widget _buildReviewItem(Map<String, dynamic> review) {
-    final rating = review['rating'] ?? 0;
-    
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.grey[50],
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.grey[200]!),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              CircleAvatar(
-                backgroundColor: Colors.blue.withOpacity(0.1),
-                child: Icon(Icons.person, color: Colors.blue),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      review['buyerName'] ?? 'Anonymous Customer',
-                      style: TextStyle(fontWeight: FontWeight.w600),
-                    ),
-                    Row(
-                      children: [
-                        ...List.generate(5, (i) => Icon(
-                          Icons.star,
-                          size: 16,
-                          color: i < rating ? Colors.orange : Colors.grey[300],
-                        )),
-                        const SizedBox(width: 8),
-                        Text(
-                          _formatTimeAgo(review['timestamp']),
-                          style: TextStyle(color: Colors.grey[600], fontSize: 12),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          if (review['comment']?.isNotEmpty == true) ...[
-            const SizedBox(height: 12),
-            Text(
-              review['comment'],
-              style: TextStyle(color: Colors.grey[700]),
-            ),
-          ],
-          if (review['productName'] != null) ...[
-            const SizedBox(height: 8),
-            Text(
-              'Product: ${review['productName']}',
-              style: TextStyle(color: Colors.grey[600], fontSize: 12, fontStyle: FontStyle.italic),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  // Add missing store settings method
-  Widget _buildStoreSettings() {
-    return SingleChildScrollView(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if ((_sellerData?['kycStatus'] ?? 'none') != 'approved') ...[
-            Container(
-              decoration: BoxDecoration(
-                color: Colors.orange.withOpacity(0.08),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.orange.withOpacity(0.2)),
-              ),
-              padding: const EdgeInsets.all(16),
-              margin: const EdgeInsets.only(bottom: 16),
-              child: Row(
-                children: [
-                  const Icon(Icons.verified_user, color: Colors.orange),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('KYC pending', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.orange[800])),
-                        const SizedBox(height: 4),
-                        const Text('Complete identity verification to enable COD and payouts.'),
-                        const SizedBox(height: 8),
-                        Align(
-                          alignment: Alignment.centerLeft,
-                          child: ElevatedButton.icon(
-                            onPressed: () => Navigator.of(context).pushNamed('/kyc'),
-                            icon: const Icon(Icons.upload),
-                            label: const Text('Go to KYC'),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
 
           // Payout (Bank) Details Editor
           Container(
@@ -3415,13 +2405,13 @@ class _ModernSellerDashboardSectionState extends State<ModernSellerDashboardSect
                   const SizedBox(height: 12),
                   Row(children: [
                     Expanded(child: DropdownButtonFormField<String>(
-                      value: _payoutAccountType,
+                      value: const ['cheque','savings','business'].contains(_payoutAccountType) ? _payoutAccountType : 'cheque',
                       items: const [
-                        DropdownMenuItem(value: 'Cheque/Current', child: Text('Cheque/Current')),
-                        DropdownMenuItem(value: 'Savings', child: Text('Savings')),
-                        DropdownMenuItem(value: 'Business Cheque', child: Text('Business Cheque')),
+                        DropdownMenuItem(value: 'cheque', child: Text('Cheque/Current')),
+                        DropdownMenuItem(value: 'savings', child: Text('Savings')),
+                        DropdownMenuItem(value: 'business', child: Text('Business Cheque')),
                       ],
-                      onChanged: (v) => setState(() => _payoutAccountType = v ?? _payoutAccountType),
+                      onChanged: (v) => setState(() => _payoutAccountType = (const ['cheque','savings','business'].contains(v) ? v! : 'cheque')),
                       decoration: InputDecoration(
                         labelText: 'Account Type',
                         border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
@@ -3678,6 +2668,90 @@ class _ModernSellerDashboardSectionState extends State<ModernSellerDashboardSect
         ],
       ),
     );
+  }
+
+  Future<void> _uploadKycDocuments() async {
+    try {
+      // Imports required: cloud_functions, image_picker, http, convert
+      // ignore: unused_local_variable
+      // Get upload auth from callable
+      final functions = FirebaseFunctions.instance;
+      final authRes = await functions.httpsCallable('getImageKitUploadAuth').call();
+      final auth = authRes.data as Map;
+      final token = auth['token'];
+      final expire = auth['expire'];
+      final signature = auth['signature'];
+      final publicKey = auth['publicKey'];
+      // ignore: unused_local_variable
+      final urlEndpoint = auth['urlEndpoint'];
+
+      // Pick files
+      final ImagePicker picker = ImagePicker();
+      final List<XFile> files = await picker.pickMultiImage(imageQuality: 90);
+      if (files.isEmpty) return;
+
+      // Upload sequentially to ImageKit REST API
+      for (final f in files) {
+        final bytes = await f.readAsBytes();
+        final b64 = base64Encode(bytes);
+        final form = {
+          'file': b64,
+          'fileName': f.name,
+          'token': token,
+          'expire': expire.toString(),
+          'signature': signature,
+          'publicKey': publicKey,
+          'folder': '/kyc/${_sellerId ?? 'unknown'}/',
+        };
+
+        final resp = await http.post(
+          Uri.parse('https://upload.imagekit.io/api/v1/files/upload'),
+          body: form,
+        );
+        if (resp.statusCode >= 200 && resp.statusCode < 300) {
+          final data = jsonDecode(resp.body) as Map<String, dynamic>;
+          final url = data['url'] as String?;
+          // Save to Firestore under user->kyc and central submissions
+          if (_sellerId != null && url != null) {
+            final now = DateTime.now();
+            await FirebaseFirestore.instance.collection('users').doc(_sellerId).collection('kyc').add({
+              'url': url,
+              'fileId': data['fileId'] ?? data['file_id'] ?? '',
+              'filePath': data['filePath'] ?? data['file_path'] ?? '',
+              'type': 'image',
+              'uploadedAt': now.toIso8601String(),
+            });
+            await FirebaseFirestore.instance.collection('kyc_submissions').add({
+              'userId': _sellerId,
+              'url': url,
+              'fileId': data['fileId'] ?? data['file_id'] ?? '',
+              'filePath': data['filePath'] ?? data['file_path'] ?? '',
+              'status': 'pending',
+              'submittedAt': now.toIso8601String(),
+            });
+          }
+        } else {
+          // surface error
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('KYC upload failed: ${resp.statusCode}')),
+            );
+          }
+        }
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('KYC documents uploaded')), 
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('KYC upload error: $e')),
+        );
+      }
+    }
   }
 
   Future<void> _toggleStoreStatus(bool isActive) async {
@@ -4001,17 +3075,14 @@ class _ModernSellerDashboardSectionState extends State<ModernSellerDashboardSect
 
   Future<String?> _uploadImageToImageKit(File file, String sellerId) async {
     try {
-      // Get authentication parameters from backend
-      final response = await http.get(Uri.parse('https://imagekit-auth-server-f4te.onrender.com/auth'));
-      if (response.statusCode != 200) {
-        throw Exception('Failed to get authentication parameters');
-      }
-      
-      final authParams = json.decode(response.body);
+      // Get authentication parameters from Firebase callable
+      final callable = FirebaseFunctions.instance.httpsCallable('getImageKitUploadAuth');
+      final result = await callable.call();
+      final authParams = result.data as Map;
       final bytes = await file.readAsBytes();
       final fileName = 'products/$sellerId/${DateTime.now().millisecondsSinceEpoch}_${path.basename(file.path)}';
       
-      final publicKey = 'public_tAO0SkfLl/37FQN+23c/bkAyfYg=';
+      final publicKey = (authParams['publicKey'] ?? '').toString();
       final token = authParams['token'];
       final signature = authParams['signature'];
       final expire = authParams['expire'];
@@ -4290,6 +3361,83 @@ class _ModernSellerDashboardSectionState extends State<ModernSellerDashboardSect
           .collection('orders')
           .doc(order['id'])
           .update({'status': newStatus, 'updatedAt': FieldValue.serverTimestamp()});
+      
+      // 🔔 STOCK REDUCTION LOGIC - Only reduce stock when admin confirms order fulfillment
+      if (['confirmed'].contains(newStatus.toLowerCase())) {
+        try {
+          final items = order['items'] as List<dynamic>?;
+          if (items != null && items.isNotEmpty) {
+            print('📦 Processing stock reduction for ${items.length} items');
+            
+            // Use batch write for atomic stock reduction
+            final batch = FirebaseFirestore.instance.batch();
+            int reducedItems = 0;
+            
+            for (var item in items) {
+              final itemData = item as Map<String, dynamic>;
+              final String? productId = (itemData['id'] ?? itemData['productId'])?.toString();
+              if (productId == null || productId.isEmpty) continue;
+              
+              final int qty = ((itemData['quantity'] ?? 1) as num).toInt();
+              final productRef = FirebaseFirestore.instance.collection('products').doc(productId);
+              
+              // Get current product data to check stock fields
+              final productDoc = await productRef.get();
+              if (!productDoc.exists) {
+                print('⚠️ Product $productId not found, skipping stock reduction');
+                continue;
+              }
+              
+              final productData = productDoc.data() as Map<String, dynamic>;
+              
+              // Check if product has stock tracking enabled
+              final bool hasExplicitStock = productData.containsKey('stock') || productData.containsKey('quantity');
+              if (!hasExplicitStock) {
+                print('ℹ️ Product ${productData['name'] ?? productId} has no stock tracking, skipping');
+                continue;
+              }
+              
+              // Determine which stock field to use and current value
+              int resolveStock(dynamic value) {
+                if (value is int) return value;
+                if (value is num) return value.toInt();
+                if (value is String) return int.tryParse(value) ?? 0;
+                return 0;
+              }
+              
+              final int current = productData.containsKey('stock')
+                ? resolveStock(productData['stock'])
+                : resolveStock(productData['quantity']);
+              
+              final int next = (current - qty).clamp(0, 1 << 31);
+              
+              // Update the appropriate stock field
+              if (productData.containsKey('stock')) {
+                batch.update(productRef, {'stock': next});
+                print('📦 Reducing stock for ${productData['name'] ?? productId}: $current → $next (qty: $qty)');
+              } else if (productData.containsKey('quantity')) {
+                batch.update(productRef, {'quantity': next});
+                print('📦 Reducing quantity for ${productData['name'] ?? productId}: $current → $next (qty: $qty)');
+              }
+              
+              reducedItems++;
+            }
+            
+            // Commit all stock reductions atomically
+            if (reducedItems > 0) {
+              await batch.commit();
+              print('✅ Stock reduced for $reducedItems products in order ${order['orderNumber'] ?? 'unknown'}');
+            } else {
+              print('ℹ️ No products required stock reduction');
+            }
+          }
+        } catch (stockError) {
+          print('❌ Error reducing stock: $stockError');
+          // Don't fail the entire status update if stock reduction fails
+          // Just log the error and continue
+        }
+      }
+      
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Order updated to $newStatus')),
       );
@@ -4542,6 +3690,914 @@ class _ModernSellerDashboardSectionState extends State<ModernSellerDashboardSect
       return false;
     });
   }
+
+  Future<void> _loadAvailableBalance() async {
+    if (_sellerId == null) return;
+    try {
+      setState(() { _loadingAvailable = true; });
+      final functions = FirebaseFunctions.instance;
+      final res = await functions.httpsCallable('getSellerAvailableBalance').call({ 'userId': _sellerId });
+      final data = Map<String, dynamic>.from(res.data as Map);
+      setState(() {
+        _availableGross = (data['gross'] ?? 0).toDouble();
+        _availableCommission = (data['commission'] ?? 0).toDouble();
+        _availableNet = (data['net'] ?? 0).toDouble();
+        _minPayoutAmount = (data['minPayoutAmount'] ?? 0).toDouble();
+        _commissionPct = ((data['commissionPct'] ?? 0) as num).toDouble();
+      });
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to load balance: $e')));
+      }
+    } finally {
+      if (mounted) setState(() { _loadingAvailable = false; });
+    }
+  }
+
+  Future<Map<String, dynamic>> _loadCodWalletData() async {
+    if (_sellerId == null) return {};
+    try {
+      final functions = FirebaseFunctions.instance;
+      final res = await functions.httpsCallable('getSellerAvailableBalance').call({ 'userId': _sellerId });
+      final data = Map<String, dynamic>.from(res.data as Map);
+      return Map<String, dynamic>.from(data['codWallet'] ?? {});
+    } catch (e) {
+      if (kDebugMode) print('Error loading COD wallet data: $e');
+      return {};
+    }
+  }
+
+  Future<void> _loadPayoutHistory() async {
+    if (_sellerId == null) return;
+    try {
+      final qs = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(_sellerId)
+          .collection('payouts')
+          .orderBy('createdAt', descending: true)
+          .limit(20)
+          .get();
+      setState(() {
+        _payoutHistory = qs.docs.map((d) => { 'id': d.id, ...?d.data() }).toList().cast<Map<String, dynamic>>();
+      });
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  Future<void> _loadComplianceAndCOD() async {
+    if (_sellerId == null) return;
+    try {
+      // KYC status from user doc
+      final u = await FirebaseFirestore.instance.collection('users').doc(_sellerId).get();
+      if (u.exists) {
+        final d = u.data() ?? {};
+        _kycStatus = (d['kycStatus'] ?? 'none').toString();
+      }
+      // Sum platform receivables with status == 'due'
+      final qs = await FirebaseFirestore.instance
+          .collection('platform_receivables')
+          .doc(_sellerId)
+          .collection('entries')
+          .where('status', isEqualTo: 'due')
+          .get();
+      double totalDue = 0.0;
+      for (final doc in qs.docs) {
+        final d = doc.data();
+        final amt = (d['amount'] is num)
+            ? (d['amount'] as num).toDouble()
+            : ((d['net'] ?? 0) as num?)?.toDouble() ?? 0.0;
+        totalDue += amt;
+      }
+      setState(() {
+        _codOutstanding = totalDue;
+        _codDisabled = totalDue > 300.0 || _kycStatus.toLowerCase() != 'approved';
+      });
+    } catch (_) {}
+  }
+
+  Future<void> _onRequestPayout() async {
+    if (_sellerId == null) return;
+    try {
+      setState(() { _requestingPayout = true; });
+      final functions = FirebaseFunctions.instance;
+      final res = await functions.httpsCallable('requestPayout').call({});
+      final data = Map<String, dynamic>.from(res.data as Map);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Payout requested: R${(_availableNet).toStringAsFixed(2)}')));
+      }
+      await _loadAvailableBalance();
+      await _loadPayoutHistory();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Request failed: $e')));
+      }
+    } finally {
+      if (mounted) setState(() { _requestingPayout = false; });
+    }
+  }
+
+  String _getFailureReasonLabel(String reason) {
+    switch (reason) {
+      case 'bank_account_closed':
+        return 'Bank account closed';
+      case 'invalid_account_number':
+        return 'Invalid account number';
+      case 'insufficient_funds':
+        return 'Insufficient funds';
+      case 'bank_rejected_compliance':
+        return 'Bank rejected (compliance)';
+      case 'expired_payout_request':
+        return 'Expired payout request';
+      case 'wrong_account_details':
+        return 'Wrong account details';
+      case 'technical_error':
+        return 'Technical error';
+      case 'other':
+        return 'Other';
+      default:
+        return reason;
+    }
+  }
+  // ===== Placeholder implementations to restore build for missing sections =====
+  Widget _buildMyProducts() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 2))],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text('My Products', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              TextButton(
+                onPressed: () {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Navigate to full product management')),
+                  );
+                },
+                child: const Text('View All'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          StreamBuilder<QuerySnapshot>(
+            stream: FirebaseFirestore.instance
+                .collection('products')
+                .where('ownerId', isEqualTo: FirebaseAuth.instance.currentUser?.uid)
+                .limit(3)
+                .snapshots(),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              
+              if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                return const Center(
+                  child: Column(
+                    children: [
+                      Icon(Icons.inventory_2_outlined, size: 48, color: Colors.grey),
+                      SizedBox(height: 8),
+                      Text('No products yet', style: TextStyle(color: Colors.grey)),
+                    ],
+                  ),
+                );
+              }
+              
+              return ListView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: snapshot.data!.docs.length,
+                itemBuilder: (context, index) {
+                  final product = snapshot.data!.docs[index].data() as Map<String, dynamic>;
+                  return ListTile(
+                    leading: ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: Image.network(
+                        product['imageUrl'] ?? '',
+                        width: 50,
+                        height: 50,
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) => Container(
+                          width: 50,
+                          height: 50,
+                          color: Colors.grey[200],
+                          child: const Icon(Icons.image, color: Colors.grey),
+                        ),
+                      ),
+                    ),
+                    title: Text(product['name'] ?? 'Unknown Product'),
+                    subtitle: Text('R${(product['price'] ?? 0).toStringAsFixed(2)}'),
+                    trailing: Text(product['category'] ?? ''),
+                  );
+                },
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInventory() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 2))],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Inventory Summary', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 16),
+          StreamBuilder<QuerySnapshot>(
+            stream: FirebaseFirestore.instance
+                .collection('products')
+                .where('ownerId', isEqualTo: FirebaseAuth.instance.currentUser?.uid)
+                .snapshots(),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              
+              final products = snapshot.hasData ? snapshot.data!.docs : [];
+              final totalProducts = products.length;
+              final activeProducts = products.where((doc) {
+                final data = doc.data() as Map<String, dynamic>;
+                return data['status'] != 'inactive';
+              }).length;
+              final lowStockProducts = products.where((doc) {
+                final data = doc.data() as Map<String, dynamic>;
+                return (data['stock'] ?? 0) < 5;
+              }).length;
+              
+              return Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                children: [
+                  _buildInventoryCard('Total Products', totalProducts.toString(), Icons.inventory),
+                  _buildInventoryCard('Active', activeProducts.toString(), Icons.check_circle, Colors.green),
+                  _buildInventoryCard('Low Stock', lowStockProducts.toString(), Icons.warning, Colors.orange),
+                ],
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInventoryCard(String title, String value, IconData icon, [Color? color]) {
+    return Column(
+      children: [
+        Icon(icon, size: 32, color: color ?? Colors.blue),
+        const SizedBox(height: 8),
+        Text(value, style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: color ?? Colors.blue)),
+        Text(title, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+      ],
+    );
+  }
+
+  Widget _buildCustomerReviews() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 2))],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text('Recent Reviews', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              TextButton(
+                onPressed: () {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Navigate to all reviews')),
+                  );
+                },
+                child: const Text('View All'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          StreamBuilder<QuerySnapshot>(
+            stream: FirebaseFirestore.instance
+                .collection('reviews')
+                .where('sellerId', isEqualTo: FirebaseAuth.instance.currentUser?.uid)
+                .orderBy('timestamp', descending: true)
+                .limit(3)
+                .snapshots(),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              
+              if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                return const Center(
+                  child: Column(
+                    children: [
+                      Icon(Icons.star_outline, size: 48, color: Colors.grey),
+                      SizedBox(height: 8),
+                      Text('No reviews yet', style: TextStyle(color: Colors.grey)),
+                    ],
+                  ),
+                );
+              }
+              
+              return ListView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: snapshot.data!.docs.length,
+                itemBuilder: (context, index) {
+                  final review = snapshot.data!.docs[index].data() as Map<String, dynamic>;
+                  return ListTile(
+                    leading: CircleAvatar(
+                      child: Text(review['userName']?.toString().substring(0, 1).toUpperCase() ?? 'U'),
+                    ),
+                    title: Text(review['userName'] ?? 'Anonymous'),
+                    subtitle: Text(review['comment'] ?? 'No comment'),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: List.generate(5, (starIndex) => Icon(
+                        starIndex < (review['rating'] ?? 0) ? Icons.star : Icons.star_border,
+                        color: Colors.orange,
+                        size: 16,
+                      )),
+                    ),
+                  );
+                },
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStoreSettings() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      alignment: Alignment.centerLeft,
+      child: const Text('Store settings appear above.'),
+    );
+  }
+
+  Future<void> _handleLogout() async {
+    try {
+      await FirebaseAuth.instance.signOut();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Logged out')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Logout failed: $e')),
+        );
+      }
+    }
+  }
+
+  Widget _buildCodKycPanel() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  _codDisabled ? Icons.block : Icons.check_circle,
+                  color: _codDisabled ? Colors.orange : Colors.green,
+                ),
+                const SizedBox(width: 8),
+                Text('COD & KYC', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
+                const Spacer(),
+                IconButton(
+                  onPressed: _loadComplianceAndCOD,
+                  icon: const Icon(Icons.refresh),
+                  tooltip: 'Refresh',
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 12,
+              runSpacing: 8,
+              children: [
+                Chip(
+                  avatar: const Icon(Icons.verified_user, size: 16),
+                  label: Text('KYC: ${_kycStatus.toUpperCase()}'),
+                ),
+                Chip(
+                  avatar: const Icon(Icons.payments, size: 16),
+                  label: Text('Outstanding: R${_codOutstanding.toStringAsFixed(2)}'),
+                ),
+                Chip(
+                  avatar: const Icon(Icons.local_shipping, size: 16),
+                  label: Text(_codDisabled ? 'COD: DISABLED' : 'COD: ENABLED'),
+                  backgroundColor: _codDisabled ? Colors.orange.withOpacity(0.15) : Colors.green.withOpacity(0.15),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                ElevatedButton.icon(
+                  onPressed: (_codOutstanding > 0 && _sellerId != null) ? () async {
+                    final url = Uri.parse('https://functions-redirect'); // placeholder
+                    try {
+                      final ok = await launchUrl(url, mode: LaunchMode.externalApplication);
+                      if (!ok && mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Open payment link (stub).')));
+                      }
+                    } catch (_) {}
+                  } : null,
+                  icon: const Icon(Icons.link),
+                  label: const Text('Generate top-up link'),
+                ),
+                const SizedBox(width: 8),
+                OutlinedButton.icon(
+                  onPressed: (_codOutstanding > 0 && _sellerId != null) ? () async {
+                    // Admin manual mark-paid (stub): in real impl, write a settlement entry
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Marked as paid (stub).')));
+                  } : null,
+                  icon: const Icon(Icons.check),
+                  label: const Text('Mark as paid'),
+                ),
+
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMetricsGrid() {
+    return GridView.count(
+      physics: const NeverScrollableScrollPhysics(),
+      shrinkWrap: true,
+      crossAxisCount: 2,
+      crossAxisSpacing: 12,
+      mainAxisSpacing: 12,
+      children: [
+        _buildAnalyticsCard('Total Revenue', 'R${_totalRevenue.toStringAsFixed(2)}', Icons.receipt, AdminTheme.success),
+        _buildAnalyticsCard('Orders', '$_totalOrders', Icons.shopping_bag, Colors.blue),
+      ],
+    );
+  }
+
+  Widget _buildSalesChart() {
+    return Container(
+      height: 200,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 2))],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Sales Overview',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Expanded(
+            child: Row(
+              children: [
+                Expanded(
+                  child: _buildSalesMetric(
+                    'Total Revenue', 
+                    'R${_totalRevenue.toStringAsFixed(2)}',
+                    Icons.attach_money,
+                    Colors.green,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: _buildSalesMetric(
+                    'Total Orders', 
+                    '$_totalOrders',
+                    Icons.shopping_bag,
+                    Colors.blue,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSalesMetric(String title, String value, IconData icon, Color color) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withOpacity(0.3)),
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(icon, color: color, size: 24),
+          const SizedBox(height: 8),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            title,
+            style: const TextStyle(
+              fontSize: 12,
+              color: Colors.grey,
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRecentActivity() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 2))],
+      ),
+        child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Recent Activity',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 16),
+          if (_recentActivity.isEmpty) 
+            const Center(
+              child: Padding(
+                padding: EdgeInsets.all(20),
+                child: Text(
+                  'No recent activity',
+                  style: TextStyle(color: Colors.grey),
+                ),
+              ),
+            )
+          else
+            ...(_recentActivity.take(5).map((activity) => Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Row(
+                children: [
+                  Container(
+                    width: 8,
+                    height: 8,
+                    decoration: const BoxDecoration(
+                      color: Colors.blue,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      activity['description'] ?? 'Activity',
+                      style: const TextStyle(fontSize: 14),
+                    ),
+                  ),
+                  Text(
+                    _formatTimeAgo(activity['timestamp']),
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey,
+                    ),
+                  ),
+                ],
+              ),
+            ))),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRecentOrders() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 2))],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Recent Orders',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 16),
+          if (_recentOrders.isEmpty)
+            const Center(
+              child: Padding(
+                padding: EdgeInsets.all(20),
+                child: Text(
+                  'No recent orders',
+                  style: TextStyle(color: Colors.grey),
+                ),
+              ),
+            )
+          else
+            ...(_recentOrders.take(5).map((order) => Container(
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.grey.withOpacity(0.05),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.grey.withOpacity(0.2)),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Order #${(order['orderNumber'] ?? order['id'] ?? 'N/A').toString().substring(0, 8)}...',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w500,
+                            fontSize: 14,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Customer: ${order['buyerName'] ?? 'Unknown'}',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text(
+                        'R${(order['total'] ?? 0).toStringAsFixed(2)}',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                          color: Colors.green,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: _getStatusColor(order['status'] ?? 'pending'),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          (order['status'] ?? 'pending').toString().toUpperCase(),
+                          style: const TextStyle(
+                            fontSize: 10,
+                            color: Colors.white,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ))),
+        ],
+      ),
+    );
+  }
+
+  Color _getStatusColor(String status) {
+    switch (status.toLowerCase()) {
+      case 'completed':
+      case 'delivered':
+        return Colors.green;
+      case 'pending':
+        return Colors.orange;
+      case 'processing':
+        return Colors.blue;
+      case 'cancelled':
+        return Colors.red;
+      default:
+        return Colors.grey;
+    }
+  }
+
+  Widget _buildTopProducts() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 2))],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Top Products',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 16),
+          if (_topProducts.isEmpty)
+            const Center(
+              child: Padding(
+                padding: EdgeInsets.all(20),
+                child: Text(
+                  'No products available',
+                  style: TextStyle(color: Colors.grey),
+                ),
+              ),
+            )
+          else
+            ...(_topProducts.take(5).map((product) => Container(
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.grey.withOpacity(0.05),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.grey.withOpacity(0.2)),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: Colors.grey.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: product['imageUrl'] != null
+                        ? ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: Image.network(
+                              product['imageUrl'],
+                              fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) {
+                                return const Icon(Icons.image, color: Colors.grey);
+                              },
+                            ),
+                          )
+                        : const Icon(Icons.shopping_bag, color: Colors.grey),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          product['name'] ?? 'Product',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w500,
+                            fontSize: 14,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Stock: ${product['stock'] ?? 0}',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text(
+                        'R${(product['price'] ?? 0).toStringAsFixed(2)}',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                          color: Colors.green,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Sold: ${product['sold'] ?? 0}',
+                        style: const TextStyle(
+                          fontSize: 10,
+                          color: Colors.grey,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ))),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatusCard(String title, int count, Color color, IconData icon) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 2))],
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: color),
+          const SizedBox(width: 8),
+          Expanded(child: Text(title)),
+          Text('$count', style: TextStyle(fontWeight: FontWeight.bold, color: color)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAnalyticsCard(String title, String value, IconData icon, Color color) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 2))],
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: color),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
+                const SizedBox(height: 4),
+                Text(value, style: TextStyle(fontWeight: FontWeight.bold, color: color, fontSize: 16)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildProfileStatCard(String title, String value, IconData icon, Color color) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 2))],
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: color),
+          const SizedBox(width: 8),
+          Expanded(child: Text(title)),
+          Text(value, style: TextStyle(fontWeight: FontWeight.bold, color: color)),
+        ],
+      ),
+    );
+  }
+
+
 }
 
 // Chat Dialog Widget

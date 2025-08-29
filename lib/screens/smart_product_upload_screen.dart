@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:http/http.dart' as http;
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:path/path.dart' as path;
 import 'dart:io';
 import 'dart:convert';
@@ -380,51 +381,34 @@ class _SmartProductUploadScreenState extends State<SmartProductUploadScreen> {
         return null;
       }
       
-      print('🔍 DEBUG: Starting ImageKit public upload...');
-      
-      // Read image file
+      print('🔍 DEBUG: Starting ImageKit upload via callable...');
       final bytes = await file.readAsBytes();
-      
-      // Create unique filename
+      final callable = FirebaseFunctions.instance.httpsCallable('getImageKitUploadAuth');
+      final result = await callable.call();
+      final data = result.data;
+      if (data is! Map) {
+        throw Exception('Invalid ImageKit auth response');
+      }
+      final authParams = Map<String, dynamic>.from(data as Map);
       final fileName = 'products/${user.uid}/${DateTime.now().millisecondsSinceEpoch}_${path.basename(file.path)}';
-      
-      // Use ImageKit's public upload API
-      final request = http.MultipartRequest(
-        'POST',
-        Uri.parse('https://upload.imagekit.io/api/v1/files/upload'),
-      );
-      
-      // Add your ImageKit public key and authentication
+      final request = http.MultipartRequest('POST', Uri.parse('https://upload.imagekit.io/api/v1/files/upload'));
       request.fields.addAll({
-        'publicKey': 'public_tAO0SkfLl/37FQN+23c/bkAyfYg=',
+        'publicKey': (authParams['publicKey'] ?? '').toString(),
+        'token': authParams['token'],
+        'signature': authParams['signature'],
+        'expire': authParams['expire'].toString(),
         'fileName': fileName,
         'folder': 'products/${user.uid}',
         'useUniqueFileName': 'true',
         'tags': 'product,${user.uid}',
       });
-      
-      request.files.add(
-        http.MultipartFile.fromBytes(
-          'file',
-          bytes,
-          filename: path.basename(file.path),
-        ),
-      );
-      
-      print('🔍 DEBUG: Sending ImageKit upload request...');
+      request.files.add(http.MultipartFile.fromBytes('file', bytes, filename: path.basename(file.path)));
       final streamedResponse = await request.send();
       final uploadResponse = await http.Response.fromStream(streamedResponse);
-      
-      print('🔍 DEBUG: ImageKit upload response status: ${uploadResponse.statusCode}');
-      print('🔍 DEBUG: ImageKit upload response body: ${uploadResponse.body}');
-      
       if (uploadResponse.statusCode == 200) {
-        final result = json.decode(uploadResponse.body);
-        final imageUrl = result['url'];
-        print('🔍 DEBUG: ImageKit upload successful: $imageUrl');
-        return imageUrl;
+        final resultMap = json.decode(uploadResponse.body);
+        return resultMap['url'];
       } else {
-        print('🔍 DEBUG: ImageKit upload failed with status: ${uploadResponse.statusCode}');
         throw Exception('ImageKit upload failed: ${uploadResponse.statusCode} - ${uploadResponse.body}');
       }
     } catch (e) {

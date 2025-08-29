@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../theme/app_theme.dart';
 import 'SellerRegistrationScreen.dart';
@@ -17,6 +18,19 @@ class _SellerOnboardingScreenState extends State<SellerOnboardingScreen> with Ti
   bool _hasReadTerms = false;
   bool _hasReadPaymentTerms = false;
   bool _hasReadReturnPolicy = false;
+  double? _platformFeePct;
+  // Live pricing settings
+  double? _pickupPct;
+  double? _merchantDeliveryPct;
+  double? _platformDeliveryPct;
+  double? _commissionMin;
+  double? _capPickup;
+  double? _capMerchant;
+  double? _capPlatform;
+  double? _buyerServiceFeePct;
+  double? _buyerServiceFeeFixed;
+  double? _smallOrderFee;
+  double? _smallOrderThreshold;
 
   final List<OnboardingStep> _steps = [
     OnboardingStep(
@@ -39,10 +53,23 @@ class _SellerOnboardingScreenState extends State<SellerOnboardingScreen> with Ti
       color: AppTheme.deepTeal,
       content: [
         'Customers pay via PayFast (secure)',
-        'You receive 90% of earnings within 24 hours',
-        '10% held for 30 days (protection against returns)',
-        'Platform fees: 5% (orders R50+) / 3% (orders <R50)',
-        'PayFast fees: 3.5% + R2 per transaction'
+        'You receive 100% of earnings after order completion',
+        'No holdback period - money available immediately',
+        'Platform fees handled separately by admin',
+        'PayFast fees: 3.5% + R2 per transaction',
+        'Request payouts when you want (minimum R100)'
+      ],
+    ),
+    OnboardingStep(
+      title: 'Fees & Payouts',
+      subtitle: 'Transparent rates and payouts, always visible',
+      icon: Icons.receipt_long,
+      color: AppTheme.primaryGreen,
+      content: [
+        'Commission varies by order type',
+        'Buyer pays a small service fee',
+        'Weekly payouts (minimum R100)',
+        'COD commission settled via payout/top-up',
       ],
     ),
     OnboardingStep(
@@ -54,8 +81,9 @@ class _SellerOnboardingScreenState extends State<SellerOnboardingScreen> with Ti
         '7-day return window for most products',
         'No returns for food items (safety)',
         'Returns must be valid (defective, wrong item, etc.)',
-        'Holdback covers return costs automatically',
-        'Platform mediates all return disputes'
+        'Returns affect your available balance directly',
+        'Platform mediates all return disputes',
+        'Admin reviews all returns for fairness'
       ],
     ),
     OnboardingStep(
@@ -81,7 +109,9 @@ class _SellerOnboardingScreenState extends State<SellerOnboardingScreen> with Ti
         'Seller delivery (your own delivery)',
         'Hybrid delivery (both options)',
         'Pickup only (customers collect)',
-        'Set your own delivery fees and ranges'
+        'Nationwide pickup (Pargo/PAXI services)',
+        'Set your own delivery fees and ranges',
+        'Category-aware delivery caps (food: 20km, others: 50km)'
       ],
     ),
     OnboardingStep(
@@ -104,6 +134,7 @@ class _SellerOnboardingScreenState extends State<SellerOnboardingScreen> with Ti
     super.initState();
     _pageController = PageController();
     _tabController = TabController(length: _steps.length, vsync: this);
+    _loadPricingSettings();
   }
 
   @override
@@ -139,6 +170,35 @@ class _SellerOnboardingScreenState extends State<SellerOnboardingScreen> with Ti
       );
       _tabController.animateTo(_currentPage);
     }
+  }
+
+  Future<void> _loadPricingSettings() async {
+    try {
+      final doc = await FirebaseFirestore.instance.collection('admin_settings').doc('payment_settings').get();
+      final data = doc.data() ?? {};
+      setState(() {
+        // legacy single percentage
+        final pct = (data['platformFeePercentage'] is num)
+            ? (data['platformFeePercentage'] as num).toDouble()
+            : double.tryParse('${data['platformFeePercentage']}');
+        _platformFeePct = pct;
+
+        // per-mode commission + caps/min
+        _pickupPct = (data['pickupPct'] as num?)?.toDouble();
+        _merchantDeliveryPct = (data['merchantDeliveryPct'] as num?)?.toDouble();
+        _platformDeliveryPct = (data['platformDeliveryPct'] as num?)?.toDouble();
+        _commissionMin = (data['commissionMin'] as num?)?.toDouble();
+        _capPickup = (data['commissionCapPickup'] as num?)?.toDouble();
+        _capMerchant = (data['commissionCapDeliveryMerchant'] as num?)?.toDouble();
+        _capPlatform = (data['commissionCapDeliveryPlatform'] as num?)?.toDouble();
+
+        // buyer fees
+        _buyerServiceFeePct = (data['buyerServiceFeePct'] as num?)?.toDouble();
+        _buyerServiceFeeFixed = (data['buyerServiceFeeFixed'] as num?)?.toDouble();
+        _smallOrderFee = (data['smallOrderFee'] as num?)?.toDouble();
+        _smallOrderThreshold = (data['smallOrderThreshold'] as num?)?.toDouble();
+      });
+    } catch (_) {}
   }
 
   void _proceedToRegistration() async {
@@ -238,6 +298,103 @@ class _SellerOnboardingScreenState extends State<SellerOnboardingScreen> with Ti
               ],
             ),
           )).toList(),
+
+          if (step.title == 'How Payments Work') ...[
+            SizedBox(height: ResponsiveUtils.getVerticalPadding(context)),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppTheme.primaryGreen.withOpacity(0.08),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppTheme.primaryGreen.withOpacity(0.2)),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.percent, color: AppTheme.primaryGreen, size: 18),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      _platformFeePct != null
+                          ? 'Current platform commission: ${_platformFeePct!.toStringAsFixed(1)}% (may change)'
+                          : 'Platform commission: set by platform (may change)',
+                      style: TextStyle(
+                        color: AppTheme.deepTeal,
+                        fontSize: ResponsiveUtils.getTitleSize(context) - 6,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+
+          if (step.title == 'Fees & Payouts') ...[
+            SizedBox(height: ResponsiveUtils.getVerticalPadding(context)),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppTheme.deepTeal.withOpacity(0.04),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppTheme.deepTeal.withOpacity(0.15)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SafeUI.safeText('Commission (per order)', style: TextStyle(fontWeight: FontWeight.w700, color: AppTheme.deepTeal)),
+                  const SizedBox(height: 8),
+                  _buildBullet('Pickup: ${_pickupPct?.toStringAsFixed(1) ?? (_platformFeePct?.toStringAsFixed(1) ?? '—')}% (min R${(_commissionMin ?? 0).toStringAsFixed(2)}, cap R${(_capPickup ?? 0).toStringAsFixed(2)})'),
+                  _buildBullet('You deliver: ${_merchantDeliveryPct?.toStringAsFixed(1) ?? (_platformFeePct?.toStringAsFixed(1) ?? '—')}% (cap R${(_capMerchant ?? 0).toStringAsFixed(2)})'),
+                  _buildBullet('We arrange courier: ${_platformDeliveryPct?.toStringAsFixed(1) ?? (_platformFeePct?.toStringAsFixed(1) ?? '—')}% (cap R${(_capPlatform ?? 0).toStringAsFixed(2)})'),
+                  const SizedBox(height: 12),
+                  SafeUI.safeText('Buyer fees', style: TextStyle(fontWeight: FontWeight.w700, color: AppTheme.deepTeal)),
+                  const SizedBox(height: 8),
+                  _buildBullet('Service fee: ${_buyerServiceFeePct?.toStringAsFixed(1) ?? '—'}% + R${(_buyerServiceFeeFixed ?? 0).toStringAsFixed(2)} (min R3, max R15)'),
+                  _buildBullet('Small-order fee: R${(_smallOrderFee ?? 0).toStringAsFixed(2)} under R${(_smallOrderThreshold ?? 0).toStringAsFixed(2)}'),
+                  _buildBullet('Delivery fee: pass-through to buyer'),
+                  const SizedBox(height: 12),
+                  SafeUI.safeText('Payouts', style: TextStyle(fontWeight: FontWeight.w700, color: AppTheme.deepTeal)),
+                  const SizedBox(height: 8),
+                  _buildBullet('Weekly payouts (minimum R100)'),
+                  _buildBullet('Instant payouts available (optional fee)'),
+                  _buildBullet('COD commission settled via payout/top-up'),
+                  const SizedBox(height: 12),
+                  SafeUI.safeText('Example (R200, you deliver)', style: TextStyle(fontWeight: FontWeight.w700, color: AppTheme.deepTeal)),
+                  const SizedBox(height: 8),
+                  _buildBullet('Commission ${_merchantDeliveryPct?.toStringAsFixed(1) ?? '—'}% ≈ R18; Buyer service fee ≈ R5'),
+                  _buildBullet('You receive ≈ R182'),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Checkbox(
+                        value: _hasReadPaymentTerms,
+                        onChanged: (v) => setState(() => _hasReadPaymentTerms = v ?? false),
+                      ),
+                      Expanded(
+                        child: SafeUI.safeText(
+                          'I have read and accept the Fees & Payouts policy.',
+                          style: TextStyle(color: AppTheme.darkGrey),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBullet(String text) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(width: 6, height: 6, margin: const EdgeInsets.only(top: 6, right: 8), decoration: BoxDecoration(color: AppTheme.deepTeal, shape: BoxShape.circle)),
+          Expanded(child: Text(text, style: TextStyle(color: AppTheme.darkGrey))),
         ],
       ),
     );
@@ -425,7 +582,9 @@ class _SellerOnboardingScreenState extends State<SellerOnboardingScreen> with Ti
                     
                     Expanded(
                       child: ElevatedButton(
-                        onPressed: _currentPage < _steps.length - 1 ? _nextPage : _proceedToRegistration,
+                        onPressed: (_steps[_currentPage].title == 'Fees & Payouts' && !_hasReadPaymentTerms)
+                            ? null
+                            : (_currentPage < _steps.length - 1 ? _nextPage : _proceedToRegistration),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AppTheme.primaryGreen,
                           foregroundColor: AppTheme.angel,
@@ -436,25 +595,25 @@ class _SellerOnboardingScreenState extends State<SellerOnboardingScreen> with Ti
                             borderRadius: BorderRadius.circular(12),
                           ),
                         ),
-                                                  child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Flexible(
-                                child: Text(
-                                  _currentPage < _steps.length - 1 ? 'Next' : 'Start Registration',
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                  overflow: TextOverflow.visible,
-                                  textAlign: TextAlign.center,
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Flexible(
+                              child: Text(
+                                _currentPage < _steps.length - 1 ? 'Next' : 'Start Registration',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w600,
                                 ),
+                                overflow: TextOverflow.visible,
+                                textAlign: TextAlign.center,
                               ),
-                              if (_currentPage < _steps.length - 1) ...[
-                                SizedBox(width: 8),
-                                Icon(Icons.arrow_forward, size: 20),
-                              ],
+                            ),
+                            if (_currentPage < _steps.length - 1) ...[
+                              SizedBox(width: 8),
+                              Icon(Icons.arrow_forward, size: 20),
                             ],
-                          ),
+                          ],
+                        ),
                       ),
                     ),
                   ],

@@ -5,9 +5,11 @@ import 'stunning_product_browser.dart';
 import 'ChatScreen.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:geolocator/geolocator.dart';
+import '../services/optimized_location_service.dart';
 // Unused heavy imports removed to reduce bundle size
 import 'stunning_store_cards.dart';
 import '../theme/app_theme.dart';
+import '../utils/time_utils.dart';
 // import '../widgets/robust_image.dart';
 import '../widgets/home_navigation_button.dart';
 import 'simple_store_profile_screen.dart';
@@ -167,18 +169,6 @@ class _StoreSelectionScreenState extends State<StoreSelectionScreen> {
     // For now, show all sellers regardless of status for testing
     print('🔍 DEBUG: Starting store query...');
     
-    // First, let's check if there are any users at all
-    final allUsersQuery = await FirebaseFirestore.instance
-        .collection('users')
-        .limit(10)
-        .get();
-    
-    print('🔍 DEBUG: Total users in database: ${allUsersQuery.docs.length}');
-    for (var doc in allUsersQuery.docs) {
-      final data = doc.data();
-      print('🔍 DEBUG: User ${doc.id} - Role: ${data['role'] ?? 'no role'}, StoreName: ${data['storeName'] ?? 'no store name'}');
-    }
-    
     final userQuery = await FirebaseFirestore.instance
         .collection('users')
         .where('role', isEqualTo: 'seller')
@@ -198,39 +188,14 @@ class _StoreSelectionScreenState extends State<StoreSelectionScreen> {
       print('🔍 DEBUG: Seller ${data['storeName'] ?? 'Unnamed'} - Status: ${data['status'] ?? 'no status'}, Verified: ${data['verified'] ?? false}');
     }
 
-    // Get user location with proper permission handling
+    // Get user location with optimized performance
     Position? userPos;
     try {
-      // Check if location services are enabled
-      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
-      if (!serviceEnabled) {
-        print('🔍 DEBUG: Location services are disabled');
-        userPos = null;
+      userPos = await OptimizedLocationService.getCurrentPosition();
+      if (userPos != null) {
+        print('🔍 DEBUG: Got user position: ${userPos.latitude}, ${userPos.longitude}');
       } else {
-        // Check location permission
-        LocationPermission permission = await Geolocator.checkPermission();
-        if (permission == LocationPermission.denied) {
-          print('🔍 DEBUG: Requesting location permission...');
-          permission = await Geolocator.requestPermission();
-          if (permission == LocationPermission.denied) {
-            print('🔍 DEBUG: Location permission denied');
-            userPos = null;
-          } else if (permission == LocationPermission.deniedForever) {
-            print('🔍 DEBUG: Location permission denied forever');
-            userPos = null;
-          } else {
-            print('🔍 DEBUG: Location permission granted, getting position...');
-            userPos = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
-            print('🔍 DEBUG: Got user position: ${userPos.latitude}, ${userPos.longitude}');
-          }
-        } else if (permission == LocationPermission.deniedForever) {
-          print('🔍 DEBUG: Location permission denied forever');
-          userPos = null;
-        } else {
-          print('🔍 DEBUG: Location permission already granted, getting position...');
-          userPos = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
-          print('🔍 DEBUG: Got user position: ${userPos.latitude}, ${userPos.longitude}');
-        }
+        print('🔍 DEBUG: Could not get user location');
       }
     } catch (e) {
       print('🔍 DEBUG: Error getting location: $e');
@@ -373,7 +338,30 @@ class _StoreSelectionScreenState extends State<StoreSelectionScreen> {
       final review = await _getStoreReviewSummary(storeId);
       final storeLat = _parseCoordinate(userData['latitude']);
       final storeLng = _parseCoordinate(userData['longitude']);
-      final deliveryRange = (userData['deliveryRange'] ?? 1000.0).toDouble(); // Use new deliveryRange field
+      final deliveryRangeRaw = (userData['deliveryRange'] ?? 0.0).toDouble();
+      final bool deliveryAvailable = userData['deliveryAvailable'] == true;
+      final bool pargoEnabled = userData['pargoEnabled'] == true;
+      final bool paxiEnabled = userData['paxiEnabled'] == true;
+      final String category = (userData['storeCategory'] ?? '').toString();
+      // Category caps (can be tuned or moved to config)
+      const double foodCapKm = 20.0;
+      const double nonFoodDeliveryCapKm = 50.0;
+      const double pickupFoodDefaultKm = 12.0;
+      const double pickupNonFoodDefaultKm = 30.0;
+      const double noDeliveryNoPickupDefaultKm = 5.0;
+      // Compute service radius
+      double serviceRadiusKm;
+      final bool hasPickup = pargoEnabled || paxiEnabled;
+      final bool isFood = _isFoodCategory(category);
+      if (deliveryAvailable && deliveryRangeRaw > 0) {
+        serviceRadiusKm = isFood
+            ? deliveryRangeRaw.clamp(1.0, foodCapKm)
+            : deliveryRangeRaw.clamp(1.0, nonFoodDeliveryCapKm);
+      } else if (hasPickup) {
+        serviceRadiusKm = isFood ? pickupFoodDefaultKm : pickupNonFoodDefaultKm;
+      } else {
+        serviceRadiusKm = noDeliveryNoPickupDefaultKm;
+      }
       double? distance;
       bool inRange = true;
       
@@ -416,15 +404,23 @@ class _StoreSelectionScreenState extends State<StoreSelectionScreen> {
             storeLng,
           ) / 1000;
           
-          // Check if store is within delivery range
-          inRange = distance <= deliveryRange;
+          // Check if store is within service radius
+          inRange = distance <= serviceRadiusKm;
+          // Nationwide pickup override: show non-food pickup stores regardless of distance
+          if (_activeFilter == 'nationwide' && hasPickup && !isFood) {
+            inRange = true;
+          }
           
-          print('🔍 DEBUG: Store ${userData['storeName']} - Distance: ${distance.toStringAsFixed(1)}km, Delivery Range: ${deliveryRange.toStringAsFixed(1)}km, In Range: $inRange');
+          print('🔍 DEBUG: Store ${userData['storeName']} - Distance: ${distance.toStringAsFixed(1)}km, ServiceRadius: ${serviceRadiusKm.toStringAsFixed(1)}km, In Range: $inRange, Delivery: $deliveryAvailable/$deliveryRangeRaw km, Pickup: $hasPickup, Category: $category');
         }
       } else {
-        // If we can't calculate distance, still show the store but mark distance as null
-        inRange = true;
-        print('🔍 DEBUG: Store ${userData['storeName']} - Could not calculate distance, showing store');
+        // If we can't calculate distance, do not show (requires location for local-first discovery)
+        inRange = false;
+        // Nationwide pickup override: include non-food pickup stores even without user coords
+        if (_activeFilter == 'nationwide' && hasPickup && !isFood) {
+          inRange = true;
+        }
+        print('🔍 DEBUG: Store ${userData['storeName']} - Could not calculate distance, ' + (inRange ? 'showing due to nationwide pickup' : 'hiding store (no user/store coords)'));
       }
       
       // Fetch favoriteCount for this store
@@ -459,7 +455,7 @@ class _StoreSelectionScreenState extends State<StoreSelectionScreen> {
           'introVideoUrl': userData['introVideoUrl'] as String?,
           // Add delivery fields
           'deliveryAvailable': userData['deliveryAvailable'] ?? false,
-          'deliveryRange': userData['deliveryRange'] ?? 500.0,
+          'deliveryRange': deliveryRangeRaw,
           // Add story media fields
           'storyPhotoUrls': userData['storyPhotoUrls'] as List<dynamic>?,
           'storyVideoUrl': userData['storyVideoUrl'] as String?,
@@ -469,6 +465,8 @@ class _StoreSelectionScreenState extends State<StoreSelectionScreen> {
           'isVerified': userData['isVerified'] ?? false, // Add isVerified field
           'storeOpenHour': userData['storeOpenHour'] as String?,
           'storeCloseHour': userData['storeCloseHour'] as String?,
+          'pargoEnabled': pargoEnabled,
+          'paxiEnabled': paxiEnabled,
         });
       }
     }
@@ -484,17 +482,137 @@ class _StoreSelectionScreenState extends State<StoreSelectionScreen> {
   // Helper method to parse coordinates from various types
   double? _parseCoordinate(dynamic value) {
     if (value == null) return null;
-    if (value is double) return value;
-    if (value is int) return value.toDouble();
+    if (value is num) return value.toDouble();
     if (value is String) {
-      final parsed = double.tryParse(value);
-      return parsed;
+      // Trim whitespace and normalize comma decimals
+      final normalized = value.trim().replaceAll(',', '.');
+      if (normalized.isEmpty) return null;
+      return double.tryParse(normalized);
     }
     return null;
   }
 
+  bool _isFoodCategory(String category) {
+    final c = category.toLowerCase();
+    return c.contains('food') || c.contains('meal') || c.contains('bak') || c.contains('pastr') || c.contains('dessert') || c.contains('beverage') || c.contains('drink') || c.contains('coffee') || c.contains('tea') || c.contains('fruit') || c.contains('vegetable') || c.contains('produce') || c.contains('snack');
+  }
+
   bool userLatLngValid(Position? userPos, dynamic storeLat, dynamic storeLng, double deliveryRange) {
     return userPos != null && storeLat != null && storeLng != null && deliveryRange > 0;
+  }
+
+  bool _isStoreCurrentlyOpen(Map<String, dynamic> store) {
+    // First check: Manual store toggle (seller can manually close store)
+    if (store['isStoreOpen'] == false) {
+      return false; // Seller manually closed the store - always respect this
+    }
+    
+    // Second check: Automatic hours (if store is manually "open", check if within hours)
+    final storeOpenHour = store['storeOpenHour'] as String?;
+    final storeCloseHour = store['storeCloseHour'] as String?;
+    
+    if (storeOpenHour == null || storeCloseHour == null) {
+      return store['isStoreOpen'] ?? false; // Fallback to manual store open status if no hours set
+    }
+    
+    try {
+      final now = DateTime.now();
+      final currentTime = TimeOfDay(hour: now.hour, minute: now.minute);
+      
+      // Parse store hours
+      final openParts = storeOpenHour.split(':');
+      final closeParts = storeCloseHour.split(':');
+      
+      if (openParts.length != 2 || closeParts.length != 2) {
+        return store['isStoreOpen'] ?? false; // Fallback if time format is invalid
+      }
+      
+      final openHour = int.parse(openParts[0]);
+      final openMinute = int.parse(openParts[1]);
+      final closeHour = int.parse(closeParts[0]);
+      final closeMinute = int.parse(closeParts[1]);
+      
+      final openTime = TimeOfDay(hour: openHour, minute: openMinute);
+      final closeTime = TimeOfDay(hour: closeHour, minute: closeMinute);
+      
+      // Convert to minutes for easier comparison
+      final currentMinutes = currentTime.hour * 60 + currentTime.minute;
+      final openMinutes = openTime.hour * 60 + openTime.minute;
+      final closeMinutes = closeTime.hour * 60 + closeTime.minute;
+      
+      bool withinOperatingHours;
+      // Handle cases where store is open past midnight
+      if (closeMinutes < openMinutes) {
+        // Store closes after midnight
+        withinOperatingHours = currentMinutes >= openMinutes || currentMinutes <= closeMinutes;
+      } else {
+        // Store closes on the same day
+        withinOperatingHours = currentMinutes >= openMinutes && currentMinutes <= closeMinutes;
+      }
+      
+      // Combined logic: Store is open if manual toggle is true AND within operating hours
+      return (store['isStoreOpen'] ?? true) && withinOperatingHours;
+      
+    } catch (e) {
+      return store['isStoreOpen'] ?? false; // Fallback to manual store open status
+    }
+  }
+
+  String _getStoreStatusText(Map<String, dynamic> store) {
+    // Check manual toggle first
+    if (store['isStoreOpen'] == false) {
+      return 'Temp Closed';
+    }
+    
+    // Check if we have operating hours
+    final storeOpenHour = store['storeOpenHour'] as String?;
+    final storeCloseHour = store['storeCloseHour'] as String?;
+    
+    if (storeOpenHour == null || storeCloseHour == null) {
+      return store['isStoreOpen'] == true ? 'Open' : 'Closed';
+    }
+    
+    // Check if within operating hours
+    try {
+      final now = DateTime.now();
+      final currentTime = TimeOfDay(hour: now.hour, minute: now.minute);
+      
+      final openParts = storeOpenHour.split(':');
+      final closeParts = storeCloseHour.split(':');
+      
+      if (openParts.length != 2 || closeParts.length != 2) {
+        return store['isStoreOpen'] == true ? 'Open' : 'Closed';
+      }
+      
+      final openHour = int.parse(openParts[0]);
+      final openMinute = int.parse(openParts[1]);
+      final closeHour = int.parse(closeParts[0]);
+      final closeMinute = int.parse(closeParts[1]);
+      
+      final openTime = TimeOfDay(hour: openHour, minute: openMinute);
+      final closeTime = TimeOfDay(hour: closeHour, minute: closeMinute);
+      
+      final currentMinutes = currentTime.hour * 60 + currentTime.minute;
+      final openMinutes = openTime.hour * 60 + openTime.minute;
+      final closeMinutes = closeTime.hour * 60 + closeTime.minute;
+      
+      bool withinOperatingHours;
+      if (closeMinutes < openMinutes) {
+        withinOperatingHours = currentMinutes >= openMinutes || currentMinutes <= closeMinutes;
+      } else {
+        withinOperatingHours = currentMinutes >= openMinutes && currentMinutes <= closeMinutes;
+      }
+      
+      if (store['isStoreOpen'] == true && withinOperatingHours) {
+        return 'Open';
+      } else if (store['isStoreOpen'] == true && !withinOperatingHours) {
+        return 'Closed (Hours)';
+      } else {
+        return 'Closed';
+      }
+    } catch (e) {
+      return store['isStoreOpen'] == true ? 'Open' : 'Closed';
+    }
   }
 
   // ignore: unused_element
@@ -829,33 +947,52 @@ void _showLeaveReviewDialog(String storeId) {
 }
 
 void _navigateToStoreProfile(Map<String, dynamic> store) {
-  print('DEBUG: Navigating to store profile with data: $store');
-  print('DEBUG: Distance value: ${store['distance']}');
-  print('DEBUG: Store story data:');
+  print('🔗 NAVIGATION DEBUG: _navigateToStoreProfile called');
+  print('🔗 NAVIGATION DEBUG: Store data: $store');
+  print('🔗 NAVIGATION DEBUG: Store ID: ${store['storeId']}');
+  print('🔗 NAVIGATION DEBUG: Store name: ${store['storeName']}');
+  print('🔗 NAVIGATION DEBUG: Distance value: ${store['distance']}');
+  print('🔗 NAVIGATION DEBUG: Store story data:');
   print('  - story: ${store['story']}');
   print('  - storyPhotoUrls: ${store['storyPhotoUrls']}');
   print('  - storyVideoUrl: ${store['storyVideoUrl']}');
-  Navigator.push(
-    context,
-    MaterialPageRoute(
-      builder: (_) => SimpleStoreProfileScreen(store: store),
-    ),
-  );
+  
+  // 🚀 PWA-FRIENDLY NAVIGATION: Use named route with proper URL
+  final storeId = store['storeId'] as String?;
+  if (storeId != null && storeId.isNotEmpty) {
+    print('🔗 PWA Navigation: Using named route /store/$storeId');
+    print('🔗 NAVIGATION DEBUG: About to call Navigator.pushNamed');
+    
+    try {
+      Navigator.pushNamed(context, '/store/$storeId');
+      print('🔗 NAVIGATION DEBUG: Navigator.pushNamed completed successfully');
+    } catch (e) {
+      print('❌ NAVIGATION ERROR: Navigator.pushNamed failed: $e');
+      // Fallback to direct navigation
+      print('🔄 NAVIGATION FALLBACK: Using direct navigation');
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => SimpleStoreProfileScreen(store: store),
+        ),
+      );
+    }
+  } else {
+    print('⚠️ Fallback: Using direct navigation (no storeId)');
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => SimpleStoreProfileScreen(store: store),
+      ),
+    );
+  }
 }
 
   Widget _buildStoreCard(Map<String, dynamic> store, int index) {
               return GestureDetector(
                 onTap: () {
-        // Navigate to product browsing for this specific store
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-            builder: (context) => StunningProductBrowser(
-              storeId: store['storeId'],
-              storeName: store['storeName'] ?? 'Store',
-            ),
-                    ),
-                  );
+        // 🚀 PWA-FRIENDLY: Navigate to store profile with proper URL instead of direct product browser
+                  _navigateToStoreProfile(store);
                 },
       child: Container(
         margin: EdgeInsets.symmetric(
@@ -1072,12 +1209,12 @@ void _navigateToStoreProfile(Map<String, dynamic> store) {
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                       decoration: BoxDecoration(
-                        color: (store['isStoreOpen'] == true) 
+                        color: _isStoreCurrentlyOpen(store) 
                           ? AppTheme.primaryGreen.withOpacity(0.1)
                           : AppTheme.primaryRed.withOpacity(0.1),
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(
-                          color: (store['isStoreOpen'] == true) 
+                          color: _isStoreCurrentlyOpen(store) 
                             ? AppTheme.primaryGreen
                             : AppTheme.primaryRed,
                           width: 1,
@@ -1087,21 +1224,21 @@ void _navigateToStoreProfile(Map<String, dynamic> store) {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Icon(
-                            (store['isStoreOpen'] == true) 
+                            _isStoreCurrentlyOpen(store) 
                               ? Icons.store
                               : Icons.store_mall_directory,
                             size: 12,
-                            color: (store['isStoreOpen'] == true) 
+                            color: _isStoreCurrentlyOpen(store) 
                               ? AppTheme.primaryGreen
                               : AppTheme.primaryRed,
                           ),
                           const SizedBox(width: 4),
                           Text(
-                            (store['isStoreOpen'] == true) ? 'Open' : 'Closed',
+                            _getStoreStatusText(store),
                             style: TextStyle(
                               fontSize: 10,
                               fontWeight: FontWeight.w600,
-                              color: (store['isStoreOpen'] == true) 
+                              color: _isStoreCurrentlyOpen(store) 
                                 ? AppTheme.primaryGreen
                                 : AppTheme.primaryRed,
                             ),
@@ -1134,7 +1271,10 @@ void _navigateToStoreProfile(Map<String, dynamic> store) {
                             ),
                             const SizedBox(width: 4),
                             Text(
-                              '${store['storeOpenHour']} - ${store['storeCloseHour']}',
+                              TimeUtils.formatTimeRangeToAmPm(
+                                store['storeOpenHour'] ?? '08:00',
+                                store['storeCloseHour'] ?? '18:00',
+                              ),
                               style: TextStyle(
                                 fontSize: 10,
                                 fontWeight: FontWeight.w600,
@@ -1941,9 +2081,13 @@ void _navigateToStoreProfile(Map<String, dynamic> store) {
         // Show stores that offer delivery
         filtered = filtered.where((store) => store['deliveryAvailable'] == true).toList();
         break;
-      case 'high_rating':
-        // Show stores with 4+ star rating
-        filtered = filtered.where((store) => store['avgRating'] >= 4.0).toList();
+      case 'nationwide':
+        // Show non-food stores that support pickup (Pargo/PAXI), distance ignored
+        filtered = filtered.where((store) {
+          final category = (store['category'] ?? '').toString();
+          final hasPickup = (store['pargoEnabled'] == true) || (store['paxiEnabled'] == true);
+          return hasPickup && !_isFoodCategory(category);
+        }).toList();
         break;
       case 'all':
       default:
@@ -2013,7 +2157,7 @@ void _navigateToStoreProfile(Map<String, dynamic> store) {
                 const SizedBox(width: 6),
                 _buildFilterChip('Delivery', 'delivery', Icons.delivery_dining),
                 const SizedBox(width: 6),
-                _buildFilterChip('4+ Star', 'high_rating', Icons.star),
+                _buildFilterChip('Nationwide', 'nationwide', Icons.public),
               ],
             ),
           ),

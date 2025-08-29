@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
+import '../services/optimized_location_service.dart';
 import '../theme/app_theme.dart';
 
 class EnhancedAddressInput extends StatefulWidget {
@@ -68,9 +69,10 @@ class _EnhancedAddressInputState extends State<EnhancedAddressInput> {
       }
 
       // Get current position
-      Position position = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
-      );
+      Position? position = await OptimizedLocationService.getCurrentPosition();
+      if (position == null) {
+        throw Exception('Could not get current location');
+      }
 
       // Get address from coordinates
       List<Placemark> placemarks = await placemarkFromCoordinates(

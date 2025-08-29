@@ -1,6 +1,29 @@
 <!DOCTYPE html>
 <html>
 <head>
+    <script>
+      // Robust SW registration for various base hrefs/paths
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', function() {
+          const baseHref = (document.querySelector('base')?.getAttribute('href') || '/').replace(/\/+$|^$/, '');
+          const candidates = [
+            'firebase-messaging-sw.js',
+            baseHref ? baseHref + '/firebase-messaging-sw.js' : '/firebase-messaging-sw.js',
+            '/firebase-messaging-sw.js'
+          ];
+          (async () => {
+            for (const url of candidates) {
+              try {
+                await navigator.serviceWorker.register(url);
+                break;
+              } catch (e) {
+                // try next
+              }
+            }
+          })();
+        });
+      }
+    </script>
   <!--
     If you are serving your web app in a path other than the root, change the
     href value below to reflect the base path you are serving from.

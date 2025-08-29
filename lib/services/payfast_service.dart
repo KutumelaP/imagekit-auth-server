@@ -12,10 +12,11 @@ class PayFastService {
   static const String _merchantKey = 'fxuj8ymlgqwra';
   static const String _passphrase = 'PeterKutumela2025';
   
-  static bool _isProduction = true;
+  static bool _isProduction = true; // production mode as requested
 
   // Callback URLs (updated to your deployed Cloud Functions URLs)
-  static String returnUrl = 'https://us-central1-marketplace-8d6bd.cloudfunctions.net/payfastReturn';
+  // Note: We'll append order ID to return URL dynamically
+  static String get returnUrl => 'https://us-central1-marketplace-8d6bd.cloudfunctions.net/payfastReturn';
   static String cancelUrl = 'https://us-central1-marketplace-8d6bd.cloudfunctions.net/payfastCancel';
   static String notifyUrl = 'https://us-central1-marketplace-8d6bd.cloudfunctions.net/payfastNotify';
 
@@ -24,6 +25,22 @@ class PayFastService {
   }
 
   static String get _baseUrl => _isProduction ? _liveUrl : _sandboxUrl;
+  static String get formRedirectUrl => 'https://us-central1-marketplace-8d6bd.cloudfunctions.net/payfastFormRedirect';
+  
+  // Public getters for merchant credentials
+  static String get merchantId => _isProduction ? _merchantId : '10000100';
+  static String get merchantKey => _isProduction ? _merchantKey : '46f0cd694581a';
+  static bool get isProduction => _isProduction;
+
+  static String _formatAmount(String amount) {
+    final parsed = double.tryParse(amount.replaceAll(',', '.')) ?? 0.0;
+    return parsed.toStringAsFixed(2);
+  }
+
+  static String _sanitizeRef(String raw) {
+    final cleaned = raw.replaceAll(RegExp(r'[^A-Za-z0-9\-_]'), '_');
+    return cleaned.length > 50 ? cleaned.substring(0, 50) : cleaned;
+  }
 
   /// Create a PayFast payment
   static Future<Map<String, dynamic>> createPayment({
@@ -46,41 +63,55 @@ class PayFastService {
   }) async {
     try {
       // Create payment data
+      final merchantId = _isProduction ? _merchantId : '10000100';
+      final merchantKey = _isProduction ? _merchantKey : '46f0cd694581a';
+      // Build return URL with order ID for proper tracking
+      final returnUrlWithOrderId = customString1 != null 
+          ? '$returnUrl?order_id=${Uri.encodeComponent(customString1)}'
+          : returnUrl;
+      
       Map<String, String> paymentData = {
-        'merchant_id': _merchantId,
-        'merchant_key': _merchantKey,
-        'return_url': returnUrl,
+        'merchant_id': merchantId,
+        'merchant_key': merchantKey,
+        'return_url': returnUrlWithOrderId,
         'cancel_url': cancelUrl,
         'notify_url': notifyUrl,
-        'amount': amount,
-        'item_name': itemName,
-        'item_description': itemDescription,
+        'amount': _formatAmount(amount),
+        'item_name': itemName.length > 100 ? itemName.substring(0, 100) : itemName,
+        'item_description': itemDescription.isNotEmpty ? itemDescription : itemName,
         'email_address': customerEmail,
-        'name_first': customerFirstName,
-        'name_last': customerLastName,
-        'cell_number': customerPhone,
+        'name_first': customerFirstName.isNotEmpty ? customerFirstName : 'Mzansi',
+        'name_last': customerLastName.isNotEmpty ? customerLastName : 'Marketplace',
+        'cell_number': customerPhone.isNotEmpty ? customerPhone : '0606304683',
       };
 
-      // Add optional fields
-      if (customerAddress != null) paymentData['email_address'] = customerAddress;
-      if (customerCity != null) paymentData['name_first'] = customerCity;
-      if (customerCountry != null) paymentData['name_last'] = customerCountry;
-      if (customerZip != null) paymentData['cell_number'] = customerZip;
-      if (customString1 != null) paymentData['custom_str1'] = customString1;
-      if (customString2 != null) paymentData['custom_str2'] = customString2;
-      if (customString3 != null) paymentData['custom_str3'] = customString3;
-      if (customString4 != null) paymentData['custom_str4'] = customString4;
-      if (customString5 != null) paymentData['custom_str5'] = customString5;
+      // Avoid sending non-standard fields to PayFast to prevent gateway errors
+      if (customString1 != null) paymentData['custom_str1'] = _sanitizeRef(customString1);
+      if (customString2 != null) paymentData['custom_str2'] = _sanitizeRef(customString2);
+      if (customString3 != null) paymentData['custom_str3'] = _sanitizeRef(customString3);
+      if (customString4 != null) paymentData['custom_str4'] = _sanitizeRef(customString4);
+      if (customString5 != null) paymentData['custom_str5'] = _sanitizeRef(customString5);
 
-      // Generate signature
-      String signature = _generateSignature(paymentData);
-      paymentData['signature'] = signature;
+      // Note: m_payment_id removed as it can cause signature validation issues
+      // PayFast will generate their own payment ID
 
+      // When using Cloud Function, don't generate signature - let server handle it
+      // This prevents double signature generation issues
+      String? signature;
+      if (_passphrase.isNotEmpty && false) { // Disabled for Cloud Function usage
+        signature = _generateSignature(paymentData);
+        paymentData['signature'] = signature;
+      }
+
+      // Use hosted form redirect (POST) to avoid gateway 500s on long GET URLs
+      final redirectParams = Map<String, String>.from(paymentData);
+      redirectParams['sandbox'] = _isProduction ? 'false' : 'true';
       return {
         'success': true,
-        'paymentUrl': _baseUrl,
-        'paymentData': paymentData,
-        'signature': signature,
+        'paymentUrl': formRedirectUrl,
+        'paymentData': redirectParams,
+        'signature': 'server_generated', // Indicate server will generate signature
+        'httpMethod': 'POST', // Indicate this should be a POST request
       };
     } catch (e) {
       return {
@@ -107,9 +138,11 @@ class PayFastService {
     // Create the signature string
     String signatureString = '';
     for (String key in keys) {
-      if (key != 'signature' && data[key]!.isNotEmpty) {
-        signatureString += '$key=${Uri.encodeComponent(data[key]!)}&';
-      }
+      if (key == 'signature') continue;
+      final val = data[key]!;
+      // PHP-style urlencode: spaces as '+'; do not encode '~', '*' unnecessarily
+      final enc = Uri.encodeQueryComponent(val).replaceAll('%20', '+');
+      signatureString += '$key=$enc&';
     }
     
     // Remove the last '&'
@@ -117,9 +150,9 @@ class PayFastService {
       signatureString = signatureString.substring(0, signatureString.length - 1);
     }
     
-    // Add passphrase if provided
+    // Add passphrase if provided (do NOT URL-encode passphrase per PayFast spec)
     if (_passphrase.isNotEmpty) {
-      signatureString += '&passphrase=$_passphrase';
+      signatureString += '&passphrase=${_passphrase}';
     }
     
     // Generate MD5 hash

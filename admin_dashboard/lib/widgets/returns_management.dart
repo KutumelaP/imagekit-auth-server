@@ -419,7 +419,7 @@ class _ReturnsManagementState extends State<ReturnsManagement> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Order: ${orderId.substring(0, 8)}...',
+                      'Order: ${orderId.length > 8 ? orderId.substring(0, 8) + '...' : orderId}',
                       style: AdminTheme.titleSmall.copyWith(
                         fontWeight: FontWeight.w600,
                       ),

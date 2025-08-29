@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Fees & Payouts – {{brandName}}</title>
+  <style>
+    body { font-family: Arial, sans-serif; color: #0f172a; margin: 40px; }
+    .wm { position: fixed; inset: 0; background: url("{{brandLogoUrl}}") no-repeat center center; background-size: 60%; opacity: 0.06; transform: rotate(-20deg); z-index: 0; pointer-events: none; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .brand { display: flex; align-items: center; gap: 12px; }
+    .brand img { height: 32px; }
+    h1 { font-size: 22px; margin: 8px 0 16px; }
+    h2 { font-size: 16px; margin: 18px 0 8px; }
+    p, li { font-size: 13px; line-height: 1.55; }
+    .muted { color: #475569; }
+    .card { border: 1px solid #e2e8f0; border-radius: 10px; padding: 16px; margin: 12px 0; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .footer { margin-top: 24px; font-size: 12px; color: #64748b; }
+    .brand, .card, .grid { position: relative; z-index: 1; }
+  </style>
+</head>
+<body>
+  <div class="wm"></div>
+  <div class="brand">
+    <img src="{{brandLogoUrl}}" alt="{{brandName}}" />
+    <div>
+      <h1>Fees & Payouts</h1>
+      <p class="muted">Effective {{issueDate}} • Version {{version}}</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Commission (per order)</h2>
+    <ul>
+      <li>Pickup: {{pickupPct}}% (min R{{commissionMin}}, cap R{{capPickup}})</li>
+      <li>You deliver: {{merchantDeliveryPct}}% (cap R{{capMerchant}})</li>
+      <li>We arrange courier: {{platformDeliveryPct}}% (cap R{{capPlatform}})</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h2>Buyer fees</h2>
+    <ul>
+      <li>Service fee: {{buyerServiceFeePct}}% + R{{buyerServiceFeeFixed}} (min R3, max R15)</li>
+      <li>Small-order fee: R{{smallOrderFee}} for orders under R{{smallOrderThreshold}}</li>
+      <li>Delivery fee: pass-through</li>
+    </ul>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <h2>Payouts</h2>
+      <ul>
+        <li>Weekly payouts (minimum R100)</li>
+        <li>Instant payout available (optional fee)</li>
+        <li>COD commission is settled from payouts or top-ups</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h2>Example (R200 order, you deliver)</h2>
+      <ul>
+        <li>Commission {{merchantDeliveryPct}}% = R18</li>
+        <li>Buyer service fee ≈ R5 (paid by buyer)</li>
+        <li>You receive R182</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Changes to fees</h2>
+    <p>We notify sellers in-app and by email prior to any change. Live rates are visible in the Seller → Earnings screen.</p>
+  </div>
+
+  <p class="footer">Questions? Contact {{supportEmail}} • © {{brandName}}</p>
+</body>
+</html>

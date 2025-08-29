@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import '../providers/user_provider.dart';
 import '../theme/app_theme.dart';
 import 'simple_home_screen.dart';
 import 'SellerRegistrationScreen.dart';
@@ -350,88 +349,46 @@ class _PostLoginScreenState extends State<PostLoginScreen> with TickerProviderSt
                 ),
               ),
               const SizedBox(height: 16),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: AppTheme.primaryGreen.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(
-                    color: AppTheme.primaryGreen.withOpacity(0.3),
-                  ),
-                ),
-                child: Column(
-                  children: [
-                    Row(
+              FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                future: FirebaseFirestore.instance.collection('admin_settings').doc('payment_settings').get(),
+                builder: (context, snapshot) {
+                  double? pct;
+                  if (snapshot.hasData && snapshot.data!.exists) {
+                    final data = snapshot.data!.data() ?? {};
+                    final v = data['platformFeePercentage'];
+                    if (v is num) pct = v.toDouble();
+                    if (pct == null) pct = double.tryParse('$v');
+                  }
+                  return Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: AppTheme.primaryGreen.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: AppTheme.primaryGreen.withOpacity(0.3),
+                      ),
+                    ),
+                    child: Row(
                       children: [
-                        Icon(
-                          Icons.receipt,
-                          color: AppTheme.primaryGreen,
-                          size: 20,
-                        ),
+                        Icon(Icons.percent, color: AppTheme.primaryGreen, size: 20),
                         const SizedBox(width: 8),
-                        Text(
-                          'Orders R50 and above:',
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            color: AppTheme.deepTeal,
-                          ),
-                        ),
-                        const Spacer(),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: AppTheme.primaryGreen,
-                            borderRadius: BorderRadius.circular(12),
-                          ),
+                        Expanded(
                           child: Text(
-                            '5%',
+                            pct != null
+                                ? 'Current platform commission: ${pct.toStringAsFixed(1)}% (may change)'
+                                : 'Platform commission is set by the platform and may change',
                             style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
-                              color: AppTheme.angel,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: AppTheme.deepTeal,
                             ),
                           ),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        Icon(
-                          Icons.receipt,
-                          color: AppTheme.deepTeal,
-                          size: 20,
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          'Orders below R50:',
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            color: AppTheme.deepTeal,
-                          ),
-                        ),
-                        const Spacer(),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: AppTheme.deepTeal,
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Text(
-                            '3%',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
-                              color: AppTheme.angel,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
+                  );
+                },
               ),
               const SizedBox(height: 12),
               Text(

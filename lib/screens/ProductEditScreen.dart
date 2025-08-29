@@ -1,5 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+import 'dart:typed_data';
 import '../services/notification_service.dart';
 import '../theme/app_theme.dart';
 import 'package:image_picker/image_picker.dart';
@@ -23,6 +25,41 @@ class ProductEditScreen extends StatefulWidget {
 
 class _ProductEditScreenState extends State<ProductEditScreen> {
   final _formKey = GlobalKey<FormState>();
+
+  Widget _buildWebCompatibleImage(File imageFile, {BoxFit? fit, double? width, double? height}) {
+    if (kIsWeb) {
+      return FutureBuilder<Uint8List>(
+        future: imageFile.readAsBytes(),
+        builder: (context, snapshot) {
+          if (snapshot.hasData) {
+            return Image.memory(
+              snapshot.data!,
+              fit: fit ?? BoxFit.cover,
+              width: width,
+              height: height,
+            );
+          } else if (snapshot.hasError) {
+            return Container(
+              color: Colors.grey[200],
+              child: const Icon(Icons.error, size: 32, color: Colors.red),
+            );
+          } else {
+            return Container(
+              color: Colors.grey[100],
+              child: const Center(child: CircularProgressIndicator()),
+            );
+          }
+        },
+      );
+    } else {
+      return Image.file(
+        imageFile,
+        fit: fit ?? BoxFit.cover,
+        width: width,
+        height: height,
+      );
+    }
+  }
 
   late TextEditingController _nameController;
   late TextEditingController _priceController;
@@ -428,7 +465,7 @@ class _ProductEditScreenState extends State<ProductEditScreen> {
                         if (_pickedImage != null)
                           ClipRRect(
                             borderRadius: BorderRadius.circular(8),
-                            child: Image.file(
+                            child: _buildWebCompatibleImage(
                               _pickedImage!,
                               height: 160,
                               width: double.infinity,
@@ -480,7 +517,7 @@ class _ProductEditScreenState extends State<ProductEditScreen> {
                             ClipRRect(
                               borderRadius: BorderRadius.circular(8),
                               child: _pickedImage != null
-                                  ? Image.file(_pickedImage!, width: 80, height: 80, fit: BoxFit.cover)
+                                  ? _buildWebCompatibleImage(_pickedImage!, width: 80, height: 80, fit: BoxFit.cover)
                                   : (_imageUrlController.text.trim().isNotEmpty
                                       ? Image.network(
                                           _imageUrlController.text.trim(),

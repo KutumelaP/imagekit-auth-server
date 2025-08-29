@@ -946,7 +946,7 @@ class _EnhancedProductManagementState extends State<EnhancedProductManagement>
               ),
             ),
             Text(
-              sellerId.substring(0, 8),
+              sellerId.length > 8 ? sellerId.substring(0, 8) + '...' : sellerId,
               style: AdminTheme.bodySmall,
             ),
           ],

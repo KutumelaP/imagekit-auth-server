@@ -212,6 +212,92 @@ class _EnhancedOrderManagementState extends State<EnhancedOrderManagement>
         'updatedAt': FieldValue.serverTimestamp(),
       });
       
+      // 🔔 STOCK REDUCTION LOGIC - Only reduce stock when admin confirms order fulfillment
+      if (['confirmed'].contains(newStatus.toLowerCase())) {
+        try {
+          // Get order data to access items
+          final orderDoc = await widget.firestore
+              .collection('orders')
+              .doc(orderId)
+              .get();
+          
+          if (orderDoc.exists) {
+            final orderData = orderDoc.data() as Map<String, dynamic>;
+            final items = orderData['items'] as List<dynamic>?;
+            
+            if (items != null && items.isNotEmpty) {
+              print('📦 Processing stock reduction for ${items.length} items');
+              
+              // Use batch write for atomic stock reduction
+              final batch = widget.firestore.batch();
+              int reducedItems = 0;
+              
+              for (var item in items) {
+                final itemData = item as Map<String, dynamic>;
+                final String? productId = (itemData['id'] ?? itemData['productId'])?.toString();
+                if (productId == null || productId.isEmpty) continue;
+                
+                final int qty = ((itemData['quantity'] ?? 1) as num).toInt();
+                final productRef = widget.firestore.collection('products').doc(productId);
+                
+                // Get current product data to check stock fields
+                final productDoc = await productRef.get();
+                if (!productDoc.exists) {
+                  print('⚠️ Product $productId not found, skipping stock reduction');
+                  continue;
+                }
+                
+                final productData = productDoc.data() as Map<String, dynamic>;
+                
+                // Check if product has stock tracking enabled
+                final bool hasExplicitStock = productData.containsKey('stock') || productData.containsKey('quantity');
+                if (!hasExplicitStock) {
+                  print('ℹ️ Product ${productData['name'] ?? productId} has no stock tracking, skipping');
+                  continue;
+                }
+                
+                // Determine which stock field to use and current value
+                int resolveStock(dynamic value) {
+                  if (value is int) return value;
+                  if (value is num) return value.toInt();
+                  if (value is String) return int.tryParse(value) ?? 0;
+                  return 0;
+                }
+                
+                final int current = productData.containsKey('stock')
+                  ? resolveStock(productData['stock'])
+                  : resolveStock(productData['quantity']);
+                
+                final int next = (current - qty).clamp(0, 1 << 31);
+                
+                // Update the appropriate stock field
+                if (productData.containsKey('stock')) {
+                  batch.update(productRef, {'stock': next});
+                  print('📦 Reducing stock for ${productData['name'] ?? productId}: $current → $next (qty: $qty)');
+                } else if (productData.containsKey('quantity')) {
+                  batch.update(productRef, {'quantity': next});
+                  print('📦 Reducing quantity for ${productData['name'] ?? productId}: $current → $next (qty: $qty)');
+                }
+                
+                reducedItems++;
+              }
+              
+              // Commit all stock reductions atomically
+              if (reducedItems > 0) {
+                await batch.commit();
+                print('✅ Stock reduced for $reducedItems products in order ${orderData['orderNumber'] ?? 'unknown'}');
+              } else {
+                print('ℹ️ No products required stock reduction');
+              }
+            }
+          }
+        } catch (stockError) {
+          print('❌ Error reducing stock: $stockError');
+          // Don't fail the entire status update if stock reduction fails
+          // Just log the error and continue
+        }
+      }
+      
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Order status updated to $newStatus'),
@@ -515,6 +601,15 @@ class _EnhancedOrderManagementState extends State<EnhancedOrderManagement>
               AdminTheme.cloud,
             ),
           ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: _buildStatCard(
+              'Platform Revenue',
+              'R${(stats['platformRevenue'] as double).toStringAsFixed(2)}',
+              Icons.payments,
+              Colors.green,
+            ),
+          ),
         ],
       ),
     );
@@ -525,16 +620,21 @@ class _EnhancedOrderManagementState extends State<EnhancedOrderManagement>
     int pending = 0;
     int completed = 0;
     double revenue = 0.0;
+    double platformRevenue = 0.0;
     
     for (final order in _filteredOrders) {
       final status = order['status'] as String? ?? '';
       final totalAmount = (order['total'] as num?)?.toDouble() ?? 0.0;
+      final platformFee = (order['platformFee'] as num?)?.toDouble() ?? 0.0;
+      final buyerFees = ((order['buyerServiceFee'] as num?)?.toDouble() ?? 0.0) +
+          ((order['smallOrderFee'] as num?)?.toDouble() ?? 0.0);
       
       if (status == 'pending' || status == 'confirmed' || status == 'preparing') {
         pending++;
       } else if (status == 'delivered' || status == 'completed') {
         completed++;
         revenue += totalAmount;
+        platformRevenue += platformFee + buyerFees;
       }
     }
     
@@ -543,6 +643,7 @@ class _EnhancedOrderManagementState extends State<EnhancedOrderManagement>
       'pending': pending,
       'completed': completed,
       'revenue': revenue,
+      'platformRevenue': platformRevenue,
     };
   }
 
@@ -692,7 +793,7 @@ class _EnhancedOrderManagementState extends State<EnhancedOrderManagement>
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Order #${orderId.substring(0, 8)}',
+                    'Order #${orderId.length > 8 ? orderId.substring(0, 8) + '...' : orderId}',
                     style: AdminTheme.titleMedium.copyWith(
                       fontWeight: FontWeight.bold,
                     ),

@@ -25,9 +25,10 @@ class BottomActionBar extends StatelessWidget {
   Widget build(BuildContext context) {
     return SafeArea(
       top: false,
+      bottom: true,
       child: Container(
         height: height,
-        padding: padding ?? const EdgeInsets.fromLTRB(16, 16, 16, 24),
+        padding: padding ?? const EdgeInsets.fromLTRB(16, 16, 16, 32),
         decoration: BoxDecoration(
           color: backgroundColor ?? Colors.white,
           boxShadow: boxShadow ?? [
@@ -70,7 +71,7 @@ class ActionButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return Expanded(
       child: SizedBox(
-        height: height ?? 50,
+        height: height ?? 56,
         child: isPrimary
             ? ElevatedButton.icon(
                 onPressed: onPressed,
@@ -79,10 +80,11 @@ class ActionButton extends StatelessWidget {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppTheme.deepTeal,
                   foregroundColor: Colors.white,
-                  padding: padding ?? const EdgeInsets.symmetric(vertical: 16),
+                  padding: padding ?? const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
+                  elevation: 2,
                 ),
               )
             : OutlinedButton.icon(
@@ -92,7 +94,7 @@ class ActionButton extends StatelessWidget {
                 style: OutlinedButton.styleFrom(
                   foregroundColor: AppTheme.deepTeal,
                   side: BorderSide(color: AppTheme.deepTeal, width: 2),
-                  padding: padding ?? const EdgeInsets.symmetric(vertical: 16),
+                  padding: padding ?? const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),

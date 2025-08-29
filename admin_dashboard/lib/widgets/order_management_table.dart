@@ -53,7 +53,7 @@ class _OrderManagementTableState extends State<OrderManagementTable> {
   }
 
   Future<void> _loadOrders() async {
-    if (_isLoading) return;
+    if (_isLoading || !mounted) return;
     
     setState(() {
       _isLoading = true;
@@ -80,21 +80,25 @@ class _OrderManagementTableState extends State<OrderManagementTable> {
       _pagination.clear();
       _pagination.addItems(processedOrders);
       
-      setState(() {
-        _isLoading = false;
-        _hasMoreData = processedOrders.length >= 20;
-      });
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _hasMoreData = processedOrders.length >= 20;
+        });
+      }
 
     } catch (e) {
       print('❌ Error loading orders: $e');
-      setState(() {
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 
   Future<void> _loadMoreOrders() async {
-    if (_isLoading || !_hasMoreData) return;
+    if (_isLoading || !_hasMoreData || !mounted) return;
     
     setState(() {
       _isLoading = true;
@@ -128,16 +132,20 @@ class _OrderManagementTableState extends State<OrderManagementTable> {
         _pagination.nextPage();
       }
 
-      setState(() {
-        _isLoading = false;
-        _hasMoreData = newOrders.length >= 20;
-      });
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _hasMoreData = newOrders.length >= 20;
+        });
+      }
 
     } catch (e) {
       print('❌ Error loading more orders: $e');
-      setState(() {
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 
@@ -219,10 +227,12 @@ class _OrderManagementTableState extends State<OrderManagementTable> {
     // Debounce search to reduce database calls
     _searchDebounceTimer?.cancel();
     _searchDebounceTimer = Timer(const Duration(milliseconds: 300), () {
-      setState(() {
-        _searchQuery = query;
-      });
-      _loadOrders();
+      if (mounted) {
+        setState(() {
+          _searchQuery = query;
+        });
+        _loadOrders();
+      }
     });
   }
 
@@ -230,10 +240,12 @@ class _OrderManagementTableState extends State<OrderManagementTable> {
     // Debounce filter changes
     _filterDebounceTimer?.cancel();
     _filterDebounceTimer = Timer(const Duration(milliseconds: 200), () {
-      setState(() {
-        _selectedStatus = status;
-      });
-      _loadOrders();
+      if (mounted) {
+        setState(() {
+          _selectedStatus = status;
+        });
+        _loadOrders();
+      }
     });
   }
 
@@ -241,10 +253,12 @@ class _OrderManagementTableState extends State<OrderManagementTable> {
     // Debounce filter changes
     _filterDebounceTimer?.cancel();
     _filterDebounceTimer = Timer(const Duration(milliseconds: 200), () {
-      setState(() {
-        _selectedSeller = sellerId;
-      });
-      _loadOrders();
+      if (mounted) {
+        setState(() {
+          _selectedSeller = sellerId;
+        });
+        _loadOrders();
+      }
     });
   }
 
@@ -470,10 +484,17 @@ class _OrderManagementTableState extends State<OrderManagementTable> {
 
   @override
   void dispose() {
+    // Cancel all async operations and timers
     _ordersStream?.cancel();
-    _scrollController.dispose();
     _searchDebounceTimer?.cancel();
     _filterDebounceTimer?.cancel();
+    
+    // Dispose controllers
+    _scrollController.dispose();
+    
+    // Clear cache
+    _sellerNameCache.clear();
+    
     super.dispose();
   }
 } 

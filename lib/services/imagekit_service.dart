@@ -1,6 +1,8 @@
 import 'dart:convert';
+import 'dart:async';
 import 'dart:io';
 import 'package:http/http.dart' as http;
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:path/path.dart' as path;
 import 'package:flutter/foundation.dart';
@@ -10,13 +12,34 @@ class ImageKitService {
   // Remove hardcoded public key - will get it from server
   // static const String _publicKey = 'public_tAO0SkfLl/37FQN+23c/bkAyfYg=';
   
-  // Multiple authentication server URLs for fallback
-  static const List<String> _authServerUrls = [
-    'https://imagekit-auth-server-f4te.onrender.com/auth', // Try remote first
-    'http://localhost:3001/auth', // Local fallback
-  ];
+  // Use Firebase callable to fetch auth; legacy URLs retained as last-resort fallback if needed
+  static const List<String> _legacyAuthServerUrls = [];
   
   static const String _uploadUrl = 'https://upload.imagekit.io/api/v1/files/upload';
+
+  // Send a multipart request with configurable timeout and simple retry for timeouts
+  static Future<http.Response> _sendMultipartWithRetry(
+    http.MultipartRequest request, {
+    Duration timeout = const Duration(minutes: 3),
+    int retries = 1,
+  }) async {
+    int attempt = 0;
+    while (true) {
+      attempt++;
+      try {
+        final streamed = await request.send().timeout(timeout);
+        // Also bound the stream-to-response phase
+        return await http.Response.fromStream(streamed).timeout(const Duration(minutes: 1));
+      } on TimeoutException catch (_) {
+        if (kDebugMode) {
+          print('⚠️ ImageKit upload timed out (attempt $attempt).');
+        }
+        if (attempt > retries) rethrow;
+        // Backoff briefly before retrying
+        await Future.delayed(const Duration(seconds: 2));
+      }
+    }
+  }
 
   /// Upload image to ImageKit with authentication
   static Future<String?> uploadImageWithAuth({
@@ -28,46 +51,47 @@ class ImageKitService {
     try {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) {
-        print('❌ User not authenticated for image upload');
+        if (kDebugMode) print('❌ User not authenticated for image upload');
         return null;
       }
 
-      print('🔍 Getting ImageKit auth parameters...');
+      if (kDebugMode) print('🔍 Getting ImageKit auth parameters...');
       
-      // Try multiple authentication servers
+      // Preferred: Firebase callable function
       Map<String, dynamic>? authParams;
-      String? workingServer;
-      
-      for (String serverUrl in _authServerUrls) {
-        try {
-          print('🔍 Trying authentication server: $serverUrl');
-          
-          final response = await http.get(
-            Uri.parse(serverUrl),
-            headers: {'Content-Type': 'application/json'},
-          ).timeout(const Duration(seconds: 15));
+      try {
+        final callable = FirebaseFunctions.instance.httpsCallable('getImageKitUploadAuth');
+        final result = await callable.call();
+        final data = result.data;
+        if (data is Map) {
+          authParams = Map<String, dynamic>.from(data as Map);
+          if (kDebugMode) print('✅ Got ImageKit auth params via Firebase callable');
+        }
+      } catch (e) {
+        if (kDebugMode) print('⚠️ Firebase callable getImageKitUploadAuth failed: $e');
+      }
 
-          if (response.statusCode == 200) {
-            authParams = Map<String, dynamic>.from(json.decode(response.body));
-            workingServer = serverUrl;
-            print('✅ Got ImageKit auth params from: $workingServer');
-            break;
-          } else {
-            print('⚠️ Server $serverUrl returned status: ${response.statusCode}');
-          }
-        } catch (e) {
-          print('⚠️ Failed to connect to $serverUrl: $e');
-          continue;
+      // Legacy fallback (disabled by default)
+      if (authParams == null) {
+        for (String serverUrl in _legacyAuthServerUrls) {
+          try {
+            final response = await http.get(Uri.parse(serverUrl), headers: {'Content-Type': 'application/json'}).timeout(const Duration(seconds: 15));
+            if (response.statusCode == 200) {
+              authParams = Map<String, dynamic>.from(json.decode(response.body));
+              if (kDebugMode) print('✅ Got ImageKit auth params from legacy: $serverUrl');
+              break;
+            }
+          } catch (_) {}
         }
       }
 
       if (authParams == null) {
-        throw Exception('All authentication servers failed. Please check your ImageKit configuration.');
+        throw Exception('Authentication failed. Please check ImageKit callable configuration.');
       }
 
       // Validate auth parameters
       if (authParams['token'] == null || authParams['signature'] == null || authParams['expire'] == null) {
-        throw Exception('Invalid authentication parameters received from $workingServer');
+        throw Exception('Invalid authentication parameters received from ImageKit auth');
       }
 
       // Get public key from server config to ensure signature matches
@@ -75,29 +99,44 @@ class ImageKitService {
       if (authParams['publicKey'] != null) {
         // Use public key from server response (recommended)
         publicKey = authParams['publicKey'];
-        print('🔑 Using public key from server: ${publicKey.substring(0, 20)}...');
+        if (kDebugMode) print('🔑 Using public key from server: ${publicKey.substring(0, 20)}...');
       } else {
         // Fallback to hardcoded key (for backward compatibility)
         publicKey = 'public_tAO0SkfLl/37FQN+23c/bkAyfYg=';
-        print('⚠️ Using fallback public key: ${publicKey.substring(0, 20)}...');
+        if (kDebugMode) print('⚠️ Using fallback public key: ${publicKey.substring(0, 20)}...');
       }
 
-      // Handle file reading based on platform
-      List<int> bytes;
+      // Determine filename and prepare multipart file
       String fileName;
-      
+      http.MultipartFile multipartFile;
+
       if (kIsWeb && file is XFile) {
-        // Web: Use XFile
-        bytes = await file.readAsBytes();
-        fileName = customFileName ?? 
-            '${folder}/${user.uid}/${DateTime.now().millisecondsSinceEpoch}_${path.basename(file.path)}';
-      } else if (file is File) {
-        // Mobile: Use File
-        bytes = await file.readAsBytes();
-        fileName = customFileName ?? 
-            '${folder}/${user.uid}/${DateTime.now().millisecondsSinceEpoch}_${path.basename(file.path)}';
+        // Web: must use bytes
+        final bytes = await file.readAsBytes();
+        fileName = customFileName ?? '${folder}/${user.uid}/${DateTime.now().millisecondsSinceEpoch}_${path.basename(file.path)}';
+        multipartFile = http.MultipartFile.fromBytes(
+          'file',
+          bytes,
+          filename: path.basename(file.path),
+        );
       } else {
-        throw Exception('Unsupported file type');
+        // Mobile/Desktop: support both File and XFile by streaming from disk to save memory
+        File fileOnDisk;
+        if (file is File) {
+          fileOnDisk = file;
+        } else if (file is XFile) {
+          fileOnDisk = File(file.path);
+        } else {
+          throw Exception('Unsupported file type');
+        }
+        fileName = customFileName ?? '${folder}/${user.uid}/${DateTime.now().millisecondsSinceEpoch}_${path.basename(fileOnDisk.path)}';
+        final length = await fileOnDisk.length();
+        multipartFile = http.MultipartFile(
+          'file',
+          fileOnDisk.openRead(),
+          length,
+          filename: path.basename(fileOnDisk.path),
+        );
       }
 
       // Create request
@@ -118,28 +157,25 @@ class ImageKitService {
         request.fields['tags'] = tags.join(',');
       }
 
-      request.files.add(
-        http.MultipartFile.fromBytes(
-          'file',
-          bytes,
-          filename: path.basename(file.path),
-        ),
+      request.files.add(multipartFile);
+
+      if (kDebugMode) print('🔍 Sending ImageKit upload request (extended timeout for large files)...');
+      final uploadResponse = await _sendMultipartWithRetry(
+        request,
+        timeout: const Duration(minutes: 3),
+        retries: 1,
       );
 
-      print('🔍 Sending ImageKit upload request...');
-      final streamedResponse = await request.send().timeout(const Duration(seconds: 30));
-      final uploadResponse = await http.Response.fromStream(streamedResponse);
-
-      print('🔍 ImageKit upload response status: ${uploadResponse.statusCode}');
+      if (kDebugMode) print('🔍 ImageKit upload response status: ${uploadResponse.statusCode}');
 
       if (uploadResponse.statusCode == 200) {
         final result = json.decode(uploadResponse.body);
         final imageUrl = result['url'];
-        print('✅ ImageKit upload successful: $imageUrl');
+        if (kDebugMode) print('✅ ImageKit upload successful: $imageUrl');
         return imageUrl;
       } else {
         final errorBody = uploadResponse.body;
-        print('❌ ImageKit upload failed: $errorBody');
+        if (kDebugMode) print('❌ ImageKit upload failed: $errorBody');
         
         // Check for specific error types
         if (errorBody.contains('authentication') || errorBody.contains('token')) {
@@ -151,7 +187,7 @@ class ImageKitService {
         }
       }
     } catch (e) {
-      print('❌ ImageKit upload error: $e');
+      if (kDebugMode) print('❌ ImageKit upload error: $e');
       rethrow;
     }
   }
@@ -166,28 +202,42 @@ class ImageKitService {
     try {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) {
-        print('❌ User not authenticated for image upload');
+        if (kDebugMode) print('❌ User not authenticated for image upload');
         return null;
       }
 
-      print('🔍 Starting ImageKit public upload...');
+      if (kDebugMode) print('🔍 Starting ImageKit public upload...');
 
-      // Handle file reading based on platform
-      List<int> bytes;
       String fileName;
-      
+      http.MultipartFile multipartFile;
+
       if (kIsWeb && file is XFile) {
-        // Web: Use XFile
-        bytes = await file.readAsBytes();
-        fileName = customFileName ?? 
-            '${folder}/${user.uid}/${DateTime.now().millisecondsSinceEpoch}_${path.basename(file.path)}';
-      } else if (file is File) {
-        // Mobile: Use File
-        bytes = await file.readAsBytes();
-        fileName = customFileName ?? 
-            '${folder}/${user.uid}/${DateTime.now().millisecondsSinceEpoch}_${path.basename(file.path)}';
+        // Web: must use bytes
+        final bytes = await file.readAsBytes();
+        fileName = customFileName ?? '${folder}/${user.uid}/${DateTime.now().millisecondsSinceEpoch}_${path.basename(file.path)}';
+        multipartFile = http.MultipartFile.fromBytes(
+          'file',
+          bytes,
+          filename: path.basename(file.path),
+        );
       } else {
-        throw Exception('Unsupported file type');
+        // Mobile/Desktop: support both File and XFile by streaming from disk to save memory
+        File fileOnDisk;
+        if (file is File) {
+          fileOnDisk = file;
+        } else if (file is XFile) {
+          fileOnDisk = File(file.path);
+        } else {
+          throw Exception('Unsupported file type');
+        }
+        fileName = customFileName ?? '${folder}/${user.uid}/${DateTime.now().millisecondsSinceEpoch}_${path.basename(fileOnDisk.path)}';
+        final length = await fileOnDisk.length();
+        multipartFile = http.MultipartFile(
+          'file',
+          fileOnDisk.openRead(),
+          length,
+          filename: path.basename(fileOnDisk.path),
+        );
       }
 
       // Use ImageKit's public upload API
@@ -205,32 +255,29 @@ class ImageKitService {
         request.fields['tags'] = tags.join(',');
       }
 
-      request.files.add(
-        http.MultipartFile.fromBytes(
-          'file',
-          bytes,
-          filename: path.basename(file.path),
-        ),
+      request.files.add(multipartFile);
+
+      if (kDebugMode) print('🔍 Sending ImageKit upload request (extended timeout for large files)...');
+      final uploadResponse = await _sendMultipartWithRetry(
+        request,
+        timeout: const Duration(minutes: 3),
+        retries: 1,
       );
 
-      print('🔍 Sending ImageKit upload request...');
-      final streamedResponse = await request.send().timeout(const Duration(seconds: 30));
-      final uploadResponse = await http.Response.fromStream(streamedResponse);
-
-      print('🔍 ImageKit upload response status: ${uploadResponse.statusCode}');
+      if (kDebugMode) print('🔍 ImageKit upload response status: ${uploadResponse.statusCode}');
 
       if (uploadResponse.statusCode == 200) {
         final result = json.decode(uploadResponse.body);
         final imageUrl = result['url'];
-        print('✅ ImageKit upload successful: $imageUrl');
+        if (kDebugMode) print('✅ ImageKit upload successful: $imageUrl');
         return imageUrl;
       } else {
         final errorBody = uploadResponse.body;
-        print('❌ ImageKit upload failed: $errorBody');
+        if (kDebugMode) print('❌ ImageKit upload failed: $errorBody');
         throw Exception('Upload failed: ${uploadResponse.statusCode} - $errorBody');
       }
     } catch (e) {
-      print('❌ ImageKit upload error: $e');
+      if (kDebugMode) print('❌ ImageKit upload error: $e');
       rethrow;
     }
   }

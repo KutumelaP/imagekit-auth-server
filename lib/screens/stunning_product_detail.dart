@@ -6,9 +6,8 @@ import '../providers/cart_provider.dart';
 import '../theme/app_theme.dart';
 import '../widgets/safe_network_image.dart';
 import '../widgets/bottom_action_bar.dart';
-import '../screens/CheckoutScreen.dart';
-import '../utils/responsive_utils.dart';
-import '../utils/loading_widget.dart';
+import '../screens/ChatScreen.dart';
+// removed unused imports
 import 'package:flutter/services.dart';
 
 class StunningProductDetail extends StatefulWidget {
@@ -199,8 +198,15 @@ class _StunningProductDetailState extends State<StunningProductDetail>
     final isOutOfStock = stock <= 0;
 
     return Scaffold(
-      backgroundColor: AppTheme.angel,
-      body: CustomScrollView(
+      backgroundColor: Colors.transparent,
+      body: Container(
+        width: double.infinity,
+        height: double.infinity,
+        decoration: BoxDecoration(
+          gradient: AppTheme.screenBackgroundGradient,
+          color: AppTheme.angel, // Fallback color
+        ),
+        child: CustomScrollView(
         controller: _scrollController,
         slivers: [
           _buildSliverAppBar(isMobile, screenHeight),
@@ -215,6 +221,7 @@ class _StunningProductDetailState extends State<StunningProductDetail>
           ),
         ],
       ),
+      ),
       bottomNavigationBar: _buildBottomBar(isMobile, isOutOfStock),
     );
   }
@@ -222,7 +229,7 @@ class _StunningProductDetailState extends State<StunningProductDetail>
   Widget _buildSliverAppBar(bool isMobile, double screenHeight) {
     return SliverSafeArea(
       top: true,
-      child: SliverAppBar(
+      sliver: SliverAppBar(
         expandedHeight: isMobile ? screenHeight * 0.4 : screenHeight * 0.5,
         floating: false,
         pinned: true,
@@ -329,6 +336,7 @@ class _StunningProductDetailState extends State<StunningProductDetail>
           ),
         ),
       ),
+    ),
     );
   }
 
@@ -366,7 +374,7 @@ class _StunningProductDetailState extends State<StunningProductDetail>
             // Quantity Selector
             if (!isOutOfStock) _buildQuantitySelector(isMobile),
             
-            const SizedBox(height: 100), // Space for bottom bar
+            const SizedBox(height: 20), // Minimal bottom spacing
           ],
         ),
       ),
@@ -799,18 +807,15 @@ class _StunningProductDetailState extends State<StunningProductDetail>
       availableStock: stock,
     );
     
-    if (success) {
-      // Show success message
-      _showSnackBar('Product added to cart!', AppTheme.primaryGreen);
-      
-      // Navigate to cart
-      Navigator.pushNamed(context, '/cart');
-    } else {
+    if (!success) {
       // Show specific error message from cart provider
       final errorMessage = cartProvider.lastAddError ?? 'Failed to add product to cart';
       final backgroundColor = cartProvider.lastAddBlocked ? AppTheme.error : AppTheme.warning;
       
       _showSnackBar(errorMessage, backgroundColor);
+    } else {
+      // Navigate to cart
+      Navigator.pushNamed(context, '/cart');
     }
   }
 
@@ -880,7 +885,7 @@ class _StunningProductDetailState extends State<StunningProductDetail>
             builder: (_) => ChatScreen(
               chatId: chatId,
               otherUserId: sellerId,
-              otherUserName: widget.product['sellerName'] ?? 'Seller',
+              otherUserName: widget.product['sellerName'] ?? widget.product['storeName'] ?? 'Seller',
             ),
           ),
         );

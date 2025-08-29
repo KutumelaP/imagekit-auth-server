@@ -11,8 +11,9 @@ class AppConstants {
   static const int maxImageHeight = 1080;
   
   // API Configuration
-  static const String backendUrl = 'https://imagekit-auth-server-f4te.onrender.com/auth';
-  static const String imageKitUploadUrl = 'https://upload.imagekit.io/api/v1/files/upload';
+  // Deprecated direct ImageKit auth/upload constants removed in favor of Firebase callable
+  static const String backendUrl = '';
+  static const String imageKitUploadUrl = '';
   
   // Firebase Collections
   static const String usersCollection = 'users';

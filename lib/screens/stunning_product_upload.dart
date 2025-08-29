@@ -7,6 +7,7 @@ import 'dart:io';
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:http/http.dart' as http;
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:path/path.dart' as path;
 import '../theme/app_theme.dart';
 import '../constants/app_constants.dart';
@@ -27,6 +28,61 @@ class StunningProductUpload extends StatefulWidget {
 
 class _StunningProductUploadState extends State<StunningProductUpload>
     with TickerProviderStateMixin {
+
+  Widget _buildWebCompatibleImage(File imageFile, {BoxFit? fit, double? width, double? height}) {
+    if (kIsWeb) {
+      // On web, read file bytes and use Image.memory
+      return FutureBuilder<Uint8List>(
+        future: imageFile.readAsBytes(),
+        builder: (context, snapshot) {
+          if (snapshot.hasData) {
+            return Image.memory(
+              snapshot.data!,
+              fit: fit ?? BoxFit.cover,
+              width: width,
+              height: height,
+              errorBuilder: (context, error, stackTrace) {
+                print('🔍 DEBUG: Error loading image memory: $error');
+                return Container(
+                  color: Colors.grey[200],
+                  child: const Icon(Icons.error, size: 32, color: Colors.red),
+                );
+              },
+            );
+          } else if (snapshot.hasError) {
+            print('🔍 DEBUG: Error reading image bytes: ${snapshot.error}');
+            return Container(
+              color: Colors.grey[200],
+              child: const Icon(Icons.error, size: 32, color: Colors.red),
+            );
+          } else {
+            return Container(
+              color: Colors.grey[100],
+              child: const Center(
+                child: CircularProgressIndicator(),
+              ),
+            );
+          }
+        },
+      );
+    } else {
+      // On mobile, use Image.file
+      return Image.file(
+        imageFile,
+        fit: fit ?? BoxFit.cover,
+        width: width,
+        height: height,
+        errorBuilder: (context, error, stackTrace) {
+          print('🔍 DEBUG: Error loading image file: $error');
+          return Container(
+            color: Colors.grey[200],
+            child: const Icon(Icons.error, size: 32, color: Colors.red),
+          );
+        },
+      );
+    }
+  }
+
   // Form Controllers
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
@@ -47,6 +103,7 @@ class _StunningProductUploadState extends State<StunningProductUpload>
   String selectedCategory = 'Food';
   String selectedSubcategory = 'Baked Goods';
   String selectedCondition = 'New'; // New, Second Hand, Refurbished
+  bool _categoryLocked = false; // lock category if loaded from store
   File? selectedImage;
   Uint8List? selectedImageBytes; // For web support
   bool isUploading = false;
@@ -83,10 +140,22 @@ class _StunningProductUploadState extends State<StunningProductUpload>
   Future<void> _loadStoreCategory() async {
     try {
       print('🔍 DEBUG: _loadStoreCategory called for storeId: ${widget.storeId}');
-      
+      // Use provided storeId if valid; otherwise default to current user's uid
+      String? docId = widget.storeId;
+      if (docId.isEmpty || docId == 'all') {
+        final user = FirebaseAuth.instance.currentUser;
+        docId = user?.uid ?? '';
+        print('🔍 DEBUG: Falling back to current user uid for store category: $docId');
+      }
+
+      if (docId.isEmpty) {
+        print('🔍 DEBUG: No valid docId for store category fetch');
+        return;
+      }
+
       final storeDoc = await FirebaseFirestore.instance
           .collection('users')
-          .doc(widget.storeId)
+          .doc(docId)
           .get();
       
       print('🔍 DEBUG: Store document exists: ${storeDoc.exists}');
@@ -106,6 +175,7 @@ class _StunningProductUploadState extends State<StunningProductUpload>
             // Set appropriate subcategory based on category
             selectedSubcategory = _getDefaultSubcategory(storeCategory);
             _subcategoryController.text = selectedSubcategory;
+            _categoryLocked = true;
           });
           print('🔍 DEBUG: Loaded store category: $storeCategory');
           print('🔍 DEBUG: Set selectedSubcategory to: $selectedSubcategory');
@@ -235,18 +305,14 @@ class _StunningProductUploadState extends State<StunningProductUpload>
         
         print('🔍 DEBUG: Getting ImageKit auth parameters from server... (attempt ${retryCount + 1})');
         
-        // Get authentication parameters from backend
-        final response = await http.get(
-          Uri.parse('https://imagekit-auth-server-f4te.onrender.com/auth'),
-          headers: {'Content-Type': 'application/json'},
-        ).timeout(const Duration(seconds: 10));
-        
-        if (response.statusCode != 200) {
-          print('🔍 DEBUG: Failed to get ImageKit auth parameters. Response: ${response.body}');
-          throw Exception('Failed to get authentication parameters: ${response.statusCode}');
+        // Get authentication parameters from Firebase callable
+        final callable = FirebaseFunctions.instance.httpsCallable('getImageKitUploadAuth');
+        final result = await callable.call();
+        final data = result.data;
+        if (data is! Map) {
+          throw Exception('Invalid ImageKit auth response');
         }
-        
-        final authParams = Map<String, dynamic>.from(json.decode(response.body));
+        final authParams = Map<String, dynamic>.from(data as Map);
         print('🔍 DEBUG: Got ImageKit auth params: ${authParams.toString()}');
         
         // Validate auth parameters
@@ -263,7 +329,7 @@ class _StunningProductUploadState extends State<StunningProductUpload>
         );
         
         request.fields.addAll({
-          'publicKey': 'public_tAO0SkfLl/37FQN+23c/bkAyfYg=',
+          'publicKey': (authParams['publicKey'] ?? '').toString(),
           'token': authParams['token'],
           'signature': authParams['signature'],
           'expire': authParams['expire'].toString(),
@@ -334,18 +400,14 @@ class _StunningProductUploadState extends State<StunningProductUpload>
         
         print('🔍 DEBUG: Getting ImageKit auth parameters from server... (attempt ${retryCount + 1})');
         
-        // Get authentication parameters from backend
-        final response = await http.get(
-          Uri.parse('https://imagekit-auth-server-f4te.onrender.com/auth'),
-          headers: {'Content-Type': 'application/json'},
-        ).timeout(const Duration(seconds: 10));
-        
-        if (response.statusCode != 200) {
-          print('🔍 DEBUG: Failed to get ImageKit auth parameters. Response: ${response.body}');
-          throw Exception('Failed to get authentication parameters: ${response.statusCode}');
+        // Get authentication parameters from Firebase callable
+        final callable = FirebaseFunctions.instance.httpsCallable('getImageKitUploadAuth');
+        final result = await callable.call();
+        final data = result.data;
+        if (data is! Map) {
+          throw Exception('Invalid ImageKit auth response');
         }
-        
-        final authParams = Map<String, dynamic>.from(json.decode(response.body));
+        final authParams = Map<String, dynamic>.from(data as Map);
         print('🔍 DEBUG: Got ImageKit auth params: ${authParams.toString()}');
         
         // Validate auth parameters
@@ -361,7 +423,7 @@ class _StunningProductUploadState extends State<StunningProductUpload>
         );
         
         request.fields.addAll({
-          'publicKey': 'public_tAO0SkfLl/37FQN+23c/bkAyfYg=',
+          'publicKey': (authParams['publicKey'] ?? '').toString(),
           'token': authParams['token'],
           'signature': authParams['signature'],
           'expire': authParams['expire'].toString(),
@@ -887,22 +949,11 @@ class _StunningProductUploadState extends State<StunningProductUpload>
                       ? ClipRRect(
                           borderRadius: BorderRadius.circular(14),
                           child: selectedImage != null
-                              ? Image.file(
+                              ? _buildWebCompatibleImage(
                                   selectedImage!,
                                   fit: BoxFit.cover,
                                   width: double.infinity,
                                   height: double.infinity,
-                                  errorBuilder: (context, error, stackTrace) {
-                                    print('🔍 DEBUG: Error loading image file: $error');
-                                    return Container(
-                                      color: AppTheme.cloud,
-                                      child: Icon(
-                                        Icons.error,
-                                        color: AppTheme.deepTeal,
-                                        size: 48,
-                                      ),
-                                    );
-                                  },
                                 )
                               : Image.memory(
                                   selectedImageBytes!,
@@ -1107,66 +1158,148 @@ class _StunningProductUploadState extends State<StunningProductUpload>
           ),
         ],
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Category & Type',
-            style: AppTheme.headlineMedium.copyWith(
-              color: AppTheme.deepTeal,
-            ),
-          ),
-          
-          const SizedBox(height: 20),
-          
-          // Category Dropdown
-          _buildStyledDropdown(
-            value: selectedCategory,
-            label: 'Category',
-            icon: Icons.category,
-            items: AppConstants.categories,
-            onChanged: (value) {
-              if (value != null) {
-                setState(() {
-                  selectedCategory = value;
-                  selectedSubcategory = AppConstants.categoryMap[value]?.first ?? 'Other';
-                  _subcategoryController.text = selectedSubcategory;
-                });
-              }
-            },
-            validator: (value) {
-              if (value == null || value.isEmpty) {
-                return 'Please select a category';
-              }
-              return null;
-            },
-          ),
-          
-          const SizedBox(height: 16),
-          
-          // Subcategory with manual entry option
-          _buildStyledTextField(
-            controller: _subcategoryController,
-            label: 'Subcategory',
-            hint: 'Enter subcategory or select from list',
-            icon: Icons.subdirectory_arrow_right,
-            onChanged: (value) {
-              setState(() => selectedSubcategory = value);
-            },
-            validator: (value) {
-              if (value == null || value.trim().isEmpty) {
-                return 'Please enter a subcategory';
-              }
-              return null;
-            },
-          ),
-          
-          const SizedBox(height: 16),
-          
-          // Suggested subcategories based on category
-          if (AppConstants.categoryMap[selectedCategory] != null) ...[
+      child: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
             Text(
-              'Suggested subcategories:',
+              'Category & Type',
+              style: AppTheme.headlineMedium.copyWith(
+                color: AppTheme.deepTeal,
+              ),
+            ),
+            
+            const SizedBox(height: 20),
+            
+            // Category Dropdown
+            if (_categoryLocked) ...[
+              Text('Category', style: AppTheme.bodyMedium.copyWith(color: AppTheme.cloud, fontWeight: FontWeight.w500)),
+              const SizedBox(height: 6),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                decoration: BoxDecoration(
+                  color: AppTheme.whisper,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppTheme.cloud),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.category, color: AppTheme.deepTeal, size: 18),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        selectedCategory,
+                        style: const TextStyle(fontWeight: FontWeight.w600, color: AppTheme.deepTeal),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const Icon(Icons.lock, color: AppTheme.cloud, size: 16),
+                  ],
+                ),
+              ),
+            ] else ...[
+              _buildStyledDropdown(
+                value: selectedCategory,
+                label: 'Category',
+                icon: Icons.category,
+                items: AppConstants.categories,
+                onChanged: (value) {
+                  if (value != null) {
+                    setState(() {
+                      selectedCategory = value;
+                      selectedSubcategory = AppConstants.categoryMap[value]?.first ?? 'Other';
+                      _subcategoryController.text = selectedSubcategory;
+                    });
+                  }
+                },
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return 'Please select a category';
+                  }
+                  return null;
+                },
+              ),
+            ],
+            
+            const SizedBox(height: 16),
+            
+            // Subcategory with manual entry option
+            _buildStyledTextField(
+              controller: _subcategoryController,
+              label: 'Subcategory',
+              hint: 'Enter subcategory or select from list',
+              icon: Icons.subdirectory_arrow_right,
+              onChanged: (value) {
+                setState(() => selectedSubcategory = value);
+              },
+              validator: (value) {
+                if (value == null || value.trim().isEmpty) {
+                  return 'Please enter a subcategory';
+                }
+                return null;
+              },
+            ),
+            
+            const SizedBox(height: 16),
+            
+            // Suggested subcategories based on category
+            if (AppConstants.categoryMap[selectedCategory] != null) ...[
+              Text(
+                'Suggested subcategories:',
+                style: AppTheme.bodyMedium.copyWith(
+                  color: AppTheme.cloud,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: AppConstants.categoryMap[selectedCategory]!
+                    .map((subcategory) => GestureDetector(
+                          onTap: () {
+                            setState(() {
+                              selectedSubcategory = subcategory;
+                              _subcategoryController.text = subcategory;
+                            });
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 6,
+                            ),
+                            decoration: BoxDecoration(
+                              color: selectedSubcategory == subcategory
+                                  ? AppTheme.deepTeal
+                                  : AppTheme.whisper,
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(
+                                color: selectedSubcategory == subcategory
+                                    ? AppTheme.deepTeal
+                                    : AppTheme.cloud,
+                              ),
+                            ),
+                            child: Text(
+                              subcategory,
+                              style: TextStyle(
+                                color: selectedSubcategory == subcategory
+                                    ? Colors.white
+                                    : AppTheme.deepTeal,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ))
+                    .toList(),
+              ),
+            ],
+
+            const SizedBox(height: 16),
+
+            // Condition Selector
+            Text(
+              'Condition',
               style: AppTheme.bodyMedium.copyWith(
                 color: AppTheme.cloud,
                 fontWeight: FontWeight.w500,
@@ -1175,47 +1308,31 @@ class _StunningProductUploadState extends State<StunningProductUpload>
             const SizedBox(height: 8),
             Wrap(
               spacing: 8,
-              runSpacing: 8,
-              children: AppConstants.categoryMap[selectedCategory]!
-                  .map((subcategory) => GestureDetector(
-                        onTap: () {
-                          setState(() {
-                            selectedSubcategory = subcategory;
-                            _subcategoryController.text = subcategory;
-                          });
-                        },
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 6,
-                          ),
-                          decoration: BoxDecoration(
-                            color: selectedSubcategory == subcategory
-                                ? AppTheme.deepTeal
-                                : AppTheme.whisper,
-                            borderRadius: BorderRadius.circular(20),
-                            border: Border.all(
-                              color: selectedSubcategory == subcategory
-                                  ? AppTheme.deepTeal
-                                  : AppTheme.cloud,
-                            ),
-                          ),
-                          child: Text(
-                            subcategory,
-                            style: TextStyle(
-                              color: selectedSubcategory == subcategory
-                                  ? Colors.white
-                                  : AppTheme.deepTeal,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ),
-                      ))
-                  .toList(),
+              children: _conditionOptions.map((opt) {
+                final selected = selectedCondition == opt;
+                return ChoiceChip(
+                  label: Text(opt),
+                  selected: selected,
+                  onSelected: (_) => setState(() => selectedCondition = opt),
+                  selectedColor: AppTheme.deepTeal,
+                  labelStyle: TextStyle(
+                    color: selected ? Colors.white : AppTheme.deepTeal,
+                  ),
+                  backgroundColor: AppTheme.whisper,
+                  side: BorderSide(color: AppTheme.cloud),
+                );
+              }).toList(),
+            ),
+
+            const SizedBox(height: 16),
+
+            // Subtle helper
+            Text(
+              'Tip: Choose the closest match so buyers can find your item easily.',
+              style: AppTheme.bodySmall.copyWith(color: AppTheme.cloud),
             ),
           ],
-        ],
+        ),
       ),
     );
   }
@@ -1250,7 +1367,7 @@ class _StunningProductUploadState extends State<StunningProductUpload>
                ClipRRect(
                  borderRadius: BorderRadius.circular(12),
                  child: selectedImage != null
-                     ? Image.file(
+                     ? _buildWebCompatibleImage(
                          selectedImage!,
                          height: 120,
                          width: 120,

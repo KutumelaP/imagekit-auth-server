@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 
 class DebugOverlay extends StatefulWidget {
   final Widget child;
@@ -195,12 +196,14 @@ class DebugLogger {
   }
 
   void log(String message) {
-    print('🐛 DEBUG: $message');
-    for (final listener in _listeners) {
-      try {
-        listener(message);
-      } catch (e) {
-        print('Error in debug listener: $e');
+    if (kDebugMode) {
+      print('🐛 DEBUG: $message');
+      for (final listener in _listeners) {
+        try {
+          listener(message);
+        } catch (e) {
+          print('Error in debug listener: $e');
+        }
       }
     }
   }

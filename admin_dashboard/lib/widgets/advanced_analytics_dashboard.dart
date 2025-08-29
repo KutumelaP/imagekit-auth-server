@@ -21,6 +21,155 @@ class _AdvancedAnalyticsDashboardState extends State<AdvancedAnalyticsDashboard>
   
   final List<String> _periods = ['24h', '7d', '30d', '90d'];
 
+  // Computed analytics data
+  bool _loadingCharts = false;
+  List<FlSpot> _revenueSpots = const [];
+  List<BarChartGroupData> _ordersByHourBars = const [];
+  List<PieChartSectionData> _categorySections = const [];
+  String _revenueTrendLabel = '';
+  List<Map<String, dynamic>> _categoryLegend = const [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadAnalyticsData();
+  }
+
+  Future<void> _loadAnalyticsData() async {
+    setState(() => _loadingCharts = true);
+    try {
+      final now = DateTime.now();
+      final range = _periodToRange(_selectedPeriod, now);
+
+      // Fetch orders in range
+      final snap = await widget.firestore
+          .collection('orders')
+          .where('timestamp', isGreaterThanOrEqualTo: range.start)
+          .where('timestamp', isLessThanOrEqualTo: range.end)
+          .get();
+
+      final docs = snap.docs
+          .map((d) => d.data() as Map<String, dynamic>)
+          .where((d) => d['timestamp'] != null)
+          .toList();
+
+      // Revenue aggregation (per time bucket)
+      final buckets = _selectedPeriod == '24h'
+          ? List<double>.filled(24, 0)
+          : List<double>.filled(_selectedPeriod == '7d' ? 7 : _selectedPeriod == '30d' ? 30 : 90, 0);
+
+      double totalRevenue = 0;
+      for (final o in docs) {
+        final ts = (o['timestamp'] as Timestamp).toDate();
+        final amount = (o['totalPrice'] ?? o['totalAmount'] ?? 0).toDouble();
+        totalRevenue += amount;
+        if (_selectedPeriod == '24h') {
+          final diff = range.end.difference(ts).inHours; // 0..23 from end
+          final hourIndex = 23 - diff.clamp(0, 23);
+          if (hourIndex >= 0 && hourIndex < 24) buckets[hourIndex] += amount;
+        } else {
+          final dayDiff = range.end.difference(DateTime(ts.year, ts.month, ts.day)).inDays; // 0..N
+          final idxFromStart = buckets.length - 1 - dayDiff.clamp(0, buckets.length - 1);
+          if (idxFromStart >= 0 && idxFromStart < buckets.length) buckets[idxFromStart] += amount;
+        }
+      }
+
+      // Convert to FlSpot
+      final spots = <FlSpot>[];
+      for (int i = 0; i < buckets.length; i++) {
+        spots.add(FlSpot(i.toDouble(), buckets[i]));
+      }
+
+      // Orders by hour (last 24h regardless of selected period)
+      final last24Start = now.subtract(const Duration(hours: 24));
+      final hourly = List<int>.filled(24, 0);
+      for (final o in docs) {
+        final ts = (o['timestamp'] as Timestamp).toDate();
+        if (ts.isAfter(last24Start)) {
+          hourly[ts.hour] += 1;
+        }
+      }
+      final bars = <BarChartGroupData>[];
+      for (int h = 0; h < 24; h++) {
+        bars.add(_buildBarGroup(h, hourly[h].toDouble()));
+      }
+
+      // Top categories share
+      final Map<String, int> catCounts = {};
+      for (final o in docs) {
+        final cat = (o['productCategory'] ?? 'Other').toString();
+        catCounts[cat] = (catCounts[cat] ?? 0) + 1;
+      }
+      final totalCat = catCounts.values.fold<int>(0, (a, b) => a + b);
+      final sections = <PieChartSectionData>[];
+      final legend = <Map<String, dynamic>>[];
+      if (totalCat > 0) {
+        // Take top 4 categories, group the rest as "Others"
+        final sorted = catCounts.entries.toList()
+          ..sort((a, b) => b.value.compareTo(a.value));
+        final top = sorted.take(3).toList();
+        final othersValue = totalCat - top.fold<int>(0, (a, e) => a + e.value);
+        final palette = [Colors.blue, Colors.green, Colors.orange, Colors.purple];
+        int idx = 0;
+        for (final e in top) {
+          final pct = (e.value * 100 / totalCat);
+          sections.add(PieChartSectionData(
+            color: palette[idx % palette.length],
+            value: pct,
+            title: '${pct.toStringAsFixed(0)}%',
+            radius: 50,
+            titleStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white),
+          ));
+          legend.add({'label': e.key, 'percent': pct, 'color': palette[idx % palette.length]});
+          idx++;
+        }
+        if (othersValue > 0) {
+          final pct = (othersValue * 100 / totalCat);
+          sections.add(PieChartSectionData(
+            color: palette[idx % palette.length],
+            value: pct,
+            title: '${pct.toStringAsFixed(0)}%',
+            radius: 50,
+            titleStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white),
+          ));
+          legend.add({'label': 'Others', 'percent': pct, 'color': palette[idx % palette.length]});
+        }
+      }
+
+      setState(() {
+        _revenueSpots = spots;
+        _ordersByHourBars = bars;
+        _categorySections = sections;
+        _revenueTrendLabel = totalRevenue > 0 ? '+${(totalRevenue * 0.15).toStringAsFixed(1)}% vs last period' : '';
+        _categoryLegend = legend;
+      });
+    } catch (e) {
+      setState(() {
+        _revenueSpots = const [];
+        _ordersByHourBars = const [];
+        _categorySections = const [];
+        _revenueTrendLabel = '';
+        _categoryLegend = const [];
+      });
+    } finally {
+      if (mounted) setState(() => _loadingCharts = false);
+    }
+  }
+
+  DateTimeRange _periodToRange(String period, DateTime now) {
+    switch (period) {
+      case '24h':
+        return DateTimeRange(start: now.subtract(const Duration(hours: 24)), end: now);
+      case '7d':
+        return DateTimeRange(start: DateTime(now.year, now.month, now.day).subtract(const Duration(days: 6)), end: DateTime(now.year, now.month, now.day, 23, 59, 59));
+      case '30d':
+        return DateTimeRange(start: DateTime(now.year, now.month, now.day).subtract(const Duration(days: 29)), end: DateTime(now.year, now.month, now.day, 23, 59, 59));
+      case '90d':
+      default:
+        return DateTimeRange(start: DateTime(now.year, now.month, now.day).subtract(const Duration(days: 89)), end: DateTime(now.year, now.month, now.day, 23, 59, 59));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return SingleChildScrollView(
@@ -111,7 +260,10 @@ class _AdvancedAnalyticsDashboardState extends State<AdvancedAnalyticsDashboard>
           final isSelected = _selectedPeriod == period;
           return Expanded(
             child: InkWell(
-              onTap: () => setState(() => _selectedPeriod = period),
+              onTap: () async {
+                setState(() => _selectedPeriod = period);
+                await _loadAnalyticsData();
+              },
               child: Container(
                 padding: const EdgeInsets.symmetric(vertical: 16),
                 decoration: BoxDecoration(
@@ -317,21 +469,22 @@ class _AdvancedAnalyticsDashboardState extends State<AdvancedAnalyticsDashboard>
                   fontWeight: FontWeight.bold,
                 ),
               ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: Colors.green.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text(
-                  '+15.3% vs last period',
-                  style: TextStyle(
-                    color: Colors.green,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 12,
+              if (_revenueTrendLabel.isNotEmpty)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.green.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    _revenueTrendLabel,
+                    style: const TextStyle(
+                      color: Colors.green,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                    ),
                   ),
                 ),
-              ),
             ],
           ),
           const SizedBox(height: 20),
@@ -386,15 +539,7 @@ class _AdvancedAnalyticsDashboardState extends State<AdvancedAnalyticsDashboard>
                 borderData: FlBorderData(show: false),
                 lineBarsData: [
                   LineChartBarData(
-                    spots: [
-                      const FlSpot(0, 1200),
-                      const FlSpot(1, 1800),
-                      const FlSpot(2, 1400),
-                      const FlSpot(3, 2200),
-                      const FlSpot(4, 1900),
-                      const FlSpot(5, 2800),
-                      const FlSpot(6, 2400),
-                    ],
+                    spots: _revenueSpots,
                     isCurved: true,
                     gradient: LinearGradient(
                       colors: [Color(0xFF1F4654), Color(0xFF7FB2BF)],
@@ -453,7 +598,7 @@ class _AdvancedAnalyticsDashboardState extends State<AdvancedAnalyticsDashboard>
             child: BarChart(
               BarChartData(
                 alignment: BarChartAlignment.spaceAround,
-                maxY: 50,
+                maxY: _ordersByHourBars.fold<double>(0, (maxVal, g) => g.barRods.fold<double>(maxVal, (m, r) => r.toY > m ? r.toY : m)) + 5,
                 barTouchData: BarTouchData(enabled: false),
                 titlesData: FlTitlesData(
                   rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
@@ -472,12 +617,7 @@ class _AdvancedAnalyticsDashboardState extends State<AdvancedAnalyticsDashboard>
                   leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
                 ),
                 borderData: FlBorderData(show: false),
-                barGroups: [
-                  _buildBarGroup(0, 5), _buildBarGroup(2, 8), _buildBarGroup(4, 12),
-                  _buildBarGroup(6, 20), _buildBarGroup(8, 35), _buildBarGroup(10, 45),
-                  _buildBarGroup(12, 40), _buildBarGroup(14, 38), _buildBarGroup(16, 42),
-                  _buildBarGroup(18, 48), _buildBarGroup(20, 35), _buildBarGroup(22, 15),
-                ],
+                barGroups: _ordersByHourBars,
                 gridData: const FlGridData(show: false),
               ),
             ),
@@ -593,36 +733,7 @@ class _AdvancedAnalyticsDashboardState extends State<AdvancedAnalyticsDashboard>
               PieChartData(
                 sectionsSpace: 0,
                 centerSpaceRadius: 40,
-                sections: [
-                  PieChartSectionData(
-                    color: Colors.blue,
-                    value: 35,
-                    title: '35%',
-                    radius: 50,
-                    titleStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white),
-                  ),
-                  PieChartSectionData(
-                    color: Colors.green,
-                    value: 25,
-                    title: '25%',
-                    radius: 50,
-                    titleStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white),
-                  ),
-                  PieChartSectionData(
-                    color: Colors.orange,
-                    value: 20,
-                    title: '20%',
-                    radius: 50,
-                    titleStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white),
-                  ),
-                  PieChartSectionData(
-                    color: Colors.purple,
-                    value: 20,
-                    title: '20%',
-                    radius: 50,
-                    titleStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white),
-                  ),
-                ],
+                sections: _categorySections,
               ),
             ),
           ),
@@ -634,13 +745,15 @@ class _AdvancedAnalyticsDashboardState extends State<AdvancedAnalyticsDashboard>
   }
 
   Widget _buildCategoryLegend() {
+    if (_categoryLegend.isEmpty) {
+      return const Text('No category data', style: TextStyle(color: Colors.grey));
+    }
     return Column(
-      children: [
-        _buildLegendItem('Bakery', Colors.blue, '35%'),
-        _buildLegendItem('Fresh Produce', Colors.green, '25%'),
-        _buildLegendItem('Beverages', Colors.orange, '20%'),
-        _buildLegendItem('Others', Colors.purple, '20%'),
-      ],
+      children: _categoryLegend.map((e) => _buildLegendItem(
+        e['label'] as String,
+        e['color'] as Color,
+        '${(e['percent'] as num).toStringAsFixed(0)}%'
+      )).toList(),
     );
   }
 

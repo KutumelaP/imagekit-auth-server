@@ -30,7 +30,7 @@ class NotificationService {
   // Notification preferences
   bool _systemNotificationsEnabled = true;
   bool _audioNotificationsEnabled = true;
-  bool _inAppNotificationsEnabled = true;
+  bool _inAppNotificationsEnabled = false;
   bool _voiceAnnouncementsEnabled = true;
   bool _speakUnreadSummaryOnOpen = true;
   bool _autoClearBadgeOnNotificationsOpen = false;
@@ -44,6 +44,7 @@ class NotificationService {
 
   // Firebase services
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseAuth _auth = FirebaseAuth.instance;
   StreamSubscription<QuerySnapshot>? _notifSub;
   StreamSubscription<RemoteMessage>? _fcmSub;
   bool _notifListenerInitialized = false;
@@ -151,7 +152,7 @@ class NotificationService {
     final prefs = await SharedPreferences.getInstance();
     _systemNotificationsEnabled = prefs.getBool('system_notifications') ?? true;
     _audioNotificationsEnabled = prefs.getBool('audio_notifications') ?? true;
-    _inAppNotificationsEnabled = prefs.getBool('inapp_notifications') ?? true;
+    _inAppNotificationsEnabled = prefs.getBool('inapp_notifications') ?? false;
     _voiceAnnouncementsEnabled = prefs.getBool('voice_announcements') ?? true;
     _autoClearBadgeOnNotificationsOpen = prefs.getBool('auto_clear_badge_notifications') ?? false;
     _ttsLanguage = prefs.getString('tts_language') ?? 'en-ZA';
@@ -261,19 +262,54 @@ class NotificationService {
       if (_ttsLanguage == null || _ttsLanguage!.isEmpty) {
         await updateTtsPreferences(language: 'en-ZA');
       }
+      
+      // Set human-like default TTS settings for better naturalness
+      if (_ttsRate == 0.5) { // Default unchanged
+        await updateTtsPreferences(
+          rate: 0.6,  // Slightly faster than default for more natural flow
+          pitch: 0.9, // Slightly lower pitch sounds more natural
+          volume: 0.8 // Comfortable volume level
+        );
+      }
+      
       if ((_ttsVoiceName == null || _ttsVoiceName!.isEmpty) && _availableVoices.isNotEmpty) {
+        // Prioritize more natural-sounding voices
+        String? bestVoice;
+        String? bestLocale;
+        
         for (final v in _availableVoices) {
           if (v is Map) {
             final locale = (v['locale']?.toString() ?? '').toLowerCase();
+            final name = (v['name']?.toString() ?? '').toLowerCase();
+            
+            // Prioritize South African voices first
             if (locale.contains('en-za') || locale.contains('en_za')) {
-              final name = v['name']?.toString();
-              final loc = v['locale']?.toString();
-              if (name != null && name.isNotEmpty) {
-                await updateTtsPreferences(voiceName: name, voiceLocale: loc);
+              // Look for enhanced/premium/neural voices
+              if (name.contains('enhanced') || name.contains('premium') || 
+                  name.contains('neural') || name.contains('natural') ||
+                  name.contains('female') || name.contains('male')) {
+                bestVoice = v['name']?.toString();
+                bestLocale = v['locale']?.toString();
                 break;
+              } else if (bestVoice == null) {
+                // Fallback to any South African voice
+                bestVoice = v['name']?.toString();
+                bestLocale = v['locale']?.toString();
+              }
+            }
+            // Fallback to other English voices if no ZA available
+            else if (bestVoice == null && (locale.contains('en-') || locale.contains('en_'))) {
+              if (name.contains('enhanced') || name.contains('premium') || 
+                  name.contains('neural') || name.contains('natural')) {
+                bestVoice = v['name']?.toString();
+                bestLocale = v['locale']?.toString();
               }
             }
           }
+        }
+        
+        if (bestVoice != null && bestVoice.isNotEmpty) {
+          await updateTtsPreferences(voiceName: bestVoice, voiceLocale: bestLocale);
         }
       }
     } catch (_) {}
@@ -295,7 +331,144 @@ class NotificationService {
     }
   }
 
-  // Request notification permissions
+  // Convert order/product IDs to human-readable format
+  static String formatOrderNumber(String orderId) {
+    if (orderId.isEmpty) return orderId;
+    
+    // If it's already a formatted number (contains letters/spaces), leave it
+    if (orderId.contains(' ') || RegExp(r'[A-Za-z]').hasMatch(orderId)) {
+      return orderId;
+    }
+    
+    // Firebase document IDs are typically 20+ characters
+    if (orderId.length > 15) {
+      // Take first 3 and last 4 characters with hyphens for readability
+      return 'Order ${orderId.substring(0, 3)}-${orderId.substring(orderId.length - 4)}';
+    } else if (orderId.length > 8) {
+      // Medium length IDs - split in middle
+      final mid = orderId.length ~/ 2;
+      return 'Order ${orderId.substring(0, mid)}-${orderId.substring(mid)}';
+    } else {
+      // Short IDs - just add prefix
+      return 'Order $orderId';
+    }
+  }
+  
+  static String formatProductId(String productId) {
+    if (productId.isEmpty) return productId;
+    
+    // If it's already formatted, leave it
+    if (productId.contains(' ') || RegExp(r'[A-Za-z]').hasMatch(productId)) {
+      return productId;
+    }
+    
+    // Similar logic for product IDs
+    if (productId.length > 15) {
+      return 'Product ${productId.substring(0, 3)}-${productId.substring(productId.length - 4)}';
+    } else if (productId.length > 8) {
+      final mid = productId.length ~/ 2;
+      return 'Product ${productId.substring(0, mid)}-${productId.substring(mid)}';
+    } else {
+      return 'Product $productId';
+    }
+  }
+
+  // Preprocess text to sound more natural when spoken
+  String _makeTextMoreNatural(String text) {
+    String processedText = text;
+    
+    // Convert order and product IDs to human-readable format
+    processedText = processedText
+        .replaceAllMapped(RegExp(r'Order\s*[#:]?\s*([A-Za-z0-9]{8,})', caseSensitive: false), (match) {
+          final orderId = match.group(1)!;
+          return formatOrderNumber(orderId);
+        })
+        .replaceAllMapped(RegExp(r'order\s*(?:number|id|#)?\s*([A-Za-z0-9]{8,})', caseSensitive: false), (match) {
+          final orderId = match.group(1)!;
+          return formatOrderNumber(orderId);
+        })
+        .replaceAllMapped(RegExp(r'Product\s*[#:]?\s*([A-Za-z0-9]{8,})', caseSensitive: false), (match) {
+          final productId = match.group(1)!;
+          return formatProductId(productId);
+        })
+        .replaceAllMapped(RegExp(r'product\s*(?:id|#)?\s*([A-Za-z0-9]{8,})', caseSensitive: false), (match) {
+          final productId = match.group(1)!;
+          return formatProductId(productId);
+        });
+    
+    // Replace abbreviations with full words for better pronunciation
+    processedText = processedText
+        .replaceAll(RegExp(r'\bR(\d+)', caseSensitive: false), r'Rand \1') // R100 -> Rand 100
+        .replaceAll(RegExp(r'\bRS(\d+)', caseSensitive: false), r'Rand \1') // RS100 -> Rand 100
+        .replaceAll(RegExp(r'\bZAR(\d+)', caseSensitive: false), r'Rand \1') // ZAR100 -> Rand 100
+        .replaceAll('&', 'and') // & -> and
+        .replaceAll('@', 'at') // @ -> at
+        .replaceAll('vs', 'versus') // vs -> versus
+        .replaceAll('etc', 'etcetera') // etc -> etcetera
+        .replaceAll('kg', 'kilograms') // kg -> kilograms
+        .replaceAll('km', 'kilometers') // km -> kilometers
+        .replaceAll('m²', 'square meters') // m² -> square meters
+        .replaceAll('°C', 'degrees celsius') // °C -> degrees celsius
+        .replaceAll('%', 'percent') // % -> percent
+        .replaceAll('No.', 'Number') // No. -> Number
+        .replaceAll('Dr.', 'Doctor') // Dr. -> Doctor
+        .replaceAll('Mr.', 'Mister') // Mr. -> Mister
+        .replaceAll('Mrs.', 'Missus') // Mrs. -> Missus
+        .replaceAll('St.', 'Street') // St. -> Street
+        .replaceAll('Ave.', 'Avenue') // Ave. -> Avenue
+        .replaceAll('Rd.', 'Road') // Rd. -> Road
+        .replaceAll('CEO', 'Chief Executive Officer')
+        .replaceAll('SMS', 'text message')
+        .replaceAll('GPS', 'GPS navigation')
+        .replaceAll('ID', 'identification')
+        .replaceAll('FAQ', 'frequently asked questions')
+        .replaceAll('PDF', 'document')
+        .replaceAll('URL', 'web address')
+        .replaceAll('WiFi', 'Wi-Fi')
+        .replaceAll('COVID', 'Covid')
+        .replaceAll('USD', 'US Dollars')
+        .replaceAll('EUR', 'Euros')
+        .replaceAll('GBP', 'British Pounds');
+    
+    // Add natural pauses for better rhythm
+    processedText = processedText
+        .replaceAll(RegExp(r'([.!?])\s*'), r'\1 ... ') // Add pause after sentences
+        .replaceAll(RegExp(r'([,:;])\s*'), r'\1 .. ') // Add shorter pause after commas
+        .replaceAll(RegExp(r'(-{2,}|\s-\s)'), ' .. ') // Replace dashes with pauses
+        .replaceAll(RegExp(r'\s+'), ' '); // Clean up multiple spaces
+    
+    // South African specific pronunciations
+    processedText = processedText
+        .replaceAll('Gauteng', 'How-teng') // Better pronunciation
+        .replaceAll('Pretoria', 'Pre-tor-ia')
+        .replaceAll('Johannesburg', 'Joe-han-nis-burg')
+        .replaceAll('Stellenbosch', 'Stel-len-bosh')
+        .replaceAll('Durban', 'Der-ban')
+        .replaceAll('Cape Town', 'Cape Town')
+        .replaceAll('Sandton', 'Sand-ton')
+        .replaceAll('Rosebank', 'Rose-bank')
+        .replaceAll('braai', 'barbecue') // For international users
+        .replaceAll('biltong', 'bil-tong');
+    
+    // Add emotional context for notifications
+    if (processedText.toLowerCase().contains('order confirmed') || 
+        processedText.toLowerCase().contains('payment successful')) {
+      processedText = 'Great news! ' + processedText;
+    } else if (processedText.toLowerCase().contains('delivered') || 
+               processedText.toLowerCase().contains('completed')) {
+      processedText = 'Excellent! ' + processedText;
+    } else if (processedText.toLowerCase().contains('error') || 
+               processedText.toLowerCase().contains('failed')) {
+      processedText = 'Unfortunately, ' + processedText;
+    } else if (processedText.toLowerCase().contains('reminder') || 
+               processedText.toLowerCase().contains('due')) {
+      processedText = 'Just a friendly reminder: ' + processedText;
+    }
+    
+    return processedText.trim();
+  }
+
+  // 🚀 AWESOME NOTIFICATION PERMISSION REQUEST
   Future<bool> requestPermissions() async {
     try {
       if (kIsWeb) {
@@ -310,27 +483,45 @@ class NotificationService {
           print('❌ Browser does not define Notification API');
           return false;
         }
+        
         final String? currentPermission = js.context.callMethod('eval', ['Notification.permission']);
+        print('🔔 Current notification permission: $currentPermission');
         
         if (currentPermission == 'granted') {
+          print('✅ Notifications already enabled!');
+          await _showWelcomeNotification();
           return true;
         } else if (currentPermission == 'denied') {
+          print('❌ Notifications blocked by user');
+          await _showPermissionHelpNotification();
           return false;
         } else {
-          // Permission is 'default', request it
-          print('🔔 Requesting notification permissions...');
+          // Permission is 'default', request it with better UX
+          print('🔔 Requesting awesome notification permissions...');
           
-          // Request permission via JS interop Promise
+          // Show pre-permission explanation
+          await _showPrePermissionNotification();
+          
+          // Request permission with proper Promise handling
           try {
-            js.context.callMethod('eval', [
-              'Notification.requestPermission().then(function(r){console.log("🔔 Notification permission result:",r)}).catch(function(e){console.error("❌ Error requesting permission:",e)})'
-            ]);
+            final permissionResult = await _requestNotificationPermissionAsync();
+            
+            if (permissionResult == 'granted') {
+              print('✅ Notification permissions granted!');
+              await _showWelcomeNotification();
+              return true;
+            } else if (permissionResult == 'denied') {
+              print('❌ Notification permissions denied');
+              await _showPermissionHelpNotification();
+              return false;
+            } else {
+              print('⏳ Notification permission request dismissed');
+              return false;
+            }
           } catch (e) {
             print('❌ Error requesting notification permission: $e');
+            return false;
           }
-
-          // Return based on current status (result will be logged asynchronously)
-          return currentPermission == 'granted';
         }
       } else {
         // Mobile: For now, return true (will be implemented later)
@@ -342,6 +533,84 @@ class NotificationService {
     }
   }
 
+  // 🎯 Request notification permission with proper Promise handling
+  Future<String> _requestNotificationPermissionAsync() async {
+    try {
+      // Create a more robust permission request
+      final result = js.context.callMethod('eval', ['''
+        (async function() {
+          try {
+            console.log("🔔 Requesting notification permission...");
+            const permission = await Notification.requestPermission();
+            console.log("🔔 Permission result:", permission);
+            return permission;
+          } catch (error) {
+            console.error("❌ Permission request error:", error);
+            return "error";
+          }
+        })()
+      ''']);
+      
+      // Handle the Promise result
+      if (result != null) {
+        return result.toString();
+      }
+      return 'error';
+    } catch (e) {
+      print('❌ Error in async permission request: $e');
+      return 'error';
+    }
+  }
+
+  // 📢 Show pre-permission explanation
+  Future<void> _showPrePermissionNotification() async {
+    try {
+      // Could show an in-app dialog explaining the benefits
+      print('💡 Would show pre-permission explanation here');
+      // For now, just log - in a real app you'd show a friendly dialog
+    } catch (e) {
+      print('❌ Error showing pre-permission notification: $e');
+    }
+  }
+
+  // 🎉 Show welcome notification after permission granted
+  Future<void> _showWelcomeNotification() async {
+    try {
+      if (kIsWeb) {
+        js.context.callMethod('eval', ['''
+          if (Notification.permission === 'granted') {
+            new Notification('🎉 Awesome Notifications Enabled!', {
+              body: 'You\'ll now receive real-time updates about your orders, messages, and promotions.',
+              icon: '/icons/Icon-192.png',
+              badge: '/icons/Icon-192.png',
+              tag: 'welcome',
+              silent: false,
+              requireInteraction: false,
+              vibrate: [100, 50, 100, 50, 200],
+              image: '/icons/notification-hero.png',
+              actions: [
+                { action: 'explore', title: '🚀 Explore App', icon: '/icons/explore-icon.png' },
+                { action: 'settings', title: '⚙️ Settings', icon: '/icons/settings-icon.png' }
+              ]
+            });
+          }
+        ''']);
+      }
+    } catch (e) {
+      print('❌ Error showing welcome notification: $e');
+    }
+  }
+
+  // 💡 Show help for users who denied permissions
+  Future<void> _showPermissionHelpNotification() async {
+    try {
+      print('💡 Notifications are blocked. You can enable them in your browser settings.');
+      // Could show in-app guidance here
+    } catch (e) {
+      print('❌ Error showing permission help: $e');
+    }
+  }
+
   // Show chat notification
   Future<void> showChatNotification({
     required String chatId,
@@ -349,6 +618,13 @@ class NotificationService {
     required String message,
   }) async {
     try {
+      // Don't show notification if sender is the current user
+      final currentUserId = _auth.currentUser?.uid;
+      if (currentUserId != null && senderId == currentUserId) {
+        print('🔇 Skipping chat notification - message sent by current user');
+        return;
+      }
+
       // Get sender's name
       final senderDoc = await _firestore
           .collection('users')
@@ -549,8 +825,13 @@ class NotificationService {
       if (kIsWeb) {
         // Web: use SpeechSynthesis via JS
         try {
+          // Process text to sound more natural
+          final naturalText = _makeTextMoreNatural(text);
+          final jsText = naturalText.replaceAll("'", " ");
+          
           js.context.callMethod('eval', [
-            "(function(){try{var u=new SpeechSynthesisUtterance('" + text.replaceAll("'", " ") + "');" +
+            "(function(){try{window.speechSynthesis.cancel();var u=new SpeechSynthesisUtterance('" + jsText + "');" +
+            "u.rate=" + _ttsRate.toString() + ";u.pitch=" + _ttsPitch.toString() + ";u.volume=" + _ttsVolume.toString() + ";" +
             ( _ttsLanguage != null ? "u.lang='" + (_ttsLanguage ?? '') + "';" : "" ) +
             "window.speechSynthesis.speak(u);}catch(e){}})();"
           ]);
@@ -558,7 +839,9 @@ class NotificationService {
         return;
       }
       await _tts.stop();
-      await _tts.speak(text);
+      // Process text to sound more natural
+      final naturalText = _makeTextMoreNatural(text);
+      await _tts.speak(naturalText);
     } catch (e) {
       print('❌ TTS speak failed: $e');
     }
@@ -741,6 +1024,11 @@ class NotificationService {
     await _updateBadgeForCurrentUser();
   }
 
+  // Public method to get unread count for a specific user
+  Future<int> getUnreadCountForUser(String userId) async {
+    return await _getTotalUnreadCount(userId);
+  }
+
   void _attachRealtimeSpeakListener() {
     try {
       final uid = FirebaseAuth.instance.currentUser?.uid;
@@ -783,10 +1071,27 @@ class NotificationService {
       _fcmSub?.cancel();
       _fcmSub = FirebaseMessaging.onMessage.listen((RemoteMessage message) async {
         if (!_voiceAnnouncementsEnabled) return;
+        
+        // Check if this is from the current user (sender) - don't announce
+        final currentUserId = _auth.currentUser?.uid;
+        final senderId = message.data['senderId']?.toString();
+        if (currentUserId != null && senderId == currentUserId) {
+          return;
+        }
+        
+        // Use simplified announcements based on message type
+        final type = message.data['type']?.toString().toLowerCase() ?? '';
         final title = message.notification?.title ?? message.data['title']?.toString() ?? '';
         final body = message.notification?.body ?? message.data['body']?.toString() ?? '';
-        if (title.isEmpty && body.isEmpty) return;
-        await _speakSafe('${title.isNotEmpty ? '$title. ' : ''}$body');
+        
+        // Use same simplified logic as _speakForNotificationData
+        await _speakForNotificationData({
+          'type': type,
+          'title': title,
+          'body': body,
+          'senderId': senderId,
+          ...message.data,
+        });
       }, onError: (e) {
         print('❌ FCM onMessage listener error: $e');
       });
@@ -798,26 +1103,48 @@ class NotificationService {
   Future<void> _speakForNotificationData(Map<String, dynamic> data) async {
     try {
       final type = (data['type'] as String?)?.toLowerCase() ?? '';
-      if (type == 'new_order_seller') {
-        final buyerName = data['data']?['buyerName']?.toString() ?? 'a customer';
-        final total = double.tryParse(data['data']?['orderTotal']?.toString() ?? '') ?? 0;
-        await _speakSafe('New order received. Buyer $buyerName. Total R${total.toStringAsFixed(2)}.');
+      
+      // Check if this is a message from the current user (sender) - don't announce
+      final currentUserId = _auth.currentUser?.uid;
+      final senderId = data['senderId']?.toString();
+      if (currentUserId != null && senderId == currentUserId) {
+        // Don't announce messages sent by the current user
         return;
       }
-      if (type == 'order_status') {
-        final status = data['data']?['status']?.toString() ?? 'updated';
-        final orderNumber = data['orderNumber']?.toString() ?? data['data']?['orderNumber']?.toString() ?? '';
-        if (orderNumber.isNotEmpty) {
-          await _speakSafe('Order number $orderNumber. Status now $status.');
-        } else {
-          await _speakSafe('Your order status is now $status.');
-        }
-        return;
-      }
-      final title = data['title']?.toString() ?? '';
-      final body = data['body']?.toString() ?? '';
-      if (title.isNotEmpty || body.isNotEmpty) {
-        await _speakSafe('${title.isNotEmpty ? '$title. ' : ''}$body');
+      
+      // Simplified announcements based on notification type
+      switch (type) {
+        case 'new_order_seller':
+          await _speakSafe('You have a new order.');
+          return;
+        case 'order_status':
+          await _speakSafe('Order status updated.');
+          return;
+        case 'chat_message':
+          await _speakSafe('New message.');
+          return;
+        case 'payment_received':
+          await _speakSafe('Payment received.');
+          return;
+        case 'payout_processed':
+          await _speakSafe('Payout processed.');
+          return;
+        case 'product_approved':
+          await _speakSafe('Product approved.');
+          return;
+        case 'product_rejected':
+          await _speakSafe('Product rejected.');
+          return;
+        case 'delivery_update':
+          await _speakSafe('Delivery update.');
+          return;
+        case 'review_received':
+          await _speakSafe('New review received.');
+          return;
+        default:
+          // For unknown types, just announce generic notification
+          await _speakSafe('New notification.');
+          return;
       }
     } catch (e) {
       print('❌ speakForNotificationData failed: $e');
@@ -998,6 +1325,8 @@ class NotificationService {
       return Stream.empty();
     }
   }
+
+
 
   // Send new order notification to seller
   Future<void> sendNewOrderNotificationToSeller({
@@ -1314,7 +1643,7 @@ class NotificationService {
       await _storeNotificationInDatabase(
         userId: userId,
         title: 'Order Status Updated',
-        body: 'Order #$orderNumber status updated to $status',
+        body: '${formatOrderNumber(orderNumber)} status updated to $status',
         type: 'order_status',
         orderId: orderId,
         data: {
@@ -1332,7 +1661,7 @@ class NotificationService {
           try {
             _showWebNotification(
               title: 'Order Status: $status',
-              body: 'Order #$orderNumber status updated to $status',
+              body: '${formatOrderNumber(orderNumber)} status updated to $status',
               icon: '/icons/Icon-192.png',
               tag: 'order_$orderId',
               payload: {
@@ -1353,7 +1682,7 @@ class NotificationService {
         _notificationController.add({
           'type': 'order_status',
           'title': 'Order Status: $status',
-          'body': 'Order #$orderNumber status updated to $status',
+          'body': '${formatOrderNumber(orderNumber)} status updated to $status',
           'orderId': orderId,
           'orderNumber': orderNumber,
           'timestamp': DateTime.now().millisecondsSinceEpoch,
@@ -1373,7 +1702,7 @@ class NotificationService {
       // Voice announcement
       if (_voiceAnnouncementsEnabled) {
         try {
-          await _speakSafe('Order number $orderNumber. Status now $status.');
+          await _speakSafe('${formatOrderNumber(orderNumber)}. Status now $status.');
         } catch (_) {}
       }
       
@@ -1388,7 +1717,7 @@ class NotificationService {
         _notificationController.add({
           'type': 'order_status',
           'title': 'Order Update',
-          'body': 'Order #$orderNumber status updated to $status',
+          'body': '${formatOrderNumber(orderNumber)} status updated to $status',
           'orderId': orderId,
           'timestamp': DateTime.now().millisecondsSinceEpoch,
         });
@@ -1584,9 +1913,12 @@ class NotificationService {
     }
   }
 
-  /// Get total unread count for a user across all chats
+  /// Get total unread count for a user across all chats AND notifications
   Future<int> _getTotalUnreadCount(String userId) async {
     try {
+      int totalUnread = 0;
+      
+      // Count unread chat messages
       final chatsQuery = await _firestore
           .collection('chats')
           .where(Filter.or(
@@ -1595,13 +1927,29 @@ class NotificationService {
           ))
           .get();
       
-      int totalUnread = 0;
       for (var chat in chatsQuery.docs) {
         final data = chat.data();
         final unreadCount = data['unreadCount'] as int? ?? 0;
         totalUnread += unreadCount;
       }
       
+      // Count unread notifications (excluding chat messages)
+      final notificationsQuery = await _firestore
+          .collection('notifications')
+          .where('userId', isEqualTo: userId)
+          .where('read', isEqualTo: false)
+          .get();
+      
+      for (var notification in notificationsQuery.docs) {
+        final data = notification.data();
+        final type = data['type'] as String? ?? '';
+        // Only count non-chat notifications since chat messages are handled above
+        if (type != 'chat_message') {
+          totalUnread += 1;
+        }
+      }
+      
+      print('🔔 Total unread count for user $userId: $totalUnread (chats + notifications)');
       return totalUnread;
     } catch (e) {
       print('❌ Error getting total unread count: $e');

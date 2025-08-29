@@ -106,24 +106,7 @@ class _MinimalProductCardState extends State<MinimalProductCard>
         widget.sellerId,
       );
       
-      // Show success animation
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Row(
-            children: [
-              const Icon(Icons.check_circle, color: Colors.white),
-              const SizedBox(width: 8),
-              Text('${widget.name} added to cart'),
-            ],
-          ),
-          backgroundColor: const Color(0xFF2E7D32),
-          duration: const Duration(seconds: 2),
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
-          ),
-        ),
-      );
+      // No success toast
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(

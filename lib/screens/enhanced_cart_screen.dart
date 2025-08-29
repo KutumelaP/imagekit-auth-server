@@ -8,6 +8,7 @@ import '../widgets/home_navigation_button.dart';
 import '../widgets/bottom_action_bar.dart';
 import '../screens/CheckoutScreen.dart';
 import '../providers/cart_provider.dart';
+import '../services/optimized_checkout_service.dart';
 import 'package:flutter/services.dart';
 
 import '../widgets/loading_widget.dart';
@@ -34,6 +35,9 @@ class _EnhancedCartScreenState extends State<EnhancedCartScreen>
   @override
   void initState() {
     super.initState();
+    
+    // Pre-warm checkout cache for faster navigation
+    OptimizedCheckoutService.prewarmCache();
     
     _slideController = AnimationController(
       duration: const Duration(milliseconds: 600),

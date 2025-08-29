@@ -1,10 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:intl/intl.dart';
 import 'OrderTrackingScreen.dart';
-import 'OrderDetailScreen.dart';
 import 'SellerOrdersListScreen.dart';
 import '../theme/app_theme.dart';
 import '../utils/order_utils.dart';
@@ -238,7 +236,7 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen>
   @override
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
-    final isSmallScreen = screenWidth < 600;
+    final isSmallScreen = screenWidth < 400; // Consistent with ResponsiveUtils
     
     return Scaffold(
       appBar: AppBar(
@@ -517,13 +515,13 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen>
         print('🔍 DEBUG: OrderHistoryScreen - Found ${orders.length} orders');
 
                   return ListView.builder(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.only(left: 16, right: 16, top: 16, bottom: 4),
             itemCount: orders.length,
             itemBuilder: (context, index) {
               final orderData = orders[index].data() as Map<String, dynamic>;
               final orderId = orders[index].id;
               final screenWidth = MediaQuery.of(context).size.width;
-              final isSmallScreen = screenWidth < 600;
+              final isSmallScreen = screenWidth < 400; // Consistent with ResponsiveUtils
               return _buildOrderCard(orderId, orderData, isSmallScreen);
             },
           );
@@ -532,12 +530,15 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen>
   }
 
   Widget _buildOrderCard(String orderId, Map<String, dynamic> orderData, bool isSmallScreen) {
-    final orderNumber = OrderUtils.formatShortOrderNumber(orderData['orderNumber'] ?? 'N/A');
+    final rawOrderNumber = (orderData['orderNumber'] as String?) ?? orderId;
+    // Use more readable formatting - only use very short format for very small screens
+    final displayOrderNumber = MediaQuery.of(context).size.width < 400
+        ? OrderUtils.formatVeryShortOrderNumber(rawOrderNumber)
+        : OrderUtils.formatShortOrderNumber(rawOrderNumber);
     final timestamp = orderData['timestamp'] as Timestamp?;
     final status = orderData['status'] ?? 'pending';
     final totalPrice = (orderData['totalPrice'] as num?)?.toDouble() ?? 0.0;
     final items = orderData['items'] as List<dynamic>? ?? [];
-    final sellerId = orderData['sellerId'] ?? '';
     
     // Format date
     final formattedDate = timestamp != null 
@@ -555,16 +556,16 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen>
     // Responsive layout - stack vertically on very small screens
     return Container(
       margin: EdgeInsets.symmetric(
-        vertical: isSmallScreen ? 4.0 : 8.0,
+        vertical: isSmallScreen ? 2.0 : 4.0,
         horizontal: isSmallScreen ? 4.0 : 8.0,
       ),
       child: isSmallScreen
-          ? _buildVerticalLayout(orderId, productSummary, formattedDate, itemCount, status, totalPrice)
-          : _buildHorizontalLayout(orderId, productSummary, formattedDate, itemCount, status, totalPrice),
+          ? _buildVerticalLayout(orderId, displayOrderNumber, productSummary, formattedDate, itemCount, status, totalPrice)
+          : _buildHorizontalLayout(orderId, displayOrderNumber, productSummary, formattedDate, itemCount, status, totalPrice),
     );
   }
 
-  Widget _buildHorizontalLayout(String orderId, String productSummary, String formattedDate, int itemCount, String status, double totalPrice) {
+  Widget _buildHorizontalLayout(String orderId, String displayOrderNumber, String productSummary, String formattedDate, int itemCount, String status, double totalPrice) {
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
@@ -608,7 +609,28 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen>
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                       ),
-                      const SizedBox(height: 4),
+                      const SizedBox(height: 2),
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.tag,
+                            size: 14,
+                            color: AppTheme.mediumGrey,
+                          ),
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: Text(
+                              'Order $displayOrderNumber',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: AppTheme.mediumGrey,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 2),
                       Text(
                         formattedDate,
                         style: TextStyle(
@@ -616,7 +638,7 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen>
                           color: AppTheme.mediumGrey,
                         ),
                       ),
-                      const SizedBox(height: 4),
+                      const SizedBox(height: 2),
                       Row(
                         children: [
                           Icon(
@@ -663,7 +685,7 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen>
                           ),
                         ),
                       ),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 4),
                       Text(
                         'R${totalPrice.toStringAsFixed(2)}',
                         style: const TextStyle(
@@ -683,7 +705,7 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen>
     );
   }
 
-  Widget _buildVerticalLayout(String orderId, String productSummary, String formattedDate, int itemCount, String status, double totalPrice) {
+  Widget _buildVerticalLayout(String orderId, String displayOrderNumber, String productSummary, String formattedDate, int itemCount, String status, double totalPrice) {
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
@@ -724,6 +746,27 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen>
                   overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Icon(
+                      Icons.tag,
+                      size: 14,
+                      color: AppTheme.mediumGrey,
+                    ),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(
+                        'Order $displayOrderNumber',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AppTheme.mediumGrey,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
                 
                 // Date and item count
                 Row(

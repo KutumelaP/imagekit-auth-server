@@ -23,7 +23,7 @@ class _PlatformSettingsSectionState extends State<PlatformSettingsSection> {
   bool _registrationEnabled = true;
   bool _moderationEnabled = true;
   bool _saving = false;
-  Map<String, dynamic>? _settings;
+  // removed unused _settings
   // Pickup visibility
   bool _pargoVisible = true;
   bool _paxiVisible = true;
@@ -45,8 +45,9 @@ class _PlatformSettingsSectionState extends State<PlatformSettingsSection> {
     final data = doc.data();
     if (data != null) {
       setState(() {
-        _settings = data;
-        _feeController.text = (data['platformFee'] ?? '').toString();
+        // _settings removed; apply fields directly
+        // platformFee here is legacy and not used; fee managed in Payment Settings
+        _feeController.text = '';
         _nameController.text = data['platformName'] ?? '';
         _contactController.text = data['contactInfo'] ?? '';
         _registrationEnabled = data['registrationEnabled'] != false;
@@ -159,17 +160,8 @@ class _PlatformSettingsSectionState extends State<PlatformSettingsSection> {
                     ),
                   Row(
                     children: [
-                      Expanded(
-                        child: TextField(
-                          controller: _feeController,
-                          decoration: InputDecoration(
-                            labelText: 'Platform Fee (%)',
-                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                          ),
-                          keyboardType: TextInputType.numberWithOptions(decimal: true),
-                        ),
-                      ),
-                      const SizedBox(width: 16),
+                      // Removed duplicate Platform Fee field; controlled in Payment Settings
+                      const SizedBox(width: 0),
                       Expanded(
                         child: TextField(
                           controller: _nameController,
@@ -192,51 +184,72 @@ class _PlatformSettingsSectionState extends State<PlatformSettingsSection> {
                     ],
                   ),
                   const SizedBox(height: 16),
+                  _buildLogoUrlRow(context),
+                  const SizedBox(height: 16),
                   Container(
                     width: double.infinity,
                     child: Theme(
                       data: Theme.of(context),
-                      child: Row(
+                      child: Wrap(
+                        spacing: 16,
+                        runSpacing: 8,
                         children: [
-                          Expanded(
+                          SizedBox(
+                            width: 260,
                             child: SwitchListTile(
-                              title: const Text('Enable Registration'),
+                              dense: true,
+                              contentPadding: EdgeInsets.zero,
+                              title: const Text('Enable Registration', softWrap: false, overflow: TextOverflow.ellipsis),
                               value: _registrationEnabled,
                               onChanged: (v) => setState(() => _registrationEnabled = v),
                             ),
                           ),
-                          Expanded(
+                          SizedBox(
+                            width: 260,
                             child: SwitchListTile(
-                              title: const Text('Enable Moderation'),
+                              dense: true,
+                              contentPadding: EdgeInsets.zero,
+                              title: const Text('Enable Moderation', softWrap: false, overflow: TextOverflow.ellipsis),
                               value: _moderationEnabled,
                               onChanged: (v) => setState(() => _moderationEnabled = v),
                             ),
                           ),
-                          Expanded(
+                          SizedBox(
+                            width: 260,
                             child: SwitchListTile(
-                              title: const Text('Enable Maintenance Mode'),
+                              dense: true,
+                              contentPadding: EdgeInsets.zero,
+                              title: const Text('Enable Maintenance Mode', softWrap: false, overflow: TextOverflow.ellipsis),
                               value: _maintenanceMode,
                               onChanged: (v) => setState(() => _maintenanceMode = v),
                             ),
                           ),
-                          Expanded(
+                          SizedBox(
+                            width: 200,
                             child: SwitchListTile(
-                              title: const Text('Show PARGO'),
+                              dense: true,
+                              contentPadding: EdgeInsets.zero,
+                              title: const Text('Show PARGO', softWrap: false, overflow: TextOverflow.ellipsis),
                               value: _pargoVisible,
                               onChanged: (v) => setState(() => _pargoVisible = v),
                             ),
                           ),
-                          Expanded(
+                          SizedBox(
+                            width: 200,
                             child: SwitchListTile(
-                              title: const Text('Show PAXI'),
+                              dense: true,
+                              contentPadding: EdgeInsets.zero,
+                              title: const Text('Show PAXI', softWrap: false, overflow: TextOverflow.ellipsis),
                               value: _paxiVisible,
                               onChanged: (v) => setState(() => _paxiVisible = v),
                             ),
                           ),
-                          const SizedBox(width: 16),
-                          ElevatedButton(
-                            onPressed: _saving ? null : _saveSettings,
-                            child: _saving ? const Text('Saving...') : const Text('Save Settings'),
+                          SizedBox(
+                            width: 200,
+                            child: ElevatedButton(
+                              onPressed: _saving ? null : _saveSettings,
+                              child: _saving ? const Text('Saving...') : const Text('Save Settings'),
+                            ),
                           ),
                         ],
                       ),
@@ -370,3 +383,70 @@ class _PlatformSettingsSectionState extends State<PlatformSettingsSection> {
     );
   }
 } 
+
+Widget _buildLogoUrlRow(BuildContext context) => _LogoUrlRow();
+
+class _LogoUrlRow extends StatefulWidget {
+  @override
+  State<_LogoUrlRow> createState() => _LogoUrlRowState();
+}
+
+class _LogoUrlRowState extends State<_LogoUrlRow> {
+  final TextEditingController _logoCtrl = TextEditingController();
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final snap = await FirebaseFirestore.instance.collection('admin_settings').doc('branding').get();
+      _logoCtrl.text = (snap.data()?['logoUrl'] as String? ?? '').trim();
+    } catch (_) {}
+    if (mounted) setState(() => _loading = false);
+  }
+
+  @override
+  void dispose() {
+    _logoCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) return const SizedBox.shrink();
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        Expanded(
+          child: TextField(
+            controller: _logoCtrl,
+            decoration: InputDecoration(
+              labelText: 'Brand Logo URL (used in PDFs/emails)',
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        ElevatedButton.icon(
+          onPressed: () async {
+            await FirebaseFirestore.instance.collection('admin_settings').doc('branding').set({
+              'logoUrl': _logoCtrl.text.trim(),
+              'updatedAt': FieldValue.serverTimestamp(),
+            }, SetOptions(merge: true));
+            if (!mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Logo URL saved.')));
+          },
+          icon: const Icon(Icons.save),
+          label: const Text('Save Logo'),
+        ),
+        const SizedBox(width: 12),
+        if ((_logoCtrl.text).trim().isNotEmpty)
+          SizedBox(height: 40, width: 120, child: Image.network(_logoCtrl.text.trim(), fit: BoxFit.contain)),
+      ],
+    );
+  }
+}

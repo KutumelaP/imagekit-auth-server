@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'OrderTrackingScreen.dart';
 import 'package:image_picker/image_picker.dart';
@@ -10,6 +11,22 @@ class OrderDetailScreen extends StatelessWidget {
   final String orderId;
 
   const OrderDetailScreen({super.key, required this.orderId});
+
+  /// Helper function to safely parse timestamps from different formats
+  DateTime? _parseTimestamp(dynamic timestamp) {
+    if (timestamp == null) return null;
+    
+    if (timestamp is Timestamp) {
+      return timestamp.toDate();
+    } else if (timestamp is String) {
+      try {
+        return DateTime.parse(timestamp);
+      } catch (e) {
+        return null;
+      }
+    }
+    return null;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -41,6 +58,10 @@ class OrderDetailScreen extends StatelessWidget {
           final excludedZones = (order['excludedZones'] as List?)?.join(', ') ?? '';
           final platformFee = order['platformFee'] ?? 0.0;
           final sellerPayout = order['sellerPayout'] ?? (order['totalPrice'] ?? 0.0) - platformFee;
+          final orderType = (order['orderType'] as String?)?.toLowerCase() ?? '';
+          final pickupAddress = order['pickupPointAddress'] as String?;
+          final pickupName = order['pickupPointName'] as String?;
+          final pickupType = order['pickupPointType'] as String?; // pargo, paxi, local_store
 
           return Padding(
             padding: const EdgeInsets.all(16),
@@ -99,6 +120,16 @@ class OrderDetailScreen extends StatelessWidget {
                         _buildDetailRow('Excluded Delivery Zones', excludedZones),
                       if (driver != null)
                         _buildDetailRow('Driver', '${driver['name'] ?? ''} (${driver['phone'] ?? ''})'),
+                      if (orderType == 'pickup' && pickupAddress != null && pickupAddress.isNotEmpty) ...[
+                        const SizedBox(height: 12),
+                        Text('Pickup Details', style: AppTheme.headlineMedium),
+                        const SizedBox(height: 8),
+                        if (pickupName != null && pickupName.isNotEmpty)
+                          _buildDetailRow('Location', pickupName),
+                        _buildDetailRow('Address', pickupAddress),
+                        if (pickupType != null)
+                          _buildDetailRow('Pickup Type', pickupType == 'local_store' ? 'Store pickup' : pickupType.toUpperCase()),
+                      ],
                     ],
                   ),
                 ),
@@ -131,8 +162,8 @@ class OrderDetailScreen extends StatelessWidget {
                             style: AppTheme.bodyMedium,
                           );
                           updates.sort((a, b) {
-                            final ta = (a['timestamp'] as Timestamp?)?.toDate() ?? DateTime.now();
-                            final tb = (b['timestamp'] as Timestamp?)?.toDate() ?? DateTime.now();
+                            final ta = _parseTimestamp(a['timestamp']) ?? DateTime.now();
+                            final tb = _parseTimestamp(b['timestamp']) ?? DateTime.now();
                             return ta.compareTo(tb);
                           });
                           return ListView.builder(
@@ -141,7 +172,7 @@ class OrderDetailScreen extends StatelessWidget {
                             itemCount: updates.length,
                             itemBuilder: (context, i) {
                               final u = updates[i];
-                              final ts = (u['timestamp'] as Timestamp).toDate();
+                              final ts = _parseTimestamp(u['timestamp']) ?? DateTime.now();
                               return ListTile(
                                 leading: Icon(
                                   i == 0 ? Icons.circle : Icons.check_circle_outline,
@@ -376,7 +407,13 @@ class _RequestReturnDialogState extends State<RequestReturnDialog> {
                             color: Colors.grey.shade300,
                             child: Icon(Icons.image, color: Colors.grey, size: 24),
                           )
-                        : Image.file(File(x.path), width: 48, height: 48, fit: BoxFit.cover),
+                        : kIsWeb 
+                          ? Image.network(x.path, width: 48, height: 48, fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) => Container(
+                                color: Colors.grey[200], 
+                                child: const Icon(Icons.error, size: 24, color: Colors.red)
+                              ))
+                          : Image.file(File(x.path), width: 48, height: 48, fit: BoxFit.cover),
                   ),
                 )),
                 if (_photos.length < 3)

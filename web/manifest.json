@@ -5,12 +5,22 @@
     "display": "standalone",
     "background_color": "#1F4654",
     "theme_color": "#1F4654",
-    "description": "Your local food and goods marketplace - Buy and sell locally",
+    "description": "Your local food and goods marketplace - Buy and sell locally across South Africa",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "scope": "/",
-    "lang": "en",
-    "categories": ["shopping", "food", "marketplace"],
+    "lang": "en-ZA",
+    "categories": ["shopping", "food", "marketplace", "business", "lifestyle"],
+    "display_override": ["standalone", "minimal-ui", "browser"],
+    "launch_handler": {
+        "client_mode": "focus-existing"
+    },
+    "id": "mzansi-marketplace-pwa",
+    "edge_side_panel": {
+        "preferred_width": 400
+    },
+    "handle_links": "preferred",
+    "capture_links": "existing-client-navigate",
     "icons": [
         {
             "src": "icons/Icon-192.png",
@@ -61,6 +71,52 @@
                     "sizes": "192x192"
                 }
             ]
+        },
+        {
+            "name": "Messages",
+            "short_name": "Chat",
+            "description": "View your messages",
+            "url": "/chat?source=pwa",
+            "icons": [
+                {
+                    "src": "icons/Icon-192.png",
+                    "sizes": "192x192"
+                }
+            ]
+        },
+        {
+            "name": "Orders",
+            "short_name": "Orders",
+            "description": "Track your orders",
+            "url": "/orders?source=pwa",
+            "icons": [
+                {
+                    "src": "icons/Icon-192.png",
+                    "sizes": "192x192"
+                }
+            ]
+        }
+    ],
+    "share_target": {
+        "action": "/share",
+        "method": "POST",
+        "enctype": "multipart/form-data",
+        "params": {
+            "title": "title",
+            "text": "text",
+            "url": "url",
+            "files": [
+                {
+                    "name": "images",
+                    "accept": ["image/*"]
+                }
+            ]
+        }
+    },
+    "protocol_handlers": [
+        {
+            "protocol": "web+marketplace",
+            "url": "/?protocol=%s"
         }
     ]
 }

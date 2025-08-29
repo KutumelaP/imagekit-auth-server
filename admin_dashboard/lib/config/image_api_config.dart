@@ -3,7 +3,8 @@ class ImageApiConfig {
   // Example: https://your-project.vercel.app/api/imagekit
   static const String baseUrl = String.fromEnvironment(
     'IMAGE_API_BASE',
-    defaultValue: 'https://your-vercel-domain.vercel.app/api/imagekit',
+    // Set to your deployed endpoint; fallback to Cloud Function proxy if set
+    defaultValue: 'https://us-central1-marketplace-8d6bd.cloudfunctions.net',
   );
   
   static String listUrl({int limit = 100, int skip = 0, String? path, String? searchQuery}) {
@@ -14,8 +15,13 @@ class ImageApiConfig {
     if (path != null) params['path'] = path;
     if (searchQuery != null) params['searchQuery'] = searchQuery;
     final qp = params.entries.map((e) => '${Uri.encodeQueryComponent(e.key)}=${Uri.encodeQueryComponent(e.value)}').join('&');
-    return '$baseUrl/list?$qp';
+    // If using Cloud Function proxy, adjust paths accordingly; else assume /api/imagekit
+    final isCf = baseUrl.contains('cloudfunctions.net');
+    return isCf ? '$baseUrl/listImagesHttp?$qp' : '$baseUrl/api/imagekit/list?$qp';
   }
   
-  static String batchDeleteUrl() => '$baseUrl/batchDelete';
+  static String batchDeleteUrl() {
+    final isCf = baseUrl.contains('cloudfunctions.net');
+    return isCf ? '$baseUrl/batchDeleteImagesHttp' : '$baseUrl/api/imagekit/batchDelete';
+  }
 }

@@ -1,9 +1,12 @@
 // import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../services/notification_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 // import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
 // import 'package:http/http.dart' as http;
@@ -32,6 +35,11 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
   final _storeNameController = TextEditingController();
   final _contactController = TextEditingController();
   final _locationController = TextEditingController();
+  final _addressLine1Controller = TextEditingController();
+  final _addressLine2Controller = TextEditingController();
+  final _cityController = TextEditingController();
+  final _postalCodeController = TextEditingController();
+  String? _formattedAddress;
   String? _selectedStoreCategory;
   final _deliveryFeeController = TextEditingController();
   final _minOrderController = TextEditingController();
@@ -96,6 +104,75 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
   dynamic _storeImage; // Can be File or XFile
   // String? _storeImageUrl;
   List<dynamic> _extraPhotos = []; // Can contain File or XFile
+
+  Widget _buildWebCompatibleImage(dynamic imageFile, {BoxFit? fit, double? width, double? height, Widget Function(BuildContext, Object, StackTrace?)? errorBuilder}) {
+    if (imageFile == null) {
+      return Container(
+        color: Colors.grey[200],
+        child: const Icon(Icons.error, size: 32, color: Colors.red),
+      );
+    }
+
+    if (kIsWeb) {
+      // On web, use Image.memory with file bytes
+      if (imageFile is XFile) {
+        return FutureBuilder<Uint8List>(
+          future: imageFile.readAsBytes(),
+          builder: (context, snapshot) {
+            if (snapshot.hasData) {
+              return Image.memory(
+                snapshot.data!,
+                fit: fit ?? BoxFit.cover,
+                width: width,
+                height: height,
+                errorBuilder: errorBuilder,
+              );
+            } else if (snapshot.hasError) {
+              return errorBuilder?.call(context, snapshot.error!, StackTrace.current) ??
+                  Container(
+                    color: Colors.grey[200],
+                    child: const Icon(Icons.error, size: 32, color: Colors.red),
+                  );
+            } else {
+              return Container(
+                color: Colors.grey[100],
+                child: const Center(
+                  child: CircularProgressIndicator(),
+                ),
+              );
+            }
+          },
+        );
+      } else {
+        // Fallback for unknown types on web
+        return Container(
+          color: Colors.grey[200],
+          child: const Icon(Icons.error, size: 32, color: Colors.red),
+        );
+      }
+    } else {
+      // On mobile, use Image.file
+      File file;
+      if (imageFile is XFile) {
+        file = File(imageFile.path);
+      } else if (imageFile is File) {
+        file = imageFile;
+      } else {
+        return Container(
+          color: Colors.grey[200],
+          child: const Icon(Icons.error, size: 32, color: Colors.red),
+        );
+      }
+
+      return Image.file(
+        file,
+        fit: fit ?? BoxFit.cover,
+        width: width,
+        height: height,
+        errorBuilder: errorBuilder,
+      );
+    }
+  }
   // List<String> _extraPhotoUrls = [];
   dynamic _introVideo; // Can be File or XFile
   // String? _introVideoUrl;
@@ -176,11 +253,16 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
                 size: 28,
               ),
               const SizedBox(width: 12),
-              const Text(
-                'Registration Complete!',
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 20,
+              const Expanded(
+                child: Text(
+                  'Registration Complete!',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 20,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
+                  softWrap: false,
                 ),
               ),
             ],
@@ -218,12 +300,17 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
                           size: 20,
                         ),
                         const SizedBox(width: 8),
-                        const Text(
-                          'Important Notice',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16,
-                            color: Colors.black87,
+                        const Expanded(
+                          child: Text(
+                            'Important Notice',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                              color: Colors.black87,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                            maxLines: 1,
+                            softWrap: false,
                           ),
                         ),
                       ],
@@ -322,6 +409,10 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
     _storeNameController.dispose();
     _contactController.dispose();
     _locationController.dispose();
+    _addressLine1Controller.dispose();
+    _addressLine2Controller.dispose();
+    _cityController.dispose();
+    _postalCodeController.dispose();
     _deliveryFeeController.dispose();
     _minOrderController.dispose();
     _storyController.dispose();
@@ -659,6 +750,14 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
     return '$hour:$minute';
   }
 
+  // Helper function to format TimeOfDay to AM/PM for display
+  String _formatTimeOfDayAmPm(TimeOfDay time) {
+    final hour = time.hourOfPeriod == 0 ? 12 : time.hourOfPeriod;
+    final minute = time.minute.toString().padLeft(2, '0');
+    final period = time.period == DayPeriod.am ? 'AM' : 'PM';
+    return '$hour:$minute $period';
+  }
+
   Future<String?> _uploadImageToImageKit(dynamic file) async {
     try {
       final user = FirebaseAuth.instance.currentUser;
@@ -755,8 +854,19 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
       );
 
       final placemark = placemarks.first;
-      final address = '${placemark.locality}, ${placemark.country}';
-      _locationController.text = address;
+      final line1 = [placemark.street, placemark.subLocality].where((e) => e != null && e!.isNotEmpty).join(', ');
+      final line2 = [placemark.locality, placemark.administrativeArea].where((e) => e != null && e!.isNotEmpty).join(', ');
+      final postal = placemark.postalCode ?? '';
+      final country = placemark.country ?? '';
+      final formatted = [line1, line2, postal, country].where((e) => e != null && e!.toString().trim().isNotEmpty).join(', ');
+      setState(() {
+        _addressLine1Controller.text = line1;
+        _addressLine2Controller.text = line2;
+        _cityController.text = placemark.locality ?? '';
+        _postalCodeController.text = postal;
+        _formattedAddress = formatted;
+        _locationController.text = formatted.isNotEmpty ? formatted : (_locationController.text.isNotEmpty ? _locationController.text : '${placemark.locality}, ${placemark.country}');
+      });
     } catch (e) {
       print('Error getting address: $e');
     }
@@ -774,6 +884,61 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
         ),
       );
       return;
+    }
+
+    // Service selection validation: at least one service must be enabled
+    final bool anyServiceEnabled = _isDeliveryAvailable || _paxiEnabled || _pargoEnabled;
+    if (!anyServiceEnabled) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Choose at least one service: Delivery or PAXI/Pargo'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    // Food category requires local delivery to be visible (nationwide pickup is non-food only)
+    bool _isFoodCat(String? c) {
+      final s = (c ?? '').toLowerCase();
+      return s.contains('food') || s.contains('meal') || s.contains('bak') || s.contains('pastr') || s.contains('dessert') || s.contains('beverage') || s.contains('drink') || s.contains('coffee') || s.contains('tea') || s.contains('fruit') || s.contains('vegetable') || s.contains('produce') || s.contains('snack');
+    }
+    if (_isFoodCat(_selectedStoreCategory) && !_isDeliveryAvailable) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Food stores must enable local delivery to be visible.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    // If delivery is enabled, coordinates are required for distance-based discovery
+    if (_isDeliveryAvailable && (_latitude == null || _longitude == null)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Location is required for delivery. Please enable location and set your store location.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    // Enforce category delivery caps (Food: 20km, Non-food: 50km)
+    double _capForCategory(String? c) {
+      return _isFoodCat(c) ? 20.0 : 50.0;
+    }
+    final double cap = _capForCategory(_selectedStoreCategory);
+    if (_deliveryRange > cap) {
+      setState(() {
+        _deliveryRange = cap;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Delivery range capped to ${cap.toStringAsFixed(0)} km for your category.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
     }
 
     // Additional validation for PAXI service
@@ -856,8 +1021,8 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
         }
       }
 
-      // Save to users collection (as per the existing data structure)
-      await FirebaseFirestore.instance.collection('users').doc(user.uid).update({
+      // Save to users collection (merge to avoid touching forbidden fields)
+      await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
         'email': user.email, // Add the logged-in user's email
         'storeName': _storeNameController.text.trim(),
         'storeCategory': _selectedStoreCategory,
@@ -899,7 +1064,12 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
         'verified': false,
         'paused': false,
         'platformFeeExempt': false,
-      });
+        'formattedAddress': _formattedAddress ?? _locationController.text.trim(),
+        'addressLine1': _addressLine1Controller.text.trim(),
+        'addressLine2': _addressLine2Controller.text.trim(),
+        'city': _cityController.text.trim(),
+        'postalCode': _postalCodeController.text.trim(),
+      }, SetOptions(merge: true));
 
       // Save payout details to secure sub-document
       try {
@@ -930,13 +1100,19 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
         } catch (_) {}
       }
 
-      await FirebaseFirestore.instance.collection('users').doc(user.uid).update({
-        'role': 'seller',
-      });
+      // Call Cloud Function to update role (handles security rules properly)
+      try {
+        final callable = FirebaseFunctions.instance.httpsCallable('registerAsSeller');
+        final result = await callable.call();
+        print('✅ Seller role updated via Cloud Function: ${result.data}');
+      } catch (e) {
+        print('❌ Failed to update seller role via Cloud Function: $e');
+        throw Exception('Failed to register as seller. Please try again.');
+      }
 
       // TTS welcome (seller)
       try {
-        await NotificationService().speakPreview('Congrats—your seller account is live. Let’s get those orders rolling.');
+        await NotificationService().speakPreview("Congrats—your seller account is live. Let's get those orders rolling.");
       } catch (_) {}
 
       // Refresh user data in provider to reflect the role change
@@ -1324,7 +1500,7 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
                               );
                             },
                           )
-                        : Image.file(
+                        : _buildWebCompatibleImage(
                             imageFile,
                             fit: BoxFit.cover,
                             errorBuilder: (context, error, stackTrace) {
@@ -1680,6 +1856,12 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
     );
   }
 
+  double _getCategoryDeliveryCap() {
+    final cat = (_selectedStoreCategory ?? '').toLowerCase();
+    if (cat.contains('food')) return 20.0;
+    return 50.0;
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -1839,6 +2021,41 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
                         prefixIcon: Icons.location_on,
                         validator: (value) => value == null || value.isEmpty ? 'Enter store location' : null,
                       ),
+                      // Detailed Address
+                      _buildEnhancedTextField(
+                        controller: _addressLine1Controller,
+                        label: 'Address Line 1',
+                        hint: 'Street and number',
+                        prefixIcon: Icons.home,
+                      ),
+                      _buildEnhancedTextField(
+                        controller: _addressLine2Controller,
+                        label: 'Address Line 2 (optional)',
+                        hint: 'Complex/Suburb',
+                        prefixIcon: Icons.apartment,
+                      ),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _buildEnhancedTextField(
+                              controller: _cityController,
+                              label: 'City/Town',
+                              hint: 'e.g., Kempton Park',
+                              prefixIcon: Icons.location_city,
+                            ),
+                          ),
+                          SizedBox(width: ResponsiveUtils.getHorizontalPadding(context) * 0.5),
+                          Expanded(
+                            child: _buildEnhancedTextField(
+                              controller: _postalCodeController,
+                              label: 'Postal Code',
+                              hint: 'e.g., 1619',
+                              prefixIcon: Icons.local_post_office,
+                              keyboardType: TextInputType.number,
+                            ),
+                          ),
+                        ],
+                      ),
                       Container(
                         width: double.infinity,
                         height: 48,
@@ -1910,7 +2127,7 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
                       ),
                       _buildSwitchTile(
                         title: 'Offer Delivery',
-                        subtitle: 'Provide delivery service to customers',
+                        subtitle: 'Provide local doorstep delivery to customers',
                         value: _isDeliveryAvailable,
                         onChanged: (value) => setState(() => _isDeliveryAvailable = value),
                       ),
@@ -1919,6 +2136,60 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
                         subtitle: 'Customers can pay cash on delivery/pickup (fees apply)',
                         value: _allowCOD,
                         onChanged: (value) => setState(() => _allowCOD = value),
+                      ),
+                      const SizedBox(height: 16),
+                      // Pickup Services (decoupled from Offer Delivery)
+                      Container(
+                        margin: const EdgeInsets.only(bottom: 16),
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: AppTheme.angel,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: AppTheme.breeze.withOpacity(0.3),
+                          ),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(Icons.store_mall_directory, color: AppTheme.deepTeal, size: 20),
+                                const SizedBox(width: 8),
+                                Text(
+                                  'Pickup Services',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppTheme.deepTeal,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Pickup via PAXI/Pargo does not require Offer Delivery. Non‑food pickup stores are discoverable via the Nationwide filter.',
+                              style: TextStyle(fontSize: 12, color: AppTheme.mediumGrey),
+                            ),
+                            const SizedBox(height: 8),
+                            if (_paxiVisible)
+                              SwitchListTile(
+                                title: const Text('Enable PAXI Pickup Service'),
+                                subtitle: const Text('Let customers collect at PAXI points'),
+                                value: _paxiEnabled,
+                                onChanged: (v) => setState(() => _paxiEnabled = v),
+                                activeColor: AppTheme.primaryGreen,
+                              ),
+                            if (_pargoVisible)
+                              SwitchListTile(
+                                title: const Text('Enable Pargo Pickup Service'),
+                                subtitle: const Text('Let customers collect at Pargo points'),
+                                value: _pargoEnabled,
+                                onChanged: (v) => setState(() => _pargoEnabled = v),
+                                activeColor: AppTheme.primaryGreen,
+                              ),
+                          ],
+                        ),
                       ),
                       if (_isDeliveryAvailable) ...[
                         // Delivery Fee Information Note
@@ -2531,10 +2802,10 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
                                       overlayShape: const RoundSliderOverlayShape(overlayRadius: 16),
                                     ),
                                     child: Slider(
-                                      value: _deliveryRange.clamp(0.0, 1000.0),
+                                      value: _deliveryRange.clamp(0.0, _getCategoryDeliveryCap()),
                                       min: 0.0,
-                                      max: 1000.0,
-                                      divisions: 100, // 10km increments
+                                      max: _getCategoryDeliveryCap(),
+                                      divisions: _getCategoryDeliveryCap().toInt(),
                                       label: '${_deliveryRange.toStringAsFixed(0)} km',
                                       onChanged: (value) {
                                         setState(() {
@@ -2555,7 +2826,7 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
                                         ),
                                       ),
                                       Text(
-                                        '1000 km',
+                                        '${_getCategoryDeliveryCap().toStringAsFixed(0)} km',
                                         style: TextStyle(
                                           fontSize: 12,
                                           color: AppTheme.mediumGrey,
@@ -2565,104 +2836,54 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
                                   ),
                                   const SizedBox(height: 16),
                                   
-                                  // Manual Range Input
-                                  Row(
-                                    children: [
-                                      Expanded(
-                                        child: Text(
-                                          'Need more than 1000km?',
-                                          style: TextStyle(
-                                            fontSize: 12,
-                                            color: AppTheme.mediumGrey,
-                                            fontStyle: FontStyle.italic,
-                                          ),
-                                        ),
-                                      ),
-                                      Container(
-                                        width: 100,
-                                        child: TextFormField(
-                                          controller: _customRangeController,
-                                          keyboardType: TextInputType.number,
-                                          enabled: !_isLoading,
-                                          style: TextStyle(
-                                            fontSize: 12,
-                                            color: AppTheme.deepTeal,
-                                          ),
-                                          decoration: InputDecoration(
-                                            hintText: 'Custom km',
-                                            hintStyle: TextStyle(
-                                              color: AppTheme.breeze,
-                                              fontSize: 12,
-                                            ),
-                                            filled: true,
-                                            fillColor: AppTheme.whisper,
-                                            border: OutlineInputBorder(
-                                              borderRadius: BorderRadius.circular(8),
-                                              borderSide: BorderSide(color: AppTheme.breeze.withOpacity(0.3)),
-                                            ),
-                                            enabledBorder: OutlineInputBorder(
-                                              borderRadius: BorderRadius.circular(8),
-                                              borderSide: BorderSide(color: AppTheme.breeze.withOpacity(0.3)),
-                                            ),
-                                            focusedBorder: OutlineInputBorder(
-                                              borderRadius: BorderRadius.circular(8),
-                                              borderSide: BorderSide(color: AppTheme.deepTeal, width: 1),
-                                            ),
-                                            contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                                          ),
-                                          onChanged: (value) {
-                                            if (value.isNotEmpty) {
-                                              final customRange = double.tryParse(value);
-                                              if (customRange != null && customRange > 1000) {
-                                                setState(() {
-                                                  _deliveryRange = customRange;
-                                                });
-                                              }
-                                            }
-                                          },
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                                                  ],
-                                ),
-                                const SizedBox(height: 12),
-                                Container(
-                                  padding: const EdgeInsets.all(12),
-                                  decoration: BoxDecoration(
-                                    color: AppTheme.primaryGreen.withOpacity(0.1),
-                                    borderRadius: BorderRadius.circular(8),
-                                    border: Border.all(
-                                      color: AppTheme.primaryGreen.withOpacity(0.3),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    'Notes: Delivery range applies only when Offer Delivery is ON. Food capped at 20 km; non‑food at 50 km. If you offer pickup only (Pargo/PAXI), delivery range is ignored. Non‑food pickup stores can be discovered with the Nationwide filter.',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      color: Colors.grey[500],
+                                      fontStyle: FontStyle.italic,
                                     ),
                                   ),
-                                  child: Row(
-                                    children: [
-                                      Icon(
-                                        Icons.info_outline,
-                                        size: 16,
-                                        color: AppTheme.primaryGreen,
-                                      ),
-                                      const SizedBox(width: 8),
-                                      Expanded(
-                                        child: Text(
-                                          'Important: Your store will only be visible to customers within your delivery range. Customers outside this range won\'t see your store in search results.',
-                                          style: TextStyle(
-                                            fontSize: 11,
-                                            color: AppTheme.primaryGreen,
-                                            fontWeight: FontWeight.w500,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
+                                ],
+                              ),
+                              const SizedBox(height: 12),
+                              Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: AppTheme.primaryGreen.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(
+                                    color: AppTheme.primaryGreen.withOpacity(0.3),
                                   ),
                                 ),
-                              ],
-                            ),
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      Icons.info_outline,
+                                      size: 16,
+                                      color: AppTheme.primaryGreen,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        'Important: Your store will only be visible to customers within your delivery range. Customers outside this range won\'t see your store in search results.',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: AppTheme.primaryGreen,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
                           ),
+                        ),
                         
-                        // PAXI Pickup Service Section (hidden if disabled globally)
-                        if (_paxiVisible) Container(
+                        // PAXI Pickup Service Section (moved above; keep disabled here to avoid duplicate UI)
+                        if (false && _paxiVisible) Container(
                           margin: const EdgeInsets.only(bottom: 16),
                           padding: const EdgeInsets.all(16),
                           decoration: BoxDecoration(
@@ -2773,8 +2994,8 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
                           ),
                         ),
                         
-                        // Pargo Pickup Service Section (hidden if disabled globally)
-                        if (_pargoVisible) Container(
+                        // Pargo Pickup Service Section (moved above; keep disabled here to avoid duplicate UI)
+                        if (false && _pargoVisible) Container(
                           margin: const EdgeInsets.only(bottom: 16),
                           padding: const EdgeInsets.all(16),
                           decoration: BoxDecoration(
@@ -2959,7 +3180,7 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
                                               ),
                                             ),
                                             Text(
-                                              _formatTimeOfDay(_deliveryStartTime),
+                                              _formatTimeOfDayAmPm(_deliveryStartTime),
                                               style: TextStyle(
                                                 fontSize: 16,
                                                 fontWeight: FontWeight.w600,
@@ -3013,7 +3234,7 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
                                               ),
                                             ),
                                             Text(
-                                              _formatTimeOfDay(_deliveryEndTime),
+                                              _formatTimeOfDayAmPm(_deliveryEndTime),
                                               style: TextStyle(
                                                 fontSize: 16,
                                                 fontWeight: FontWeight.w600,
@@ -3110,7 +3331,7 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
                                               ),
                                             ),
                                             Text(
-                                              _formatTimeOfDay(_storeOpenTime),
+                                              _formatTimeOfDayAmPm(_storeOpenTime),
                                               style: TextStyle(
                                                 fontSize: 16,
                                                 fontWeight: FontWeight.w600,
@@ -3164,7 +3385,7 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
                                               ),
                                             ),
                                             Text(
-                                              _formatTimeOfDay(_storeCloseTime),
+                                              _formatTimeOfDayAmPm(_storeCloseTime),
                                               style: TextStyle(
                                                 fontSize: 16,
                                                 fontWeight: FontWeight.w600,
@@ -3226,7 +3447,7 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
                         validator: (v) => (v == null || v.isEmpty) ? 'Enter branch code' : null,
                       ),
                       DropdownButtonFormField<String>(
-                        value: _accountType,
+                        value: const ['cheque','savings','business'].contains(_accountType) ? _accountType : 'cheque',
                         decoration: const InputDecoration(
                           labelText: 'Account Type',
                           border: OutlineInputBorder(),
@@ -3237,7 +3458,7 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
                           DropdownMenuItem(value: 'savings', child: Text('Savings')),
                           DropdownMenuItem(value: 'business', child: Text('Business')),
                         ],
-                        onChanged: (v) => setState(() => _accountType = v ?? 'cheque'),
+                        onChanged: (v) => setState(() => _accountType = (const ['cheque','savings','business'].contains(v) ? v : 'cheque') ?? 'cheque'),
                       ),
                     ],
                   ),
@@ -3410,7 +3631,7 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
                                                 height: 100,
                                                 fit: BoxFit.cover,
                                               )
-                                            : Image.file(
+                                            : _buildWebCompatibleImage(
                                                 photo,
                                                 width: 100,
                                                 height: 100,

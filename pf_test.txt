@@ -1,0 +1,1 @@
+merchant_id=10000100&merchant_key=46f0cd694581a&amount=100.00&item_name=Test+Product&signature=f103e22c0418655fb03991538c51bfd5
