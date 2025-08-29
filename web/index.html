@@ -51,7 +51,7 @@
       --brand-subtle: #cbd5e1;
       --brand-accent: #22c55e;
     }
-    #ios-pwa-gate { display:none; position:fixed; inset:0; z-index:2147483647; background: var(--brand-bg-grad); color: var(--brand-text); }
+    #ios-pwa-gate { display:none; position:fixed; inset:0; z-index:2147483647; background: rgba(31,70,84,0.95); color: var(--brand-text); backdrop-filter: blur(8px); }
     #ios-pwa-gate .wrap { max-width:560px; margin:0 auto; padding:32px 20px; }
     #ios-pwa-gate .card { background: var(--brand-card); border: 1px solid rgba(255,255,255,0.08); backdrop-filter: blur(8px); border-radius: 12px; padding: 20px; box-shadow: 0 8px 24px rgba(0,0,0,0.25); }
     #ios-pwa-gate .logo { display:flex; align-items:center; gap:12px; margin-bottom: 12px; }
@@ -86,13 +86,35 @@
     (function(){
       var isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
       var isStandalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone === true;
+      
+      // Check if user has dismissed PWA gate or if this is a direct store URL
+      var pwaGateDismissed = localStorage.getItem('pwa_gate_dismissed') === '1' || 
+                            sessionStorage.getItem('pwa_reminder_dismissed') === '1';
+      var isDirectStoreUrl = window.location.pathname.includes('/store/') || window.location.search.includes('store') || 
+                            window.location.hash.includes('store') || window.location.pathname.includes('/seller/');
+      
       if (isIOS && !isStandalone) {
-        window.__blockFlutter = true;
-        console.warn('[PWA Gate] iOS Safari tab detected. Blocking Flutter and showing install overlay.');
-        window.addEventListener('DOMContentLoaded', function(){
-          var gate = document.getElementById('ios-pwa-gate');
-          if (gate) gate.style.display = 'block';
-        });
+        // Always show PWA gate for Safari users (they need the better experience)
+        if (!pwaGateDismissed) {
+          console.info('[PWA Gate] iOS Safari detected. Encouraging PWA installation for better performance.');
+          window.addEventListener('DOMContentLoaded', function(){
+            var gate = document.getElementById('ios-pwa-gate');
+            if (gate) {
+              // Customize message based on whether it's a store URL
+              if (isDirectStoreUrl) {
+                var title = gate.querySelector('h1');
+                var description = gate.querySelector('p');
+                if (title) title.textContent = 'Install App to Access This Store';
+                if (description) description.textContent = 'This store link works best in the installed app. Safari has performance issues with marketplace features.';
+              }
+              
+              gate.style.display = 'block';
+              // Make it prominent but allow dismissal
+              gate.style.pointerEvents = 'none';
+              gate.querySelector('.card').style.pointerEvents = 'all';
+            }
+          });
+        }
       }
     })();
   </script>
@@ -582,14 +604,50 @@
     
     // iOS Safari specific: Prevent reload on tab switch
     if (/iPhone|iPad|iPod/.test(navigator.userAgent)) {
-      // Keep connection alive
-      setInterval(function() {
-        // Minimal activity to prevent iOS from killing the page
-        if (!document.hidden) {
-          // Just log to keep JavaScript engine active
-          console.debug('📱 Keeping iOS Safari active');
+      // Enhanced keep-alive system for iOS PWA
+      let keepAliveInterval;
+      
+      function startKeepAlive() {
+        if (keepAliveInterval) clearInterval(keepAliveInterval);
+        keepAliveInterval = setInterval(function() {
+          if (!document.hidden) {
+            // Multiple strategies to keep the page alive
+            console.debug('📱 iOS PWA keep-alive ping');
+            
+            // 1. Touch localStorage to maintain storage connection
+            try {
+              localStorage.setItem('pwa_heartbeat', Date.now().toString());
+            } catch(e) {}
+            
+            // 2. Dispatch a minimal event to keep event system active
+            window.dispatchEvent(new CustomEvent('pwa-keepalive'));
+            
+            // 3. Minimal DOM interaction
+            document.body.style.setProperty('--pwa-heartbeat', Date.now().toString());
+          }
+        }, 15000); // Every 15 seconds (more frequent for PWA)
+      }
+      
+      function stopKeepAlive() {
+        if (keepAliveInterval) {
+          clearInterval(keepAliveInterval);
+          keepAliveInterval = null;
         }
-      }, 30000); // Every 30 seconds when visible
+      }
+      
+      // Start keep-alive when page is visible
+      if (!document.hidden) startKeepAlive();
+      
+      // Manage keep-alive based on visibility
+      document.addEventListener('visibilitychange', function() {
+        if (document.hidden) {
+          console.log('📱 PWA going to background - reducing activity');
+          stopKeepAlive();
+        } else {
+          console.log('📱 PWA returning to foreground - resuming keep-alive');
+          startKeepAlive();
+        }
+      });
       
       // Prevent iOS Safari auto-refresh on return
       window.addEventListener('pageshow', function(e) {
@@ -663,15 +721,23 @@
             <div class="subtitle" style="color: var(--brand-subtle); font-size: 13px;">Fast, app-like experience</div>
           </div>
         </div>
-        <h1>Install to Home Screen</h1>
-        <p>For iPhone/iPad, add this app to your Home Screen for the best performance and fewer reloads.</p>
+        <h1 id="pwa-title">Install to Home Screen</h1>
+        <p id="pwa-description">For iPhone/iPad, add this app to your Home Screen for the best performance and fewer reloads.</p>
+        <div class="performance-warning" style="background: rgba(251, 191, 36, 0.1); border: 1px solid rgba(251, 191, 36, 0.3); border-radius: 8px; padding: 12px; margin: 16px 0; display: flex; align-items: center; gap: 8px;">
+          <span style="font-size: 18px;">⚠️</span>
+          <div style="font-size: 13px; color: var(--brand-subtle);">
+            <strong>Safari Performance Issues:</strong> Marketplace features like image uploads, real-time chat, and smooth scrolling work much better in the installed app.
+          </div>
+        </div>
         <ol class="steps">
           <li>Tap the Share icon in Safari.</li>
           <li>Choose “Add to Home Screen”.</li>
           <li>Open the app from your Home Screen.</li>
         </ol>
         <div class="btn-row">
-          <button class="btn" id="pwa-installed-btn">I’ve installed it</button>
+          <button class="btn" id="pwa-installed-btn">I've installed it</button>
+          <button class="link" id="pwa-skip-btn">Continue anyway</button>
+          <button class="link" id="pwa-remind-later-btn" style="font-size: 12px;">Remind me later</button>
         </div>
       </div>
     </div>
@@ -695,10 +761,11 @@
   <script src="flutter.js" defer></script>
   <script>
     window.addEventListener('load', function(ev) {
-      if (window.__blockFlutter) {
-        console.warn('iOS PWA gate active - blocking Flutter load in Safari tab');
-        return;
-      }
+      // Remove the blocking behavior entirely
+      // if (window.__blockFlutter) {
+      //   console.warn('iOS PWA gate active - blocking Flutter load in Safari tab');
+      //   return;
+      // }
       // Use the standard Flutter web initialization pattern
       console.log('Starting Flutter initialization...');
       
@@ -834,6 +901,32 @@
         if (installedBtn) installedBtn.addEventListener('click', function(){
           // User installed and opened this page in Safari; refresh to let SW/loader detect standalone
           location.reload();
+        });
+
+        // Handle Continue anyway button (temporary access)
+        var skipBtn = document.getElementById('pwa-skip-btn');
+        if (skipBtn) skipBtn.addEventListener('click', function(){
+          var gate = document.getElementById('ios-pwa-gate');
+          if (gate) gate.style.display = 'none';
+          // Show a subtle reminder banner about performance
+          setTimeout(function() {
+            if (!window.document.getElementById('safari-warning')) {
+              var warning = document.createElement('div');
+              warning.id = 'safari-warning';
+              warning.style.cssText = 'position:fixed;top:0;left:0;right:0;background:#f59e0b;color:#000;text-align:center;padding:8px;font-size:12px;z-index:1000;';
+              warning.innerHTML = '⚠️ Using Safari - some features may be slow. <strong>Install app for better performance</strong>';
+              document.body.appendChild(warning);
+              setTimeout(function() { warning.remove(); }, 5000);
+            }
+          }, 3000);
+        });
+
+        // Handle Remind me later button (dismisses for this session)
+        var remindBtn = document.getElementById('pwa-remind-later-btn');
+        if (remindBtn) remindBtn.addEventListener('click', function(){
+          sessionStorage.setItem('pwa_reminder_dismissed', '1');
+          var gate = document.getElementById('ios-pwa-gate');
+          if (gate) gate.style.display = 'none';
         });
       } catch(_) {}
     });
