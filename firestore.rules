@@ -42,25 +42,28 @@ service cloud.firestore {
             !('kycStatus' in request.resource.data.diff(resource.data).affectedKeys()) ||
             (request.resource.data.kycStatus == 'pending')
           ) &&
+          // Allow users to set their own role during registration (but not admin)
+          (
+            !('role' in request.resource.data.diff(resource.data).affectedKeys()) ||
+            (request.resource.data.role != 'admin')
+          ) &&
           // Prevent users from modifying other critical fields that should only be admin-controlled
-          !('role' in request.resource.data.diff(resource.data).affectedKeys()) &&
           !('kycApprovedAt' in request.resource.data.diff(resource.data).affectedKeys()) &&
           !('approvedAt' in request.resource.data.diff(resource.data).affectedKeys()) &&
           !('approvedBy' in request.resource.data.diff(resource.data).affectedKeys()) &&
-          // Allow setting status to 'pending' during seller registration, otherwise disallow
+          // Allow setting status to 'pending' during seller registration
           (
             !('status' in request.resource.data.diff(resource.data).affectedKeys()) ||
             (
-              request.resource.data.status == 'pending'
+              request.resource.data.status == 'pending' ||
+              resource.data.status == request.resource.data.status // Allow keeping same status
             )
           ) &&
           // Allow users to write verified=false (but not true)
           (
             !('verified' in request.resource.data.diff(resource.data).affectedKeys()) ||
             (request.resource.data.verified == false)
-          ) &&
-          // Disallow client from changing role directly (redundant guard)
-          !('role' in request.resource.data.diff(resource.data).affectedKeys())
+          )
         ) ||
         isAdmin()
       );

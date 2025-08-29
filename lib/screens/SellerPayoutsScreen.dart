@@ -193,9 +193,11 @@ class _SellerPayoutsScreenState extends State<SellerPayoutsScreen> {
                 : 16.0;
             
             return ListView(
-              padding: EdgeInsets.symmetric(
-                horizontal: horizontalPadding,
-                vertical: 16,
+              padding: EdgeInsets.only(
+                left: horizontalPadding,
+                right: horizontalPadding,
+                top: 16,
+                bottom: 32, // Reduced bottom padding to minimize white space
               ),
               children: [
             Container(
@@ -222,69 +224,202 @@ class _SellerPayoutsScreenState extends State<SellerPayoutsScreen> {
                   ),
                   const SizedBox(height: 8),
                   if (_loading) const LinearProgressIndicator(minHeight: 2),
-                  const SizedBox(height: 8),
-                  LayoutBuilder(builder: (context, constraints) {
-                    final narrow = constraints.maxWidth < 380;
-                    final stats = Column(
+                  const SizedBox(height: 16),
+                  
+                  // Main Available Balance
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: AppTheme.deepTeal.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AppTheme.deepTeal.withOpacity(0.3)),
+                    ),
+                    child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        FittedBox(
-                          fit: BoxFit.scaleDown,
-                          child: Text('R ${_net.toStringAsFixed(2)}', style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold)),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'Gross R ${_gross.toStringAsFixed(2)} • Commission R ${_commission.toStringAsFixed(2)} (${(_commissionPct * 100).toStringAsFixed(0)}%)',
-                          style: TextStyle(color: Colors.grey[600]),
-                          overflow: TextOverflow.ellipsis,
-                          maxLines: 2,
+                        Row(
+                          children: [
+                            Icon(Icons.account_balance_wallet, color: AppTheme.deepTeal, size: 20),
+                            const SizedBox(width: 8),
+                            Text(
+                              '💰 AVAILABLE TO WITHDRAW',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
+                                color: AppTheme.deepTeal,
+                              ),
+                            ),
+                          ],
                         ),
                         const SizedBox(height: 8),
-                        Container(
-                          padding: const EdgeInsets.all(8),
+                        Text(
+                          'R ${_net.toStringAsFixed(2)}',
+                          style: TextStyle(
+                            fontSize: 28,
+                            fontWeight: FontWeight.bold,
+                            color: AppTheme.deepTeal,
+                          ),
+                        ),
+                        Text(
+                          'This is your money after platform fees - ready to withdraw!',
+                          style: TextStyle(
+                            color: AppTheme.deepTeal.withOpacity(0.7),
+                            fontSize: 12,
+                            fontStyle: FontStyle.italic,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  
+                  const SizedBox(height: 16),
+                  
+                  // Detailed Breakdown
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Container(
+                          padding: const EdgeInsets.all(16),
                           decoration: BoxDecoration(
-                            color: Colors.blue.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(6),
+                            color: Colors.grey.shade50,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.grey.shade300),
                           ),
-                          child: Text(
-                            '💡 Minimum payout: R${_min.toStringAsFixed(2)}. Commission covers platform costs (payment processing, hosting, support).',
-                            style: TextStyle(fontSize: 11, color: Colors.blue[800]),
-                            overflow: TextOverflow.fade,
-                            softWrap: true,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Icon(Icons.receipt_long, color: AppTheme.deepTeal, size: 16),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    'Total Sales',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                      color: AppTheme.deepTeal,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'R ${_gross.toStringAsFixed(2)}',
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppTheme.deepTeal,
+                                ),
+                              ),
+                              Text(
+                                'What customers paid',
+                                style: TextStyle(
+                                  color: Colors.grey.shade600,
+                                  fontSize: 10,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
-                      ],
-                    );
-                    final button = SizedBox(
-                      width: narrow ? double.infinity : null,
-                      child: ElevatedButton.icon(
-                        onPressed: (_requesting || _net < _min) ? null : _requestPayout,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppTheme.deepTeal,
-                          foregroundColor: AppTheme.angel,
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                        ),
-                        icon: _requesting
-                            ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                            : const Icon(Icons.payments),
-                        label: Text(_requesting
-                            ? 'Requesting...'
-                            : (_net < _min ? 'Minimum R ${_min.toStringAsFixed(0)}' : 'Request Payout')),
                       ),
-                    );
-                    if (narrow) {
-                      return Column(children: [stats, const SizedBox(height: 12), button]);
-                    }
-                    return Row(
-                      crossAxisAlignment: CrossAxisAlignment.center,
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: Colors.grey.shade50,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.grey.shade300),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Icon(Icons.percent, color: AppTheme.deepTeal, size: 16),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    'Platform Fee',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                      color: AppTheme.deepTeal,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'R ${_commission.toStringAsFixed(2)}',
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppTheme.deepTeal,
+                                ),
+                              ),
+                              Text(
+                                '${(_commissionPct * 100).toStringAsFixed(0)}% of sales',
+                                style: TextStyle(
+                                  color: Colors.grey.shade600,
+                                  fontSize: 10,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  
+                  const SizedBox(height: 16),
+                  
+                  // Minimum payout info
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: AppTheme.deepTeal.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: AppTheme.deepTeal.withOpacity(0.3)),
+                    ),
+                    child: Row(
                       children: [
-                        Expanded(child: stats),
-                        const SizedBox(width: 12),
-                        button,
+                        Icon(Icons.info_outline, color: AppTheme.deepTeal, size: 16),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Minimum payout: R${_min.toStringAsFixed(2)}. Commission covers platform costs (payment processing, hosting, support).',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: AppTheme.deepTeal,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
                       ],
-                    );
-                  }),
+                    ),
+                  ),
+                  
+                  const SizedBox(height: 16),
+                  
+                  // Payout Button
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: (_requesting || _net < _min) ? null : _requestPayout,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppTheme.deepTeal,
+                        foregroundColor: AppTheme.angel,
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                      icon: _requesting
+                          ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                          : const Icon(Icons.payments),
+                      label: Text(_requesting
+                          ? 'Requesting...'
+                          : (_net < _min ? 'Minimum R ${_min.toStringAsFixed(0)}' : 'Request Payout')),
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -296,14 +431,14 @@ class _SellerPayoutsScreenState extends State<SellerPayoutsScreen> {
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(12),
                 boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 2))],
-                border: Border.all(color: Colors.green.withOpacity(0.3), width: 1),
+                border: Border.all(color: AppTheme.deepTeal.withOpacity(0.3), width: 1),
               ),
               padding: const EdgeInsets.all(16),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(children: [
-                    Icon(Icons.account_balance_wallet, color: Colors.green[700]),
+                    Icon(Icons.account_balance_wallet, color: AppTheme.deepTeal),
                     const SizedBox(width: 8),
                     const Text('COD Wallet', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
                     const Spacer(),
@@ -323,13 +458,13 @@ class _SellerPayoutsScreenState extends State<SellerPayoutsScreen> {
                       Container(
                         padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
-                          color: Colors.green[50],
+                          color: AppTheme.deepTeal.withOpacity(0.1),
                           borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: Colors.green[200]!),
+                          border: Border.all(color: AppTheme.deepTeal.withOpacity(0.3)),
                         ),
                         child: Row(
                           children: [
-                            Icon(Icons.money, color: Colors.green[700], size: 24),
+                            Icon(Icons.money, color: AppTheme.deepTeal, size: 24),
                             const SizedBox(width: 12),
                             Expanded(
                               child: Column(
@@ -337,7 +472,7 @@ class _SellerPayoutsScreenState extends State<SellerPayoutsScreen> {
                                 children: [
                                   Text('Cash Collected', style: TextStyle(fontSize: 14, color: Colors.grey[600], fontWeight: FontWeight.w500)),
                                   Text('R${(_codWallet['cashCollected'] ?? 0).toStringAsFixed(2)}', 
-                                       style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.green)),
+                                       style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppTheme.deepTeal)),
                                 ],
                               ),
                             ),
@@ -350,13 +485,13 @@ class _SellerPayoutsScreenState extends State<SellerPayoutsScreen> {
                       Container(
                         padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
-                          color: Colors.orange[50],
+                          color: AppTheme.deepTeal.withOpacity(0.1),
                           borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: Colors.orange[200]!),
+                          border: Border.all(color: AppTheme.deepTeal.withOpacity(0.3)),
                         ),
                         child: Row(
                           children: [
-                            Icon(Icons.account_balance, color: Colors.orange[700], size: 24),
+                            Icon(Icons.account_balance, color: AppTheme.deepTeal, size: 24),
                             const SizedBox(width: 12),
                             Expanded(
                               child: Column(
@@ -364,7 +499,7 @@ class _SellerPayoutsScreenState extends State<SellerPayoutsScreen> {
                                 children: [
                                   Text('Commission Owed to Platform', style: TextStyle(fontSize: 14, color: Colors.grey[600], fontWeight: FontWeight.w500)),
                                   Text('R${(_codWallet['commissionOwed'] ?? 0).toStringAsFixed(2)}', 
-                                       style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.orange)),
+                                       style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppTheme.deepTeal)),
                                 ],
                               ),
                             ),
@@ -377,13 +512,13 @@ class _SellerPayoutsScreenState extends State<SellerPayoutsScreen> {
                       Container(
                         padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
-                          color: Colors.blue[50],
+                          color: AppTheme.deepTeal.withOpacity(0.1),
                           borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: Colors.blue[200]!),
+                          border: Border.all(color: AppTheme.deepTeal.withOpacity(0.3)),
                         ),
                         child: Row(
                           children: [
-                            Icon(Icons.savings, color: Colors.blue[700], size: 24),
+                            Icon(Icons.savings, color: AppTheme.deepTeal, size: 24),
                             const SizedBox(width: 12),
                             Expanded(
                               child: Column(
@@ -391,7 +526,7 @@ class _SellerPayoutsScreenState extends State<SellerPayoutsScreen> {
                                 children: [
                                   Text('Your Share (After Commission)', style: TextStyle(fontSize: 14, color: Colors.grey[600], fontWeight: FontWeight.w500)),
                                   Text('R${((_codWallet['cashCollected'] ?? 0) - (_codWallet['commissionOwed'] ?? 0)).toStringAsFixed(2)}', 
-                                       style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.blue)),
+                                       style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppTheme.deepTeal)),
                                 ],
                               ),
                             ),
@@ -406,16 +541,16 @@ class _SellerPayoutsScreenState extends State<SellerPayoutsScreen> {
                     Container(
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: Colors.orange.withOpacity(0.1),
+                        color: AppTheme.deepTeal.withOpacity(0.1),
                         borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.orange.withOpacity(0.3)),
+                        border: Border.all(color: AppTheme.deepTeal.withOpacity(0.3)),
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Row(
                             children: [
-                              Icon(Icons.info_outline, color: Colors.orange[700], size: 16),
+                              Icon(Icons.info_outline, color: AppTheme.deepTeal, size: 16),
                               const SizedBox(width: 6),
                               const Text('Platform Commission Due', style: TextStyle(fontWeight: FontWeight.w600)),
                             ],
@@ -434,8 +569,8 @@ class _SellerPayoutsScreenState extends State<SellerPayoutsScreen> {
                       child: ElevatedButton.icon(
                         onPressed: () => _payOutstandingFees(),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.orange,
-                          foregroundColor: Colors.white,
+                          backgroundColor: AppTheme.deepTeal,
+                          foregroundColor: AppTheme.angel,
                           padding: const EdgeInsets.symmetric(vertical: 14),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                         ),
@@ -456,16 +591,16 @@ class _SellerPayoutsScreenState extends State<SellerPayoutsScreen> {
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(12),
                 boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 2))],
-                border: Border.all(color: Colors.red.withOpacity(0.3), width: 1),
+                border: Border.all(color: AppTheme.deepTeal.withOpacity(0.3), width: 1),
               ),
               padding: const EdgeInsets.all(16),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(children: [
-                    Icon(Icons.warning, color: Colors.red),
+                    Icon(Icons.warning, color: AppTheme.deepTeal),
                     const SizedBox(width: 8),
-                    const Text('Outstanding Fees', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.red)),
+                    Text('Outstanding Fees', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppTheme.deepTeal)),
                   ]),
                   const SizedBox(height: 4),
                   Text(
@@ -477,7 +612,7 @@ class _SellerPayoutsScreenState extends State<SellerPayoutsScreen> {
                                             FittedBox(
                           fit: BoxFit.scaleDown,
                           child: Text('R ${_outstandingAmount.toStringAsFixed(2)}', 
-                               style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.red)),
+                               style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: AppTheme.deepTeal)),
                         ),
                     const SizedBox(height: 4),
                     Text('Type: $_outstandingType', style: TextStyle(color: Colors.grey[600])),
@@ -487,16 +622,16 @@ class _SellerPayoutsScreenState extends State<SellerPayoutsScreen> {
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                       decoration: BoxDecoration(
-                        color: Colors.orange.withOpacity(0.1),
+                        color: AppTheme.deepTeal.withOpacity(0.1),
                         borderRadius: BorderRadius.circular(6),
-                        border: Border.all(color: Colors.orange.withOpacity(0.3)),
+                        border: Border.all(color: AppTheme.deepTeal.withOpacity(0.3)),
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.block, color: Colors.orange, size: 16),
+                          Icon(Icons.block, color: AppTheme.deepTeal, size: 16),
                           const SizedBox(width: 6),
-                          const Text('Cash on Delivery Disabled', style: TextStyle(color: Colors.orange, fontWeight: FontWeight.w600)),
+                          Text('Cash on Delivery Disabled', style: TextStyle(color: AppTheme.deepTeal, fontWeight: FontWeight.w600)),
                         ],
                       ),
                     ),
@@ -505,19 +640,19 @@ class _SellerPayoutsScreenState extends State<SellerPayoutsScreen> {
                   Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: Colors.amber.withOpacity(0.1),
+                      color: AppTheme.deepTeal.withOpacity(0.1),
                       borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.amber.withOpacity(0.3)),
+                      border: Border.all(color: AppTheme.deepTeal.withOpacity(0.3)),
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Row(
                           children: [
-                            Icon(Icons.info_outline, color: Colors.amber[700], size: 16),
+                            Icon(Icons.info_outline, color: AppTheme.deepTeal, size: 16),
                             const SizedBox(width: 6),
                             Expanded(
-                              child: Text('Why are there outstanding fees?', style: TextStyle(fontWeight: FontWeight.w600, color: Colors.amber[700])),
+                              child: Text('Why are there outstanding fees?', style: TextStyle(fontWeight: FontWeight.w600, color: AppTheme.deepTeal)),
                             ),
                           ],
                         ),
@@ -538,8 +673,8 @@ class _SellerPayoutsScreenState extends State<SellerPayoutsScreen> {
                       child: ElevatedButton.icon(
                         onPressed: () => _payOutstandingFees(),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.red,
-                          foregroundColor: Colors.white,
+                          backgroundColor: AppTheme.deepTeal,
+                          foregroundColor: AppTheme.angel,
                           padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                         ),
@@ -591,29 +726,29 @@ class _SellerPayoutsScreenState extends State<SellerPayoutsScreen> {
                       if (ts is Timestamp) date = ts.toDate().toLocal().toString();
                     } catch (_) {}
                     
-                    // Get status color and icon
-                    Color statusColor = Colors.blue;
+                    // Get status color and icon - using standard theme
+                    Color statusColor = AppTheme.deepTeal;
                     IconData statusIcon = Icons.payments_outlined;
                     
                     switch (status) {
                       case 'paid':
-                        statusColor = Colors.green;
+                        statusColor = AppTheme.deepTeal;
                         statusIcon = Icons.check_circle;
                         break;
                       case 'failed':
-                        statusColor = Colors.red;
+                        statusColor = AppTheme.deepTeal;
                         statusIcon = Icons.error;
                         break;
                       case 'cancelled':
-                        statusColor = Colors.orange;
+                        statusColor = AppTheme.deepTeal;
                         statusIcon = Icons.cancel;
                         break;
                       case 'processing':
-                        statusColor = Colors.blue;
+                        statusColor = AppTheme.deepTeal;
                         statusIcon = Icons.sync;
                         break;
                       default:
-                        statusColor = Colors.grey;
+                        statusColor = AppTheme.deepTeal;
                         statusIcon = Icons.pending;
                     }
                     

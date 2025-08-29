@@ -5,6 +5,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../utils/safari_optimizer.dart';
 import '../services/awesome_notification_service.dart' as an;
+import '../services/notification_service.dart';
 
 class NotificationBadge extends StatefulWidget {
   final Widget child;
@@ -116,13 +117,10 @@ class _NotificationBadgeState extends State<NotificationBadge> {
           .snapshots(includeMetadataChanges: false)
           .listen((snapshot) async {
         try {
-          int unread = 0;
-          for (final doc in snapshot.docs) {
-            final data = doc.data() as Map<String, dynamic>;
-            final type = data['type'] as String? ?? '';
-            if (type != 'chat_message') unread++;
-          }
-
+          // Use NotificationService to get accurate count instead of local counting
+          final notificationService = NotificationService();
+          final unread = await notificationService.getUnreadCountForUser(currentUserId);
+          
           // Local fallback system popup for newly added order notifications
           for (final change in snapshot.docChanges) {
             if (change.type == DocumentChangeType.added) {

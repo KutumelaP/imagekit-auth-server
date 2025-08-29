@@ -117,7 +117,7 @@
       // Enhanced condition logic
       var shouldShowGate = false;
       
-      if (forceShow) {
+          if (forceShow) {
         console.log('🚀 Force showing PWA gate via ?show_gate=1');
         shouldShowGate = true;
       } else if (isIOS && !isStandalone) {
@@ -125,7 +125,7 @@
           // Always show for iOS Safari unless explicitly dismissed or skipped
           shouldShowGate = true;
           console.log('✅ PWA gate will show for iOS Safari user');
-        } else {
+          } else {
           console.log('❌ PWA gate blocked - dismissed or skipped');
         }
       } else if (isIOS && isStandalone) {
@@ -138,22 +138,22 @@
         console.log('🎯 Preparing to show PWA gate...');
         
         function showPWAGate() {
-          var gate = document.getElementById('ios-pwa-gate');
+            var gate = document.getElementById('ios-pwa-gate');
           console.log('🔍 Gate element found:', !!gate);
           
-          if (gate) {
+            if (gate) {
             // Customize message for store URLs
-            if (isDirectStoreUrl) {
-              var title = gate.querySelector('#pwa-title');
-              var description = gate.querySelector('#pwa-description');
-              if (title) title.textContent = 'Install App to Access This Store';
-              if (description) description.textContent = 'This store link works best in the installed app. Safari has performance issues with marketplace features.';
+              if (isDirectStoreUrl) {
+                var title = gate.querySelector('#pwa-title');
+                var description = gate.querySelector('#pwa-description');
+                if (title) title.textContent = 'Install App to Access This Store';
+                if (description) description.textContent = 'This store link works best in the installed app. Safari has performance issues with marketplace features.';
               console.log('📝 Customized message for store URL');
             }
             
             // Show the gate
-            gate.style.display = 'block';
-            gate.style.pointerEvents = 'none';
+              gate.style.display = 'block';
+              gate.style.pointerEvents = 'none';
             
             var card = gate.querySelector('.card');
             if (card) {
@@ -863,7 +863,7 @@
           <li>Tap the Share icon in Safari.</li>
           <li>Choose "Add to Home Screen".</li>
           <li>Open the app from your Home Screen.</li>
-        </ol>
+          </ol>
         <div class="btn-row">
           <button class="btn" id="pwa-installed-btn" onclick="handlePWAInstalled()">✅ I've installed it</button>
           <button class="link" id="pwa-skip-btn" onclick="handlePWASkip()">🌐 Continue anyway</button>
@@ -1054,11 +1054,11 @@
         console.log('🌐 User chose to continue without installing');
         
         // Hide the gate
-        var gate = document.getElementById('ios-pwa-gate');
-        if (gate) gate.style.display = 'none';
+          var gate = document.getElementById('ios-pwa-gate');
+          if (gate) gate.style.display = 'none';
         
         // Show performance warning banner
-        setTimeout(function() {
+          setTimeout(function() {
           showPerformanceWarning();
         }, 1000);
       };
@@ -1182,8 +1182,8 @@
       function showPerformanceWarning() {
         if (document.getElementById('safari-warning')) return;
         
-        var warning = document.createElement('div');
-        warning.id = 'safari-warning';
+              var warning = document.createElement('div');
+              warning.id = 'safari-warning';
         warning.style.cssText = 'position:fixed;top:0;left:0;right:0;background:linear-gradient(135deg,#f59e0b,#d97706);color:#000;text-align:center;padding:12px;font-size:13px;z-index:1000;box-shadow:0 2px 8px rgba(0,0,0,0.15);';
         warning.innerHTML = `
           <div style="max-width:600px;margin:0 auto;display:flex;align-items:center;justify-content:center;gap:8px;">
@@ -1192,7 +1192,7 @@
             <button onclick="this.parentElement.parentElement.remove()" style="background:rgba(0,0,0,0.1);border:none;padding:4px 8px;border-radius:4px;margin-left:8px;cursor:pointer;font-weight:bold;">✕</button>
           </div>
         `;
-        document.body.appendChild(warning);
+              document.body.appendChild(warning);
         
         // Auto-hide after 8 seconds
         setTimeout(function() {
@@ -1224,11 +1224,11 @@
         showSuccessMessage('🎉 App installed successfully! Enjoy the better experience!');
         
         // Hide any install prompts
-        var gate = document.getElementById('ios-pwa-gate');
+          var gate = document.getElementById('ios-pwa-gate');
         var banner = document.getElementById('android-apk-banner');
         var customBtn = document.getElementById('custom-install-btn');
         
-        if (gate) gate.style.display = 'none';
+          if (gate) gate.style.display = 'none';
         if (banner) banner.style.display = 'none';
         if (customBtn) customBtn.remove();
         

@@ -2384,18 +2384,9 @@ exports.onNewMessage = functions.runWith({ timeoutSeconds: 60, memory: '256MB' }
         },
       };
 
-      // Update chat unreadCount and lastMessageBy before sending notification
-      const chatRef = admin.firestore().collection('chats').doc(chatId);
-      await chatRef.update({
-        unreadCount: admin.firestore.FieldValue.increment(1),
-        lastMessageBy: message.senderId,
-        lastMessageTime: admin.firestore.FieldValue.serverTimestamp(),
-        timestamp: admin.firestore.FieldValue.serverTimestamp(),
-      });
-
       const result = await sendWithRetry(notificationMessage, 3);
       if (result.ok) {
-        console.log('Successfully sent chat notification and updated unreadCount');
+        console.log('Successfully sent chat notification');
         await admin.firestore().collection('notifications_sent').doc(idempotencyKey).set({
           chatId,
           messageId: context.params.messageId,
@@ -2431,26 +2422,6 @@ exports.markNotificationDelivered = functions.https.onCall(async (data, context)
     userId,
   }, { merge: true });
   return { ok: true };
-});
-
-// Mark chat as viewed and reset unreadCount
-exports.markChatAsViewed = functions.https.onCall(async (data, context) => {
-  try {
-    const { chatId, userId } = data || {};
-    if (!chatId || !userId) return { ok: false, error: 'Missing chatId or userId' };
-    
-    // Update the chat document to mark it as viewed by this user
-    await admin.firestore().collection('chats').doc(chatId).update({
-      [`lastViewed_${userId}`]: admin.firestore.FieldValue.serverTimestamp(),
-      unreadCount: 0, // Reset unread count when viewed
-    });
-    
-    console.log(`[markChatAsViewed] Chat ${chatId} marked as viewed by user ${userId}`);
-    return { ok: true };
-  } catch (e) {
-    console.error('[markChatAsViewed] Error:', e);
-    return { ok: false, error: e.message };
-  }
 });
 
 exports.markNotificationOpened = functions.https.onCall(async (data, context) => {
@@ -2643,112 +2614,6 @@ exports.onOrderFinalized = functions.runWith({ timeoutSeconds: 60, memory: '256M
     }
   });
 
-// === Fix order sellerName when orders are created/updated ===
-exports.fixOrderSellerName = functions.runWith({ timeoutSeconds: 60, memory: '256MB' }).firestore
-  .document('orders/{orderId}')
-  .onWrite(async (change, context) => {
-    try {
-      const orderData = change.after.data();
-      if (!orderData) return null; // Document was deleted
-      
-      const orderId = context.params.orderId;
-      const sellerId = orderData.sellerId;
-      
-      // Only proceed if we have a sellerId and the sellerName is incorrect
-      if (sellerId && (!orderData.sellerName || orderData.sellerName === 'Unknown Store')) {
-        console.log(`[fixOrderSellerName] Fixing sellerName for order ${orderId}`);
-        
-        // Get the seller's user document to get their store name
-        const sellerDoc = await db.collection('users').doc(sellerId).get();
-        if (sellerDoc.exists) {
-          const sellerData = sellerDoc.data();
-          const correctSellerName = sellerData.storeName || sellerData.name || 'Store';
-          
-          // Update the order with the correct seller name
-          await change.after.ref.update({
-            sellerName: correctSellerName,
-            updatedAt: admin.firestore.FieldValue.serverTimestamp()
-          });
-          
-          console.log(`[fixOrderSellerName] Updated order ${orderId} sellerName from "${orderData.sellerName}" to "${correctSellerName}"`);
-        }
-      }
-      
-      return null;
-    } catch (e) {
-      console.error('[fixOrderSellerName] Failed to fix order sellerName:', e);
-      return null;
-    }
-  });
-
-// === Fix existing orders with incorrect sellerName ===
-exports.fixExistingOrderSellerNames = functions.https.onCall(async (data, context) => {
-  try {
-    // Only allow admins to run this function
-    if (!context.auth) {
-      throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
-    }
-    
-    const callerUid = context.auth.uid;
-    const callerDoc = await db.collection('users').doc(callerUid).get();
-    if (!callerDoc.exists || callerDoc.data().role !== 'admin') {
-      throw new functions.https.HttpsError('permission-denied', 'Only admins can run this function');
-    }
-    
-    console.log('[fixExistingOrderSellerNames] Starting to fix existing orders...');
-    
-    // Get all orders with incorrect sellerName
-    const ordersSnapshot = await db.collection('orders')
-      .where('sellerName', '==', 'Unknown Store')
-      .limit(100) // Process in batches to avoid timeout
-      .get();
-    
-    let fixedCount = 0;
-    let errorCount = 0;
-    
-    for (const orderDoc of ordersSnapshot.docs) {
-      try {
-        const orderData = orderDoc.data();
-        const sellerId = orderData.sellerId;
-        
-        if (sellerId) {
-          // Get the seller's user document
-          const sellerDoc = await db.collection('users').doc(sellerId).get();
-          if (sellerDoc.exists) {
-            const sellerData = sellerDoc.data();
-            const correctSellerName = sellerData.storeName || sellerData.name || 'Store';
-            
-            // Update the order
-            await orderDoc.ref.update({
-              sellerName: correctSellerName,
-              updatedAt: admin.firestore.FieldValue.serverTimestamp()
-            });
-            
-            fixedCount++;
-            console.log(`[fixExistingOrderSellerNames] Fixed order ${orderDoc.id}: "${orderData.sellerName}" → "${correctSellerName}"`);
-          }
-        }
-      } catch (e) {
-        errorCount++;
-        console.error(`[fixExistingOrderSellerNames] Error fixing order ${orderDoc.id}:`, e);
-      }
-    }
-    
-    console.log(`[fixExistingOrderSellerNames] Completed. Fixed: ${fixedCount}, Errors: ${errorCount}`);
-    
-    return {
-      success: true,
-      message: `Fixed ${fixedCount} orders, ${errorCount} errors`,
-      fixedCount,
-      errorCount
-    };
-    
-  } catch (e) {
-    console.error('[fixExistingOrderSellerNames] Function failed:', e);
-    throw new functions.https.HttpsError('internal', `Failed to fix existing orders: ${e.message}`);
-  }
-});
-
 // === Set user custom claims based on Firestore role ===
 exports.setUserCustomClaims = functions.https.onCall(async (data, context) => {
   try {
@@ -2881,88 +2746,52 @@ async function computeCommissionWithSettings({ gross, order }) {
   try {
     const doc = await db.collection('admin_settings').doc('payment_settings').get();
     const s = doc.exists ? (doc.data() || {}) : {};
-    
+    // Determine order mode
+    const isDelivery = String(order.orderType || order.type || '').toLowerCase() === 'delivery';
+    const deliveryPref = String(order.deliveryModelPreference || '').toLowerCase();
+    const isPlatformDelivery = isDelivery && (deliveryPref === 'system');
+
+    // Choose pct
+    let pct = null;
+    if (!isDelivery) {
+      pct = Number(s.pickupPct);
+    } else if (isPlatformDelivery) {
+      pct = Number(s.platformDeliveryPct);
+    } else {
+      pct = Number(s.merchantDeliveryPct);
+    }
+    if (isNaN(pct) || pct < 0 || pct > 50) {
+      // fallback to legacy percent
+      const legacyPct = await getCommissionPct().catch(() => COMMISSION_PCT_FALLBACK);
+      pct = legacyPct * 100; // getCommissionPct returns fraction
+    }
+
     // Compute raw commission on subtotal only (exclude delivery & buyer fees)
     const subtotal = Number(order.totalPrice || order.total || 0) || 0;
-    
-    // Apply tiered pricing based on order amount
-    let pct = null;
-    let smallOrderFee = 0;
-    
-    if (subtotal <= Number(s.tier1Max || 25)) {
-      // Tier 1: Small orders (R0 - R25)
-      pct = Number(s.tier1Commission || 4.0);
-      smallOrderFee = Number(s.tier1SmallOrderFee || 3.0);
-    } else if (subtotal <= Number(s.tier2Max || 100)) {
-      // Tier 2: Medium orders (R25 - R100)
-      pct = Number(s.tier2Commission || 6.0);
-      smallOrderFee = Number(s.tier2SmallOrderFee || 5.0);
-    } else {
-      // Tier 3: Large orders (R100+)
-      pct = Number(s.tier3Commission || 6.0);
-      smallOrderFee = 0; // No small order fee for large orders
-    }
-    
-    // Fallback to legacy per-mode pricing if tiered pricing not configured
-    if (isNaN(pct) || pct < 0 || pct > 50) {
-      const isDelivery = String(order.orderType || order.type || '').toLowerCase() === 'delivery';
-      const deliveryPref = String(order.deliveryModelPreference || '').toLowerCase();
-      const isPlatformDelivery = isDelivery && (deliveryPref === 'system');
-
-      if (!isDelivery) {
-        pct = Number(s.pickupPct);
-      } else if (isPlatformDelivery) {
-        pct = Number(s.platformDeliveryPct);
-      } else {
-        pct = Number(s.merchantDeliveryPct);
-      }
-      
-      if (isNaN(pct) || pct < 0 || pct > 50) {
-        // fallback to legacy percent
-        const legacyPct = await getCommissionPct().catch(() => COMMISSION_PCT_FALLBACK);
-        pct = legacyPct * 100; // getCommissionPct returns fraction
-      }
-    }
-    
     let commission = subtotal * (pct / 100);
 
-    // Apply min and caps (only for legacy mode, tiered pricing handles this automatically)
-    if (!s.tier1Commission) {
-      const cmin = Number(s.commissionMin);
-      if (!isNaN(cmin) && cmin > 0) commission = Math.max(commission, cmin);
-      
-      let cap = null;
-      const isDelivery = String(order.orderType || order.type || '').toLowerCase() === 'delivery';
-      const deliveryPref = String(order.deliveryModelPreference || '').toLowerCase();
-      const isPlatformDelivery = isDelivery && (deliveryPref === 'system');
-      
-      if (!isDelivery) {
-        cap = Number(s.commissionCapPickup);
-      } else if (isPlatformDelivery) {
-        cap = Number(s.commissionCapDeliveryPlatform);
-      } else {
-        cap = Number(s.commissionCapDeliveryMerchant);
-      }
-      if (!isNaN(cap) && cap > 0) commission = Math.min(commission, cap);
+    // Apply min and caps
+    const cmin = Number(s.commissionMin);
+    if (!isNaN(cmin) && cmin > 0) commission = Math.max(commission, cmin);
+    let cap = null;
+    if (!isDelivery) {
+      cap = Number(s.commissionCapPickup);
+    } else if (isPlatformDelivery) {
+      cap = Number(s.commissionCapDeliveryPlatform);
+    } else {
+      cap = Number(s.commissionCapDeliveryMerchant);
     }
+    if (!isNaN(cap) && cap > 0) commission = Math.min(commission, cap);
 
     commission = toRand(commission);
     const net = toRand(subtotal - commission);
-    
-    // Return commission, net, percentage used, and small order fee
-    return { 
-      commission, 
-      net, 
-      pctUsed: pct,
-      smallOrderFee: toRand(smallOrderFee),
-      tier: subtotal <= Number(s.tier1Max || 25) ? 1 : subtotal <= Number(s.tier2Max || 100) ? 2 : 3
-    };
+    return { commission, net, pctUsed: pct };
   } catch (e) {
     const fallbackPct = await getCommissionPct().catch(() => COMMISSION_PCT_FALLBACK);
     const subtotal = Number(order.totalPrice || order.total || 0) || 0;
     const commission = toRand(subtotal * fallbackPct);
     const net = toRand(subtotal - commission);
-    return { commission, net, pctUsed: fallbackPct * 100, smallOrderFee: 0, tier: 0 };
+    return { commission, net, pctUsed: fallbackPct * 100 };
   }
 }
 
@@ -3268,9 +3097,9 @@ exports.markCodPaid = functions.https.onCall(async (data, context) => {
     throw new functions.https.HttpsError('failed-precondition', 'Order is not Cash on Delivery');
   }
 
-  // Derive amounts with tiered pricing system
+  // Derive amounts with per-mode settings and caps/mins
   const gross = Number(order.totalPrice || order.total || order.paymentAmount || 0) || 0;
-  const { commission, net, smallOrderFee, tier } = await computeCommissionWithSettings({ gross, order });
+  const { commission, net } = await computeCommissionWithSettings({ gross, order });
 
   // Create debt entry: seller owes platform the commission
   const eref = db.collection('platform_receivables').doc(sellerId).collection('entries').doc(orderId);
@@ -3283,12 +3112,10 @@ exports.markCodPaid = functions.https.onCall(async (data, context) => {
     gross,
     commission,
     net,
-    smallOrderFee,
-    tier,
     status: 'due', // Platform is owed this money
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-    description: `Commission owed for COD order ${orderId} (Tier ${tier})`,
+    description: `Commission owed for COD order ${orderId}`,
   }, { merge: true });
 
   // Update parent receivable doc with total outstanding amount
@@ -3325,8 +3152,6 @@ exports.adminUpdatePayoutStatus = functions.https.onCall(async (data, context) =
   const payoutId = String(data?.payoutId || '').trim();
   const status = String(data?.status || '').toLowerCase(); // requested|processing|paid|failed|cancelled
   const reference = String(data?.reference || '').trim() || null;
-  const failureReason = String(data?.failureReason || '').trim() || null;
-  const failureNotes = String(data?.failureNotes || '').trim() || null;
   if (!payoutId || !status) {
     throw new functions.https.HttpsError('invalid-argument', 'payoutId and status are required');
   }
@@ -3344,19 +3169,8 @@ exports.adminUpdatePayoutStatus = functions.https.onCall(async (data, context) =
 
   await db.runTransaction(async (tx) => {
     const now = admin.firestore.FieldValue.serverTimestamp();
-    
-    // Prepare update data
-    const updateData = { status, reference, updatedAt: now };
-    
-    // Add failure details if status is failed
-    if (status === 'failed') {
-      updateData.failureReason = failureReason;
-      updateData.failureNotes = failureNotes;
-      updateData.failedAt = now;
-    }
-    
-    tx.set(pref, updateData, { merge: true });
-    tx.set(userPayoutRef, updateData, { merge: true });
+    tx.set(pref, { status, reference, updatedAt: now }, { merge: true });
+    tx.set(userPayoutRef, { status, reference, updatedAt: now }, { merge: true });
 
     if (status === 'paid') {
       const orderIds = Array.isArray(pdata.orderIds) ? pdata.orderIds : [];
@@ -3384,76 +3198,22 @@ exports.adminUpdatePayoutStatus = functions.https.onCall(async (data, context) =
     }
 
     if (status === 'failed' || status === 'cancelled') {
-      // 🚨 AUTOMATIC PAYOUT REVERSAL: When marked as failed/cancelled, funds are automatically returned to seller's wallet
-      // - Orders are unlocked for new payout requests
-      // - Platform receivables are unlocked and available for new payouts
-      // - Money returns to seller's available balance (not admin account)
-      
       const orderIds = Array.isArray(pdata.orderIds) ? pdata.orderIds : [];
       const entryIds = Array.isArray(pdata.entryIds) ? pdata.entryIds : [];
-      
-      // Unlock orders for new payout requests
       orderIds.forEach(id => {
         const oref = db.collection('orders').doc(id);
         tx.set(oref, { payoutRequestId: admin.firestore.FieldValue.delete(), updatedAt: now }, { merge: true });
       });
-      
-      // Unlock platform receivables for new payouts (this makes money available in seller's wallet again)
       if (sellerId && entryIds.length > 0) {
         entryIds.forEach((eid) => {
           const eref = db.collection('platform_receivables').doc(sellerId).collection('entries').doc(eid);
-          tx.set(eref, { 
-            status: 'available', 
-            payoutLockId: admin.firestore.FieldValue.delete(), 
-            updatedAt: now,
-            // Add failure tracking for seller visibility
-            lastFailureReason: status === 'failed' ? failureReason : null,
-            lastFailureNotes: status === 'failed' ? failureNotes : null,
-            lastFailedAt: status === 'failed' ? now : null
-          }, { merge: true });
+          tx.set(eref, { status: 'available', payoutLockId: admin.firestore.FieldValue.delete(), updatedAt: now }, { merge: true });
         });
       }
     }
   });
 
   return { ok: true };
-});
-
-// === Admin: get seller emails for payouts ===
-exports.getSellerEmailsForPayouts = functions.https.onCall(async (data, context) => {
-  if (!context.auth) {
-    throw new functions.https.HttpsError('unauthenticated', 'Sign in required');
-  }
-  const isAdmin = context.auth.token?.admin === true || context.auth.token?.role === 'admin';
-  if (!isAdmin) throw new functions.https.HttpsError('permission-denied', 'Admin only');
-
-  const sellerIds = Array.isArray(data?.sellerIds) ? data.sellerIds : [];
-  if (sellerIds.length === 0) return {};
-
-  try {
-    const emails = {};
-    
-    // Fetch emails one by one since 'in' with documentId is not supported
-    for (const sellerId of sellerIds) {
-      try {
-        const userDoc = await db.collection('users').doc(sellerId).get();
-        if (userDoc.exists) {
-          const userData = userDoc.data();
-          emails[sellerId] = userData.email || 'No email';
-        } else {
-          emails[sellerId] = 'User not found';
-        }
-      } catch (docError) {
-        console.error(`Error fetching user ${sellerId}:`, docError);
-        emails[sellerId] = 'Error fetching';
-      }
-    }
-    
-    return emails;
-  } catch (error) {
-    console.error('Error fetching seller emails:', error);
-    throw new functions.https.HttpsError('internal', 'Failed to fetch seller emails');
-  }
 });
 
 // === Admin: delete a user (Auth + Firestore doc + subcollections + tokens)

@@ -316,12 +316,38 @@ class _SplashWrapperState extends State<SplashWrapper> {
   @override
   void initState() {
     super.initState();
+    // Check if we're already on a specific route (like store links)
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _checkInitialRoute();
+    });
+  }
+
+  Future<void> _checkInitialRoute() async {
+    if (!mounted) return;
+    
+    // Check if we're already on a specific route (like /store/123)
+    final currentRoute = ModalRoute.of(context)?.settings.name;
+    if (currentRoute != null && currentRoute.startsWith('/store/')) {
+      // We're already on a store route, don't redirect
+      if (kDebugMode) print('🔗 Already on store route: $currentRoute, skipping redirect');
+      return;
+    }
+    
     // Navigate to last route if available, else home
     Future.delayed(const Duration(seconds: 1), () async {
       if (!mounted) return;
       final last = await RoutePersistenceObserver.getLastRoute();
+      
+      // Don't redirect if we're on a store route
+      if (last != null && last.startsWith('/store/')) {
+        if (kDebugMode) print('🔗 Last route is store route: $last, skipping redirect');
+        return;
+      }
+      
       final target = (last != null && last.isNotEmpty) ? last : '/home';
       if (!mounted) return;
+      
+      if (kDebugMode) print('🔄 Redirecting to last route: $target');
       Navigator.of(context).pushReplacementNamed(target);
     });
   }

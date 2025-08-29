@@ -627,7 +627,7 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
                 ),
               // Bottom padding for FAB clearance and proper spacing
               SliverToBoxAdapter(
-                child: SizedBox(height: 80), // Adequate spacing for FAB + safe area
+                child: SizedBox(height: MediaQuery.of(context).size.height * 0.08), // Increased to 8% to compensate for reduced SafeArea
               ),
             ],
           ),

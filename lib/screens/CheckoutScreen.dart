@@ -5665,43 +5665,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         parameters: {'totalPrice': widget.totalPrice, 'sellerId': sellerId},
       );
 
-      // Decrement product stock atomically per item
-      try {
-        for (var doc in cartSnapshot.docs) {
-          final item = doc.data();
-          final String? productId = (item['id'] ?? item['productId'])?.toString();
-          if (productId == null || productId.isEmpty) continue;
-          final int qty = ((item['quantity'] ?? 1) as num).toInt();
-          final productRef = FirebaseFirestore.instance.collection('products').doc(productId);
-          await FirebaseFirestore.instance.runTransaction((tx) async {
-            final snap = await tx.get(productRef);
-            if (!snap.exists) return;
-            final data = snap.data() as Map<String, dynamic>;
-            int resolveStock(dynamic value) {
-              if (value is int) return value;
-              if (value is num) return value.toInt();
-              if (value is String) return int.tryParse(value) ?? 0;
-              return 0;
-            }
-            final bool hasExplicitStock = data.containsKey('stock') || data.containsKey('quantity');
-            if (!hasExplicitStock) return; // do not decrement for items without stock tracking
-            final int current = data.containsKey('stock')
-              ? resolveStock(data['stock'])
-              : resolveStock(data['quantity']);
-            final int next = (current - qty).clamp(0, 1 << 31);
-            if (data.containsKey('stock')) {
-              tx.update(productRef, {'stock': next});
-            } else if (data.containsKey('quantity')) {
-              tx.update(productRef, {'quantity': next});
-            } else {
-              // default to 'stock'
-              tx.update(productRef, {'stock': next});
-            }
-          });
-        }
-      } catch (e) {
-        debugPrint('⚠️ Failed to decrement stock: $e');
-      }
+      // Stock reduction is now handled by Cloud Functions when payment is confirmed
+      // This prevents stock from being reduced for failed/cancelled payments
+      print('🔔 Stock reduction will be handled by Cloud Function when payment is confirmed');
 
       // Clear cart from Firestore
       for (var doc in cartSnapshot.docs) {

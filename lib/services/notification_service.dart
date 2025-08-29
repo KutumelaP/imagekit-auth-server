@@ -1024,6 +1024,11 @@ class NotificationService {
     await _updateBadgeForCurrentUser();
   }
 
+  // Public method to get unread count for a specific user
+  Future<int> getUnreadCountForUser(String userId) async {
+    return await _getTotalUnreadCount(userId);
+  }
+
   void _attachRealtimeSpeakListener() {
     try {
       final uid = FirebaseAuth.instance.currentUser?.uid;
@@ -1908,9 +1913,12 @@ class NotificationService {
     }
   }
 
-  /// Get total unread count for a user across all chats
+  /// Get total unread count for a user across all chats AND notifications
   Future<int> _getTotalUnreadCount(String userId) async {
     try {
+      int totalUnread = 0;
+      
+      // Count unread chat messages
       final chatsQuery = await _firestore
           .collection('chats')
           .where(Filter.or(
@@ -1919,13 +1927,29 @@ class NotificationService {
           ))
           .get();
       
-      int totalUnread = 0;
       for (var chat in chatsQuery.docs) {
         final data = chat.data();
         final unreadCount = data['unreadCount'] as int? ?? 0;
         totalUnread += unreadCount;
       }
       
+      // Count unread notifications (excluding chat messages)
+      final notificationsQuery = await _firestore
+          .collection('notifications')
+          .where('userId', isEqualTo: userId)
+          .where('read', isEqualTo: false)
+          .get();
+      
+      for (var notification in notificationsQuery.docs) {
+        final data = notification.data();
+        final type = data['type'] as String? ?? '';
+        // Only count non-chat notifications since chat messages are handled above
+        if (type != 'chat_message') {
+          totalUnread += 1;
+        }
+      }
+      
+      print('🔔 Total unread count for user $userId: $totalUnread (chats + notifications)');
       return totalUnread;
     } catch (e) {
       print('❌ Error getting total unread count: $e');
