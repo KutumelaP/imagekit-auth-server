@@ -5,6 +5,7 @@ service cloud.firestore {
     // Helper function to check if user is admin
     function isAdmin() {
       return request.auth != null &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
     }
 
@@ -569,6 +570,38 @@ service cloud.firestore {
       allow read, write: if isAdmin();
       // Allow users to read their own entries
       allow read: if request.auth != null && resource.data.ownerId == request.auth.uid;
+    }
+
+    // ADDITIONAL COLLECTIONS - For app functionality
+    // STORE_FOLLOWERS - Allow users to follow stores
+    match /store_followers/{followerId} {
+      allow read, write: if request.auth != null && request.auth.uid == followerId;
+      allow read: if isAdmin();
+    }
+
+    // STORE_REVIEWS - Allow users to review stores
+    match /store_reviews/{reviewId} {
+      allow read: if true;
+      allow create, update: if request.auth != null && request.resource.data.userId == request.auth.uid;
+      allow delete: if isAdmin();
+    }
+
+    // PRODUCT_CATEGORIES - Allow browsing
+    match /product_categories/{categoryId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // DELIVERY_ZONES - Allow reading delivery zones
+    match /delivery_zones/{zoneId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // PAYMENT_METHODS - Allow reading payment methods
+    match /payment_methods/{methodId} {
+      allow read: if true;
+      allow write: if isAdmin();
     }
   }
 } 
