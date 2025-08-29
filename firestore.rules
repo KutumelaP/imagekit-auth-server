@@ -129,7 +129,10 @@ service cloud.firestore {
     match /products/{productId} {
       allow read: if true;
       allow create, update: if request.auth != null && request.resource.data.ownerId == request.auth.uid;
-      allow delete: if isAdmin();
+      allow delete: if request.auth != null && (
+        request.resource.data.ownerId == request.auth.uid || // Sellers can delete their own products
+        isAdmin() // Admins can delete any product
+      );
     }
 
     // REVIEWS - Allow unauthenticated read for browsing
@@ -542,8 +545,8 @@ service cloud.firestore {
       allow read, write: if isAdmin();
       // Allow authenticated users to read their own image assets
       allow read: if request.auth != null && resource.data.ownerId == request.auth.uid;
-      // Allow authenticated users to create/update their own image assets
-      allow create, update: if request.auth != null && request.resource.data.ownerId == request.auth.uid;
+      // Allow authenticated users to create/update/delete their own image assets
+      allow create, update, delete: if request.auth != null && request.resource.data.ownerId == request.auth.uid;
     }
 
     // PAYOUTS - For seller payout management
@@ -583,7 +586,10 @@ service cloud.firestore {
     match /store_reviews/{reviewId} {
       allow read: if true;
       allow create, update: if request.auth != null && request.resource.data.userId == request.auth.uid;
-      allow delete: if isAdmin();
+      allow delete: if request.auth != null && (
+        request.resource.data.userId == request.auth.uid || // Users can delete their own reviews
+        isAdmin() // Admins can delete any review
+      );
     }
 
     // PRODUCT_CATEGORIES - Allow browsing
