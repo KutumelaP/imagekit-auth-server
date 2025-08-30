@@ -156,7 +156,6 @@ class MyApp extends StatelessWidget {
         ],
         home: SplashWrapper(),
         builder: (context, child) {
-          // Global bottom SafeArea to avoid iPhone home indicator overlap
           // Disable chatbot globally for now - will be re-enabled only on home screen
           final showBot = false;
 
@@ -165,10 +164,10 @@ class MyApp extends StatelessWidget {
             showChatbot: showBot,
           );
 
+          // Only add top SafeArea - let individual screens handle bottom safe area
           final wrapped = SafeArea(
             top: true,
-            bottom: true,
-            minimum: const EdgeInsets.only(bottom: 80), // Increased for FAB clearance
+            bottom: false, // Let individual screens handle bottom safe area
             child: layered,
           );
           return MediaQuery(
