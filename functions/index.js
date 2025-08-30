@@ -208,19 +208,16 @@ exports.payfastNotify = functions.https.onRequest(async (req, res) => {
         // 3) Ledger entry (escrow/receivable) for online (PayFast) payments
         try {
           if (sellerId && Number(totalPrice) > 0) {
-            // Commission percent from admin settings (fallback to env)
-            let commissionPct = Number(process.env.PLATFORM_COMMISSION_PCT || 0.1);
-            try {
-              const feeDoc = await db.collection('admin_settings').doc('payment_settings').get();
-              const feeData = feeDoc.exists ? feeDoc.data() : {};
-              const cfgPct = Number(feeData?.platformFeePercentage);
-              if (!isNaN(cfgPct) && cfgPct >= 0 && cfgPct <= 0.5) {
-                commissionPct = cfgPct / 100; // stored as percent in UI
-              }
-            } catch (_) {}
+            // Use tiered pricing system (Smart Commission)
             const gross = Math.round(Number(totalPrice) * 100) / 100;
-            const commission = Math.round(gross * commissionPct * 100) / 100;
-            const net = Math.round((gross - commission) * 100) / 100;
+            const { commission, net, smallOrderFee, tier } = await computeCommissionWithSettings({ 
+              gross, 
+              order: { 
+                totalPrice: gross, 
+                orderType: order.orderType || 'pickup',
+                deliveryModelPreference: order.deliveryModelPreference || 'merchant'
+              } 
+            });
             const eref = db
               .collection('platform_receivables')
               .doc(sellerId)
@@ -237,6 +234,9 @@ exports.payfastNotify = functions.https.onRequest(async (req, res) => {
                 gross,
                 commission,
                 net,
+                smallOrderFee,
+                tier,
+                commissionType: 'tiered_pricing',
                 createdAt: admin.firestore.FieldValue.serverTimestamp(),
                 updatedAt: admin.firestore.FieldValue.serverTimestamp(),
               },
@@ -2741,57 +2741,112 @@ const MIN_PAYOUT_AMOUNT = Number(process.env.MIN_PAYOUT_AMOUNT || 50); // R50 de
 
 function toRand(n) { return Math.round(Number(n || 0) * 100) / 100; }
 
-// Compute per-order commission using admin settings (supports per-mode pct + min/caps)
+// Compute per-order commission using tiered pricing system (Smart Commission)
 async function computeCommissionWithSettings({ gross, order }) {
   try {
     const doc = await db.collection('admin_settings').doc('payment_settings').get();
     const s = doc.exists ? (doc.data() || {}) : {};
-    // Determine order mode
-    const isDelivery = String(order.orderType || order.type || '').toLowerCase() === 'delivery';
-    const deliveryPref = String(order.deliveryModelPreference || '').toLowerCase();
-    const isPlatformDelivery = isDelivery && (deliveryPref === 'system');
-
-    // Choose pct
-    let pct = null;
-    if (!isDelivery) {
-      pct = Number(s.pickupPct);
-    } else if (isPlatformDelivery) {
-      pct = Number(s.platformDeliveryPct);
-    } else {
-      pct = Number(s.merchantDeliveryPct);
-    }
-    if (isNaN(pct) || pct < 0 || pct > 50) {
-      // fallback to legacy percent
-      const legacyPct = await getCommissionPct().catch(() => COMMISSION_PCT_FALLBACK);
-      pct = legacyPct * 100; // getCommissionPct returns fraction
-    }
-
-    // Compute raw commission on subtotal only (exclude delivery & buyer fees)
     const subtotal = Number(order.totalPrice || order.total || 0) || 0;
-    let commission = subtotal * (pct / 100);
-
-    // Apply min and caps
-    const cmin = Number(s.commissionMin);
-    if (!isNaN(cmin) && cmin > 0) commission = Math.max(commission, cmin);
-    let cap = null;
-    if (!isDelivery) {
-      cap = Number(s.commissionCapPickup);
-    } else if (isPlatformDelivery) {
-      cap = Number(s.commissionCapDeliveryPlatform);
+    
+    // 🚀 TIERED PRICING SYSTEM - Smart Commission based on order size
+    let commission = 0;
+    let smallOrderFee = 0;
+    let pctUsed = 0;
+    
+    // Get tiered pricing settings
+    const tier1Max = Number(s.tier1Max || 25);
+    const tier1Commission = Number(s.tier1Commission || 4);
+    const tier1SmallOrderFee = Number(s.tier1SmallOrderFee || 3);
+    
+    const tier2Max = Number(s.tier2Max || 100);
+    const tier2Commission = Number(s.tier2Commission || 6);
+    const tier2SmallOrderFee = Number(s.tier2SmallOrderFee || 2);
+    
+    const tier3Commission = Number(s.tier3Commission || 8);
+    
+    // Determine which tier this order falls into
+    if (subtotal <= tier1Max) {
+      // Tier 1: Small Orders (R0 - R25)
+      pctUsed = tier1Commission;
+      commission = subtotal * (tier1Commission / 100);
+      smallOrderFee = tier1SmallOrderFee;
+      
+      // Apply minimum commission for very small orders (fallback protection)
+      const minCommission = Number(s.commissionMin || 2);
+      if (commission < minCommission) {
+        commission = minCommission;
+      }
+      
+    } else if (subtotal <= tier2Max) {
+      // Tier 2: Medium Orders (R25 - R100)
+      pctUsed = tier2Commission;
+      commission = subtotal * (tier2Commission / 100);
+      smallOrderFee = tier2SmallOrderFee;
+      
     } else {
-      cap = Number(s.commissionCapDeliveryMerchant);
+      // Tier 3: Large Orders (R100+)
+      pctUsed = tier3Commission;
+      commission = subtotal * (tier3Commission / 100);
+      smallOrderFee = 0; // No small order fee for large orders
     }
-    if (!isNaN(cap) && cap > 0) commission = Math.min(commission, cap);
+    
+    // Apply delivery mode adjustments if tiered system fails
+    if (isNaN(commission) || commission < 0) {
+      // Fallback to legacy per-mode system
+      const isDelivery = String(order.orderType || order.type || '').toLowerCase() === 'delivery';
+      const deliveryPref = String(order.deliveryModelPreference || '').toLowerCase();
+      const isPlatformDelivery = isDelivery && (deliveryPref === 'system');
 
+      if (!isDelivery) {
+        pctUsed = Number(s.pickupPct || 6);
+      } else if (isPlatformDelivery) {
+        pctUsed = Number(s.platformDeliveryPct || 11);
+      } else {
+        pctUsed = Number(s.merchantDeliveryPct || 9);
+      }
+      
+      commission = subtotal * (pctUsed / 100);
+      
+      // Apply legacy min/caps as fallback
+      const cmin = Number(s.commissionMin || 5);
+      if (cmin > 0) commission = Math.max(commission, cmin);
+      
+      let cap = null;
+      if (!isDelivery) {
+        cap = Number(s.commissionCapPickup || 30);
+      } else if (isPlatformDelivery) {
+        cap = Number(s.commissionCapDeliveryPlatform || 50);
+      } else {
+        cap = Number(s.commissionCapDeliveryMerchant || 40);
+      }
+      if (cap > 0) commission = Math.min(commission, cap);
+    }
+    
+    // Round to 2 decimal places
     commission = toRand(commission);
     const net = toRand(subtotal - commission);
-    return { commission, net, pctUsed: pct };
+    
+    return { 
+      commission, 
+      net, 
+      pctUsed,
+      smallOrderFee,
+      tier: subtotal <= tier1Max ? 1 : subtotal <= tier2Max ? 2 : 3
+    };
+    
   } catch (e) {
+    // Ultimate fallback to legacy system
     const fallbackPct = await getCommissionPct().catch(() => COMMISSION_PCT_FALLBACK);
     const subtotal = Number(order.totalPrice || order.total || 0) || 0;
     const commission = toRand(subtotal * fallbackPct);
     const net = toRand(subtotal - commission);
-    return { commission, net, pctUsed: fallbackPct * 100 };
+    return { 
+      commission, 
+      net, 
+      pctUsed: fallbackPct * 100,
+      smallOrderFee: 0,
+      tier: 0
+    };
   }
 }
 
@@ -3097,9 +3152,9 @@ exports.markCodPaid = functions.https.onCall(async (data, context) => {
     throw new functions.https.HttpsError('failed-precondition', 'Order is not Cash on Delivery');
   }
 
-  // Derive amounts with per-mode settings and caps/mins
+  // Derive amounts with tiered pricing system (Smart Commission)
   const gross = Number(order.totalPrice || order.total || order.paymentAmount || 0) || 0;
-  const { commission, net } = await computeCommissionWithSettings({ gross, order });
+  const { commission, net, smallOrderFee, tier } = await computeCommissionWithSettings({ gross, order });
 
   // Create debt entry: seller owes platform the commission
   const eref = db.collection('platform_receivables').doc(sellerId).collection('entries').doc(orderId);
@@ -3112,6 +3167,9 @@ exports.markCodPaid = functions.https.onCall(async (data, context) => {
     gross,
     commission,
     net,
+    smallOrderFee,
+    tier,
+    commissionType: 'tiered_pricing',
     status: 'due', // Platform is owed this money
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -3139,7 +3197,15 @@ exports.markCodPaid = functions.https.onCall(async (data, context) => {
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
   }, { merge: true });
 
-  return { success: true, gross, commission, net, amountDue: commission };
+  return { 
+    success: true, 
+    gross, 
+    commission, 
+    net, 
+    smallOrderFee,
+    tier,
+    amountDue: commission 
+  };
 });
 
 exports.adminUpdatePayoutStatus = functions.https.onCall(async (data, context) => {
