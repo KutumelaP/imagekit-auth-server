@@ -34,6 +34,8 @@ class _PlatformSettingsSectionState extends State<PlatformSettingsSection> {
   bool _sending = false;
   // Add a maintenanceMode field to state
   bool _maintenanceMode = false;
+  // Delivery/assignment controls
+  bool _autoDriverAssignmentEnabled = false;
 
   @override
   void initState() {
@@ -62,6 +64,7 @@ class _PlatformSettingsSectionState extends State<PlatformSettingsSection> {
         _eftBankNameController.text = data['eftBankName'] ?? '';
         _eftAccountNumberController.text = data['eftAccountNumber'] ?? '';
         _eftBranchCodeController.text = data['eftBranchCode'] ?? '';
+        _autoDriverAssignmentEnabled = data['autoDriverAssignmentEnabled'] == true;
       });
     }
   }
@@ -79,6 +82,7 @@ class _PlatformSettingsSectionState extends State<PlatformSettingsSection> {
         'pargoVisible': _pargoVisible,
         'paxiVisible': _paxiVisible,
         'forcePudoDoorVisible': _forcePudoDoorVisible,
+        'autoDriverAssignmentEnabled': _autoDriverAssignmentEnabled,
         'eftAccountName': _eftAccountNameController.text.trim(),
         'eftBankName': _eftBankNameController.text.trim(),
         'eftAccountNumber': _eftAccountNumberController.text.trim(),
@@ -246,6 +250,16 @@ class _PlatformSettingsSectionState extends State<PlatformSettingsSection> {
                               title: const Text('Show PAXI', softWrap: false, overflow: TextOverflow.ellipsis),
                               value: _paxiVisible,
                               onChanged: (v) => setState(() => _paxiVisible = v),
+                            ),
+                          ),
+                          SizedBox(
+                            width: 260,
+                            child: SwitchListTile(
+                              dense: true,
+                              contentPadding: EdgeInsets.zero,
+                              title: const Text('Enable Auto Driver Assignment', softWrap: false, overflow: TextOverflow.ellipsis),
+                              value: _autoDriverAssignmentEnabled,
+                              onChanged: (v) => setState(() => _autoDriverAssignmentEnabled = v),
                             ),
                           ),
                           SizedBox(

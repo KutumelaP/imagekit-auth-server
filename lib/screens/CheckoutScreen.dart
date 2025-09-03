@@ -140,6 +140,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   // PAXI delivery speed selection
   String? _selectedPaxiDeliverySpeed; // 'standard' or 'express'
 
+  // Go-live safety flags
+  bool _enableAutoDriverAssignment = false; // OFF for launch
+  bool _paxiOnlyForLaunch = true; // ON for launch
+
   User? get currentUser => FirebaseAuth.instance.currentUser;
 
   // Web: HERE Autocomplete for pickup address
@@ -2948,19 +2952,24 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         final bool hasPargoPoints = _allPickupPoints.any((p) => p.isPargoPoint);
         final bool hasPaxiPoints = _allPickupPoints.any((p) => p.isPaxiPoint);
 
-        // Auto-select service filter based on seller capabilities and availability
-        if (_sellerPargoEnabled && !_sellerPaxiEnabled) {
-          _selectedServiceFilter = 'pargo';
-        } else if (_sellerPaxiEnabled && !_sellerPargoEnabled) {
+        // Auto-select service filter with go-live safety
+        if (_paxiOnlyForLaunch && hasPaxiPoints) {
           _selectedServiceFilter = 'paxi';
-        } else if (_sellerPargoEnabled && _sellerPaxiEnabled) {
-          // If only one service has points, preselect it
-          if (hasPargoPoints && !hasPaxiPoints) {
+        } else {
+          // Fallback to original logic when PAXI-only is disabled or unavailable
+          if (_sellerPargoEnabled && !_sellerPaxiEnabled) {
             _selectedServiceFilter = 'pargo';
-          } else if (!hasPargoPoints && hasPaxiPoints) {
+          } else if (_sellerPaxiEnabled && !_sellerPargoEnabled) {
             _selectedServiceFilter = 'paxi';
-          } else if (!hasPargoPoints && !hasPaxiPoints) {
-            _selectedServiceFilter = null; // neither available
+          } else if (_sellerPargoEnabled && _sellerPaxiEnabled) {
+            // If only one service has points, preselect it
+            if (hasPargoPoints && !hasPaxiPoints) {
+              _selectedServiceFilter = 'pargo';
+            } else if (!hasPargoPoints && hasPaxiPoints) {
+              _selectedServiceFilter = 'paxi';
+            } else if (!hasPargoPoints && !hasPaxiPoints) {
+              _selectedServiceFilter = null; // neither available
+            }
           }
         }
 
@@ -3192,6 +3201,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       bool pargoVisible = true;
       bool paxiVisible = true;
       bool platformDeliveryEnabled = true; // Default fallback
+      bool autoDriverAssignmentEnabled = false;
       
       try {
         final platformCfg = await FirebaseFirestore.instance.collection('config').doc('platform').get();
@@ -3200,6 +3210,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           pargoVisible = (cfg['pargoVisible'] != false);
           paxiVisible = (cfg['paxiVisible'] != false);
           platformDeliveryEnabled = (cfg['platformDeliveryEnabled'] != false);
+          autoDriverAssignmentEnabled = (cfg['autoDriverAssignmentEnabled'] == true);
         }
       } catch (_) {}
       
@@ -3213,6 +3224,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       print('  - seller sellerDeliveryEnabled: ${seller['sellerDeliveryEnabled']}');
       print('  - platform platformDeliveryEnabled: $platformDeliveryEnabled');
       print('  - Final _deliveryAllowed: $_deliveryAllowed');
+
+      // Set kill switch based on platform config
+      _enableAutoDriverAssignment = autoDriverAssignmentEnabled;
 
       _sellerPargoEnabled = (seller['pargoEnabled'] ?? false) && pargoVisible;
       _sellerPaxiEnabled = (seller['paxiEnabled'] ?? false) && paxiVisible;
@@ -5547,7 +5561,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                   ? '📦 Collect NON-FOOD items from PAXI counter with ID verification. Food items must be collected from restaurant.'
                   : '📦 Collect from PAXI counter with ID verification. Bring your order number and ID.')
               : '🏪 Collect from store counter. Bring your order number.',
-          'pickupPointFee': _selectedPickupPoint?.fee ?? 0.0,
+          'pickupPointFee': _selectedPickupPoint?.isPaxiPoint == true && _selectedPaxiDeliverySpeed != null
+              ? PaxiConfig.getPrice(_selectedPaxiDeliverySpeed!)
+              : (_selectedPickupPoint?.fee ?? 0.0),
           'pickupPointDistance': _selectedPickupPoint?.distance ?? 0.0,
           'pickupPointSummary': _selectedPickupPoint != null 
               ? '${_selectedPickupPoint!.isPargoPoint ? "🚚 Pargo" : _selectedPickupPoint!.isPaxiPoint ? "📦 PAXI" : "🏪 Local Store"}: ${_selectedPickupPoint!.name} - ${_selectedPickupPoint!.address}'
@@ -5605,7 +5621,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
                      // **AUTOMATED DRIVER ASSIGNMENT**
                Map<String, dynamic>? assignedDriver;
-               if (_isDelivery && (_isRuralArea || _isUrbanArea)) {
+               if (_enableAutoDriverAssignment && _isDelivery && (_isRuralArea || _isUrbanArea)) {
                  try {
                    print('🔍 DEBUG: Starting automated driver assignment...');
                    
@@ -5764,22 +5780,22 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       final isCOD = (_selectedPaymentMethod?.toLowerCase().contains('cash') ?? false);
       if (isCOD) {
         print('🔔 Sending immediate COD notifications...');
-        await NotificationService().sendNewOrderNotificationToSeller(
-          sellerId: sellerId,
-          orderId: orderId,
-          buyerName: buyerName,
-          orderTotal: widget.totalPrice,
-          sellerName: sellerName,
-        );
+      await NotificationService().sendNewOrderNotificationToSeller(
+        sellerId: sellerId,
+        orderId: orderId,
+        buyerName: buyerName,
+        orderTotal: widget.totalPrice,
+        sellerName: sellerName,
+      );
         await NotificationService().sendOrderStatusNotificationToBuyer(
           buyerId: currentUser!.uid,
           orderId: orderId,
           status: 'pending',
           sellerName: sellerName,
         );
-                        } else {
+      } else {
                     print('🔔 Skipping notifications until payment confirmed by gateway (awaiting_payment).');
-                  }
+      }
       
       print('✅ Order notifications sent successfully');
     } catch (e) {
@@ -6601,8 +6617,14 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                         fontWeight: FontWeight.w700,
                                       ),
                                     ),
-                                    // Remove address hint entirely for store pickup chip
-                                    SizedBox.shrink(),
+                                    Text(
+                                      'Secure Points',
+                                      style: TextStyle(
+                                        color: _selectedServiceFilter == 'store' ? AppTheme.angel.withOpacity(0.85) : AppTheme.deepTeal.withOpacity(0.7),
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
                                   ],
                                 ),
                               ),
@@ -6611,7 +6633,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                         ),
                       ),
                       if (_storePickupAvailable && (_sellerPargoEnabled || _sellerPaxiEnabled)) SizedBox(width: 12),
-                      if (_sellerPargoEnabled) Expanded(
+                      if (_sellerPargoEnabled && !_paxiOnlyForLaunch) Expanded(
                         child: Container(
                           decoration: BoxDecoration(
                             gradient: _selectedServiceFilter == 'pargo' 

@@ -32,6 +32,51 @@ const { dailyPaymentAlerts, weeklyPaymentSummary } = require('./scheduled_paymen
 exports.dailyPaymentAlerts = dailyPaymentAlerts;
 exports.weeklyPaymentSummary = weeklyPaymentSummary;
 
+// Notify buyer on meaningful order status transitions
+exports.onOrderStatusChange = functions.runWith({ timeoutSeconds: 60, memory: '256MB' }).firestore
+  .document('orders/{orderId}')
+  .onUpdate(async (change, context) => {
+    try {
+      const before = change.before.data() || {};
+      const after = change.after.data() || {};
+      const prev = String(before.status || '').toLowerCase();
+      const curr = String(after.status || '').toLowerCase();
+      if (!curr || prev === curr) return null;
+
+      const titles = {
+        driver_assigned: 'Driver assigned',
+        dispatched: 'Order dispatched',
+        in_transit: 'Your order is on the way',
+        ready_for_pickup: 'Ready for pickup',
+        delivered: 'Order delivered',
+      };
+      const bodies = {
+        driver_assigned: `Driver ${(after.assignedDriver && after.assignedDriver.name) || ''} is assigned to your order.`,
+        dispatched: 'Your order has left the store.',
+        in_transit: 'Track your order for live updates.',
+        ready_for_pickup: after.pickupPointType === 'paxi'
+          ? 'Collect at PAXI counter with your order number and ID.'
+          : 'Your order is ready for pickup.',
+        delivered: 'Enjoy! Please rate your experience.',
+      };
+
+      const title = titles[curr];
+      if (!title) return null;
+
+      await db.collection('push_notifications').add({
+        to: after.buyerId,
+        title,
+        body: bodies[curr],
+        data: { type: 'order', orderId: context.params.orderId, status: curr },
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+      return null;
+    } catch (e) {
+      console.error('[onOrderStatusChange] failed', e);
+      return null;
+    }
+  });
+
 // --- PayFast IPN/Return handlers ---
 exports.payfastNotify = functions.https.onRequest(async (req, res) => {
   try {
