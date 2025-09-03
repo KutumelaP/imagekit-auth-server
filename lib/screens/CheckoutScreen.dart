@@ -3236,8 +3236,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       // Set kill switch based on platform config
       _enableAutoDriverAssignment = autoDriverAssignmentEnabled;
 
-      // Auto PUDO Locker-to-Door routing: only for non-food carts and if enabled
-      if (autoPudoRoutingEnabled && _productCategory.toLowerCase() != 'food' && _isDelivery) {
+      // Auto PUDO Locker-to-Door routing: for eligible non-food orders
+      // Runs if Delivery is selected OR when delivery is not allowed (routes silently to PUDO)
+      if (autoPudoRoutingEnabled && _productCategory.toLowerCase() != 'food' && (_isDelivery || !_deliveryAllowed)) {
         try {
           // Determine size/speed defaults (simple heuristic)
           final String pudoSpeed = 'standard';
