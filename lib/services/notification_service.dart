@@ -1335,6 +1335,7 @@ class NotificationService {
     required String buyerName,
     required double orderTotal,
     required String sellerName,
+    Map<String, dynamic>? orderData, // Add order data parameter
   }) async {
     try {
       print('🔍 DEBUG: sendNewOrderNotificationToSeller called');
@@ -1343,6 +1344,7 @@ class NotificationService {
       print('🔍 DEBUG: buyerName: $buyerName');
       print('🔍 DEBUG: orderTotal: $orderTotal');
       print('🔍 DEBUG: sellerName: $sellerName');
+      print('🔍 DEBUG: orderData: $orderData');
       
       // Validate seller ID
       if (sellerId.isEmpty) {
@@ -1368,36 +1370,108 @@ class NotificationService {
         return;
       }
 
-      print('🔔 Sending new order notification to seller: $sellerId');
-      print('🔔 Order details: ID=$orderId, Buyer=$buyerName, Total=R$orderTotal');
+      // Enhanced notification content with delivery details
+      String notificationTitle = 'New Order Received';
+      String notificationBody = 'You have a new order from $buyerName for R${orderTotal.toStringAsFixed(2)}';
       
-      // Store notification in Firestore database
-      print('🔍 DEBUG: Storing notification in database...');
+      // Check if this is a Paxi delivery order and enhance notification
+      if (orderData != null) {
+        final deliveryType = orderData['deliveryType']?.toString().toLowerCase() ?? '';
+        final paxiDetails = orderData['paxiDetails'];
+        final paxiPickupPoint = orderData['paxiPickupPoint'];
+        final paxiDeliverySpeed = orderData['paxiDeliverySpeed'];
+        
+        if (deliveryType == 'paxi' && paxiDetails != null) {
+          // Enhanced Paxi notification
+          notificationTitle = '🚚 New PAXI Order Received';
+          
+          final pickupName = paxiPickupPoint?['name'] ?? 'PAXI Pickup Point';
+          final pickupAddress = paxiPickupPoint?['address'] ?? 'Address not specified';
+          final speed = paxiDeliverySpeed == 'express' ? 'Express (3-5 days)' : 'Standard (7-9 days)';
+          
+          notificationBody = '''🚚 New PAXI Order from $buyerName
+💰 Total: R${orderTotal.toStringAsFixed(2)}
+📍 Pickup Point: $pickupName
+🏠 Address: $pickupAddress
+⚡ Delivery: $speed
+📦 Package: 10kg max''';
+          
+          print('🔍 DEBUG: Enhanced Paxi notification created');
+          print('🔍 DEBUG: Pickup Point: $pickupName');
+          print('🔍 DEBUG: Address: $pickupAddress');
+          print('🔍 DEBUG: Speed: $speed');
+        } else if (deliveryType == 'pargo' && orderData['pargoPickupDetails'] != null) {
+          // Enhanced Pargo notification
+          final pargoDetails = orderData['pargoPickupDetails'];
+          final pickupName = pargoDetails['pickupPointName'] ?? 'Pargo Pickup Point';
+          final pickupAddress = pargoDetails['pickupPointAddress'] ?? 'Address not specified';
+          
+          notificationTitle = '📦 New Pargo Order Received';
+          notificationBody = '''📦 New Pargo Order from $buyerName
+💰 Total: R${orderTotal.toStringAsFixed(2)}
+📍 Pickup Point: $pickupName
+🏠 Address: $pickupAddress
+📋 Instructions: Ship to Pargo pickup point''';
+          
+          print('🔍 DEBUG: Enhanced Pargo notification created');
+        } else if (deliveryType == 'pickup') {
+          // Store pickup notification
+          notificationTitle = '🏪 New Pickup Order Received';
+          notificationBody = '''🏪 New Pickup Order from $buyerName
+💰 Total: R${orderTotal.toStringAsFixed(2)}
+📍 Customer will collect from your store
+⏰ Prepare for pickup''';
+        } else if (deliveryType == 'delivery' && orderData['deliveryAddress'] != null) {
+          // Merchant delivery notification
+          final deliveryAddress = orderData['deliveryAddress'];
+          final address = deliveryAddress['address'] ?? 'Address not specified';
+          final suburb = deliveryAddress['suburb'] ?? '';
+          final city = deliveryAddress['city'] ?? '';
+          
+          notificationTitle = '🚚 New Delivery Order Received';
+          notificationBody = '''🚚 New Delivery Order from $buyerName
+💰 Total: R${orderTotal.toStringAsFixed(2)}
+📍 Delivery Address: $address
+🏘️ $suburb, $city
+📦 You will deliver this order''';
+        }
+      }
+
+      print('🔔 Sending enhanced order notification to seller: $sellerId');
+      print('🔔 Order details: ID=$orderId, Buyer=$buyerName, Total=R$orderTotal');
+      print('🔔 Enhanced notification - Title: $notificationTitle');
+      print('🔔 Enhanced notification - Body: $notificationBody');
+      
+      // Store enhanced notification in Firestore database
+      print('🔍 DEBUG: Storing enhanced notification in database...');
       await _storeNotificationInDatabase(
         userId: sellerId,
-        title: 'New Order Received',
-        body: 'You have a new order from $buyerName for R${orderTotal.toStringAsFixed(2)}',
+        title: notificationTitle,
+        body: notificationBody,
         type: 'new_order_seller',
         orderId: orderId,
         data: {
           'buyerName': buyerName,
           'orderTotal': orderTotal.toString(),
           'sellerName': sellerName,
+          'deliveryType': orderData?['deliveryType'],
+          'paxiDetails': orderData?['paxiDetails'],
+          'paxiPickupPoint': orderData?['paxiPickupPoint'],
+          'paxiDeliverySpeed': orderData?['paxiDeliverySpeed'],
+          'pargoPickupDetails': orderData?['pargoPickupDetails'],
+          'deliveryAddress': orderData?['deliveryAddress'],
         },
       );
-      print('🔍 DEBUG: Notification stored in database');
+      print('🔍 DEBUG: Enhanced notification stored in database');
       
-      // Show local notification
-      final notificationTitle = 'New Order Received';
-      final notificationBody = 'You have a new order from $buyerName for R${orderTotal.toStringAsFixed(2)}';
-      
-      print('🔔 Showing order notification - Title: $notificationTitle, Body: $notificationBody');
+      // Show enhanced local notification
+      print('🔔 Showing enhanced order notification - Title: $notificationTitle, Body: $notificationBody');
       print('🔔 Notification settings - System: $_systemNotificationsEnabled, In-app: $_inAppNotificationsEnabled');
       
       // Show system notification if enabled
       if (_systemNotificationsEnabled) {
         if (kIsWeb) {
-          print('🔍 DEBUG: Showing web notification...');
+          print('🔍 DEBUG: Showing enhanced web notification...');
           _showWebNotification(
             title: notificationTitle,
             body: notificationBody,
@@ -1408,21 +1482,25 @@ class NotificationService {
               'orderId': orderId,
             },
           );
-          print('🔍 DEBUG: Web notification shown');
+          print('🔍 DEBUG: Enhanced web notification shown');
         }
       }
 
-      // Add to notification stream for in-app display
+      // Add enhanced notification to stream for in-app display
       if (_inAppNotificationsEnabled) {
-        print('🔍 DEBUG: Adding to notification stream...');
+        print('🔍 DEBUG: Adding enhanced notification to stream...');
         _notificationController.add({
           'type': 'new_order_seller',
           'title': notificationTitle,
           'body': notificationBody,
           'orderId': orderId,
           'timestamp': DateTime.now().millisecondsSinceEpoch,
+          'deliveryType': orderData?['deliveryType'],
+          'paxiDetails': orderData?['paxiDetails'],
+          'paxiPickupPoint': orderData?['paxiPickupPoint'],
+          'paxiDeliverySpeed': orderData?['paxiDeliverySpeed'],
         });
-        print('🔍 DEBUG: Added to notification stream');
+        print('🔍 DEBUG: Enhanced notification added to stream');
       }
       
       // Play notification sound
@@ -1431,17 +1509,24 @@ class NotificationService {
         await _soundService.playNotificationSound();
         print('🔍 DEBUG: Notification sound played');
       }
-      // Voice announcement
+      
+      // Enhanced voice announcement
       if (_voiceAnnouncementsEnabled) {
         try {
-          await _speakSafe('New order received. Buyer $buyerName. Total R${orderTotal.toStringAsFixed(2)}.');
+          if (orderData?['deliveryType'] == 'paxi') {
+            final pickupName = orderData?['paxiPickupPoint']?['name'] ?? 'PAXI Pickup Point';
+            final speed = orderData?['paxiDeliverySpeed'] == 'express' ? 'Express delivery' : 'Standard delivery';
+            await _speakSafe('New PAXI order received. Buyer $buyerName. Total R${orderTotal.toStringAsFixed(2)}. Ship to $pickupName. $speed.');
+          } else {
+            await _speakSafe('New order received. Buyer $buyerName. Total R${orderTotal.toStringAsFixed(2)}.');
+          }
         } catch (_) {}
       }
       
-      print('✅ New order notification to seller completed successfully');
+      print('✅ Enhanced order notification to seller completed successfully');
       
     } catch (e) {
-      print('❌ Error sending new order notification to seller: $e');
+      print('❌ Error sending enhanced order notification to seller: $e');
       print('❌ Error stack trace: ${StackTrace.current}');
     }
   }

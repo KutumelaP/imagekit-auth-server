@@ -156,10 +156,70 @@ class FirebaseAdminService {
     required String orderNumber,
     required double totalPrice,
     required String buyerName,
+    Map<String, dynamic>? orderData, // Add order data parameter
   }) async {
     try {
-      final title = 'New Order Received! 🎉';
-      final body = 'Order ${_formatOrderNumber(orderNumber)} from $buyerName - R${totalPrice.toStringAsFixed(2)}';
+      // Enhanced notification content with delivery details
+      String title = 'New Order Received! 🎉';
+      String body = 'Order ${_formatOrderNumber(orderNumber)} from $buyerName - R${totalPrice.toStringAsFixed(2)}';
+      
+      // Check if this is a Paxi delivery order and enhance notification
+      if (orderData != null) {
+        final deliveryType = orderData['deliveryType']?.toString().toLowerCase() ?? '';
+        final paxiDetails = orderData['paxiDetails'];
+        final paxiPickupPoint = orderData['paxiPickupPoint'];
+        final paxiDeliverySpeed = orderData['paxiDeliverySpeed'];
+        
+        if (deliveryType == 'paxi' && paxiDetails != null) {
+          // Enhanced Paxi notification
+          title = '🚚 New PAXI Order Received!';
+          
+          final pickupName = paxiPickupPoint?['name'] ?? 'PAXI Pickup Point';
+          final pickupAddress = paxiPickupPoint?['address'] ?? 'Address not specified';
+          final speed = paxiDeliverySpeed == 'express' ? 'Express (3-5 days)' : 'Standard (7-9 days)';
+          
+          body = '''🚚 New PAXI Order ${_formatOrderNumber(orderNumber)} from $buyerName
+💰 Total: R${totalPrice.toStringAsFixed(2)}
+📍 Pickup Point: $pickupName
+🏠 Address: $pickupAddress
+⚡ Delivery: $speed
+📦 Package: 10kg max''';
+          
+        } else if (deliveryType == 'pargo' && orderData['pargoPickupDetails'] != null) {
+          // Enhanced Pargo notification
+          final pargoDetails = orderData['pargoPickupDetails'];
+          final pickupName = pargoDetails['pickupPointName'] ?? 'Pargo Pickup Point';
+          final pickupAddress = pargoDetails['pickupPointAddress'] ?? 'Address not specified';
+          
+          title = '📦 New Pargo Order Received!';
+          body = '''📦 New Pargo Order ${_formatOrderNumber(orderNumber)} from $buyerName
+💰 Total: R${totalPrice.toStringAsFixed(2)}
+📍 Pickup Point: $pickupName
+🏠 Address: $pickupAddress
+📋 Instructions: Ship to Pargo pickup point''';
+          
+        } else if (deliveryType == 'pickup') {
+          // Store pickup notification
+          title = '🏪 New Pickup Order Received!';
+          body = '''🏪 New Pickup Order ${_formatOrderNumber(orderNumber)} from $buyerName
+💰 Total: R${totalPrice.toStringAsFixed(2)}
+📍 Customer will collect from your store
+⏰ Prepare for pickup''';
+        } else if (deliveryType == 'delivery' && orderData['deliveryAddress'] != null) {
+          // Merchant delivery notification
+          final deliveryAddress = orderData['deliveryAddress'];
+          final address = deliveryAddress['address'] ?? 'Address not specified';
+          final suburb = deliveryAddress['suburb'] ?? '';
+          final city = deliveryAddress['city'] ?? '';
+          
+          title = '🚚 New Delivery Order Received!';
+          body = '''🚚 New Delivery Order ${_formatOrderNumber(orderNumber)} from $buyerName
+💰 Total: R${totalPrice.toStringAsFixed(2)}
+📍 Delivery Address: $address
+🏘️ $suburb, $city
+📦 You will deliver this order''';
+        }
+      }
 
       final data = {
         'type': 'new_order_seller',
@@ -167,6 +227,12 @@ class FirebaseAdminService {
         'orderNumber': orderNumber,
         'totalPrice': totalPrice.toString(),
         'buyerName': buyerName,
+        'deliveryType': orderData?['deliveryType'],
+        'paxiDetails': orderData?['paxiDetails'],
+        'paxiPickupPoint': orderData?['paxiPickupPoint'],
+        'paxiDeliverySpeed': orderData?['paxiDeliverySpeed'],
+        'pargoPickupDetails': orderData?['pargoPickupDetails'],
+        'deliveryAddress': orderData?['deliveryAddress'],
       };
 
       return await sendNotificationToUser(
@@ -176,7 +242,7 @@ class FirebaseAdminService {
         data: data,
       );
     } catch (e) {
-      print('❌ Error sending new order notification to seller: $e');
+      print('❌ Error sending enhanced new order notification to seller: $e');
       return false;
     }
   }

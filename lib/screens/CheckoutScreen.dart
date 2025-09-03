@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import '../widgets/pudo_section.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart';
 import '../config/paxi_config.dart';
@@ -31,6 +32,7 @@ import '../utils/time_utils.dart';
 import '../config/paxi_config.dart';
 import '../widgets/enhanced_pickup_button.dart';
 import 'package:cloud_functions/cloud_functions.dart';
+import '../widgets/pudo_section.dart';
 
 import '../providers/cart_provider.dart';
 import '../services/optimized_checkout_service.dart';
@@ -128,7 +130,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   List<PickupPoint> _allPickupPoints = []; // Store all pickup points
   bool _isLoadingPickupPoints = false;
   PickupPoint? _selectedPickupPoint;
-  String? _selectedServiceFilter; // 'pargo', 'paxi', 'store', or null for all
+  String? _selectedServiceFilter; // 'pargo', 'paxi', 'pudo', 'store', or null for all
   bool _storePickupAvailable = false;
   double? _selectedLat;
   double? _selectedLng;
@@ -136,6 +138,19 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   // Seller service availability
   bool _sellerPargoEnabled = false;
   bool _sellerPaxiEnabled = false;
+  // PUDO integration
+  bool _sellerPudoEnabled = false;
+  bool _pudoEnabledGlobal = false;
+  bool _forcePudoDoorVisible = false;
+  String? _selectedPudoSize; // 'xs','s','m','l','xl' (xs optional)
+  String? _selectedPudoSpeed; // 'standard' | 'express'
+  final TextEditingController _pudoLockerNameController = TextEditingController();
+  final TextEditingController _pudoLockerAddressController = TextEditingController();
+  Map<String, dynamic> _pudoPricing = const {};
+  // PUDO Door-to-Door (delivery) state
+  bool _pudoDoorSelected = false;
+  Map<String, dynamic> _pudoPricingDoor = const {};
+  double? _pudoDoorSurcharge; // optional extra fee for door services
   
   // PAXI delivery speed selection
   String? _selectedPaxiDeliverySpeed; // 'standard' or 'express'
@@ -195,6 +210,32 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       return double.parse(fee.toStringAsFixed(2));
     }
     return 0.0;
+  }
+
+  void _maybeUpdatePudoFee() {
+    try {
+      if ((_selectedServiceFilter == 'pudo' && !_isDelivery) && _pudoEnabledGlobal && _sellerPudoEnabled) {
+        final sp = _pudoPricing; // {'standard': {'s': 45.0, ...}, 'express': {...}}
+        final speed = (_selectedPudoSpeed ?? 'standard');
+        final size = (_selectedPudoSize ?? 'm');
+        final bySpeed = (sp[speed] as Map?) ?? {};
+        final price = bySpeed[size];
+        if (price is num) {
+          if (mounted) setState(() { _deliveryFee = price.toDouble(); });
+        }
+      }
+      if (_isDelivery && _pudoDoorSelected && _pudoEnabledGlobal && _sellerPudoEnabled) {
+        final sp = _pudoPricingDoor; // {'standard': {'s': 60.0, ...}, 'express': {...}}
+        final speed = (_selectedPudoSpeed ?? 'standard');
+        final size = (_selectedPudoSize ?? 'm');
+        final bySpeed = (sp[speed] as Map?) ?? {};
+        final price = bySpeed[size];
+        if (price is num) {
+          final surcharge = (FirebaseFirestore.instance); // placeholder no-op to avoid unused import
+          if (mounted) setState(() { _deliveryFee = price.toDouble(); });
+        }
+      }
+    } catch (_) {}
   }
 
   double _selectCommissionPercentForCurrentMode() {
@@ -3055,10 +3096,14 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         print('🔍 DEBUG: No pickup points available for selected service');
       }
       
-      // Reset PAXI delivery speed when service filter changes
+      // Reset PAXI/PUDO options when service filter changes
       if (service != 'paxi') {
         _selectedPaxiDeliverySpeed = null;
         print('🔍 DEBUG: Reset PAXI delivery speed - service changed to: $service');
+      }
+      if (service != 'pudo') {
+        _selectedPudoSize = (service == 'pudo') ? _selectedPudoSize : null;
+        _selectedPudoSpeed = (service == 'pudo') ? _selectedPudoSpeed : null;
       }
     });
     // Small async delay to show spinner then settle
@@ -3191,6 +3236,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       // Global platform visibility overrides
       bool pargoVisible = true;
       bool paxiVisible = true;
+      bool pudoVisible = false;
       bool platformDeliveryEnabled = true; // Default fallback
       
       try {
@@ -3200,6 +3246,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           pargoVisible = (cfg['pargoVisible'] != false);
           paxiVisible = (cfg['paxiVisible'] != false);
           platformDeliveryEnabled = (cfg['platformDeliveryEnabled'] != false);
+          final f = cfg['forcePudoDoorVisible'];
+          _forcePudoDoorVisible = (f == true) || (f is String && f.toLowerCase() == 'true');
         }
       } catch (_) {}
       
@@ -3216,6 +3264,36 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
       _sellerPargoEnabled = (seller['pargoEnabled'] ?? false) && pargoVisible;
       _sellerPaxiEnabled = (seller['paxiEnabled'] ?? false) && paxiVisible;
+      _sellerPudoEnabled = (seller['pudoEnabled'] ?? false);
+
+      // Read global PUDO config and prefill defaults
+      try {
+        final spDoc = await FirebaseFirestore.instance.collection('admin_settings').doc('shipping_providers').get();
+        final sp = spDoc.data() ?? {};
+        final pudo = (sp['pudo'] as Map?) ?? {};
+        final enabledRaw = pudo['enabled'];
+        _pudoEnabledGlobal = (enabledRaw == true) || (enabledRaw is String && enabledRaw.toLowerCase() == 'true');
+        if (kDebugMode) {
+          print('🔍 DEBUG: Loaded PUDO admin_settings/shipping_providers');
+          print('  - enabledRaw: $enabledRaw -> _pudoEnabledGlobal: $_pudoEnabledGlobal');
+          print('  - pricing keys: ${(pudo['pricing'] is Map) ? (pudo['pricing'] as Map).keys.toList() : 'none'}');
+          print('  - pricingDoor keys: ${(pudo['pricingDoor'] is Map) ? (pudo['pricingDoor'] as Map).keys.toList() : 'none'}');
+          print('  - doorSurcharge: ${pudo['doorSurcharge']}');
+        }
+        if (_pudoEnabledGlobal) {
+          final pricing = (pudo['pricing'] as Map?) ?? {};
+          _pudoPricing = pricing.map((k, v) => MapEntry(k.toString(), Map<String, dynamic>.from(v as Map)));
+          _pudoPricingDoor = Map<String, dynamic>.from((pudo['pricingDoor'] as Map?) ?? {});
+          final ds = pudo['doorSurcharge'];
+          if (ds is num) _pudoDoorSurcharge = ds.toDouble();
+          // Prefill seller defaults if provided
+          _selectedPudoSize = (seller['pudoDefaultSize'] as String?) ?? 'm';
+          _selectedPudoSpeed = (seller['pudoDefaultSpeed'] as String?) ?? 'standard';
+          _pudoLockerNameController.text = (seller['pudoLockerName'] ?? '').toString();
+          _pudoLockerAddressController.text = (seller['pudoLockerAddress'] ?? '').toString();
+          if (mounted) setState(() {});
+        }
+      } catch (_) {}
       // Store pickup available if seller has coordinates
       _storePickupAvailable = (storeLat != null && storeLng != null);
       
@@ -5478,6 +5556,22 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       final String resolvedPaymentStatus = paymentStatusOverride ?? (isCOD ? 'pending' : 'awaiting_payment');
       final String resolvedOrderStatus = isCOD ? 'pending' : 'awaiting_payment';
 
+      // Shipping reimbursement: PAXI/PUDO prepaid wallet
+      final bool isPickupPointPaxi = (!_isDelivery && (_selectedServiceFilter == 'paxi'));
+      final bool isPickupPointPudo = (!_isDelivery && (_selectedServiceFilter == 'pudo')) || (_isDelivery && _pudoDoorSelected);
+      final double paxiFee = isPickupPointPaxi
+          ? (_selectedPaxiDeliverySpeed != null ? PaxiConfig.getPrice(_selectedPaxiDeliverySpeed!) : 0.0)
+          : 0.0;
+      final double pudoFee = isPickupPointPudo ? (() {
+        final speed = (_selectedPudoSpeed ?? 'standard');
+        final size = (_selectedPudoSize ?? 'm');
+        final bySpeed = _isDelivery && _pudoDoorSelected 
+            ? ((_pudoPricingDoor[speed] as Map?) ?? {})
+            : ((_pudoPricing[speed] as Map?) ?? {});
+        final price = bySpeed[size];
+        return price is num ? price.toDouble() : 0.0;
+      }()) : 0.0;
+
       final orderRef = await FirebaseFirestore.instance.collection('orders').add({
         'orderNumber': orderNumber,
         'buyerId': currentUser!.uid,
@@ -5517,6 +5611,12 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         // Buyer-facing fees
         'buyerServiceFee': _computeBuyerServiceFeeAmount(subtotal: widget.totalPrice),
         'smallOrderFee': _computeSmallOrderFeeAmount(subtotal: widget.totalPrice),
+        // PAXI shipping credit for seller
+        'shippingCreditMethod': isPickupPointPaxi ? 'paxi' : (isPickupPointPudo ? 'pudo' : null),
+        'shippingCreditAmount': isPickupPointPaxi ? paxiFee : (isPickupPointPudo ? pudoFee : 0.0),
+        'shippingSettlementMode': (isPickupPointPaxi || isPickupPointPudo) ? 'prepaid_wallet' : null,
+        'carrier': isPickupPointPaxi ? 'paxi' : (isPickupPointPudo ? 'pudo' : null),
+        'pudoService': (_isDelivery && _pudoDoorSelected) ? 'door' : (_selectedServiceFilter == 'pudo' ? 'locker' : null),
         
         // 🚚 PAXI DELIVERY SPEED INFORMATION (for all orders)
         'paxiDeliverySpeed': _selectedPaxiDeliverySpeed,
@@ -5529,8 +5629,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           'pickupPointId': _selectedPickupPoint?.id,
           'pickupPointName': _selectedPickupPoint?.name,
           'pickupPointAddress': _selectedPickupPoint?.address,
-          'pickupPointType': _selectedPickupPoint?.isPargoPoint == true ? 'pargo' : 
-                          _selectedPickupPoint?.isPaxiPoint == true ? 'paxi' : 'local_store',
+          'pickupPointType': _selectedServiceFilter == 'pargo' ? 'pargo' : _selectedServiceFilter == 'paxi' ? 'paxi' : _selectedServiceFilter == 'pudo' ? 'pudo' : 'local_store',
           'pickupPointOperatingHours': _selectedPickupPoint?.operatingHours,
           'pickupPointCategory': _selectedPickupPoint?.type,
           'pickupPointPargoId': _selectedPickupPoint?.pargoId,
@@ -5538,14 +5637,16 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             'latitude': _selectedPickupPoint!.latitude,
             'longitude': _selectedPickupPoint!.longitude,
           } : null,
-          'pickupInstructions': _selectedPickupPoint?.isPargoPoint == true 
+          'pickupInstructions': _selectedServiceFilter == 'pargo' 
               ? (_productCategory == 'mixed' 
                   ? '📦 Collect NON-FOOD items from Pargo counter with ID verification. Food items must be collected from restaurant.'
                   : '📦 Collect from Pargo counter with ID verification. Bring your order number and ID.')
-              : _selectedPickupPoint?.isPaxiPoint == true
+              : _selectedServiceFilter == 'paxi'
               ? (_productCategory == 'mixed'
                   ? '📦 Collect NON-FOOD items from PAXI counter with ID verification. Food items must be collected from restaurant.'
                   : '📦 Collect from PAXI counter with ID verification. Bring your order number and ID.')
+              : _selectedServiceFilter == 'pudo'
+              ? '📦 Use the PUDO app to book a locker. Enter the locker name and address above. Bring your order number and ID to collect.'
               : '🏪 Collect from store counter. Bring your order number.',
           'pickupPointFee': _selectedPickupPoint?.fee ?? 0.0,
           'pickupPointDistance': _selectedPickupPoint?.distance ?? 0.0,
@@ -5760,26 +5861,66 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         debugPrint('Error getting seller name: $e');
       }
 
-      // Notify logic: Send appropriate notifications based on payment method
+      // 🔔 ENHANCED NOTIFICATION LOGIC: Send delivery details for ALL orders
+      print('🔔 Preparing enhanced notifications with delivery details...');
+      
+      // Prepare order data for enhanced notifications (for ALL orders)
+      final Map<String, dynamic> orderData = {
+        'deliveryType': _isDelivery ? 'delivery' : 'pickup',
+        'deliveryAddress': _isDelivery ? {
+          'address': _addressController.text.trim(),
+          'suburb': '', // Will be extracted from address if needed
+          'city': '', // Will be extracted from address if needed
+        } : null,
+      };
+
+      // Add Paxi details if Paxi pickup is selected
+      if (!_isDelivery && _selectedPickupPoint?.isPaxiPoint == true) {
+        orderData['deliveryType'] = 'paxi';
+        orderData['paxiDetails'] = {
+          'deliverySpeed': _selectedPaxiDeliverySpeed ?? 'standard',
+          'pickupPoint': _selectedPickupPoint?.id ?? '',
+        };
+        orderData['paxiPickupPoint'] = {
+          'name': _selectedPickupPoint?.name ?? 'PAXI Pickup Point',
+          'address': _selectedPickupPoint?.address ?? 'Address not specified',
+          'id': _selectedPickupPoint?.id ?? '',
+        };
+        orderData['paxiDeliverySpeed'] = _selectedPaxiDeliverySpeed ?? 'standard';
+      }
+      // Add Pargo details if Pargo pickup is selected
+      else if (!_isDelivery && _selectedPickupPoint?.isPargoPoint == true) {
+        orderData['deliveryType'] = 'pargo';
+        orderData['pargoPickupDetails'] = {
+          'pickupPointName': _selectedPickupPoint?.name ?? 'Pargo Pickup Point',
+          'pickupPointAddress': _selectedPickupPoint?.address ?? 'Address not specified',
+          'pickupPointId': _selectedPickupPoint?.id ?? '',
+        };
+      }
+
+      // Send enhanced seller notification for ALL orders (regardless of payment method)
+      await NotificationService().sendNewOrderNotificationToSeller(
+        sellerId: sellerId,
+        orderId: orderId,
+        buyerName: buyerName,
+        orderTotal: widget.totalPrice,
+        sellerName: sellerName,
+        orderData: orderData, // Pass enhanced order data
+      );
+
+      // Send buyer notification based on payment method
       final isCOD = (_selectedPaymentMethod?.toLowerCase().contains('cash') ?? false);
       if (isCOD) {
-        print('🔔 Sending immediate COD notifications...');
-        await NotificationService().sendNewOrderNotificationToSeller(
-          sellerId: sellerId,
-          orderId: orderId,
-          buyerName: buyerName,
-          orderTotal: widget.totalPrice,
-          sellerName: sellerName,
-        );
+        print('🔔 Sending immediate buyer notification for COD order...');
         await NotificationService().sendOrderStatusNotificationToBuyer(
           buyerId: currentUser!.uid,
           orderId: orderId,
           status: 'pending',
           sellerName: sellerName,
         );
-                        } else {
-                    print('🔔 Skipping notifications until payment confirmed by gateway (awaiting_payment).');
-                  }
+      } else {
+        print('🔔 Buyer notification will be sent when payment is confirmed by gateway.');
+      }
       
       print('✅ Order notifications sent successfully');
     } catch (e) {
@@ -5888,7 +6029,24 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                     padding: EdgeInsets.all(ResponsiveUtils.getHorizontalPadding(context)),
                     sliver: SliverList(
                       delegate: SliverChildListDelegate([
+                        // TOP-LEVEL DEBUG STRIP
+                        Builder(builder: (context) {
+                          print('🟨 PUDO DEBUG STRIP: building at top of sliver list');
+                          return Container(
+                            padding: EdgeInsets.all(12),
+                            margin: EdgeInsets.only(bottom: 8),
+                            decoration: BoxDecoration(
+                              color: Colors.yellow.shade100,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Colors.orange, width: 2),
+                            ),
+                            child: Text('PUDO DEBUG STRIP (TOP): if you see this, UI updated',
+                              style: TextStyle(color: Colors.black, fontWeight: FontWeight.w700),
+                            ),
+                          );
+                        }),
                         _buildCheckoutHeader(),
+                        // (removed top test section)
                         SizedBox(height: ResponsiveUtils.getVerticalPadding(context)),
                         
                         _buildStoreInfoSection(),
@@ -5946,7 +6104,13 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                         if (_isLoadingPickupPoints && _pickupPoints.isEmpty) ...[
                           SizedBox(height: ResponsiveUtils.getVerticalPadding(context) * 0.5),
                           SafeUI.safeText(
-                            'This can take a few seconds while we search nearby PAXI and Pargo stores.',
+                            (_sellerPargoEnabled && _sellerPaxiEnabled)
+                                ? 'This can take a few seconds while we search nearby PAXI and Pargo stores.'
+                                : (_sellerPaxiEnabled
+                                    ? 'This can take a few seconds while we search nearby PAXI stores.'
+                                    : (_sellerPargoEnabled
+                                        ? 'This can take a few seconds while we search nearby Pargo stores.'
+                                        : 'This can take a few seconds while we search nearby pickup stores.')),
                             style: TextStyle(
                               fontSize: ResponsiveUtils.getTitleSize(context) - 4,
                               color: AppTheme.deepTeal.withOpacity(0.7),
@@ -6168,6 +6332,107 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // PUDO Door-to-Door selector at the very top
+          Container(
+            margin: EdgeInsets.only(bottom: 16),
+            padding: EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.orange.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.orange, width: 2),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Builder(builder: (context){ 
+                  print('🟩 PUDO SELECTOR: Rendering at TOP of delivery section');
+                  print('  - _pudoEnabledGlobal: $_pudoEnabledGlobal');
+                  print('  - _forcePudoDoorVisible: $_forcePudoDoorVisible');
+                  print('  - _sellerPudoEnabled: $_sellerPudoEnabled');
+                  return const SizedBox.shrink(); 
+                }),
+                Row(
+                  children: [
+                    Icon(Icons.local_shipping, color: Colors.orange, size: 24),
+                    SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('PUDO Door-to-Door Delivery', 
+                            style: TextStyle(color: Colors.orange, fontWeight: FontWeight.bold, fontSize: 16)),
+                          Text('Weekdays, business hours', 
+                            style: TextStyle(color: Colors.orange.withOpacity(0.7), fontSize: 12)),
+                        ],
+                      ),
+                    ),
+                    Switch(
+                      value: _pudoDoorSelected,
+                      onChanged: (v) {
+                        print('🟩 PUDO SWITCH: Toggled to $v');
+                        if (mounted) setState(() { _isDelivery = true; _pudoDoorSelected = v; });
+                        if (v) {
+                          final speed = (_selectedPudoSpeed ?? 'standard');
+                          final size = (_selectedPudoSize ?? 'm');
+                          final bySpeed = (_pudoPricingDoor[speed] as Map?) ?? {};
+                          final price = bySpeed[size];
+                          double total = 0.0;
+                          if (price is num) total = price.toDouble();
+                          if (_pudoDoorSurcharge != null) total += _pudoDoorSurcharge!;
+                          if (mounted) setState(() { _deliveryFee = total; });
+                        }
+                      },
+                      activeColor: Colors.orange,
+                    )
+                  ],
+                ),
+                if (_pudoDoorSelected) ...[
+                  SizedBox(height: 12),
+                  Row(children:[
+                    Expanded(child: DropdownButtonFormField<String>(
+                      value: _selectedPudoSize,
+                      items: ['s','m','l','xl'].map((s) => DropdownMenuItem(value: s, child: Text(s.toUpperCase()))).toList(),
+                      onChanged: (v){ 
+                        if (mounted) setState(()=> _selectedPudoSize = v); 
+                        if (_pudoDoorSelected) { 
+                          final speed = (_selectedPudoSpeed ?? 'standard'); 
+                          final bySpeed = (_pudoPricingDoor[speed] as Map?) ?? {}; 
+                          final base = bySpeed[v]; 
+                          double total = 0.0; 
+                          if (base is num) total = base.toDouble(); 
+                          if (_pudoDoorSurcharge != null) total += _pudoDoorSurcharge!; 
+                          setState(()=> _deliveryFee = total); 
+                        } 
+                      },
+                      decoration: const InputDecoration(labelText: 'Size', border: OutlineInputBorder()),
+                    )),
+                    SizedBox(width: 8),
+                    Expanded(child: DropdownButtonFormField<String>(
+                      value: _selectedPudoSpeed,
+                      items: [
+                        DropdownMenuItem(value: 'standard', child: Text('Standard')),
+                        DropdownMenuItem(value: 'express', child: Text('Express')),
+                      ],
+                      onChanged: (v){ 
+                        if (mounted) setState(()=> _selectedPudoSpeed = v); 
+                        if (_pudoDoorSelected) { 
+                          final size = (_selectedPudoSize ?? 'm'); 
+                          final bySpeed = (_pudoPricingDoor[v ?? 'standard'] as Map?) ?? {}; 
+                          final base = bySpeed[size]; 
+                          double total = 0.0; 
+                          if (base is num) total = base.toDouble(); 
+                          if (_pudoDoorSurcharge != null) total += _pudoDoorSurcharge!; 
+                          setState(()=> _deliveryFee = total); 
+                        } 
+                      },
+                      decoration: const InputDecoration(labelText: 'Speed', border: OutlineInputBorder()),
+                    )),
+                  ]),
+                ],
+              ],
+            ),
+          ),
+          
           // Debug: Print current values
           Builder(
             builder: (context) {
@@ -6664,7 +6929,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                           ),
                         ),
                       ),
-                      if (_sellerPargoEnabled && _sellerPaxiEnabled) SizedBox(width: 12),
+                      if ((_sellerPargoEnabled && _sellerPaxiEnabled) || ((_sellerPargoEnabled || _sellerPaxiEnabled) && (_sellerPudoEnabled && _pudoEnabledGlobal))) SizedBox(width: 12),
                       if (_sellerPaxiEnabled) Expanded(
                         child: Container(
                           decoration: BoxDecoration(
@@ -6707,6 +6972,59 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                       'Secure Points',
                                       style: TextStyle(
                                         color: _selectedServiceFilter == 'paxi' ? AppTheme.angel.withOpacity(0.85) : AppTheme.deepTeal.withOpacity(0.7),
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      if (false) SizedBox(width: 12),
+                      if (false) Expanded(
+                        child: Container(
+                          decoration: BoxDecoration(
+                            gradient: _selectedServiceFilter == 'pudo' 
+                                ? LinearGradient(colors: AppTheme.primaryGradient)
+                                : LinearGradient(colors: [AppTheme.angel, AppTheme.angel]),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: _selectedServiceFilter == 'pudo' 
+                                  ? AppTheme.deepTeal.withOpacity(0.5)
+                                  : AppTheme.breeze.withOpacity(0.3),
+                              width: _selectedServiceFilter == 'pudo' ? 2 : 1,
+                            ),
+                          ),
+                          child: Material(
+                            color: Colors.transparent,
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(12),
+                              onTap: () => _filterPickupPointsByService('pudo'),
+                              child: Container(
+                                padding: EdgeInsets.symmetric(vertical: 16, horizontal: 12),
+                                child: Column(
+                                  children: [
+                                    Icon(
+                                      Icons.lock,
+                                      color: _selectedServiceFilter == 'pudo' ? AppTheme.angel : AppTheme.deepTeal,
+                                      size: 24,
+                                    ),
+                                    SizedBox(height: 8),
+                                    Text(
+                                      'PUDO',
+                                      style: TextStyle(
+                                        color: _selectedServiceFilter == 'pudo' ? AppTheme.angel : AppTheme.deepTeal,
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                    Text(
+                                      'Locker Pickup',
+                                      style: TextStyle(
+                                        color: _selectedServiceFilter == 'pudo' ? AppTheme.angel.withOpacity(0.85) : AppTheme.deepTeal.withOpacity(0.7),
                                         fontSize: 12,
                                         fontWeight: FontWeight.w500,
                                       ),
@@ -6780,6 +7098,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                         ),
                       ),
                     ],
+                  // Locker-to-Door only: no locker UI in Pickup mode
                  // Debug button to reload pickup points
                   Center(
                     child: TextButton.icon(
@@ -8570,6 +8889,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                           print('🚚 Enhanced delivery button tapped');
                           if (mounted) setState(() {
                             _isDelivery = true;
+                            _selectedServiceFilter = null; // clear pickup filter
+                            _pudoDoorSelected = false; // reset door
                           });
                           if (currentUser != null) {
                             _calculateDeliveryFeeAndCheckStore();
@@ -8616,6 +8937,181 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             ),
           ),
           SizedBox(height: ResponsiveUtils.getVerticalPadding(context)),
+              
+          // Delivery service chips (include PUDO Door-to-Door when platform enabled)
+          // (removed debug strip)
+          Builder(
+            builder: (context) {
+              if (kDebugMode) {
+                print('🔍 DEBUG: Delivery chips gate:');
+                print('  - _isDelivery: ' + _isDelivery.toString());
+                print('  - _pudoEnabledGlobal: ' + _pudoEnabledGlobal.toString());
+                print('  - _forcePudoDoorVisible: ' + _forcePudoDoorVisible.toString());
+              }
+              return const SizedBox.shrink();
+            },
+          ),
+          if (_isDelivery && (_pudoEnabledGlobal || _forcePudoDoorVisible)) ...[
+            SizedBox(height: 8),
+            Row(children:[
+              Expanded(
+                child: Container(
+                  decoration: BoxDecoration(
+                    gradient: _pudoDoorSelected
+                        ? LinearGradient(colors: AppTheme.primaryGradient)
+                        : LinearGradient(colors: [AppTheme.angel, AppTheme.angel]),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: _pudoDoorSelected ? AppTheme.deepTeal.withOpacity(0.5) : AppTheme.breeze.withOpacity(0.3),
+                      width: _pudoDoorSelected ? 2 : 1,
+                    ),
+                  ),
+                  child: Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(12),
+                      onTap: () {
+                        if (mounted) setState(() {
+                          _pudoDoorSelected = !_pudoDoorSelected;
+                        });
+                        // Apply door pricing if toggled on
+                        if (_pudoDoorSelected) {
+                          final speed = (_selectedPudoSpeed ?? 'standard');
+                          final size = (_selectedPudoSize ?? 'm');
+                          final bySpeed = (_pudoPricingDoor[speed] as Map?) ?? {};
+                          final price = bySpeed[size];
+                          if (price is num) {
+                            if (mounted) setState(() { _deliveryFee = price.toDouble(); });
+                          }
+                        }
+                      },
+                      child: Container(
+                        padding: EdgeInsets.symmetric(vertical: 16, horizontal: 12),
+                        child: Column(children:[
+                          Icon(Icons.home_filled, color: _pudoDoorSelected ? AppTheme.angel : AppTheme.deepTeal, size: 24),
+                          SizedBox(height: 8),
+                          Text('PUDO Door-to-Door', style: TextStyle(color: _pudoDoorSelected ? AppTheme.angel : AppTheme.deepTeal, fontSize: 14, fontWeight: FontWeight.w700)),
+                          Text('Weekdays, business hours', style: TextStyle(color: _pudoDoorSelected ? AppTheme.angel.withOpacity(0.85) : AppTheme.deepTeal.withOpacity(0.7), fontSize: 12, fontWeight: FontWeight.w500)),
+                        ]),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ]),
+            SizedBox(height: 8),
+            // Optional size/speed for door pricing if tiers present
+            if (_pudoPricingDoor.isNotEmpty) Row(children:[
+              Expanded(child: DropdownButtonFormField<String>(
+                value: _selectedPudoSize,
+                items: const [
+                  DropdownMenuItem(value: 'xs', child: Text('XS')),
+                  DropdownMenuItem(value: 's', child: Text('S')),
+                  DropdownMenuItem(value: 'm', child: Text('M')),
+                  DropdownMenuItem(value: 'l', child: Text('L')),
+                  DropdownMenuItem(value: 'xl', child: Text('XL')),
+                ],
+                onChanged: (v){ if (mounted) setState(()=> _selectedPudoSize = v); if (_pudoDoorSelected) { final speed = (_selectedPudoSpeed ?? 'standard'); final bySpeed = (_pudoPricingDoor[speed] as Map?) ?? {}; final base = bySpeed[v]; double total = 0.0; if (base is num) total = base.toDouble(); if (_pudoDoorSurcharge != null) total += _pudoDoorSurcharge!; setState(()=> _deliveryFee = total); } },
+                decoration: const InputDecoration(labelText: 'Parcel Size', border: OutlineInputBorder()),
+              )),
+              SizedBox(width: 8),
+              Expanded(child: DropdownButtonFormField<String>(
+                value: _selectedPudoSpeed,
+                items: const [
+                  DropdownMenuItem(value: 'standard', child: Text('Standard')),
+                  DropdownMenuItem(value: 'express', child: Text('Express')),
+                ],
+                onChanged: (v){ if (mounted) setState(()=> _selectedPudoSpeed = v); if (_pudoDoorSelected) { final size = (_selectedPudoSize ?? 'm'); final bySpeed = (_pudoPricingDoor[v ?? 'standard'] as Map?) ?? {}; final base = bySpeed[size]; double total = 0.0; if (base is num) total = base.toDouble(); if (_pudoDoorSurcharge != null) total += _pudoDoorSurcharge!; setState(()=> _deliveryFee = total); } },
+                decoration: const InputDecoration(labelText: 'Speed', border: OutlineInputBorder()),
+              )),
+            ]),
+          ],
+
+          // PUDO Door-to-Door inline selector (always near address section for visibility)
+          Container(
+            margin: EdgeInsets.only(bottom: 16),
+            padding: EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.orange.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.orange, width: 2),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Builder(builder: (context){ 
+                  print('🟩 PUDO SELECTOR: Rendering at top of delivery section');
+                  print('  - _pudoEnabledGlobal: $_pudoEnabledGlobal');
+                  print('  - _forcePudoDoorVisible: $_forcePudoDoorVisible');
+                  print('  - _sellerPudoEnabled: $_sellerPudoEnabled');
+                  return const SizedBox.shrink(); 
+                }),
+                Row(
+                  children: [
+                    Icon(Icons.local_shipping, color: Colors.orange, size: 24),
+                    SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('PUDO Door-to-Door Delivery', 
+                            style: TextStyle(color: Colors.orange, fontWeight: FontWeight.bold, fontSize: 16)),
+                          Text('Weekdays, business hours', 
+                            style: TextStyle(color: Colors.orange.withOpacity(0.7), fontSize: 12)),
+                        ],
+                      ),
+                    ),
+                    Switch(
+                      value: _pudoDoorSelected,
+                      onChanged: (v) {
+                        print('🟩 PUDO SWITCH: Toggled to $v');
+                        if (mounted) setState(() { _isDelivery = true; _pudoDoorSelected = v; });
+                        if (v) {
+                          final speed = (_selectedPudoSpeed ?? 'standard');
+                          final size = (_selectedPudoSize ?? 'm');
+                          final bySpeed = (_pudoPricingDoor[speed] as Map?) ?? {};
+                          final price = bySpeed[size];
+                          double total = 0.0;
+                          if (price is num) total = price.toDouble();
+                          if (_pudoDoorSurcharge != null) total += _pudoDoorSurcharge!;
+                          if (mounted) setState(() { _deliveryFee = total; });
+                        }
+                      },
+                      activeColor: Colors.orange,
+                    )
+                  ],
+                ),
+                  if (_pudoDoorSelected) ...[
+                    SizedBox(height: 8),
+                    Row(children:[
+                      Expanded(child: DropdownButtonFormField<String>(
+                        value: _selectedPudoSize,
+                        items: const [
+                          DropdownMenuItem(value: 'xs', child: Text('XS')),
+                          DropdownMenuItem(value: 's', child: Text('S')),
+                          DropdownMenuItem(value: 'm', child: Text('M')),
+                          DropdownMenuItem(value: 'l', child: Text('L')),
+                          DropdownMenuItem(value: 'xl', child: Text('XL')),
+                        ],
+                        onChanged: (v){ if (mounted) setState(()=> _selectedPudoSize = v); if (_pudoDoorSelected) { final speed = (_selectedPudoSpeed ?? 'standard'); final bySpeed = (_pudoPricingDoor[speed] as Map?) ?? {}; final base = bySpeed[v]; double total = 0.0; if (base is num) total = base.toDouble(); if (_pudoDoorSurcharge != null) total += _pudoDoorSurcharge!; setState(()=> _deliveryFee = total); } },
+                        decoration: const InputDecoration(labelText: 'Parcel Size', border: OutlineInputBorder()),
+                      )),
+                      SizedBox(width: 8),
+                      Expanded(child: DropdownButtonFormField<String>(
+                        value: _selectedPudoSpeed,
+                        items: const [
+                          DropdownMenuItem(value: 'standard', child: Text('Standard')),
+                          DropdownMenuItem(value: 'express', child: Text('Express')),
+                        ],
+                        onChanged: (v){ if (mounted) setState(()=> _selectedPudoSpeed = v); if (_pudoDoorSelected) { final size = (_selectedPudoSize ?? 'm'); final bySpeed = (_pudoPricingDoor[v ?? 'standard'] as Map?) ?? {}; final base = bySpeed[size]; double total = 0.0; if (base is num) total = base.toDouble(); if (_pudoDoorSurcharge != null) total += _pudoDoorSurcharge!; setState(()=> _deliveryFee = total); } },
+                        decoration: const InputDecoration(labelText: 'Speed', border: OutlineInputBorder()),
+                      )),
+                    ]),
+                  ],
+                ],
+              ),
+            ),
+          ],
               
           // Address Field with Inline Search
           Column(

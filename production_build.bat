@@ -33,11 +33,19 @@ if %ERRORLEVEL% neq 0 (
     exit /b 1
 )
 
+echo 🧱 Building Admin Dashboard (Web Release with base-href)...
+call admin_production_build.bat
+if %ERRORLEVEL% neq 0 (
+    echo ❌ Admin Dashboard build failed
+    exit /b 1
+)
+
 echo.
 echo ✅ Production builds completed successfully!
 echo.
 echo 📱 Android APK: build\app\outputs\flutter-apk\app-release.apk
 echo 🌐 Web build: build\web\
+echo 🧭 Admin served at: build\web\admin_dashboard\ (deployed at /admin_dashboard)
 echo.
 echo 🎉 Your app is ready for deployment!
 pause

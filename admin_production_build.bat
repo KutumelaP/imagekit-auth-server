@@ -21,7 +21,7 @@ if %ERRORLEVEL% neq 0 (
 )
 
 echo 🌐 Building Admin Dashboard for Web (Release)...
-call flutter build web --release --web-renderer html
+call flutter build web --release --base-href /admin_dashboard/
 if %ERRORLEVEL% neq 0 (
     echo ❌ Admin web build failed
     cd ..
@@ -31,10 +31,15 @@ if %ERRORLEVEL% neq 0 (
 cd ..
 
 echo.
-echo ✅ Admin Dashboard production build completed!
+echo 📁 Preparing deployable admin web folder under main build...
+if not exist build\web mkdir build\web
+if exist build\web\admin_dashboard rmdir /S /Q build\web\admin_dashboard
+mkdir build\web\admin_dashboard
+xcopy /E /I /Y admin_dashboard\build\web build\web\admin_dashboard >nul
+
+echo ✅ Admin Dashboard production build completed and copied to build\web\admin_dashboard!
 echo.
-echo 🌐 Admin Web build: admin_dashboard\build\web\
+echo 🌐 Admin Web output: build\web\admin_dashboard\
 echo.
 echo 🎉 Admin Dashboard is ready for deployment!
-pause
 

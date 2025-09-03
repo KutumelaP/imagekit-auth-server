@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 // import 'product_browsing_screen.dart';
 import 'stunning_product_browser.dart';
 import 'ChatScreen.dart';
@@ -17,8 +18,13 @@ import '../widgets/safe_network_image.dart';
 
 class StoreSelectionScreen extends StatefulWidget {
   final String category;
+  final String? specificStoreId; // 🚀 NEW: For filtering to specific store
 
-  const StoreSelectionScreen({super.key, required this.category});
+  const StoreSelectionScreen({
+    super.key, 
+    required this.category,
+    this.specificStoreId, // 🚀 NEW: Optional parameter
+  });
 
   @override
   State<StoreSelectionScreen> createState() => _StoreSelectionScreenState();
@@ -165,15 +171,34 @@ class _StoreSelectionScreenState extends State<StoreSelectionScreen> {
 
   Future<List<Map<String, dynamic>>> _getApprovedStores() async {
     try {
+      // 🚀 NEW: If specific store ID is provided, filter to that store only
+      if (widget.specificStoreId != null && widget.specificStoreId!.isNotEmpty) {
+        print('🔍 DEBUG: Filtering to specific store: ${widget.specificStoreId}');
+        
+        final specificStoreQuery = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(widget.specificStoreId)
+            .get();
+            
+        if (specificStoreQuery.exists) {
+          final data = specificStoreQuery.data()!;
+          if (data['role'] == 'seller' && data['status'] == 'approved') {
+            data.putIfAbsent('storeId', () => widget.specificStoreId);
+            return [data];
+          }
+        }
+        return []; // Store not found or not approved
+      }
+      
       // Get all sellers from users collection (all store data is stored here)
-    // For now, show all sellers regardless of status for testing
-    print('🔍 DEBUG: Starting store query...');
-    
-    final userQuery = await FirebaseFirestore.instance
-        .collection('users')
-        .where('role', isEqualTo: 'seller')
-        .where('status', isEqualTo: 'approved')
-        .get();
+      // For now, show all sellers regardless of status for testing
+      print('🔍 DEBUG: Starting store query...');
+      
+      final userQuery = await FirebaseFirestore.instance
+          .collection('users')
+          .where('role', isEqualTo: 'seller')
+          .where('status', isEqualTo: 'approved')
+          .get();
 
     print('🔍 DEBUG: Found ${userQuery.docs.length} sellers in database');
     
@@ -2100,6 +2125,12 @@ void _navigateToStoreProfile(Map<String, dynamic> store) {
 
   @override
   Widget build(BuildContext context) {
+    // 🚀 DEBUG: Log the specificStoreId parameter
+    if (kDebugMode) {
+      print('🔍 DEBUG: StoreSelectionScreen build - specificStoreId: ${widget.specificStoreId}');
+      print('🔍 DEBUG: StoreSelectionScreen build - category: ${widget.category}');
+    }
+    
     return Scaffold(
       appBar: AppBar(
         title: Text('${widget.category} Stores'),

@@ -196,6 +196,16 @@ class _SellerOrderDetailScreenState extends State<SellerOrderDetailScreen> {
           final internalNote = order['internalNote'] ?? '';
           final ts = order['timestamp'] is Timestamp ? (order['timestamp'] as Timestamp).toDate() : null;
 
+          // Extract enhanced delivery information
+          final deliveryType = order['deliveryType']?.toString().toLowerCase() ?? '';
+          final paxiDetails = order['paxiDetails'] as Map<String, dynamic>?;
+          final paxiPickupPoint = order['paxiPickupPoint'] as Map<String, dynamic>?;
+          final paxiDeliverySpeed = order['paxiDeliverySpeed']?.toString() ?? '';
+          final pargoPickupDetails = order['pargoPickupDetails'] as Map<String, dynamic>?;
+          final pickupPointAddress = order['pickupPointAddress'] as String?;
+          final pickupPointName = order['pickupPointName'] as String?;
+          final pickupPointType = order['pickupPointType'] as String?;
+
           // Change the icon for Total from Icons.attach_money to Icons.currency_exchange
           // And make driver fields always visible
           bool showDriverFields = true;
@@ -348,6 +358,19 @@ class _SellerOrderDetailScreenState extends State<SellerOrderDetailScreen> {
                   child: Text('Instructions: $deliveryInstructions', style: TextStyle(color: Colors.grey)),
                 ),
             ],
+          );
+
+          // Enhanced Delivery Information Section
+          Widget deliverySection = _buildEnhancedDeliverySection(
+            deliveryType: deliveryType,
+            paxiDetails: paxiDetails,
+            paxiPickupPoint: paxiPickupPoint,
+            paxiDeliverySpeed: paxiDeliverySpeed,
+            pargoPickupDetails: pargoPickupDetails,
+            pickupPointAddress: pickupPointAddress,
+            pickupPointName: pickupPointName,
+            pickupPointType: pickupPointType,
+            deliveryAddress: deliveryAddress,
           );
 
           Widget statusSection = Column(
@@ -818,6 +841,12 @@ class _SellerOrderDetailScreenState extends State<SellerOrderDetailScreen> {
                   const SizedBox(height: 32),
                   summarySection,
                   const SizedBox(height: 32),
+                  if (deliveryType.isNotEmpty || paxiDetails != null || pargoPickupDetails != null || pickupPointName != null) ...[
+                    Text('Delivery Information', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.green.shade800, fontSize: 16)),
+                    const SizedBox(height: 8),
+                    deliverySection,
+                    const SizedBox(height: 32),
+                  ],
                   Text('Order Status', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.green.shade800, fontSize: 16)),
                   const SizedBox(height: 8),
                   statusSection,
@@ -840,6 +869,122 @@ class _SellerOrderDetailScreenState extends State<SellerOrderDetailScreen> {
             ),
           );
         },
+      ),
+    );
+  }
+
+  Widget _buildEnhancedDeliverySection({
+    required String deliveryType,
+    Map<String, dynamic>? paxiDetails,
+    Map<String, dynamic>? paxiPickupPoint,
+    String? paxiDeliverySpeed,
+    Map<String, dynamic>? pargoPickupDetails,
+    String? pickupPointAddress,
+    String? pickupPointName,
+    String? pickupPointType,
+    String? deliveryAddress,
+  }) {
+    // Determine the appropriate icon and title based on delivery type
+    IconData deliveryIcon;
+    String deliveryTitle;
+    Color iconColor;
+
+    if (deliveryType == 'paxi') {
+      deliveryIcon = Icons.local_shipping;
+      deliveryTitle = '🚚 PAXI Pickup Details';
+      iconColor = Colors.blue;
+    } else if (deliveryType == 'pargo') {
+      deliveryIcon = Icons.store;
+      deliveryTitle = '📦 Pargo Pickup Details';
+      iconColor = Colors.green;
+    } else if (deliveryType == 'pickup') {
+      deliveryIcon = Icons.storefront;
+      deliveryTitle = '🏪 Store Pickup Details';
+      iconColor = Colors.orange;
+    } else if (deliveryType == 'delivery') {
+      deliveryIcon = Icons.delivery_dining;
+      deliveryTitle = '🚚 Delivery Details';
+      iconColor = Colors.red;
+    } else {
+      deliveryIcon = Icons.info_outline;
+      deliveryTitle = '📋 Delivery Information';
+      iconColor = Colors.grey;
+    }
+
+    return Card(
+      elevation: 1,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(deliveryIcon, color: iconColor, size: 24),
+                const SizedBox(width: 8),
+                Text(
+                  deliveryTitle,
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            
+            // PAXI Delivery Details
+            if (deliveryType == 'paxi' && paxiPickupPoint != null) ...[
+              _buildDeliveryInfoRow('Pickup Point', paxiPickupPoint['name'] ?? 'PAXI Pickup Point'),
+              _buildDeliveryInfoRow('Address', paxiPickupPoint['address'] ?? 'Address not specified'),
+              if (paxiDeliverySpeed != null && paxiDeliverySpeed.isNotEmpty)
+                _buildDeliveryInfoRow(
+                  'Delivery Speed', 
+                  paxiDeliverySpeed == 'express' ? 'Express (3-5 days)' : 'Standard (7-9 days)'
+                ),
+              _buildDeliveryInfoRow('Package Size', 'Maximum 10kg'),
+              _buildDeliveryInfoRow('Service', 'PAXI - Reliable pickup point delivery'),
+            ] else if (deliveryType == 'pargo' && pargoPickupDetails != null) ...[
+              // Pargo Pickup Details
+              _buildDeliveryInfoRow('Pickup Point', pargoPickupDetails['pickupPointName'] ?? 'Pargo Pickup Point'),
+              _buildDeliveryInfoRow('Address', pargoPickupDetails['pickupPointAddress'] ?? 'Address not specified'),
+              _buildDeliveryInfoRow('Service', 'Pargo - Convenient pickup point delivery'),
+            ] else if (deliveryType == 'pickup' && pickupPointName != null) ...[
+              // Store Pickup Details
+              _buildDeliveryInfoRow('Pickup Location', pickupPointName),
+              if (pickupPointAddress != null && pickupPointAddress.isNotEmpty)
+                _buildDeliveryInfoRow('Address', pickupPointAddress),
+              _buildDeliveryInfoRow('Service', 'Store Pickup - Collect from our store'),
+            ] else if (deliveryType == 'delivery' && deliveryAddress != null && deliveryAddress.isNotEmpty) ...[
+              // Merchant Delivery Details
+              _buildDeliveryInfoRow('Delivery Address', deliveryAddress),
+              _buildDeliveryInfoRow('Service', 'Merchant Delivery - We deliver to your address'),
+            ] else ...[
+              // Fallback for unknown delivery types
+              _buildDeliveryInfoRow('Delivery Type', deliveryType.isNotEmpty ? deliveryType.toUpperCase() : 'Not specified'),
+              if (deliveryAddress != null && deliveryAddress.isNotEmpty)
+                _buildDeliveryInfoRow('Address', deliveryAddress),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDeliveryInfoRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 120,
+            child: Text(
+              '$label:',
+              style: const TextStyle(fontWeight: FontWeight.w600, color: Colors.grey),
+            ),
+          ),
+          Expanded(
+            child: Text(value),
+          ),
+        ],
       ),
     );
   }

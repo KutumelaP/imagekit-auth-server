@@ -27,6 +27,7 @@ class _PlatformSettingsSectionState extends State<PlatformSettingsSection> {
   // Pickup visibility
   bool _pargoVisible = true;
   bool _paxiVisible = true;
+  bool _forcePudoDoorVisible = false;
   // Notification fields (already present)
   final _messageController = TextEditingController();
   String _target = 'all';
@@ -55,6 +56,8 @@ class _PlatformSettingsSectionState extends State<PlatformSettingsSection> {
         _maintenanceMode = data['maintenanceMode'] == true;
         _pargoVisible = data['pargoVisible'] != false;
         _paxiVisible = data['paxiVisible'] != false;
+        final f = data['forcePudoDoorVisible'];
+        _forcePudoDoorVisible = (f == true) || (f is String && f.toLowerCase() == 'true');
         _eftAccountNameController.text = data['eftAccountName'] ?? '';
         _eftBankNameController.text = data['eftBankName'] ?? '';
         _eftAccountNumberController.text = data['eftAccountNumber'] ?? '';
@@ -75,6 +78,7 @@ class _PlatformSettingsSectionState extends State<PlatformSettingsSection> {
         'maintenanceMode': _maintenanceMode,
         'pargoVisible': _pargoVisible,
         'paxiVisible': _paxiVisible,
+        'forcePudoDoorVisible': _forcePudoDoorVisible,
         'eftAccountName': _eftAccountNameController.text.trim(),
         'eftBankName': _eftBankNameController.text.trim(),
         'eftAccountNumber': _eftAccountNumberController.text.trim(),
@@ -242,6 +246,16 @@ class _PlatformSettingsSectionState extends State<PlatformSettingsSection> {
                               title: const Text('Show PAXI', softWrap: false, overflow: TextOverflow.ellipsis),
                               value: _paxiVisible,
                               onChanged: (v) => setState(() => _paxiVisible = v),
+                            ),
+                          ),
+                          SizedBox(
+                            width: 260,
+                            child: SwitchListTile(
+                              dense: true,
+                              contentPadding: EdgeInsets.zero,
+                              title: const Text('Force PUDO Door visible (debug)', softWrap: false, overflow: TextOverflow.ellipsis),
+                              value: _forcePudoDoorVisible,
+                              onChanged: (v) => setState(() => _forcePudoDoorVisible = v),
                             ),
                           ),
                           SizedBox(

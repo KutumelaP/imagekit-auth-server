@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Debug Flutter Loading</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 24px; max-width: 800px; margin: 0 auto; }
+    .log { white-space: pre-wrap; background:#f7f7f7; padding:12px; border-radius:8px; max-height: 400px; overflow-y: auto; margin: 12px 0; }
+    .status { padding: 8px; border-radius: 6px; margin: 8px 0; }
+    .success { background: #d4edda; color: #155724; }
+    .error { background: #f8d7da; color: #721c24; }
+    .warning { background: #fff3cd; color: #856404; }
+    .info { background: #d1ecf1; color: #0c5460; }
+    button { padding: 8px 16px; margin: 4px; border: 1px solid #ccc; border-radius: 4px; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <h2>Flutter Loading Debug</h2>
+  
+  <div id="status-container">
+    <div class="status info">Initializing diagnostics...</div>
+  </div>
+  
+  <div class="log" id="log">Starting diagnostics...\n</div>
+  
+  <div>
+    <button onclick="clearCaches()">Clear All Caches</button>
+    <button onclick="testFlutter()">Test Flutter Init</button>
+    <button onclick="location.reload()">Reload</button>
+    <button onclick="location.href='/'">Go to App</button>
+  </div>
+
+  <script>
+    const log = (m, type = 'info') => {
+      const timestamp = new Date().toLocaleTimeString();
+      document.getElementById('log').textContent += `[${timestamp}] ${m}\n`;
+      console.log(m);
+    };
+
+    const setStatus = (message, type = 'info') => {
+      const container = document.getElementById('status-container');
+      container.innerHTML = `<div class="status ${type}">${message}</div>`;
+    };
+
+    async function clearCaches() {
+      log('Starting cache clear...');
+      try {
+        // Clear service workers
+        if ('serviceWorker' in navigator) {
+          const regs = await navigator.serviceWorker.getRegistrations();
+          for (const reg of regs) {
+            await reg.unregister();
+            log(`Unregistered SW: ${reg.scope}`);
+          }
+        }
+        
+        // Clear caches
+        if (window.caches) {
+          const keys = await caches.keys();
+          for (const key of keys) {
+            await caches.delete(key);
+            log(`Deleted cache: ${key}`);
+          }
+        }
+        
+        // Clear storage
+        try {
+          localStorage.clear();
+          sessionStorage.clear();
+          log('Cleared local/session storage');
+        } catch (e) {
+          log(`Storage clear error: ${e}`);
+        }
+        
+        setStatus('Caches cleared! Reload to test.', 'success');
+      } catch (e) {
+        log(`Cache clear error: ${e}`);
+        setStatus('Cache clear failed', 'error');
+      }
+    }
+
+    async function testFlutter() {
+      log('Testing Flutter initialization...');
+      
+      // Check browser info
+      const ua = navigator.userAgent;
+      const isIOS = /iPad|iPhone|iPod/.test(ua);
+      const isSafari = /^((?!chrome|android).)*safari/i.test(ua);
+      const isStandalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone === true;
+      
+      log(`Browser: ${ua}`);
+      log(`iOS: ${isIOS}, Safari: ${isSafari}, Standalone: ${isStandalone}`);
+      
+      // Check Flutter files
+      try {
+        const flutterJS = await fetch('/flutter.js');
+        log(`flutter.js: ${flutterJS.status} ${flutterJS.statusText}`);
+        
+        const mainDart = await fetch('/main.dart.js');
+        log(`main.dart.js: ${mainDart.status} ${mainDart.statusText}`);
+        
+        const manifest = await fetch('/manifest.json');
+        log(`manifest.json: ${manifest.status} ${manifest.statusText}`);
+      } catch (e) {
+        log(`File check error: ${e}`);
+      }
+      
+      // Test Flutter loading
+      try {
+        if (window._flutter && window._flutter.loader) {
+          log('Flutter loader available');
+          
+          // Try to load
+          const config = { renderer: isIOS ? 'html' : 'canvaskit' };
+          log(`Using config: ${JSON.stringify(config)}`);
+          
+          window._flutter.loader.load({
+            config: config,
+            onEntrypointLoaded: function(engineInitializer) {
+              log('Flutter entrypoint loaded!');
+              engineInitializer.initializeEngine(config).then(function(appRunner) {
+                log('Flutter engine initialized!');
+                setStatus('Flutter loaded successfully!', 'success');
+              }).catch(function(error) {
+                log(`Flutter engine error: ${error}`);
+                setStatus('Flutter engine failed', 'error');
+              });
+            }
+          });
+        } else {
+          log('Flutter loader not available');
+          setStatus('Flutter loader missing', 'error');
+        }
+      } catch (e) {
+        log(`Flutter test error: ${e}`);
+        setStatus('Flutter test failed', 'error');
+      }
+    }
+
+    // Auto-run diagnostics
+    (async function() {
+      log('Running automatic diagnostics...');
+      
+      // Check service worker status
+      if ('serviceWorker' in navigator) {
+        try {
+          const regs = await navigator.serviceWorker.getRegistrations();
+          log(`Service workers: ${regs.length} registered`);
+          regs.forEach(reg => {
+            log(`SW: ${reg.scope} - ${reg.active ? 'active' : 'inactive'}`);
+          });
+        } catch (e) {
+          log(`SW check error: ${e}`);
+        }
+      }
+      
+      // Check caches
+      if (window.caches) {
+        try {
+          const keys = await caches.keys();
+          log(`Caches: ${keys.join(', ')}`);
+        } catch (e) {
+          log(`Cache check error: ${e}`);
+        }
+      }
+      
+      setStatus('Diagnostics complete. Use buttons to test.', 'info');
+    })();
+  </script>
+</body>
+</html>

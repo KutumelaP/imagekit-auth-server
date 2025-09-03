@@ -44,10 +44,33 @@ class _PaymentSettingsManagementState extends State<PaymentSettingsManagement> {
   final TextEditingController _tier2SmallOrderFeeController = TextEditingController();
   final TextEditingController _tier3CommissionController = TextEditingController();
 
+  // Platform Shipping Providers (PUDO)
+  bool _spLoading = false;
+  bool _pudoEnabled = false;
+  // Standard pricing
+  final TextEditingController _pudoStdS = TextEditingController();
+  final TextEditingController _pudoStdM = TextEditingController();
+  final TextEditingController _pudoStdL = TextEditingController();
+  final TextEditingController _pudoStdXL = TextEditingController();
+  // Express pricing
+  final TextEditingController _pudoExpS = TextEditingController();
+  final TextEditingController _pudoExpM = TextEditingController();
+  final TextEditingController _pudoExpL = TextEditingController();
+  final TextEditingController _pudoExpXL = TextEditingController();
+  final TextEditingController _pudoNotes = TextEditingController();
+  // Door pricing (Locker↔Door)
+  final TextEditingController _pudoDoorXS = TextEditingController();
+  final TextEditingController _pudoDoorS = TextEditingController();
+  final TextEditingController _pudoDoorM = TextEditingController();
+  final TextEditingController _pudoDoorL = TextEditingController();
+  final TextEditingController _pudoDoorXL = TextEditingController();
+  final TextEditingController _pudoDoorSurcharge = TextEditingController();
+
   @override
   void initState() {
     super.initState();
     _loadPaymentSettings();
+    _loadShippingProviders();
   }
 
   @override
@@ -78,6 +101,16 @@ class _PaymentSettingsManagementState extends State<PaymentSettingsManagement> {
     _tier2CommissionController.dispose();
     _tier2SmallOrderFeeController.dispose();
     _tier3CommissionController.dispose();
+    // Shipping providers controllers
+    _pudoStdS.dispose();
+    _pudoStdM.dispose();
+    _pudoStdL.dispose();
+    _pudoStdXL.dispose();
+    _pudoExpS.dispose();
+    _pudoExpM.dispose();
+    _pudoExpL.dispose();
+    _pudoExpXL.dispose();
+    _pudoNotes.dispose();
     super.dispose();
   }
 
@@ -161,6 +194,99 @@ class _PaymentSettingsManagementState extends State<PaymentSettingsManagement> {
       setState(() {
         _isLoading = false;
       });
+    }
+  }
+
+  Future<void> _loadShippingProviders() async {
+    setState(() { _spLoading = true; });
+    try {
+      final doc = await _firestore.collection('admin_settings').doc('shipping_providers').get();
+      final data = doc.data() ?? {};
+      final pudo = (data['pudo'] as Map?) ?? {};
+      _pudoEnabled = (pudo['enabled'] ?? false) == true;
+      final pricing = (pudo['pricing'] as Map?) ?? {};
+      final std = (pricing['standard'] as Map?) ?? {};
+      final exp = (pricing['express'] as Map?) ?? {};
+      _pudoStdS.text = '${std['s'] ?? ''}';
+      _pudoStdM.text = '${std['m'] ?? ''}';
+      _pudoStdL.text = '${std['l'] ?? ''}';
+      _pudoStdXL.text = '${std['xl'] ?? ''}';
+      _pudoExpS.text = '${exp['s'] ?? ''}';
+      _pudoExpM.text = '${exp['m'] ?? ''}';
+      _pudoExpL.text = '${exp['l'] ?? ''}';
+      _pudoExpXL.text = '${exp['xl'] ?? ''}';
+      final door = (pudo['pricingDoor'] as Map?) ?? {};
+      _pudoDoorXS.text = '${door['xs'] ?? ''}';
+      _pudoDoorS.text = '${door['s'] ?? ''}';
+      _pudoDoorM.text = '${door['m'] ?? ''}';
+      _pudoDoorL.text = '${door['l'] ?? ''}';
+      _pudoDoorXL.text = '${door['xl'] ?? ''}';
+      _pudoDoorSurcharge.text = '${pudo['doorSurcharge'] ?? ''}';
+      _pudoNotes.text = '${pudo['notes'] ?? ''}';
+      setState(() {});
+    } catch (e) {
+      // ignore errors for now
+    } finally {
+      setState(() { _spLoading = false; });
+    }
+  }
+
+  double? _parseNullableDouble(String s) {
+    final t = s.trim();
+    if (t.isEmpty) return null;
+    return double.tryParse(t);
+  }
+
+  Future<void> _saveShippingProviders() async {
+    setState(() { _spLoading = true; });
+    try {
+      final standard = {
+        's': _parseNullableDouble(_pudoStdS.text),
+        'm': _parseNullableDouble(_pudoStdM.text),
+        'l': _parseNullableDouble(_pudoStdL.text),
+        'xl': _parseNullableDouble(_pudoStdXL.text),
+      }..removeWhere((k, v) => v == null);
+      final express = {
+        's': _parseNullableDouble(_pudoExpS.text),
+        'm': _parseNullableDouble(_pudoExpM.text),
+        'l': _parseNullableDouble(_pudoExpL.text),
+        'xl': _parseNullableDouble(_pudoExpXL.text),
+      }..removeWhere((k, v) => v == null);
+
+      final payload = {
+        'pudo': {
+          'enabled': _pudoEnabled,
+          'pricing': {
+            if (standard.isNotEmpty) 'standard': standard,
+            if (express.isNotEmpty) 'express': express,
+          },
+          'pricingDoor': {
+            if (_parseNullableDouble(_pudoDoorXS.text) != null) 'xs': _parseNullableDouble(_pudoDoorXS.text),
+            if (_parseNullableDouble(_pudoDoorS.text) != null) 's': _parseNullableDouble(_pudoDoorS.text),
+            if (_parseNullableDouble(_pudoDoorM.text) != null) 'm': _parseNullableDouble(_pudoDoorM.text),
+            if (_parseNullableDouble(_pudoDoorL.text) != null) 'l': _parseNullableDouble(_pudoDoorL.text),
+            if (_parseNullableDouble(_pudoDoorXL.text) != null) 'xl': _parseNullableDouble(_pudoDoorXL.text),
+          }..removeWhere((k, v) => v == null),
+          'doorSurcharge': _parseNullableDouble(_pudoDoorSurcharge.text),
+          'notes': _pudoNotes.text.trim(),
+          'updatedAt': FieldValue.serverTimestamp(),
+        }
+      };
+
+      await _firestore.collection('admin_settings').doc('shipping_providers').set(payload, SetOptions(merge: true));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: const Text('Shipping providers saved'), backgroundColor: AdminTheme.success),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error saving shipping providers: $e'), backgroundColor: AdminTheme.error),
+        );
+      }
+    } finally {
+      setState(() { _spLoading = false; });
     }
   }
 
@@ -255,6 +381,8 @@ class _PaymentSettingsManagementState extends State<PaymentSettingsManagement> {
                 _buildHoldbackSettingsSection(),
                 const SizedBox(height: 24),
                 _buildReturnSettingsSection(),
+                const SizedBox(height: 24),
+                _buildShippingProvidersSection(),
                 const SizedBox(height: 24),
                 _buildSaveButton(),
               ],
@@ -409,6 +537,111 @@ class _PaymentSettingsManagementState extends State<PaymentSettingsManagement> {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildShippingProvidersSection() {
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: AdminTheme.angel,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AdminTheme.cloud.withOpacity(0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            Icon(Icons.local_shipping, color: AdminTheme.deepTeal),
+            const SizedBox(width: 8),
+            Text('Platform Shipping Providers', style: AdminTheme.headlineMedium.copyWith(color: AdminTheme.deepTeal, fontWeight: FontWeight.bold)),
+            const Spacer(),
+            if (_spLoading) const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
+          ]),
+          const SizedBox(height: 16),
+          SwitchListTile(
+            title: const Text('Enable PUDO (prepaid wallet)'),
+            subtitle: const Text('Sellers book via PUDO app; shipping reimbursement applies if buyer is charged.'),
+            value: _pudoEnabled,
+            onChanged: (v) => setState(() => _pudoEnabled = v),
+            contentPadding: EdgeInsets.zero,
+            activeColor: AdminTheme.success,
+          ),
+          if (_pudoEnabled) ...[
+            const SizedBox(height: 12),
+            Text('PUDO Pricing (optional)', style: AdminTheme.titleMedium.copyWith(fontWeight: FontWeight.w600)),
+            const SizedBox(height: 8),
+            _priceRow('Standard', _pudoStdS, _pudoStdM, _pudoStdL, _pudoStdXL),
+            const SizedBox(height: 8),
+            _priceRow('Express', _pudoExpS, _pudoExpM, _pudoExpL, _pudoExpXL),
+            const SizedBox(height: 12),
+            Text('PUDO Door-to-Door (Locker↔Door) Pricing', style: AdminTheme.titleMedium.copyWith(fontWeight: FontWeight.w600)),
+            const SizedBox(height: 8),
+            _priceRowDoor(_pudoDoorXS, _pudoDoorS, _pudoDoorM, _pudoDoorL, _pudoDoorXL),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _pudoDoorSurcharge,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(labelText: 'Door Surcharge (R, optional)', border: OutlineInputBorder()),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _pudoNotes,
+              maxLines: 3,
+              decoration: const InputDecoration(labelText: 'Notes (admins only)', border: OutlineInputBorder()),
+            ),
+            const SizedBox(height: 12),
+            Align(
+              alignment: Alignment.centerRight,
+              child: ElevatedButton.icon(
+                onPressed: _spLoading ? null : _saveShippingProviders,
+                icon: const Icon(Icons.save),
+                label: const Text('Save Shipping Providers'),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _priceRow(String label, TextEditingController s, TextEditingController m, TextEditingController l, TextEditingController xl) {
+    InputDecoration dec(String hint) => InputDecoration(labelText: hint, border: const OutlineInputBorder());
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: AdminTheme.bodyLarge.copyWith(fontWeight: FontWeight.w600)),
+        const SizedBox(height: 6),
+        Row(children: [
+          Expanded(child: TextField(controller: s, decoration: dec('S (R)'))),
+          const SizedBox(width: 8),
+          Expanded(child: TextField(controller: m, decoration: dec('M (R)'))),
+          const SizedBox(width: 8),
+          Expanded(child: TextField(controller: l, decoration: dec('L (R)'))),
+          const SizedBox(width: 8),
+          Expanded(child: TextField(controller: xl, decoration: dec('XL (R)'))),
+        ]),
+      ],
+    );
+  }
+
+  Widget _priceRowDoor(TextEditingController xs, TextEditingController s, TextEditingController m, TextEditingController l, TextEditingController xl) {
+    InputDecoration dec(String hint) => InputDecoration(labelText: hint, border: const OutlineInputBorder());
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(children: [
+          Expanded(child: TextField(controller: xs, decoration: dec('XS (R)'))),
+          const SizedBox(width: 8),
+          Expanded(child: TextField(controller: s, decoration: dec('S (R)'))),
+          const SizedBox(width: 8),
+          Expanded(child: TextField(controller: m, decoration: dec('M (R)'))),
+          const SizedBox(width: 8),
+          Expanded(child: TextField(controller: l, decoration: dec('L (R)'))),
+          const SizedBox(width: 8),
+          Expanded(child: TextField(controller: xl, decoration: dec('XL (R)'))),
+        ]),
+      ],
     );
   }
 

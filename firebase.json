@@ -18,6 +18,10 @@
     ],
     "rewrites": [
       {
+        "source": "/admin_dashboard",
+        "destination": "/admin_dashboard/index.html"
+      },
+      {
         "source": "/admin_dashboard/**",
         "destination": "/admin_dashboard/index.html"
       },
@@ -46,6 +50,30 @@
           { "key": "Content-Type", "value": "application/javascript" },
           { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" },
           { "key": "Service-Worker-Allowed", "value": "/" }
+        ]
+      },
+      {
+        "source": "/flutter_service_worker.js",
+        "headers": [
+          { "key": "Content-Type", "value": "application/javascript" },
+          { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" },
+          { "key": "Service-Worker-Allowed", "value": "/" }
+        ]
+      },
+      {
+        "source": "/admin_dashboard/firebase-messaging-sw.js",
+        "headers": [
+          { "key": "Content-Type", "value": "application/javascript" },
+          { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" },
+          { "key": "Service-Worker-Allowed", "value": "/admin_dashboard/" }
+        ]
+      },
+      {
+        "source": "/admin_dashboard/flutter_service_worker.js",
+        "headers": [
+          { "key": "Content-Type", "value": "application/javascript" },
+          { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" },
+          { "key": "Service-Worker-Allowed", "value": "/admin_dashboard/" }
         ]
       }
     ]

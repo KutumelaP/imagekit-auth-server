@@ -288,6 +288,184 @@ class OrphanedDataCleanup {
   }
 
   /**
+   * Find orphaned platform receivables
+   */
+  async findOrphanedPlatformReceivables(validUserIds) {
+    console.log('🔍 Finding orphaned platform receivables...');
+    
+    const receivablesSnapshot = await db.collection('platform_receivables').get();
+    const orphanedReceivables = [];
+    
+    for (const receivableDoc of receivablesSnapshot.docs) {
+      const receivableData = receivableDoc.data();
+      const sellerId = receivableDoc.id; // Document ID is the seller ID
+      
+      if (sellerId && !validUserIds.has(sellerId)) {
+        orphanedReceivables.push({
+          receivableId: receivableDoc.id,
+          sellerId,
+          amount: receivableData.amount,
+          type: receivableData.type,
+          createdAt: receivableData.createdAt
+        });
+      }
+    }
+    
+    console.log(`📊 Found ${orphanedReceivables.length} orphaned platform receivables`);
+    return orphanedReceivables;
+  }
+
+  /**
+   * Find orphaned payouts
+   */
+  async findOrphanedPayouts(validUserIds) {
+    console.log('🔍 Finding orphaned payouts...');
+    
+    const payoutsSnapshot = await db.collection('payouts').get();
+    const orphanedPayouts = [];
+    
+    for (const payoutDoc of payoutsSnapshot.docs) {
+      const payoutData = payoutDoc.data();
+      const sellerId = payoutData.sellerId;
+      
+      if (sellerId && !validUserIds.has(sellerId)) {
+        orphanedPayouts.push({
+          payoutId: payoutDoc.id,
+          sellerId,
+          amount: payoutData.amount,
+          status: payoutData.status,
+          failureReason: payoutData.failureReason,
+          createdAt: payoutData.createdAt
+        });
+      }
+    }
+    
+    console.log(`📊 Found ${orphanedPayouts.length} orphaned payouts`);
+    return orphanedPayouts;
+  }
+
+  /**
+   * Find orphaned settlements
+   */
+  async findOrphanedSettlements(validUserIds) {
+    console.log('🔍 Finding orphaned settlements...');
+    
+    const settlementsSnapshot = await db.collection('settlements').get();
+    const orphanedSettlements = [];
+    
+    for (const settlementDoc of settlementsSnapshot.docs) {
+      const settlementData = settlementDoc.data();
+      const sellerId = settlementData.sellerId;
+      const buyerId = settlementData.buyerId;
+      
+      const missingSeller = sellerId && !validUserIds.has(sellerId);
+      const missingBuyer = buyerId && !validUserIds.has(buyerId);
+      
+      if (missingSeller || missingBuyer) {
+        orphanedSettlements.push({
+          settlementId: settlementDoc.id,
+          sellerId,
+          buyerId,
+          amount: settlementData.amount,
+          status: settlementData.status,
+          missingSeller,
+          missingBuyer,
+          createdAt: settlementData.createdAt
+        });
+      }
+    }
+    
+    console.log(`📊 Found ${orphanedSettlements.length} orphaned settlements`);
+    return orphanedSettlements;
+  }
+
+  /**
+   * Find orphaned entries
+   */
+  async findOrphanedEntries(validUserIds) {
+    console.log('🔍 Finding orphaned entries...');
+    
+    const entriesSnapshot = await db.collection('entries').get();
+    const orphanedEntries = [];
+    
+    for (const entryDoc of entriesSnapshot.docs) {
+      const entryData = entryDoc.data();
+      const ownerId = entryData.ownerId;
+      
+      if (ownerId && !validUserIds.has(ownerId)) {
+        orphanedEntries.push({
+          entryId: entryDoc.id,
+          ownerId,
+          type: entryData.type,
+          amount: entryData.amount,
+          description: entryData.description,
+          createdAt: entryData.createdAt
+        });
+      }
+    }
+    
+    console.log(`📊 Found ${orphanedEntries.length} orphaned entries`);
+    return orphanedEntries;
+  }
+
+  /**
+   * Find orphaned returns
+   */
+  async findOrphanedReturns(validUserIds) {
+    console.log('🔍 Finding orphaned returns...');
+    
+    const returnsSnapshot = await db.collection('returns').get();
+    const orphanedReturns = [];
+    
+    for (const returnDoc of returnsSnapshot.docs) {
+      const returnData = returnDoc.data();
+      const sellerId = returnData.sellerId;
+      
+      if (sellerId && !validUserIds.has(sellerId)) {
+        orphanedReturns.push({
+          returnId: returnDoc.id,
+          sellerId,
+          orderId: returnData.orderId,
+          reason: returnData.reason,
+          status: returnData.status,
+          createdAt: returnData.createdAt
+        });
+      }
+    }
+    
+    console.log(`📊 Found ${orphanedReturns.length} orphaned returns`);
+    return orphanedReturns;
+  }
+
+  /**
+   * Find orphaned KYC submissions
+   */
+  async findOrphanedKycSubmissions(validUserIds) {
+    console.log('🔍 Finding orphaned KYC submissions...');
+    
+    const kycSnapshot = await db.collection('kyc_submissions').get();
+    const orphanedKyc = [];
+    
+    for (const kycDoc of kycSnapshot.docs) {
+      const kycData = kycDoc.data();
+      const userId = kycData.userId;
+      
+      if (userId && !validUserIds.has(userId)) {
+        orphanedKyc.push({
+          kycId: kycDoc.id,
+          userId,
+          status: kycData.status,
+          documentType: kycData.documentType,
+          createdAt: kycData.createdAt
+        });
+      }
+    }
+    
+    console.log(`📊 Found ${orphanedKyc.length} orphaned KYC submissions`);
+    return orphanedKyc;
+  }
+
+  /**
    * Delete orphaned chats and their messages in batches
    */
   async deleteOrphanedChats(orphanedChats) {
@@ -424,7 +602,13 @@ class OrphanedDataCleanup {
         reviews: await this.findOrphanedReviews(validUserIds, validProductIds),
         notifications: await this.findOrphanedNotifications(validUserIds),
         fcm_tokens: await this.findOrphanedFcmTokens(validUserIds),
-        products: await this.findOrphanedProducts(validUserIds)
+        products: await this.findOrphanedProducts(validUserIds),
+        platform_receivables: await this.findOrphanedPlatformReceivables(validUserIds),
+        payouts: await this.findOrphanedPayouts(validUserIds),
+        settlements: await this.findOrphanedSettlements(validUserIds),
+        entries: await this.findOrphanedEntries(validUserIds),
+        returns: await this.findOrphanedReturns(validUserIds),
+        kyc_submissions: await this.findOrphanedKycSubmissions(validUserIds)
       };
       
       // Calculate totals
@@ -474,6 +658,12 @@ class OrphanedDataCleanup {
       this.results.notifications = await this.deleteOrphanedDocuments('notifications', orphanedData.notifications, 'notificationId');
       this.results.fcm_tokens = await this.deleteOrphanedDocuments('fcm_tokens', orphanedData.fcm_tokens, 'tokenId');
       this.results.products = await this.deleteOrphanedDocuments('products', orphanedData.products, 'productId');
+      this.results.platform_receivables = await this.deleteOrphanedDocuments('platform_receivables', orphanedData.platform_receivables, 'receivableId');
+      this.results.payouts = await this.deleteOrphanedDocuments('payouts', orphanedData.payouts, 'payoutId');
+      this.results.settlements = await this.deleteOrphanedDocuments('settlements', orphanedData.settlements, 'settlementId');
+      this.results.entries = await this.deleteOrphanedDocuments('entries', orphanedData.entries, 'entryId');
+      this.results.returns = await this.deleteOrphanedDocuments('returns', orphanedData.returns, 'returnId');
+      this.results.kyc_submissions = await this.deleteOrphanedDocuments('kyc_submissions', orphanedData.kyc_submissions, 'kycId');
       
       const totalDeleted = Object.values(this.results).reduce((sum, count) => sum + count, 0);
       
@@ -499,7 +689,7 @@ class OrphanedDataCleanup {
     console.log('📊 Calculating database statistics...');
     
     try {
-      const collections = ['users', 'products', 'chats', 'orders', 'reviews', 'notifications', 'fcm_tokens', 'chatbot_conversations'];
+      const collections = ['users', 'products', 'chats', 'orders', 'reviews', 'notifications', 'fcm_tokens', 'chatbot_conversations', 'platform_receivables', 'payouts', 'settlements', 'entries', 'returns', 'kyc_submissions'];
       const stats = {};
       
       for (const collection of collections) {

@@ -11,14 +11,14 @@ import 'providers/optimized_provider.dart';
 import 'services/notification_service.dart';
 import 'services/error_tracking_service.dart';
 import 'services/fcm_config_service.dart';
-import 'services/awesome_notification_service.dart';
+// import 'services/awesome_notification_service.dart';
 import 'services/navigation_service.dart';
 import 'services/route_persistence_observer.dart';
 import 'screens/notification_settings_screen.dart';
 import 'screens/security_settings_screen.dart';
 import 'screens/KycUploadScreen.dart';
 import 'screens/ChatRoute.dart';
-import 'services/global_message_listener.dart';
+// import 'services/global_message_listener.dart';
 // import 'widgets/in_app_notification_widget.dart'; // DISABLED - No popup overlays
 // import 'widgets/notification_badge.dart'; // DISABLED - No global notification badge
 import 'widgets/simple_splash_screen.dart';
@@ -41,17 +41,20 @@ import 'screens/StoreProfileRouteLoader.dart';
 import 'screens/MyStoresScreen.dart';
 import 'screens/SellerPayoutsScreen.dart';
 import 'screens/PaymentSuccessScreen.dart';
+import 'screens/stunning_product_browser.dart';
+import 'screens/store_page.dart';
+import 'screens/web_desktop_block_screen.dart';
 
 import 'dart:async';
 import 'utils/safari_optimizer.dart';
 import 'utils/web_memory_guard.dart';
 import 'utils/performance_config.dart';
-import 'services/optimized_location_service.dart';
-import 'services/pwa_optimization_service.dart';
+// import 'services/optimized_location_service.dart';
+// import 'services/pwa_optimization_service.dart';
 import 'services/pwa_url_handler.dart';
 // Removed optimization services for deployment
 import 'package:flutter/foundation.dart' show kIsWeb, kDebugMode;
-import 'utils/web_env.dart';
+// import 'utils/web_env.dart';
 
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
@@ -59,21 +62,8 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   if (kDebugMode) print('🔔 Background message: ${message.messageId} data=${message.data}');
 }
 
-/// 🚀 Set up PWA navigation listener for service worker messages
-void _setupPWANavigationListener() {
-  if (!kIsWeb) return;
-  
-  try {
-    // Listen for service worker messages
-    if (kDebugMode) print('🚀 Setting up PWA navigation listener...');
-    
-    // This would typically use dart:html's MessageEvent listener
-    // For now, we'll rely on the existing navigation system
-    if (kDebugMode) print('✅ PWA navigation listener ready');
-  } catch (e) {
-    if (kDebugMode) print('❌ Error setting up PWA navigation listener: $e');
-  }
-}
+// 🚀 PWA navigation listener not used currently; keep stub commented for future use
+// void _setupPWANavigationListener() {}
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -154,9 +144,17 @@ class MyApp extends StatelessWidget {
           if (kDebugMode) _DebugNavigatorObserver(),
           RoutePersistenceObserver(),
         ],
-        home: SplashWrapper(),
+
         builder: (context, child) {
-          // Global bottom SafeArea to avoid iPhone home indicator overlap
+          // Show a dedicated desktop web gate screen to indicate the web app
+          // is coming soon. Mobile (narrow width) web continues to the app.
+          if (kIsWeb) {
+            final size = MediaQuery.of(context).size;
+            final isDesktopLike = size.width >= 800;
+            if (isDesktopLike) {
+              return const WebDesktopBlockScreen();
+            }
+          }
           // Disable chatbot globally for now - will be re-enabled only on home screen
           final showBot = false;
 
@@ -165,10 +163,10 @@ class MyApp extends StatelessWidget {
             showChatbot: showBot,
           );
 
+          // Only add top SafeArea - let individual screens handle bottom safe area
           final wrapped = SafeArea(
             top: true,
-            bottom: true,
-            minimum: const EdgeInsets.only(bottom: 80), // Increased for FAB clearance
+            bottom: false, // Let individual screens handle bottom safe area
             child: layered,
           );
           return MediaQuery(
@@ -180,6 +178,7 @@ class MyApp extends StatelessWidget {
         },
         routes: {
           '/home': (context) => SimpleHomeScreen(),
+          // 🚀 REMOVED: /stores route from here - handled by onGenerateRoute instead
           '/login': (context) => LoginScreen(),
           '/cart': (context) => CartScreen(),
           '/order-history': (context) => OrderHistoryScreen(),
@@ -194,8 +193,185 @@ class MyApp extends StatelessWidget {
           '/seller-payouts': (context) => const SellerPayoutsScreen(),
 
         },
+        onGenerateInitialRoutes: (initialRoute) {
+          // Handle initial routes for deep links
+          
+          // 🚀 NEW: Handle /stores route for store browsing
+          if (initialRoute.startsWith('/stores')) {
+            if (kDebugMode) {
+              print('🔗 INITIAL ROUTE: Handling stores route: $initialRoute');
+            }
+            
+            // Extract storeId from query parameters if present
+            final uri = Uri.parse(initialRoute);
+            final storeId = uri.queryParameters['storeId'];
+            
+            return [
+              MaterialPageRoute(
+                builder: (_) => StoreSelectionScreen(
+                  category: 'All',
+                  specificStoreId: storeId,
+                ),
+                settings: RouteSettings(name: initialRoute),
+              ),
+            ];
+          }
+          
+          if (initialRoute.startsWith('/store/')) {
+            final storePath = initialRoute.substring('/store/'.length);
+            
+            // Handle /store/:storeId/products route
+            if (storePath.contains('/products')) {
+              final storeId = storePath.split('/')[0];
+              if (kDebugMode) {
+                print('🔗 INITIAL ROUTE: Handling store products route: $initialRoute');
+                print('🔗 INITIAL ROUTE: Store ID: $storeId');
+              }
+              
+              return [
+                MaterialPageRoute(
+                  builder: (_) => StunningProductBrowser(
+                    storeId: storeId,
+                    storeName: 'Store',
+                  ),
+                  settings: RouteSettings(name: initialRoute),
+                ),
+              ];
+            } else {
+              // Handle /store/:storeId route (profile)
+              final storeId = storePath;
+              if (kDebugMode) {
+                print('🔗 INITIAL ROUTE: Handling store profile route: $initialRoute');
+                print('🔗 INITIAL ROUTE: Store ID: $storeId');
+              }
+              
+              return [
+                MaterialPageRoute(
+                  builder: (_) => StoreProfileRouteLoader(storeId: storeId),
+                  settings: RouteSettings(name: initialRoute),
+                ),
+              ];
+            }
+          }
+          
+          // Handle hash-based routes (like #/home)
+          if (initialRoute.contains('#')) {
+            final hashRoute = initialRoute.split('#')[1];
+            
+            // 🚀 ENHANCED: Check if main route has storeId before processing hash
+            final mainUri = Uri.parse(initialRoute.split('#')[0]);
+            final mainStoreId = mainUri.queryParameters['storeId'];
+            
+            // If main route has storeId, prioritize it over hash route
+            if (mainStoreId != null && mainStoreId.isNotEmpty) {
+              if (kDebugMode) {
+                print('🔗 MAIN ROUTE PRIORITY: Store ID from main route: $mainStoreId');
+              }
+              
+              return [
+                MaterialPageRoute(
+                  builder: (_) => StoreSelectionScreen(
+                    category: 'All',
+                    specificStoreId: mainStoreId,
+                  ),
+                  settings: RouteSettings(name: initialRoute),
+                ),
+              ];
+            }
+            
+            // 🚀 NEW: Handle hash-based /stores route
+            if (hashRoute.startsWith('/stores')) {
+              if (kDebugMode) {
+                print('🔗 HASH ROUTE: Handling stores route: $hashRoute');
+              }
+              
+              // Extract storeId from query parameters if present
+              final uri = Uri.parse(hashRoute);
+              final storeId = uri.queryParameters['storeId'];
+              
+              return [
+                MaterialPageRoute(
+                  builder: (_) => StoreSelectionScreen(
+                    category: 'All',
+                    specificStoreId: storeId,
+                  ),
+                  settings: RouteSettings(name: hashRoute),
+                ),
+              ];
+            }
+            
+            if (hashRoute.startsWith('/store/')) {
+              final storePath = hashRoute.substring('/store/'.length);
+              
+              // Handle /store/:storeId/products route
+              if (storePath.contains('/products')) {
+                final storeId = storePath.split('/')[0];
+                if (kDebugMode) {
+                  print('🔗 HASH ROUTE: Handling store products route: $hashRoute');
+                  print('🔗 HASH ROUTE: Store ID: $storeId');
+                }
+                
+                return [
+                  MaterialPageRoute(
+                    builder: (_) => StunningProductBrowser(
+                      storeId: storeId,
+                      storeName: 'Store',
+                    ),
+                    settings: RouteSettings(name: hashRoute),
+                  ),
+                ];
+              } else {
+                // Handle /store/:storeId route (profile)
+                final storeId = storePath;
+                if (kDebugMode) {
+                  print('🔗 HASH ROUTE: Handling store profile route: $hashRoute');
+                  print('🔗 HASH ROUTE: Store ID: $storeId');
+                }
+                
+                return [
+                  MaterialPageRoute(
+                    builder: (_) => StoreProfileRouteLoader(storeId: storeId),
+                    settings: RouteSettings(name: hashRoute),
+                  ),
+                ];
+              }
+            }
+          }
+          
+          // Default to splash wrapper for other routes
+          return [
+            MaterialPageRoute(
+              builder: (_) => SplashWrapper(),
+              settings: const RouteSettings(name: '/'),
+            ),
+          ];
+        },
         onGenerateRoute: (settings) {
           // Handle routes with parameters
+          
+          // 🚀 NEW: Handle /stores route for store browsing
+          if (settings.name != null && settings.name!.startsWith('/stores')) {
+            if (kDebugMode) {
+              print('🔗 GENERATE ROUTE: Handling stores route: ${settings.name}');
+            }
+            
+            // Extract storeId from query parameters if present
+            final uri = Uri.parse(settings.name!);
+            final storeId = uri.queryParameters['storeId'];
+            
+            if (kDebugMode) {
+              print('🔗 GENERATE ROUTE: Store ID from query: $storeId');
+            }
+            
+            return MaterialPageRoute(
+              builder: (_) => StoreSelectionScreen(
+                category: 'All',
+                specificStoreId: storeId,
+              ),
+              settings: RouteSettings(name: settings.name),
+            );
+          }
+          
           // 🚀 PWA-FRIENDLY: Shareable web URL: /store/:storeId
           if (settings.name != null && settings.name!.startsWith('/store/')) {
             final storePath = settings.name!.substring('/store/'.length);
@@ -212,7 +388,10 @@ class MyApp extends StatelessWidget {
               final storeId = storePath.split('/')[0];
               if (kDebugMode) print('🏪 PWA Route: Opening product browser for store $storeId');
               return MaterialPageRoute(
-                builder: (_) => StoreProfileRouteLoader(storeId: storeId),
+                builder: (_) => StunningProductBrowser(
+                  storeId: storeId,
+                  storeName: 'Store', // Will be updated when store data loads
+                ),
                 settings: RouteSettings(name: settings.name),
               );
             } else {
@@ -229,6 +408,41 @@ class MyApp extends StatelessWidget {
                 builder: (_) => StoreProfileRouteLoader(storeId: storeId),
                 settings: RouteSettings(name: settings.name),
               );
+            }
+          }
+          
+          // Handle hash-based store routes (like #/store/123)
+          if (settings.name != null && settings.name!.contains('#')) {
+            final hashRoute = settings.name!.split('#')[1];
+            if (hashRoute.startsWith('/store/')) {
+              final storePath = hashRoute.substring('/store/'.length);
+              
+              if (kDebugMode) {
+                print('🔗 HASH ROUTE DEBUG: Handling hash store route: $hashRoute');
+                print('🔗 HASH ROUTE DEBUG: Store path: $storePath');
+              }
+              
+              // Handle /store/:storeId/products route
+              if (storePath.contains('/products')) {
+                final storeId = storePath.split('/')[0];
+                if (kDebugMode) print('🏪 Hash Route: Opening product browser for store $storeId');
+                return MaterialPageRoute(
+                  builder: (_) => StunningProductBrowser(
+                    storeId: storeId,
+                    storeName: 'Store',
+                  ),
+                  settings: RouteSettings(name: hashRoute),
+                );
+              } else {
+                // Handle /store/:storeId route
+                final storeId = storePath;
+                if (kDebugMode) print('🏪 Hash Route: Opening store profile for $storeId');
+                
+                return MaterialPageRoute(
+                  builder: (_) => StoreProfileRouteLoader(storeId: storeId),
+                  settings: RouteSettings(name: hashRoute),
+                );
+              }
             }
           }
           if (settings.name == '/search') {
@@ -322,6 +536,8 @@ class _SplashWrapperState extends State<SplashWrapper> {
     });
   }
 
+
+
   Future<void> _checkInitialRoute() async {
     if (!mounted) return;
     
@@ -331,6 +547,31 @@ class _SplashWrapperState extends State<SplashWrapper> {
       // We're already on a store route, don't redirect
       if (kDebugMode) print('🔗 Already on store route: $currentRoute, skipping redirect');
       return;
+    }
+    
+    // 🚀 NEW: Check URL hash for store routes before redirecting
+    if (kIsWeb) {
+      try {
+        // Check if current URL contains a store route
+        final url = Uri.base.toString();
+        if (url.contains('/store/')) {
+          final storeMatch = RegExp(r'/store/([^/#]+)').firstMatch(url);
+          if (storeMatch != null) {
+            final storeId = storeMatch.group(1);
+            if (kDebugMode) print('🔗 URL contains store route: /store/$storeId');
+            
+            // Navigate to store instead of home
+            Future.delayed(const Duration(milliseconds: 500), () {
+              if (mounted) {
+                Navigator.of(context).pushReplacementNamed('/store/$storeId');
+              }
+            });
+            return;
+          }
+        }
+      } catch (e) {
+        if (kDebugMode) print('❌ Error checking URL for store routes: $e');
+      }
     }
     
     // Navigate to last route if available, else home

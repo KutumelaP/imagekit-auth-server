@@ -405,8 +405,10 @@ class PayFastService {
       double platformFeePercentage = (settings['platformFeePercentage'] ?? 5.0).toDouble();
       double platformFee = orderTotal * (platformFeePercentage / 100);
       
-      // PayFast transaction fee (3.5% + R2)
-      double payfastFee = (orderTotal * 0.035) + 2.00;
+      // PayFast transaction fee from settings
+      double payfastFeePercentage = (settings['payfastFeePercentage'] ?? 3.5).toDouble();
+      double payfastFixedFee = (settings['payfastFixedFee'] ?? 2.0).toDouble();
+      double payfastFee = (orderTotal * (payfastFeePercentage / 100)) + payfastFixedFee;
       
       // Total fees
       double totalFees = platformFee + payfastFee;
@@ -440,7 +442,7 @@ class PayFastService {
         'customerId': customerId,
         'feeBreakdown': {
           'platformFee': 'R${platformFee.toStringAsFixed(2)} (${platformFeePercentage.toStringAsFixed(1)}%)',
-          'payfastFee': 'R${payfastFee.toStringAsFixed(2)} (3.5% + R2)',
+          'payfastFee': 'R${payfastFee.toStringAsFixed(2)} (${payfastFeePercentage.toStringAsFixed(1)}% + R${payfastFixedFee.toStringAsFixed(0)})',
           'sellerPayment': 'R${sellerPayment.toStringAsFixed(2)}',
           'holdback': 'R${holdbackAmount.toStringAsFixed(2)} (${holdbackPercentage.toStringAsFixed(1)}%)',
         },

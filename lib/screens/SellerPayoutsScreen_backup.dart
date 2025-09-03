@@ -2,16 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
-import 'package:firebase_analytics/firebase_analytics.dart';
-import 'package:intl/intl.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:share_plus/share_plus.dart';
-import 'package:printing/printing.dart';
-import 'dart:io';
-import 'package:path_provider/path_provider.dart';
-import 'dart:typed_data';
 import '../theme/app_theme.dart';
-import '../services/receipt_service.dart';
 
 class SellerPayoutsScreen extends StatefulWidget {
   const SellerPayoutsScreen({super.key});
@@ -23,8 +14,6 @@ class SellerPayoutsScreen extends StatefulWidget {
 class _SellerPayoutsScreenState extends State<SellerPayoutsScreen> {
   bool _loading = false;
   bool _requesting = false;
-  bool _generatingStatement = false;
-  bool _exportingCsv = false;
   double _gross = 0.0;
   double _commission = 0.0;
   double _net = 0.0;
@@ -40,30 +29,12 @@ class _SellerPayoutsScreenState extends State<SellerPayoutsScreen> {
   String _outstandingType = '';
   bool _codDisabled = false;
 
-  // Statement date range
-  DateTime _rangeFrom = DateTime.now().subtract(const Duration(days: 30));
-  DateTime _rangeTo = DateTime.now();
-
-  // History pagination
-  static const int _historyPageSize = 20;
-  DocumentSnapshot? _lastUserPayoutDoc;
-  DocumentSnapshot? _lastMainPayoutDoc;
-  bool _hasMoreUser = true;
-  bool _hasMoreMain = true;
-  bool _loadingHistory = false;
-  final Set<String> _historySeenIds = <String>{};
-
-  Future<void> _initialize() async {
-    await _loadPersistedRange();
-    await _refreshAll();
-  }
-
   
 
   @override
   void initState() {
     super.initState();
-    _initialize();
+    _refreshAll();
   }
 
   Future<void> _refreshAll() async {
@@ -72,51 +43,6 @@ class _SellerPayoutsScreenState extends State<SellerPayoutsScreen> {
       _loadHistory(),
       _loadOutstandingFees(),
     ]);
-  }
-
-  Future<void> _loadPersistedRange() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final fromMs = prefs.getInt('statement_from_ms');
-      final toMs = prefs.getInt('statement_to_ms');
-      if (fromMs != null && toMs != null) {
-        setState(() {
-          _rangeFrom = DateTime.fromMillisecondsSinceEpoch(fromMs);
-          _rangeTo = DateTime.fromMillisecondsSinceEpoch(toMs);
-        });
-      }
-    } catch (_) {}
-  }
-
-  Future<void> _persistRange(DateTime from, DateTime to) async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setInt('statement_from_ms', from.millisecondsSinceEpoch);
-      await prefs.setInt('statement_to_ms', to.millisecondsSinceEpoch);
-    } catch (_) {}
-  }
-
-  String _formatCurrency(double value) {
-    try {
-      final locale = Localizations.localeOf(context).toString();
-      final fmt = NumberFormat.currency(locale: locale, symbol: 'R ', decimalDigits: 2);
-      return fmt.format(value);
-    } catch (_) {
-      return 'R ${value.toStringAsFixed(2)}';
-    }
-  }
-
-  double _asDouble(dynamic v) {
-    if (v is num) return v.toDouble();
-    if (v is String) return double.tryParse(v) ?? 0.0;
-    return 0.0;
-  }
-
-  Future<File> _saveTempFile(Uint8List bytes, String filename) async {
-    final dir = await getTemporaryDirectory();
-    final file = File('${dir.path}/$filename');
-    await file.writeAsBytes(bytes, flush: true);
-    return file;
   }
 
   Future<void> _loadBalance() async {
@@ -164,395 +90,15 @@ class _SellerPayoutsScreenState extends State<SellerPayoutsScreen> {
   Future<void> _loadHistory() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
-    
-    print('🔍 DEBUG: Starting payout history load for user: ${user.uid}');
-    
     try {
-      // Reset pagination
-      setState(() {
-        _history.clear();
-        _historySeenIds.clear();
-        _lastUserPayoutDoc = null;
-        _lastMainPayoutDoc = null;
-        _hasMoreUser = true;
-        _hasMoreMain = true;
-      });
-
-      await _loadNextHistoryPage();
-      
-      // Debug logging
-      print('🔍 DEBUG: Payout History Loading Summary:');
-      print('  Final history count: ${_history.length}');
-      print('  Has more user: $_hasMoreUser  •  Has more main: $_hasMoreMain');
-      if (_history.isNotEmpty) {
-        print('  First payout: ${_history.first}');
-      } else {
-        print('  ⚠️ No payouts found in either collection!');
-        print('  🔍 This could mean:');
-        print('    1. No payouts have been requested yet');
-        print('    2. Payouts are stored in a different collection');
-        print('    3. Firebase permissions issue');
-        print('    4. Query error due to missing indexes');
-      }
-    } catch (e) {
-      print('❌ Error loading payout history: $e');
-      print('🔍 DEBUG: Error details: ${e.toString()}');
-      
-      // Try a simpler query to check if collection exists
-      try {
-        print('🔍 DEBUG: Testing if payouts collection exists...');
-        final testQuery = await FirebaseFirestore.instance
-            .collection('payouts')
-            .limit(1)
-            .get();
-        print('🔍 DEBUG: Payouts collection exists with ${testQuery.docs.length} documents');
-      } catch (testError) {
-        print('❌ ERROR: Cannot access payouts collection: $testError');
-      }
-    }
-  }
-
-  Future<void> _loadNextHistoryPage() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
-    if (_loadingHistory) return;
-    if (!_hasMoreUser && !_hasMoreMain) return;
-    setState(() { _loadingHistory = true; });
-    try {
-      // Build queries
-      Query<Map<String, dynamic>> userQuery = FirebaseFirestore.instance
+      final qs = await FirebaseFirestore.instance
           .collection('users').doc(user.uid)
           .collection('payouts')
           .orderBy('createdAt', descending: true)
-          .limit(_historyPageSize);
-      if (_lastUserPayoutDoc != null) {
-        userQuery = userQuery.startAfterDocument(_lastUserPayoutDoc!);
-      }
-
-      Query<Map<String, dynamic>> mainQuery = FirebaseFirestore.instance
-          .collection('payouts')
-          .where('sellerId', isEqualTo: user.uid)
-          .orderBy('createdAt', descending: true)
-          .limit(_historyPageSize);
-      if (_lastMainPayoutDoc != null) {
-        mainQuery = mainQuery.startAfterDocument(_lastMainPayoutDoc!);
-      }
-
-      final userPayouts = _hasMoreUser ? await userQuery.get() : null;
-      final mainPayouts = _hasMoreMain ? await mainQuery.get() : null;
-
-      // Track cursors and hasMore flags
-      if (userPayouts != null) {
-        if (userPayouts.docs.isNotEmpty) {
-          _lastUserPayoutDoc = userPayouts.docs.last;
-        }
-        if (userPayouts.docs.length < _historyPageSize) _hasMoreUser = false;
-      for (final doc in userPayouts.docs) {
-          if (_historySeenIds.add(doc.id)) {
-            _history.add({'id': doc.id, ...doc.data()});
-          }
-        }
-      }
-
-      if (mainPayouts != null) {
-        if (mainPayouts.docs.isNotEmpty) {
-          _lastMainPayoutDoc = mainPayouts.docs.last;
-        }
-        if (mainPayouts.docs.length < _historyPageSize) _hasMoreMain = false;
-      for (final doc in mainPayouts.docs) {
-          if (_historySeenIds.add(doc.id)) {
-            _history.add({'id': doc.id, ...doc.data()});
-          }
-        }
-      }
-
-      // Sort combined results
-      _history.sort((a, b) {
-        final aDate = a['createdAt'];
-        final bDate = b['createdAt'];
-        if (aDate == null && bDate == null) return 0;
-        if (aDate == null) return 1;
-        if (bDate == null) return -1;
-        try { return (bDate as Timestamp).compareTo(aDate as Timestamp); } catch (_) { return 0; }
-      });
-
-      setState(() {});
-    } catch (e) {
-      print('❌ Error loading next history page: $e');
-    } finally {
-      if (mounted) setState(() { _loadingHistory = false; });
-    }
-  }
-
-  Future<void> _pickRangeAndGenerateStatement() async {
-    // Quick presets dialog
-    final preset = await showModalBottomSheet<String>(
-      context: context,
-      builder: (ctx) {
-        return SafeArea(
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            ListTile(
-              leading: const Icon(Icons.calendar_view_week),
-              title: const Text('Last 7 days'),
-              onTap: () => Navigator.pop(ctx, '7'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.calendar_view_month),
-              title: const Text('Last 30 days'),
-              onTap: () => Navigator.pop(ctx, '30'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.date_range),
-              title: const Text('Custom range...'),
-              onTap: () => Navigator.pop(ctx, 'custom'),
-            ),
-          ]),
-        );
-      },
-    );
-
-    DateTime from = _rangeFrom;
-    DateTime to = _rangeTo;
-    if (preset == '7') {
-      from = DateTime.now().subtract(const Duration(days: 7));
-      to = DateTime.now();
-    } else if (preset == '30') {
-      from = DateTime.now().subtract(const Duration(days: 30));
-      to = DateTime.now();
-    } else if (preset == 'custom') {
-      final picked = await showDateRangePicker(
-        context: context,
-        firstDate: DateTime.now().subtract(const Duration(days: 365 * 3)),
-        lastDate: DateTime.now().add(const Duration(days: 1)),
-        initialDateRange: DateTimeRange(start: _rangeFrom, end: _rangeTo),
-      );
-      if (picked != null) {
-        from = picked.start;
-        to = picked.end.add(const Duration(hours: 23, minutes: 59));
-      }
-    }
-
-    setState(() { _rangeFrom = from; _rangeTo = to; });
-    await _persistRange(from, to);
-    setState(() { _generatingStatement = true; });
-    await _generateStatement(from, to);
-    if (mounted) setState(() { _generatingStatement = false; });
-  }
-
-  Future<void> _pickRangeAndPreviewStatement() async {
-    await _pickRangeAndGenerateStatement(); // reuse range picker
-    // After range is set, open preview
-    await _openStatementPreview(_rangeFrom, _rangeTo);
-  }
-
-  Future<void> _openStatementPreview(DateTime from, DateTime to) async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
-    try {
-      // Fetch seller profile
-      final userDoc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
-      final sellerName = userDoc.data()?['businessName'] ?? userDoc.data()?['name'] ?? 'Unknown Seller';
-
-      // Fetch data
-      final entriesSnap = await FirebaseFirestore.instance
-          .collection('platform_receivables')
-          .doc(user.uid)
-          .collection('entries')
-          .where('createdAt', isGreaterThanOrEqualTo: from)
-          .where('createdAt', isLessThanOrEqualTo: to)
+          .limit(50)
           .get();
-      final payoutsSnap = await FirebaseFirestore.instance
-          .collection('payouts')
-          .where('sellerId', isEqualTo: user.uid)
-          .where('createdAt', isGreaterThanOrEqualTo: from)
-          .where('createdAt', isLessThanOrEqualTo: to)
-          .get();
-      final moneyIn = entriesSnap.docs.map((d) => { ...d.data(), 'id': d.id }).toList();
-      final moneyOut = payoutsSnap.docs.map((d) => { ...d.data(), 'id': d.id }).toList();
-
-      final double windowIn = moneyIn.fold<double>(0.0, (p, e) {
-        final gross = _asDouble(e['gross'] ?? e['amount']);
-        final comm = _asDouble(e['commission']);
-        final net = _asDouble(e['net']);
-        final effective = net == 0.0 ? (gross - comm) : net;
-        return p + effective;
-      });
-      final double windowOut = moneyOut.fold<double>(0.0, (p, e) => p + _asDouble(e['net'] ?? e['amount']));
-      final startingBalance = (_net - windowIn + windowOut);
-
-      // Build preview rows
-      final totalFees = moneyIn.fold<double>(0.0, (p, e) => p + _asDouble(e['commission']));
-
-      showModalBottomSheet(
-        context: context,
-        isScrollControlled: true,
-        builder: (ctx) {
-          return SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Row(
-                    children: [
-                      const Icon(Icons.visibility),
-                      const SizedBox(width: 8),
-                      Expanded(child: Text('Statement Preview – $sellerName', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold))),
-                      IconButton(onPressed: () => Navigator.pop(ctx), icon: const Icon(Icons.close)),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Text('${DateFormat('MMM dd, yyyy').format(from)} to ${DateFormat('MMM dd, yyyy').format(to)}', style: TextStyle(color: Colors.grey[700])),
-                  const SizedBox(height: 12),
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.grey.shade50,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.grey.shade300),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _kv('Opening Balance (before period)', _formatCurrency(startingBalance)),
-                        _kv('Money In (sales)', _formatCurrency(windowIn + totalFees)),
-                        _kv('Platform Fees', _formatCurrency(totalFees)),
-                        _kv('Money Out (payouts)', _formatCurrency(windowOut)),
-                        const Divider(),
-                        _kv('Net Movement', _formatCurrency(windowIn - totalFees - windowOut)),
-                        _kv('Ending Balance', _formatCurrency(startingBalance + windowIn - totalFees - windowOut)),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: ElevatedButton.icon(
-                      onPressed: () async {
-                        Navigator.pop(ctx);
-                        await _generateStatement(from, to);
-                      },
-                      icon: const Icon(Icons.picture_as_pdf),
-                      label: const Text('Download PDF'),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          );
-        },
-      );
-    } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Preview failed: $e')));
-    }
-  }
-
-  Widget _kv(String k, String v) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
-      child: Row(
-        children: [
-          Expanded(child: Text(k, style: const TextStyle(fontWeight: FontWeight.w600))),
-          Text(v),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _generateStatement(DateTime from, DateTime to) async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
-    try {
-      // Fetch seller profile
-      final userDoc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
-      final sellerName = userDoc.data()?['businessName'] ?? userDoc.data()?['name'] ?? 'Unknown Seller';
-      final sellerEmail = userDoc.data()?['email'] ?? '';
-      final bankDoc = await FirebaseFirestore.instance
-          .collection('users').doc(user.uid).collection('payout').doc('bank').get();
-      final bank = bankDoc.data();
-
-      // Money In: receivable entries in period
-      final entriesSnap = await FirebaseFirestore.instance
-          .collection('platform_receivables')
-          .doc(user.uid)
-          .collection('entries')
-          .where('createdAt', isGreaterThanOrEqualTo: from)
-          .where('createdAt', isLessThanOrEqualTo: to)
-          .get();
-
-      final moneyIn = entriesSnap.docs.map((d) => {
-        ...d.data(),
-        'id': d.id,
-      }).toList();
-
-      // Money Out: payouts in period
-      final payoutsSnap = await FirebaseFirestore.instance
-            .collection('payouts')
-          .where('sellerId', isEqualTo: user.uid)
-          .where('createdAt', isGreaterThanOrEqualTo: from)
-          .where('createdAt', isLessThanOrEqualTo: to)
-          .orderBy('createdAt', descending: true)
-            .get();
-
-      final moneyOut = payoutsSnap.docs.map((d) => {
-        ...d.data(),
-        'id': d.id,
-      }).toList();
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Generating statement...')));
-      }
-
-      // Rough starting balance: current net - inflows + fees + outflows in window
-      // If you have a true ledger, compute from it; this is a simple estimate.
-      double startingBalance = _net;
-      final double windowIn = moneyIn.fold<double>(0.0, (p, e) {
-        final gross = _asDouble(e['gross'] ?? e['amount']);
-        final comm = _asDouble(e['commission']);
-        final net = _asDouble(e['net']);
-        final effective = net == 0.0 ? (gross - comm) : net;
-        return p + effective;
-      });
-      final double windowOut = moneyOut.fold<double>(0.0, (p, e) {
-        final amt = _asDouble(e['net'] ?? e['amount']);
-        return p + amt;
-      });
-      startingBalance = (_net - windowIn + windowOut).toDouble();
-
-      final bytes = await ReceiptService.generateSellerStatement(
-        sellerName: sellerName,
-        sellerEmail: sellerEmail,
-        from: from,
-        to: to,
-        moneyInEntries: moneyIn,
-        moneyOutEntries: moneyOut,
-        startingBalance: startingBalance,
-        statementNumber: 'ST-${DateTime.now().millisecondsSinceEpoch}',
-        bankDetails: bank,
-        brandName: 'Food Marketplace',
-      );
-
-      if (bytes != null && mounted) {
-        await Printing.layoutPdf(onLayout: (format) async => bytes);
-        final filename = 'statement_${DateFormat('yyyy-MM-dd').format(from)}_to_${DateFormat('yyyy-MM-dd').format(to)}.pdf';
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Statement ready: $filename')));
-        try {
-          await FirebaseAnalytics.instance.logEvent(name: 'statement_pdf_generated', parameters: {
-            'from': from.toIso8601String(),
-            'to': to.toIso8601String(),
-            'count_in': moneyIn.length,
-            'count_out': moneyOut.length,
-          });
-        } catch (_) {}
-      } else if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to generate statement')));
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
-      }
-    }
+      setState(() { _history = qs.docs.map((d) => { 'id': d.id, ...d.data() }).toList().cast<Map<String, dynamic>>(); });
+    } catch (_) {}
   }
 
   Future<void> _loadOutstandingFees() async {
@@ -574,15 +120,6 @@ class _SellerPayoutsScreenState extends State<SellerPayoutsScreen> {
             ? (data['amount'] as num).toDouble() 
             : double.tryParse('${data['amount']}') ?? 0.0;
         outstandingType = data['type'] ?? '';
-      }
-
-      // Cross-check with COD wallet commission owed (more accurate aggregate)
-      final codCommissionOwed = (_codWallet['commissionOwed'] is num)
-          ? (_codWallet['commissionOwed'] as num).toDouble()
-          : double.tryParse('${_codWallet['commissionOwed']}') ?? 0.0;
-      if (codCommissionOwed > outstandingAmount) {
-        outstandingAmount = codCommissionOwed;
-        if (outstandingType.isEmpty) outstandingType = 'commission';
       }
 
       // Check COD status
@@ -716,7 +253,7 @@ class _SellerPayoutsScreenState extends State<SellerPayoutsScreen> {
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          _formatCurrency(_net),
+                          'R ${_net.toStringAsFixed(2)}',
                           style: TextStyle(
                             fontSize: 28,
                             fontWeight: FontWeight.bold,
@@ -767,7 +304,7 @@ class _SellerPayoutsScreenState extends State<SellerPayoutsScreen> {
                               ),
                               const SizedBox(height: 4),
                               Text(
-                                _formatCurrency(_gross),
+                                'R ${_gross.toStringAsFixed(2)}',
                                 style: TextStyle(
                                   fontSize: 18,
                                   fontWeight: FontWeight.bold,
@@ -813,7 +350,7 @@ class _SellerPayoutsScreenState extends State<SellerPayoutsScreen> {
                               ),
                               const SizedBox(height: 4),
                               Text(
-                                _formatCurrency(_commission),
+                                'R ${_commission.toStringAsFixed(2)}',
                                 style: TextStyle(
                                   fontSize: 18,
                                   fontWeight: FontWeight.bold,
@@ -881,113 +418,6 @@ class _SellerPayoutsScreenState extends State<SellerPayoutsScreen> {
                       label: Text(_requesting
                           ? 'Requesting...'
                           : (_net < _min ? 'Minimum R ${_min.toStringAsFixed(0)}' : 'Request Payout')),
-                    ),
-                  ),
-
-                  const SizedBox(height: 8),
-
-                  // Statement Buttons
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      onPressed: _pickRangeAndGenerateStatement,
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: AppTheme.deepTeal,
-                        side: BorderSide(color: AppTheme.deepTeal.withOpacity(0.5)),
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                      ),
-                      icon: Semantics(
-                        label: 'Generate PDF statement',
-                        button: true,
-                        child: const Icon(Icons.picture_as_pdf),
-                      ),
-                      label: Text(_generatingStatement
-                          ? 'Preparing statement...'
-                          : 'Download statement (choose range)'),
-                    ),
-                  ),
-
-                  const SizedBox(height: 8),
-
-                  // Preview Statement Button
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      onPressed: () async {
-                        await _pickRangeAndPreviewStatement();
-                      },
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: AppTheme.deepTeal,
-                        side: BorderSide(color: AppTheme.deepTeal.withOpacity(0.5)),
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                      ),
-                      icon: const Icon(Icons.visibility),
-                      label: const Text('Preview statement (choose range)'),
-                    ),
-                  ),
-
-                  const SizedBox(height: 8),
-
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      onPressed: _exportingCsv ? null : () async {
-                        final user = FirebaseAuth.instance.currentUser;
-                        if (user == null) return;
-                        try {
-                          setState(() { _exportingCsv = true; });
-                          final entriesSnap = await FirebaseFirestore.instance
-                              .collection('platform_receivables')
-                              .doc(user.uid)
-                              .collection('entries')
-                              .where('createdAt', isGreaterThanOrEqualTo: _rangeFrom)
-                              .where('createdAt', isLessThanOrEqualTo: _rangeTo)
-                              .get();
-                          final payoutsSnap = await FirebaseFirestore.instance
-                              .collection('payouts')
-                              .where('sellerId', isEqualTo: user.uid)
-                              .where('createdAt', isGreaterThanOrEqualTo: _rangeFrom)
-                              .where('createdAt', isLessThanOrEqualTo: _rangeTo)
-                              .get();
-                          final moneyIn = entriesSnap.docs.map((d) => { ...d.data(), 'id': d.id }).toList();
-                          final moneyOut = payoutsSnap.docs.map((d) => { ...d.data(), 'id': d.id }).toList();
-                          final bytes = await ReceiptService.generateSellerStatementCsv(
-                            sellerName: user.displayName ?? 'Seller',
-                            from: _rangeFrom,
-                            to: _rangeTo,
-                            moneyInEntries: moneyIn,
-                            moneyOutEntries: moneyOut,
-                            startingBalance: _net, // best-effort
-                          );
-                          if (bytes != null) {
-                            final tmp = await _saveTempFile(bytes, 'seller_statement_${DateFormat('yyyyMMdd_HHmm').format(DateTime.now())}.csv');
-                            await Share.shareXFiles([XFile(tmp.path)], subject: 'Seller Statement CSV');
-                            if (mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('CSV exported: ${tmp.path.split('/').last}')));
-                            }
-                          }
-                        } catch (e) {
-                          if (mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('CSV error: $e')));
-                          }
-                        } finally {
-                          if (mounted) setState(() { _exportingCsv = false; });
-                        }
-                      },
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: AppTheme.deepTeal,
-                        side: BorderSide(color: AppTheme.deepTeal.withOpacity(0.5)),
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                      ),
-                      icon: Semantics(
-                        label: 'Export statement CSV',
-                        button: true,
-                        child: const Icon(Icons.table_view),
-                      ),
-                      label: const Text('Export CSV for selected range'),
                     ),
                   ),
                 ],
@@ -1281,36 +711,9 @@ class _SellerPayoutsScreenState extends State<SellerPayoutsScreen> {
                     'Record of money withdrawn to your bank account',
                     style: TextStyle(fontSize: 12, color: Colors.grey[600], fontStyle: FontStyle.italic),
                   ),
-                                     const SizedBox(height: 8),
-                   if (_history.isEmpty)
-                     Text('No payouts yet', style: TextStyle(color: Colors.grey[600])),
-                   if (_history.isNotEmpty) ...[
-                     Container(
-                       padding: const EdgeInsets.all(12),
-                       decoration: BoxDecoration(
-                         color: AppTheme.deepTeal.withOpacity(0.1),
-                         borderRadius: BorderRadius.circular(8),
-                         border: Border.all(color: AppTheme.deepTeal.withOpacity(0.3)),
-                       ),
-                       child: Row(
-                         children: [
-                           Icon(Icons.receipt, color: AppTheme.deepTeal, size: 16),
-                           const SizedBox(width: 8),
-                           Expanded(
-                             child: Text(
-                               'Click the receipt icon 📄 to generate a PDF receipt for completed payouts',
-                               style: TextStyle(
-                                 fontSize: 12,
-                                 color: AppTheme.deepTeal,
-                                 fontWeight: FontWeight.w500,
-                               ),
-                             ),
-                           ),
-                         ],
-                       ),
-                     ),
-                     const SizedBox(height: 12),
-                   ],
+                  const SizedBox(height: 8),
+                  if (_history.isEmpty)
+                    Text('No payouts yet', style: TextStyle(color: Colors.grey[600])),
                   ..._history.map((p) {
                     final amount = (p['amount'] ?? 0).toDouble();
                     final status = (p['status'] ?? 'requested').toString();
@@ -1356,36 +759,8 @@ class _SellerPayoutsScreenState extends State<SellerPayoutsScreen> {
                       title: FittedBox(
                         fit: BoxFit.scaleDown,
                         alignment: Alignment.centerLeft,
-                        child: Text('${_formatCurrency(amount)}  •  ${status.toUpperCase()}'),
+                        child: Text('R ${amount.toStringAsFixed(2)}  •  ${status.toUpperCase()}'),
                       ),
-                                             trailing: (status == 'paid' || status == 'completed' || status == 'processing') ? Row(
-                         mainAxisSize: MainAxisSize.min,
-                         children: [
-                           if (status != 'paid') 
-                             Container(
-                               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                               decoration: BoxDecoration(
-                                 color: Colors.orange.shade100,
-                                 borderRadius: BorderRadius.circular(8),
-                                 border: Border.all(color: Colors.orange.shade300),
-                               ),
-                               child: Text(
-                                 'Draft',
-                                 style: TextStyle(
-                                   fontSize: 10,
-                                   color: Colors.orange.shade700,
-                                   fontWeight: FontWeight.w500,
-                                 ),
-                               ),
-                             ),
-                           const SizedBox(width: 4),
-                           IconButton(
-                             icon: const Icon(Icons.receipt),
-                             onPressed: () => _generateReceipt(p),
-                             tooltip: 'Generate Receipt',
-                           ),
-                         ],
-                       ) : null,
                       subtitle: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -1394,34 +769,6 @@ class _SellerPayoutsScreenState extends State<SellerPayoutsScreen> {
                             overflow: TextOverflow.ellipsis,
                             maxLines: 1,
                           ),
-                          // Show money flow breakdown
-                          if (p['gross'] != null && p['commission'] != null) ...[
-                            const SizedBox(height: 4),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                              decoration: BoxDecoration(
-                                color: AppTheme.deepTeal.withOpacity(0.1),
-                                borderRadius: BorderRadius.circular(6),
-                                border: Border.all(color: AppTheme.deepTeal.withOpacity(0.3)),
-                              ),
-                              child: Row(
-                                children: [
-                                  Icon(Icons.account_balance_wallet, color: AppTheme.deepTeal, size: 14),
-                                  const SizedBox(width: 4),
-                                  Expanded(
-                                    child: Text(
-                                      'From buyers: R${(p['gross'] ?? 0).toStringAsFixed(2)} • Fees: R${(p['commission'] ?? 0).toStringAsFixed(2)}',
-                                      style: TextStyle(
-                                        color: AppTheme.deepTeal,
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.w500,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
                           // Show failure reason if payout failed
                           if (status == 'failed' && failureReason.isNotEmpty) ...[
                             const SizedBox(height: 4),
@@ -1466,15 +813,6 @@ class _SellerPayoutsScreenState extends State<SellerPayoutsScreen> {
                       ),
                     );
                   }).toList(),
-                  const SizedBox(height: 8),
-                  if (_loadingHistory) const Center(child: Padding(padding: EdgeInsets.all(8), child: CircularProgressIndicator(strokeWidth: 2))),
-                  if (!_loadingHistory && (_hasMoreUser || _hasMoreMain)) Center(
-                    child: OutlinedButton.icon(
-                      onPressed: _loadNextHistoryPage,
-                      icon: const Icon(Icons.expand_more),
-                      label: const Text('Load more'),
-                    ),
-                  ),
                 ],
               ),
             ),
@@ -1519,57 +857,6 @@ class _SellerPayoutsScreenState extends State<SellerPayoutsScreen> {
         return 'Other';
       default:
         return reason;
-    }
-  }
-
-  Future<void> _generateReceipt(Map<String, dynamic> payoutData) async {
-    try {
-      final user = FirebaseAuth.instance.currentUser;
-      if (user == null) return;
-
-      // Get seller info
-      final userDoc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .get();
-      
-      final sellerName = userDoc.data()?['businessName'] ?? userDoc.data()?['name'] ?? 'Unknown Seller';
-      final sellerEmail = userDoc.data()?['email'] ?? '';
-
-      // Show loading
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Generating receipt...')),
-        );
-      }
-
-      // Generate receipt
-      final bytes = await ReceiptService.generatePayoutReceipt(
-        payoutData: payoutData,
-        sellerName: sellerName,
-        sellerEmail: sellerEmail,
-      );
-
-      if (bytes != null && mounted) {
-        // Open the PDF
-        await Printing.layoutPdf(onLayout: (format) async => bytes);
-        
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Receipt generated successfully!')),
-        );
-      } else {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Failed to generate receipt')),
-          );
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error generating receipt: $e')),
-        );
-      }
     }
   }
 }

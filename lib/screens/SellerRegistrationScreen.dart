@@ -49,6 +49,23 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
   final TextEditingController _accountNumberController = TextEditingController();
   final TextEditingController _branchCodeController = TextEditingController();
   String _accountType = 'cheque';
+  // Bank selection & universal branch codes (SA)
+  final Map<String, String> _bankToUniversalBranch = const {
+    'Absa Bank': '632005',
+    'African Bank': '430000',
+    'Bidvest Bank': '462005',
+    'Capitec Bank': '470010',
+    'Discovery Bank': '679000',
+    'First National Bank (FNB)': '250655',
+    'Investec Bank': '580105',
+    'Mercantile Bank': '450905',
+    'Nedbank': '198765',
+    'Sasfin Bank': '683000',
+    'Standard Bank': '051001',
+    'TymeBank': '678910',
+  };
+  late final List<String> _bankOptions = _bankToUniversalBranch.keys.toList();
+  String? _selectedBank;
   final TextEditingController _storyController = TextEditingController();
   final TextEditingController _specialtiesController = TextEditingController();
   final TextEditingController _passionController = TextEditingController();
@@ -71,6 +88,26 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
   bool _termsAccepted = false;
   bool _deliverEverywhere = false;
   double _visibilityRadius = 5.0;
+  // PUDO settings
+  bool _pudoEnabled = false;
+  String _pudoDefaultSize = 'm';
+  String _pudoDefaultSpeed = 'standard';
+  final TextEditingController _pudoLockerNameController = TextEditingController();
+  final TextEditingController _pudoLockerAddressController = TextEditingController();
+
+  Widget _buildDropdown({required String label, required String value, required List<String> items, required ValueChanged<String?> onChanged}) {
+    return InputDecorator(
+      decoration: InputDecoration(labelText: label, border: const OutlineInputBorder()),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          isExpanded: true,
+          value: value,
+          items: items.map((e) => DropdownMenuItem(value: e, child: Text(e.toUpperCase()))).toList(),
+          onChanged: onChanged,
+        ),
+      ),
+    );
+  }
   
   // New delivery range variables
   double _deliveryRange = 20.0; // Default 20km range (SA market standard)
@@ -91,6 +128,24 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
   // Operating hours variables
   TimeOfDay _storeOpenTime = const TimeOfDay(hour: 8, minute: 0);
   TimeOfDay _storeCloseTime = const TimeOfDay(hour: 18, minute: 0);
+  String? _normalizeBankKey(String name) {
+    final n = name.trim().toLowerCase();
+    if (n.isEmpty) return null;
+    if (n == 'fnb' || n.contains('first national')) return 'First National Bank (FNB)';
+    if (n.contains('standard')) return 'Standard Bank';
+    if (n.contains('absa')) return 'Absa Bank';
+    if (n.contains('nedbank')) return 'Nedbank';
+    if (n.contains('capitec')) return 'Capitec Bank';
+    if (n.contains('investec')) return 'Investec Bank';
+    if (n.contains('tyme')) return 'TymeBank';
+    if (n.contains('african bank')) return 'African Bank';
+    if (n.contains('bidvest')) return 'Bidvest Bank';
+    if (n.contains('mercantile')) return 'Mercantile Bank';
+    if (n.contains('sasfin')) return 'Sasfin Bank';
+    if (n.contains('discovery')) return 'Discovery Bank';
+    return _bankToUniversalBranch.containsKey(name) ? name : null;
+  }
+
 
   // PAXI Service variables
   bool _paxiEnabled = false;
@@ -220,6 +275,15 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
 
     // Load global pickup visibility
     _loadPickupVisibility();
+
+    // Initialize bank selection from existing values if present
+    final String initialBank = _bankNameController.text.trim();
+    final normalized = _normalizeBankKey(initialBank ?? '');
+    if ((normalized ?? '').isNotEmpty) {
+      _selectedBank = normalized;
+      _bankNameController.text = normalized!;
+      _branchCodeController.text = _bankToUniversalBranch[normalized] ?? '';
+    }
   }
 
   Future<void> _loadPickupVisibility() async {
@@ -1326,6 +1390,7 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
     int maxLines = 1,
     String? helperText,
     void Function(String)? onChanged,
+    bool readOnly = false,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1357,6 +1422,7 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
             validator: validator,
             maxLines: maxLines,
             enabled: !_isLoading,
+            readOnly: readOnly,
             onChanged: onChanged,
             style: TextStyle(
               fontSize: ResponsiveUtils.getTitleSize(context) - 2,
@@ -2136,6 +2202,63 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
                         subtitle: 'Customers can pay cash on delivery/pickup (fees apply)',
                         value: _allowCOD,
                         onChanged: (value) => setState(() => _allowCOD = value),
+                      ),
+                      // PUDO settings block
+                      const SizedBox(height: 16),
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: AppTheme.angel,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: AppTheme.breeze.withOpacity(0.3)),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(children: [
+                              Icon(Icons.lock, color: AppTheme.deepTeal, size: 20),
+                              const SizedBox(width: 8),
+                              Text('PUDO Locker Delivery', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: AppTheme.deepTeal)),
+                            ]),
+                            const SizedBox(height: 8),
+                            SwitchListTile(
+                              title: const Text('Use PUDO (prepaid wallet)'),
+                              subtitle: const Text('You book via PUDO app; we reimburse shipping if buyer is charged.'),
+                              value: _pudoEnabled,
+                              onChanged: (v) => setState(() => _pudoEnabled = v),
+                              activeColor: AppTheme.primaryGreen,
+                              contentPadding: EdgeInsets.zero,
+                            ),
+                            if (_pudoEnabled) ...[
+                              const SizedBox(height: 8),
+                              Row(children: [
+                                Expanded(child: _buildDropdown(
+                                  label: 'Default Size',
+                                  value: _pudoDefaultSize,
+                                  items: const ['s','m','l','xl'],
+                                  onChanged: (v){ if (v!=null) setState(()=> _pudoDefaultSize = v); },
+                                )),
+                                const SizedBox(width: 8),
+                                Expanded(child: _buildDropdown(
+                                  label: 'Default Speed',
+                                  value: _pudoDefaultSpeed,
+                                  items: const ['standard','express'],
+                                  onChanged: (v){ if (v!=null) setState(()=> _pudoDefaultSpeed = v); },
+                                )),
+                              ]),
+                              const SizedBox(height: 8),
+                              TextField(
+                                controller: _pudoLockerNameController,
+                                decoration: const InputDecoration(labelText: 'Default Locker Name (optional)', border: OutlineInputBorder()),
+                              ),
+                              const SizedBox(height: 8),
+                              TextField(
+                                controller: _pudoLockerAddressController,
+                                decoration: const InputDecoration(labelText: 'Default Locker Address (optional)', border: OutlineInputBorder()),
+                              ),
+                            ],
+                          ],
+                        ),
                       ),
                       const SizedBox(height: 16),
                       // Pickup Services (decoupled from Offer Delivery)
@@ -3423,12 +3546,25 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
                         prefixIcon: Icons.person,
                         validator: (v) => (v == null || v.isEmpty) ? 'Enter account holder name' : null,
                       ),
-                      _buildEnhancedTextField(
-                        controller: _bankNameController,
-                        label: 'Bank Name',
-                        hint: 'e.g., FNB, Standard Bank',
-                        prefixIcon: Icons.account_balance,
-                        validator: (v) => (v == null || v.isEmpty) ? 'Enter bank name' : null,
+                      DropdownButtonFormField<String>(
+                        value: _selectedBank,
+                        isExpanded: true,
+                        decoration: const InputDecoration(
+                          labelText: 'Bank',
+                          border: OutlineInputBorder(),
+                          prefixIcon: Icon(Icons.account_balance),
+                        ),
+                        items: _bankOptions
+                          .map((b) => DropdownMenuItem<String>(value: b, child: Text(b)))
+                          .toList(),
+                        validator: (v) => (v == null || v.isEmpty) ? 'Select bank' : null,
+                        onChanged: (v) {
+                          setState(() {
+                            _selectedBank = v;
+                            _bankNameController.text = v ?? '';
+                            _branchCodeController.text = v != null ? (_bankToUniversalBranch[v] ?? '') : '';
+                          });
+                        },
                       ),
                       _buildEnhancedTextField(
                         controller: _accountNumberController,
@@ -3441,10 +3577,11 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
                       _buildEnhancedTextField(
                         controller: _branchCodeController,
                         label: 'Branch Code',
-                        hint: 'e.g., 250 655',
+                        hint: 'Auto-filled universal branch code',
                         prefixIcon: Icons.confirmation_number,
                         keyboardType: TextInputType.number,
-                        validator: (v) => (v == null || v.isEmpty) ? 'Enter branch code' : null,
+                        readOnly: true,
+                        validator: (v) => (v == null || v.isEmpty) ? 'Branch code required' : null,
                       ),
                       DropdownButtonFormField<String>(
                         value: const ['cheque','savings','business'].contains(_accountType) ? _accountType : 'cheque',

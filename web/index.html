@@ -1,26 +1,10 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <!--
-    If you are serving your web app in a path other than the root, change the
-    href value below to reflect the base path you are serving from.
-
-    The path provided below has to start and end with a slash "/" in order for
-    it to work correctly.
-
-    For more details:
-    * https://developer.mozilla.org/en-US/docs/Web/HTML/Element/base
-
-    This is a placeholder for base href that will be replaced by the value of
-    the `--base-href` argument provided to `flutter build`.
-  -->
   <base href="$FLUTTER_BASE_HREF">
-
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
   <meta name="description" content="Mzansi Marketplace - Your local food and goods marketplace">
-
-  <!-- Mobile Viewport Optimizations -->
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -28,907 +12,469 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="format-detection" content="telephone=no">
   <meta name="msapplication-tap-highlight" content="no">
-  
-  <!-- iOS Icons -->
+
   <link rel="apple-touch-icon" href="icons/Icon-192.png">
   <link rel="apple-touch-icon" sizes="152x152" href="icons/Icon-192.png">
   <link rel="apple-touch-icon" sizes="180x180" href="icons/Icon-192.png">
   <link rel="apple-touch-icon" sizes="167x167" href="icons/Icon-192.png">
-
-  <!-- Favicon -->
   <link rel="icon" type="image/png" href="favicon.png"/>
 
   <title>Mzansi Marketplace</title>
   <link rel="manifest" href="manifest.json">
-  
-  <!-- iOS PWA-only gate: detect iOS Safari tab (not standalone) and block app, show install overlay -->
+
   <style>
     :root {
-      --brand-bg: #1F4654; /* from manifest theme_color */
-      --brand-bg-grad: linear-gradient(180deg, rgba(31,70,84,1) 0%, rgba(16,38,45,1) 100%);
-      --brand-card: rgba(255,255,255,0.06);
+      --brand-bg: #1F4654;
       --brand-text: #ffffff;
       --brand-subtle: #cbd5e1;
       --brand-accent: #22c55e;
     }
-    #ios-pwa-gate { display:none; position:fixed; inset:0; z-index:2147483647; background: rgba(31,70,84,0.95); color: var(--brand-text); backdrop-filter: blur(8px); }
-    #ios-pwa-gate .wrap { max-width:560px; margin:0 auto; padding:32px 20px; }
-    #ios-pwa-gate .card { background: var(--brand-card); border: 1px solid rgba(255,255,255,0.08); backdrop-filter: blur(8px); border-radius: 12px; padding: 20px; box-shadow: 0 8px 24px rgba(0,0,0,0.25); }
-    #ios-pwa-gate .logo { display:flex; align-items:center; gap:12px; margin-bottom: 12px; }
-    #ios-pwa-gate .logo img { width: 40px; height: 40px; border-radius: 8px; }
-    #ios-pwa-gate h1 { font-size:20px; margin:0 0 8px; }
-    #ios-pwa-gate p { line-height:1.5; color: var(--brand-subtle); margin: 0 0 8px; }
-    #ios-pwa-gate .steps { margin-top:10px; padding-left: 18px; }
-    #ios-pwa-gate .steps li { margin:8px 0; }
-    #ios-pwa-gate .btn-row { display:flex; gap:10px; margin-top:16px; }
-    #ios-pwa-gate .btn { background: var(--brand-accent); color:#0f172a; border:0; border-radius:8px; padding:10px 14px; font-weight:700; cursor:pointer; }
-    #ios-pwa-gate .link { background: transparent; color: var(--brand-subtle); border:1px solid rgba(255,255,255,0.2); border-radius:8px; padding:10px 14px; font-weight:600; cursor:pointer; }
 
-    /* Android APK banner */
-    #android-apk-banner { display:none; position: fixed; left: 0; right: 0; bottom: 12px; z-index: 2147483600; }
-    #android-apk-banner .inner { margin: 0 auto; max-width: 640px; background: #0b1320; color: #fff; border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 14px 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.35); display: flex; align-items: center; gap: 12px; }
-    #android-apk-banner img { width: 32px; height: 32px; border-radius: 6px; }
-    #android-apk-banner .title { font-weight: 700; }
-    #android-apk-banner .cta { margin-left: auto; background: var(--brand-accent); color: #0f172a; border: 0; border-radius: 8px; padding: 8px 12px; font-weight: 700; cursor: pointer; }
-    #android-apk-banner .dismiss { background: transparent; border: 0; color: #9fb0c3; margin-left: 8px; cursor: pointer; }
+    /* iOS Gate Overlay */
+    #ios-pwa-gate {
+      display: none;
+      visibility: hidden;
+      pointer-events: none;
+      position: fixed;
+      inset: 0;
+      z-index: 2147483647;
+      background: rgba(31,70,84,0.95);
+      color: var(--brand-text);
+      backdrop-filter: blur(8px);
+    }
 
-    /* Boot fallback overlay */
-    #boot-fallback { display:none; position: fixed; inset: 0; z-index: 2147483646; background: rgba(15,23,42,0.98); color: #fff; }
-    #boot-fallback .wrap { max-width: 560px; margin: 0 auto; padding: 32px 20px; }
-    #boot-fallback .card { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 20px; }
-    #boot-fallback h2 { margin: 0 0 8px; font-size: 18px; }
-    #boot-fallback p { margin: 0 0 8px; color: #cbd5e1; }
-    #boot-fallback .btn-row { display:flex; gap:10px; margin-top:14px; flex-wrap: wrap; }
-    #boot-fallback .btn { background: var(--brand-accent); color:#0f172a; border:0; border-radius:8px; padding:10px 14px; font-weight:700; cursor:pointer; }
-    #boot-fallback .link { background: transparent; color: var(--brand-subtle); border:1px solid rgba(255,255,255,0.2); border-radius:8px; padding:10px 14px; font-weight:600; cursor:pointer; }
-  </style>
-  <script>
-    (function(){
-      var isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-      var isStandalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone === true;
-      
-      // Check if user has dismissed PWA gate or if this is a direct store URL
-      var pwaGateDismissed = localStorage.getItem('pwa_gate_dismissed') === '1' || 
-                            sessionStorage.getItem('pwa_reminder_dismissed') === '1';
-      var isDirectStoreUrl = window.location.pathname.includes('/store/') || window.location.search.includes('store') || 
-                            window.location.hash.includes('store') || window.location.pathname.includes('/seller/');
-      
-      if (isIOS && !isStandalone) {
-        // Always show PWA gate for Safari users (they need the better experience)
-        if (!pwaGateDismissed) {
-          console.info('[PWA Gate] iOS Safari detected. Encouraging PWA installation for better performance.');
-          window.addEventListener('DOMContentLoaded', function(){
-            var gate = document.getElementById('ios-pwa-gate');
-            if (gate) {
-              // Customize message based on whether it's a store URL
-              if (isDirectStoreUrl) {
-                var title = gate.querySelector('h1');
-                var description = gate.querySelector('p');
-                if (title) title.textContent = 'Install App to Access This Store';
-                if (description) description.textContent = 'This store link works best in the installed app. Safari has performance issues with marketplace features.';
-              }
-              
-              gate.style.display = 'block';
-              // Make it prominent but allow dismissal
-              gate.style.pointerEvents = 'none';
-              gate.querySelector('.card').style.pointerEvents = 'all';
-            }
-          });
-        }
-      }
-    })();
-  </script>
+    /* iOS Gate Styling */
+    #ios-pwa-gate .wrap {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 20px;
+    }
 
-  <!-- Global boot error logging and Android APK banner logic -->
-  <script>
-    (function(){
-      const ua = navigator.userAgent || navigator.vendor || window.opera;
-      const isAndroid = /Android/i.test(ua);
-      const isStandalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone === true;
+    #ios-pwa-gate .card {
+      background: rgba(255,255,255,0.1);
+      backdrop-filter: blur(20px);
+      border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 20px;
+      padding: 40px;
+      text-align: center;
+      max-width: 400px;
+      box-shadow: 0 20px 40px rgba(0,0,0,0.3);
+    }
 
-      // Robust boot logging
-      window.addEventListener('error', function(e){
-        try { console.error('[BootError]', e.message || e.error, e.filename, e.lineno, e.colno, e.error); } catch(_) {}
-      });
-      window.addEventListener('unhandledrejection', function(e){
-        try { console.error('[UnhandledRejection]', e.reason || e); } catch(_) {}
-      });
+    #ios-pwa-gate h1 {
+      margin: 0 0 20px;
+      font-size: 28px;
+      font-weight: 700;
+    }
 
-      // Android APK banner
-      document.addEventListener('DOMContentLoaded', function(){
-        const banner = document.getElementById('android-apk-banner');
-        const btn = document.getElementById('apk-download-btn');
-        const dismiss = document.getElementById('apk-dismiss-btn');
-        const dismissed = localStorage.getItem('apk_banner_dismissed_v1') === '1';
-        const APK_DOWNLOAD_URL = window.APK_DOWNLOAD_URL || '/app.apk'; // TODO: replace with your real APK URL
-
-        if (isAndroid && !isStandalone && !dismissed) {
-          if (banner) banner.style.display = 'block';
-          if (btn) btn.addEventListener('click', function(){
-            try { localStorage.setItem('apk_banner_dismissed_v1', '1'); } catch(_) {}
-            window.location.href = APK_DOWNLOAD_URL;
-          });
-          if (dismiss) dismiss.addEventListener('click', function(){
-            try { localStorage.setItem('apk_banner_dismissed_v1', '1'); } catch(_) {}
-            if (banner) banner.style.display = 'none';
-          });
-        }
-      });
-    })();
-  </script>
-
-  <!-- Flutter Web Configuration - HTML Renderer for better stability -->
-  <script>
-    // Safari-specific fixes
-    const ua = navigator.userAgent || navigator.vendor || window.opera;
-    const isSafari = /^((?!chrome|android).)*safari/i.test(ua);
-    const isIOS = /iP(ad|hone|od)/.test(ua);
-    const isAndroid = /Android/i.test(ua);
-    
-    if (isSafari || isIOS) {
-      console.log('🔍 Safari/iOS detected - applying specific fixes');
-      
-      // Fix deprecated Intl.v8BreakIterator issue for Safari
-      if (typeof Intl !== 'undefined') {
-        try {
-          // Safari-specific Intl polyfill
-          if (Intl.v8BreakIterator && !Intl.Segmenter) {
-            Intl.Segmenter = Intl.v8BreakIterator;
-            console.log('✅ Intl polyfill applied for Safari');
-          }
-          
-          // Suppress all deprecation warnings in Safari
-          const originalConsoleWarn = console.warn;
-          console.warn = function(...args) {
-            const message = args[0]?.toString() || '';
-            if (message.includes('Intl.v8BreakIterator') || 
-                message.includes('deprecated') ||
-                message.includes('Deprecation')) {
-              return; // Suppress deprecation warnings in Safari
-            }
-            originalConsoleWarn.apply(console, args);
-          };
-        } catch (e) {
-          console.log('⚠️ Intl polyfill failed:', e);
-        }
-      }
-      
-      // Enhanced Safari memory management for iOS
-      if (isIOS) {
-        console.log('📱 iOS Safari detected - applying memory optimizations');
-        
-        // Prevent page reload on visibility change
-        let isPageVisible = true;
-        
-        window.addEventListener('pagehide', function(e) {
-          console.log('📱 Page hiding - iOS Safari memory management');
-          isPageVisible = false;
-          
-          // Try to prevent the page from being discarded
-          if (e.persisted) {
-            console.log('📱 Page will be cached');
-          } else {
-            console.log('📱 Page might be discarded');
-          }
-        });
-        
-        window.addEventListener('pageshow', function(e) {
-          console.log('📱 Page showing - iOS Safari restored');
-          isPageVisible = true;
-          
-          if (e.persisted) {
-            console.log('📱 Page restored from cache');
-          } else {
-            console.log('📱 Page reloaded from scratch');
-          }
-        });
-        
-        // Prevent reload on focus/blur
-        window.addEventListener('blur', function() {
-          console.log('📱 Window blurred - maintaining state');
-        });
-        
-        window.addEventListener('focus', function() {
-          console.log('📱 Window focused - checking state');
-          if (!isPageVisible) {
-            console.log('📱 Preventing unnecessary reload');
-          }
-        });
-        
-        // Enhanced memory management
-        window.addEventListener('visibilitychange', function() {
-          if (document.hidden) {
-            console.log('📱 Page hidden - pausing animations');
-            // Flutter will handle this automatically with CanvasKit
-          } else {
-            console.log('📱 Page visible - resuming');
-          }
-        });
-        
-        // Prevent iOS Safari from reloading on low memory
-        window.addEventListener('beforeunload', function(e) {
-          console.log('📱 Before unload - saving state');
-          // Don't show confirmation dialog but prepare for potential reload
-        });
-      }
-    } else {
-      // Non-Safari browsers - minimal fixes
-      if (typeof Intl !== 'undefined' && Intl.v8BreakIterator) {
-        if (!Intl.Segmenter) {
-          Intl.Segmenter = Intl.v8BreakIterator;
-        }
-      }
-    }
-    
-    // Set Flutter configuration for better compatibility
-    // Renderer selection with override and default
-    const urlRenderer = (new URLSearchParams(location.search)).get('r');
-    if (urlRenderer === 'html' || urlRenderer === 'canvaskit') {
-      try { localStorage.setItem('web_renderer_override', urlRenderer); } catch(_) {}
-    }
-    let overrideRenderer = (() => { try { return localStorage.getItem('web_renderer_override'); } catch(_) { return null; } })();
-    const defaultRenderer = 'canvaskit';
-    // Do not force HTML renderer; rely on Flutter default/CanvasKit.
-    // For iOS/Safari, use default CanvasKit (no chromium variant).
-    const chosenRenderer = (overrideRenderer === 'html' || overrideRenderer === 'canvaskit') ? overrideRenderer : defaultRenderer;
-    window.flutterConfiguration = { renderer: chosenRenderer };
-    
-    // Ensure Flutter configuration is available globally
-    if (typeof window.flutterConfiguration === 'undefined') {
-      window.flutterConfiguration = { renderer: isIOS ? "html" : "canvaskit" };
-    }
-    
-    // Log configuration for debugging
-    console.log('Flutter Configuration:', window.flutterConfiguration, '(override:', overrideRenderer || 'none', ')');
-    console.log('Browser:', isSafari ? 'Safari' : 'Other', isIOS ? 'iOS' : (isAndroid ? 'Android' : 'Desktop'));
-  </script>
-  
-  <script>
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', function() {
-        if (!window.__blockFlutter) {
-          navigator.serviceWorker.register('/flutter_service_worker.js');
-        }
-      });
-    }
-  </script>
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="preconnect" href="https://ik.imagekit.io" crossorigin>
-  <meta name="theme-color" content="#1F4654" />
-  <link rel="canonical" href="https://marketplace-8d6bd.web.app/" />
-  <meta property="og:site_name" content="Mzansi Marketplace" />
-  <meta property="og:type" content="website" />
-  <meta property="og:title" content="Mzansi Marketplace" />
-  <meta property="og:description" content="Your local SA marketplace for food and goods" />
-  <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="Mzansi Marketplace" />
-  <meta name="twitter:description" content="Your local SA marketplace for food and goods" />
-  
-  <!-- Mobile Keyboard and Viewport Fixes -->
-  <style>
-    /* Base mobile optimizations */
-    html, body {
-      margin: 0;
-      padding: 0;
-      width: 100%;
-      height: 100%;
-      overflow-x: hidden;
-      position: relative;
-    }
-    
-    /* Prevent iOS Safari overscroll/bounce effects */
-    html {
-      overscroll-behavior: none;
-      -webkit-overflow-scrolling: touch;
-    }
-    
-    body {
-      overscroll-behavior: none;
-      -webkit-overflow-scrolling: touch;
-    }
-    
-    /* Prevent text selection on mobile */
-    * {
-      -webkit-touch-callout: none;
-      -webkit-user-select: none;
-      -khtml-user-select: none;
-      -moz-user-select: none;
-      -ms-user-select: none;
-      user-select: none;
-      -webkit-tap-highlight-color: transparent;
-    }
-    
-    /* Allow text selection in input fields */
-    input, textarea {
-      -webkit-user-select: text;
-      -moz-user-select: text;
-      -ms-user-select: text;
-      user-select: text;
-    }
-    
-    /* Prevent zoom on input focus */
-    input[type="text"], input[type="email"], input[type="password"], textarea {
+    #ios-pwa-gate p {
+      margin: 0 0 30px;
       font-size: 16px;
+      line-height: 1.5;
+      color: var(--brand-subtle);
     }
-    
-    /* Flutter canvas optimization */
+
+    #ios-pwa-gate .btn-row {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    #ios-pwa-gate .btn {
+      background: var(--brand-accent);
+      color: #0f172a;
+      border: 0;
+      border-radius: 12px;
+      padding: 16px 24px;
+      font-weight: 700;
+      font-size: 16px;
+      cursor: pointer;
+      transition: all 0.3s;
+    }
+
+    #ios-pwa-gate .btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 25px rgba(34, 197, 94, 0.4);
+    }
+
+    #ios-pwa-gate .link {
+      background: transparent;
+      color: var(--brand-subtle);
+      border: 1px solid rgba(255,255,255,0.3);
+      border-radius: 12px;
+      padding: 16px 24px;
+      font-weight: 500;
+      font-size: 16px;
+      cursor: pointer;
+      transition: all 0.3s;
+    }
+
+    #ios-pwa-gate .link:hover {
+      background: rgba(255,255,255,0.1);
+      border-color: rgba(255,255,255,0.5);
+    }
+
+    /* iOS Steps Styling */
+    #ios-pwa-gate .ios-steps {
+      margin: 0 0 30px;
+      text-align: left;
+    }
+
+    #ios-pwa-gate .step {
+      display: flex;
+      align-items: flex-start;
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+
+    #ios-pwa-gate .step-number {
+      background: var(--brand-accent);
+      color: #0f172a;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 14px;
+      flex-shrink: 0;
+    }
+
+    #ios-pwa-gate .step-text {
+      font-size: 16px;
+      line-height: 1.5;
+      color: var(--brand-subtle);
+      flex: 1;
+    }
+
+    #ios-pwa-gate .share-icon {
+      font-size: 18px;
+      color: var(--brand-accent);
+      font-weight: bold;
+    }
+
+    /* Stunning PWA Banner */
+    #pwa-suggestion-banner {
+      display: none;
+      visibility: hidden;
+      pointer-events: none;
+      position: fixed;
+      left: 12px;
+      right: 12px;
+      bottom: 0;
+      z-index: 2147483601;
+      animation: slideUp 0.5s ease-out;
+      max-height: calc(100vh - 160px);
+      overflow: visible;
+    }
+
+    @keyframes slideUp {
+      from { transform: translateY(100%); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+    @keyframes slideDown {
+      from { transform: translateY(0); opacity: 1; }
+      to { transform: translateY(100%); opacity: 0; }
+    }
+
+    #pwa-suggestion-banner .banner-content {
+      margin: 0 auto 16px;
+      max-width: 400px;
+      background: linear-gradient(135deg, var(--brand-bg) 0%, #2a5f6f 100%);
+      color: #fff;
+      border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 16px;
+      padding: 16px 20px;
+      box-shadow: 0 20px 40px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.1);
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      backdrop-filter: blur(20px);
+      position: relative;
+      overflow: hidden;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      transform: translateZ(0);
+    }
+    #pwa-suggestion-banner .banner-content:hover {
+      transform: translateY(-2px) translateZ(0);
+      box-shadow: 0 25px 50px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.15);
+    }
+    #pwa-suggestion-banner .banner-content::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 2px;
+      background: linear-gradient(90deg, var(--brand-accent), #4ade80, var(--brand-accent));
+      animation: shimmer 2s infinite;
+    }
+    @keyframes shimmer { 
+      0% { transform: translateX(-100%);} 
+      100% { transform: translateX(100%);} 
+    }
+
+    #pwa-suggestion-banner .banner-icon-wrapper {
+      width: 48px; height: 48px;
+      background: var(--brand-accent);
+      border-radius: 12px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 24px;
+      box-shadow: 0 4px 12px rgba(34, 197, 94, 0.3);
+      flex-shrink: 0;
+    }
+    #pwa-suggestion-banner .banner-text { flex: 1; }
+    #pwa-suggestion-banner .banner-title { font-size: 16px; font-weight: 700; margin:0 0 4px; }
+    #pwa-suggestion-banner .banner-subtitle { font-size: 13px; color:#cbd5e1; margin:0; }
+
+    #pwa-suggestion-banner .banner-actions { display:flex; flex-direction: column; gap:8px; flex-shrink:0; }
+    #pwa-suggestion-banner .install-btn {
+      background: linear-gradient(135deg, var(--brand-accent) 0%, #16a34a 100%);
+      color: #0f172a;
+      border: 0; border-radius: 12px;
+      padding: 12px 20px;
+      font-weight: 800; font-size: 15px;
+      cursor: pointer;
+      box-shadow: 0 6px 20px rgba(34, 197, 94, 0.4);
+      transition: all 0.3s;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    #pwa-suggestion-banner .install-btn:hover {
+      transform: translateY(-3px) scale(1.05);
+      box-shadow: 0 10px 30px rgba(34, 197, 94, 0.6);
+    }
+    #pwa-suggestion-banner .dismiss-btn, #pwa-suggestion-banner .never-btn {
+      background: transparent;
+      border-radius: 8px;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    #pwa-suggestion-banner .dismiss-btn {
+      color: #9fb0c3;
+      border: 1px solid rgba(255,255,255,0.2);
+      padding: 6px 10px;
+    }
+    #pwa-suggestion-banner .never-btn {
+      color: #9fb0c3;
+      border: 0;
+      padding: 6px 8px;
+      text-decoration: underline;
+    }
+
+    /* Flutter target styling */
     #flutter_target {
       width: 100%;
+      height: 100vh;
+      background: #f0f4f8;
+      min-height: 100vh;
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* Body and general styling */
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #f0f4f8;
+      min-height: 100vh;
+      overflow-x: hidden;
+      overflow-y: hidden;
+    }
+
+    /* Ensure full viewport coverage */
+    html {
       height: 100%;
-      position: absolute;
-      top: 0;
-      left: 0;
+      background: #f0f4f8;
+      overflow: hidden;
     }
-    
-    /* Prefer dynamic viewport units when supported to reduce iOS top-bar jump */
-    @supports (height: 100dvh) {
-      html, body, #flutter_target {
-        height: 100dvh;
-        min-height: 100dvh;
-      }
-    }
-    
-    /* Mobile viewport handling */
-    @media screen and (max-width: 768px) {
-      html, body {
-        height: 100vh;
-        height: -webkit-fill-available;
-        height: -moz-available;
-        height: stretch;
-        position: relative;
-        overflow: auto;
-      }
-      
-      #flutter_target {
-        height: 100vh;
-        height: -webkit-fill-available;
-        height: -moz-available;
-        height: stretch;
-        min-height: 100vh;
-        min-height: -webkit-fill-available;
-        min-height: -moz-available;
-        min-height: stretch;
-      }
-    }
-    
-    /* Handle mobile keyboard */
-    @media screen and (max-height: 600px) {
-      /* When keyboard is visible */
-      html, body {
-        height: 100vh;
-        height: -webkit-fill-available;
-        height: -moz-available;
-        height: stretch;
-        position: relative;
-        overflow: auto;
-      }
-      
-      #flutter_target {
-        height: 100vh;
-        height: -webkit-fill-available;
-        height: -moz-available;
-        height: stretch;
-        min-height: 100vh;
-        min-height: -webkit-fill-available;
-        min-height: -moz-available;
-        min-height: stretch;
-      }
-    }
-    
-    /* Portrait orientation */
-    @media screen and (max-width: 768px) and (orientation: portrait) {
-      html, body {
-        height: 100vh;
-        height: -webkit-fill-available;
-        height: -moz-available;
-        height: stretch;
-        position: relative;
-        overflow: auto;
-      }
-    }
-    
-    /* Landscape orientation */
-    @media screen and (max-width: 768px) and (orientation: landscape) {
-      html, body {
-        height: 100vh;
-        height: -webkit-fill-available;
-        height: -moz-available;
-        height: stretch;
-        position: relative;
-        overflow: auto;
-      }
-    }
-    
-    /* Android Chrome specific fixes */
-    @media screen and (max-width: 768px) {
-      /* Prevent Android Chrome from resizing viewport */
-      html {
-        height: 100vh;
-        height: -webkit-fill-available;
-        height: -moz-available;
-        height: stretch;
-      }
-      
-      body {
-        height: 100vh;
-        height: -webkit-fill-available;
-        height: -moz-available;
-        height: stretch;
-        min-height: 100vh;
-        min-height: -webkit-fill-available;
-        min-height: -moz-available;
-        min-height: stretch;
-      }
-    }
-    
-    /* iOS Safari specific fixes - Enhanced for stability */
-    @supports (-webkit-touch-callout: none) {
-      html, body {
-        height: 100vh;
-        height: -webkit-fill-available;
-        /* Prevent page refresh on memory pressure */
-        -webkit-transform: translateZ(0);
-        -webkit-backface-visibility: hidden;
-        will-change: auto;
-      }
-      
-      #flutter_target {
-        height: 100vh;
-        height: -webkit-fill-available;
-        min-height: 100vh;
-        min-height: -webkit-fill-available;
-        /* GPU acceleration for better performance */
-        transform: translateZ(0);
-        backface-visibility: hidden;
-        -webkit-transform: translateZ(0);
-        -webkit-backface-visibility: hidden;
-      }
-      
-      /* Reduce memory pressure with CSS containment */
-      * {
-        contain: layout style paint;
-      }
-      
-      /* Optimize images and media for memory */
-      img, video, canvas {
-        transform: translateZ(0);
-        -webkit-transform: translateZ(0);
-        image-rendering: -webkit-optimize-contrast;
-        image-rendering: crisp-edges;
-      }
+
+    /* Force full viewport coverage */
+    * {
+      box-sizing: border-box;
     }
   </style>
-  
-  <!-- Mobile Keyboard Management Script -->
-  <script>
-    // Handle mobile keyboard and viewport issues
-    function handleMobileViewport() {
-      const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-      
-      if (isMobile) {
-        // Set viewport height for mobile
-        let resizeTimer;
-        const setViewportHeight = () => {
-          const vh = window.innerHeight * 0.01;
-          document.documentElement.style.setProperty('--vh', `${vh}px`);
-          
-          // Update body height
-          document.body.style.height = `${window.innerHeight}px`;
-          document.body.style.minHeight = `${window.innerHeight}px`;
-        };
-        
-        // Set initial height
-        setViewportHeight();
-        
-        // Update on resize (keyboard show/hide)
-        const debouncedResize = () => {
-          if (resizeTimer) cancelAnimationFrame(resizeTimer);
-          resizeTimer = requestAnimationFrame(setViewportHeight);
-        };
-        window.addEventListener('resize', debouncedResize);
-        window.addEventListener('orientationchange', debouncedResize);
-        
-        // Handle visual viewport changes
-        if (window.visualViewport) {
-          window.visualViewport.addEventListener('resize', debouncedResize);
-        }
-      }
-    }
-    
-    // Reduce scroll position restores that can cause jumps on Safari
-    try { if ('scrollRestoration' in history) { history.scrollRestoration = 'manual'; } } catch (_) {}
-
-    // iOS Safari: prevent pull-to-refresh/bounce which looks like a page refresh
-    (function() {
-      const ua = navigator.userAgent || '';
-      const isSafari = ua.includes('Safari') && !ua.includes('Chrome');
-      const isIOS = /iP(ad|hone|od)/.test(ua);
-      if (!(isSafari && isIOS)) return;
-
-      let startY = 0;
-      let startX = 0;
-      let active = false;
-
-      const onTouchStart = (e) => {
-        if (!e.touches || e.touches.length !== 1) return;
-        startY = e.touches[0].clientY;
-        startX = e.touches[0].clientX;
-        active = true;
-      };
-
-      const onTouchMove = (e) => {
-        if (!active || !e.touches || e.touches.length !== 1) return;
-        const currentY = e.touches[0].clientY;
-        const deltaY = currentY - startY;
-        const el = document.scrollingElement || document.documentElement;
-        const atTop = el.scrollTop <= 0;
-        const atBottom = Math.ceil(el.scrollTop + el.clientHeight) >= el.scrollHeight;
-        const movingDown = deltaY > 0;
-        const movingUp = deltaY < 0;
-
-        // Prevent overscroll at the top (pull-to-refresh) or bottom bounce
-        if ((atTop && movingDown) || (atBottom && movingUp)) {
-          e.preventDefault();
-        }
-      };
-
-      const onTouchEnd = () => { active = false; };
-
-      document.addEventListener('touchstart', onTouchStart, { passive: false });
-      document.addEventListener('touchmove', onTouchMove, { passive: false });
-      document.addEventListener('touchend', onTouchEnd, { passive: true });
-    })();
-    
-    // Enhanced Safari page preservation
-    window.addEventListener('pagehide', function(e) {
-      if (e.persisted) {
-        console.log('📱 Page is being cached by Safari');
-      } else {
-        console.log('📱 Page might be discarded - preparing state');
-        // Save critical state to localStorage if needed
-        try {
-          localStorage.setItem('flutter_app_state', JSON.stringify({
-            timestamp: Date.now(),
-            url: window.location.href
-          }));
-        } catch (e) {
-          console.log('Could not save state:', e);
-        }
-      }
-    });
-    
-    // Prevent Safari from reloading on focus
-    window.addEventListener('focus', function(e) {
-      console.log('📱 Window focused - maintaining state');
-    });
-    
-    // iOS Safari specific: Prevent reload on tab switch
-    if (/iPhone|iPad|iPod/.test(navigator.userAgent)) {
-      // Enhanced keep-alive system for iOS PWA
-      let keepAliveInterval;
-      
-      function startKeepAlive() {
-        if (keepAliveInterval) clearInterval(keepAliveInterval);
-        keepAliveInterval = setInterval(function() {
-          if (!document.hidden) {
-            // Multiple strategies to keep the page alive
-            console.debug('📱 iOS PWA keep-alive ping');
-            
-            // 1. Touch localStorage to maintain storage connection
-            try {
-              localStorage.setItem('pwa_heartbeat', Date.now().toString());
-            } catch(e) {}
-            
-            // 2. Dispatch a minimal event to keep event system active
-            window.dispatchEvent(new CustomEvent('pwa-keepalive'));
-            
-            // 3. Minimal DOM interaction
-            document.body.style.setProperty('--pwa-heartbeat', Date.now().toString());
-          }
-        }, 15000); // Every 15 seconds (more frequent for PWA)
-      }
-      
-      function stopKeepAlive() {
-        if (keepAliveInterval) {
-          clearInterval(keepAliveInterval);
-          keepAliveInterval = null;
-        }
-      }
-      
-      // Start keep-alive when page is visible
-      if (!document.hidden) startKeepAlive();
-      
-      // Manage keep-alive based on visibility
-      document.addEventListener('visibilitychange', function() {
-        if (document.hidden) {
-          console.log('📱 PWA going to background - reducing activity');
-          stopKeepAlive();
-        } else {
-          console.log('📱 PWA returning to foreground - resuming keep-alive');
-          startKeepAlive();
-        }
-      });
-      
-      // Prevent iOS Safari auto-refresh on return
-      window.addEventListener('pageshow', function(e) {
-        if (e.persisted) {
-          console.log('📱 Page restored from iOS cache');
-        } else {
-          console.log('📱 Page reloaded - checking for saved state');
-          try {
-            const savedState = localStorage.getItem('flutter_app_state');
-            if (savedState) {
-              const state = JSON.parse(savedState);
-              console.log('📱 Found saved state from:', new Date(state.timestamp));
-            }
-          } catch (e) {
-            console.log('📱 No previous state found');
-          }
-        }
-      });
-    }
-    
-    // Initialize mobile optimizations
-    document.addEventListener('DOMContentLoaded', function() {
-      handleMobileViewport();
-      
-      // Safari-specific optimizations
-      if (navigator.userAgent.includes('Safari') && !navigator.userAgent.includes('Chrome')) {
-        // Prevent zoom on double tap
-        let lastTouchEnd = 0;
-        document.addEventListener('touchend', function (event) {
-          const now = (new Date()).getTime();
-          if (now - lastTouchEnd <= 300) {
-            event.preventDefault();
-          }
-          lastTouchEnd = now;
-        }, false);
-        
-        // Prevent pull-to-refresh
-        // Handled globally above; keep this minimal to avoid double prevention
-      }
-    });
-  </script>
 </head>
-<body>
-  <!-- Flutter Web App Container -->
-  <div id="flutter_target"></div>
+  <body>
+    <!-- Full viewport background to eliminate white space -->
+    <div style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: #f0f4f8; z-index: -1;"></div>
+    <div id="flutter_target"></div>
 
-  <!-- White screen watchdog fallback -->
-  <div id="boot-fallback">
-    <div class="wrap">
-      <div class="card">
-        <h2>Launching…</h2>
-        <p>If this takes too long, try switching rendering mode or reloading.</p>
-        <div class="btn-row">
-          <button class="btn" id="retry-reload">Reload</button>
-          <button class="link" id="switch-renderer">Try alternate mode</button>
-          <button class="link" id="clear-sw">Clear caches</button>
-        </div>
-        <p id="renderer-hint" style="font-size:12px; color:#9fb0c3; margin-top:10px;"></p>
-      </div>
-    </div>
-  </div>
-
-  <!-- iOS PWA Install Gate Overlay -->
+  <!-- Installation Gate -->
   <div id="ios-pwa-gate">
     <div class="wrap">
       <div class="card">
-        <div class="logo">
-          <img src="icons/Icon-192.png" alt="Logo">
-          <div>
-            <div class="title" style="font-weight:800; letter-spacing:.2px;">Mzansi Marketplace</div>
-            <div class="subtitle" style="color: var(--brand-subtle); font-size: 13px;">Fast, app-like experience</div>
+        <div id="ios-instructions" style="display: none;">
+          <h1>Add to Home Screen</h1>
+          <div class="ios-steps">
+            <div class="step">
+              <div class="step-number">1</div>
+              <div class="step-text">Tap the <strong>Share</strong> button <span class="share-icon">⎋</span> at the bottom of your browser</div>
+            </div>
+            <div class="step">
+              <div class="step-number">2</div>
+              <div class="step-text">Scroll down and tap <strong>"Add to Home Screen"</strong></div>
+            </div>
+            <div class="step">
+              <div class="step-number">3</div>
+              <div class="step-text">Tap <strong>"Add"</strong> to confirm</div>
+            </div>
+          </div>
+          <div class="btn-row">
+            <button class="btn" id="pwa-installed-btn">I've added it</button>
+            <button class="link" id="pwa-skip-btn">Continue anyway</button>
           </div>
         </div>
-        <h1 id="pwa-title">Install to Home Screen</h1>
-        <p id="pwa-description">For iPhone/iPad, add this app to your Home Screen for the best performance and fewer reloads.</p>
-        <div class="performance-warning" style="background: rgba(251, 191, 36, 0.1); border: 1px solid rgba(251, 191, 36, 0.3); border-radius: 8px; padding: 12px; margin: 16px 0; display: flex; align-items: center; gap: 8px;">
-          <span style="font-size: 18px;">⚠️</span>
-          <div style="font-size: 13px; color: var(--brand-subtle);">
-            <strong>Safari Performance Issues:</strong> Marketplace features like image uploads, real-time chat, and smooth scrolling work much better in the installed app.
+        <div id="android-instructions" style="display: none;">
+          <h1>Install Mzansi Marketplace</h1>
+          <p>Add this app to your Home Screen or install as a PWA for the best performance.</p>
+          <div class="btn-row">
+            <button class="btn" id="pwa-installed-btn">I've installed it</button>
+            <button class="link" id="pwa-skip-btn">Continue anyway</button>
+            <button class="link" id="pwa-remind-later-btn">Remind me later</button>
           </div>
-        </div>
-        <ol class="steps">
-          <li>Tap the Share icon in Safari.</li>
-          <li>Choose “Add to Home Screen”.</li>
-          <li>Open the app from your Home Screen.</li>
-        </ol>
-        <div class="btn-row">
-          <button class="btn" id="pwa-installed-btn">I've installed it</button>
-          <button class="link" id="pwa-skip-btn">Continue anyway</button>
-          <button class="link" id="pwa-remind-later-btn" style="font-size: 12px;">Remind me later</button>
         </div>
       </div>
     </div>
   </div>
 
-  <!-- Android APK banner -->
-  <div id="android-apk-banner">
-    <div class="inner">
-      <img src="icons/Icon-192.png" alt="Logo" />
-      <div>
-        <div class="title">Get the Android app</div>
-        <div class="sub" style="color:#9fb0c3; font-size: 13px;">Download the APK for the smoothest experience</div>
+  <!-- Stunning PWA Banner -->
+  <div id="pwa-suggestion-banner">
+    <div class="banner-content">
+      <div class="banner-icon-wrapper">📱</div>
+      <div class="banner-text">
+        <div class="banner-title">Install Mzansi Marketplace</div>
+        <div class="banner-subtitle">Get faster loading & work offline</div>
       </div>
-      <button id="apk-download-btn" class="cta">Download APK</button>
-      <button id="apk-dismiss-btn" class="dismiss">Dismiss</button>
+      <div class="banner-actions">
+        <button class="install-btn" id="pwa-install-now">Install App</button>
+        <div class="banner-actions-row">
+          <button class="dismiss-btn" id="pwa-dismiss-banner">Not now</button>
+          <button class="never-btn" id="pwa-never-again">Never</button>
+        </div>
+      </div>
     </div>
   </div>
-  
-  <!-- Enhanced Flutter Web Scripts -->
-  <script src="flutter_init.js"></script>
-  <script src="flutter.js" defer></script>
+
+  <!-- Flutter App -->
+  <script src="main.dart.js"></script>
+
   <script>
-    window.addEventListener('load', function(ev) {
-      // Remove the blocking behavior entirely
-      // if (window.__blockFlutter) {
-      //   console.warn('iOS PWA gate active - blocking Flutter load in Safari tab');
-      //   return;
-      // }
-      // Use the standard Flutter web initialization pattern
-      console.log('Starting Flutter initialization...');
+    function showOverlay(el){ el.style.display='block'; el.style.visibility='visible'; el.style.pointerEvents='auto'; }
+    function hideOverlay(el){ el.style.display='none'; el.style.visibility='hidden'; el.style.pointerEvents='none'; }
+
+    (function(){
+      function hideOverlays(){
+        var gate=document.getElementById('ios-pwa-gate');
+        // Don't hide the banner - let it show by default
+        if(gate && !window.__forceShowPwaGate) hideOverlay(gate);
+      }
+      document.addEventListener('DOMContentLoaded', hideOverlays);
+      window.addEventListener('load', hideOverlays);
+    })();
+
+    // Show banner after Flutter app loads (after splash screen) - for both iOS and Android
+    document.addEventListener('DOMContentLoaded', ()=>{
+      // Wait for Flutter to be ready
+      if (window.flutter_inappwebview) {
+        // If using Flutter WebView, wait for it to be ready
+        window.flutter_inappwebview.callHandler('onFlutterReady').then(() => {
+          setTimeout(() => showBanner(), 8000); // Show after 8s delay
+        }).catch(() => {
+          // Fallback: show after 12 seconds
+          setTimeout(() => showBanner(), 12000);
+        });
+      } else {
+        // Fallback: show after Flutter main.dart.js loads
+        setTimeout(() => showBanner(), 10000); // Show after 10 seconds
+      }
+    });
+
+    function updateBannerButton() {
+      const ua = navigator.userAgent || navigator.vendor || window.opera;
+      const isIOS = /iPad|iPhone|iPod/.test(ua);
+      const installBtn = document.getElementById('pwa-install-now');
       
-      // Enhanced Flutter initialization with better error handling
-      const initFlutter = () => {
-        try {
-          // Use the configuration we set up
-          const config = window.flutterConfiguration || { renderer: "canvaskit" };
-          console.log('🚀 Initializing Flutter with config:', config);
-          
-          // Check if Flutter is available
-          if (window._flutter_loader || window.flutter?.loader) {
-            const loader = window._flutter_loader || window.flutter.loader;
-            console.log('📱 Using Flutter loader...');
-            
-            loader.load({
-              serviceWorkerSettings: {
-                serviceWorkerVersion: '1.0.0',
-              },
-              config: config,
-              onEntrypointLoaded: function(engineInitializer) {
-                console.log('🎯 Flutter entrypoint loaded');
-                engineInitializer.initializeEngine(config).then(function(appRunner) {
-                  console.log('✅ Flutter engine initialized');
-                  appRunner.runApp();
-                  
-                  // Dispatch custom event for iOS optimizations
-                  document.dispatchEvent(new CustomEvent('flutter-initialized'));
-                }).catch(function(error) {
-                  console.error('❌ Flutter engine initialization failed:', error);
-                  // Auto-fallback: if CanvasKit failed on iOS, switch to HTML and reload once
-                  try {
-                    const wasCanvas = (config && config.renderer === 'canvaskit');
-                    if (isIOS && wasCanvas) {
-                      localStorage.setItem('web_renderer_override', 'html');
-                      const url = new URL(window.location.href);
-                      url.searchParams.set('r', 'html');
-                      return window.location.replace(url.toString());
-                    }
-                  } catch(_) {}
-                  fallbackInit();
-                });
-              }
-            });
-          } else if (window.flutter) {
-            console.log('📱 Using legacy flutter loader...');
-            window.flutter.loader.loadEntrypoint({
-              serviceWorker: {
-                serviceWorkerVersion: '1.0.0',
-              },
-              config: config,
-              onEntrypointLoaded: function(engineInitializer) {
-                engineInitializer.initializeEngine(config).then(function(appRunner) {
-                  appRunner.runApp();
-                  document.dispatchEvent(new CustomEvent('flutter-initialized'));
-                }).catch(function(error){
-                  console.error('❌ Legacy engine init failed:', error);
-                  try {
-                    const wasCanvas = (config && config.renderer === 'canvaskit');
-                    if (isIOS && wasCanvas) {
-                      localStorage.setItem('web_renderer_override', 'html');
-                      const url = new URL(window.location.href);
-                      url.searchParams.set('r', 'html');
-                      return window.location.replace(url.toString());
-                    }
-                  } catch(_) {}
-                });
-              }
-            });
-          } else {
-            console.log('⚠️ Flutter loader not found, using fallback...');
-            fallbackInit();
-          }
-        } catch (error) {
-          console.error('❌ Flutter initialization error:', error);
-          fallbackInit();
+      if (installBtn) {
+        if (isIOS) {
+          installBtn.textContent = 'Add to Home';
+        } else {
+          installBtn.textContent = 'Install App';
         }
-      };
+      }
+    }
+
+    function showBanner() {
+      let banner = document.getElementById('pwa-suggestion-banner');
+      if (banner) {
+        updateBannerButton(); // Update button text based on platform
+        showOverlay(banner);
+        window.__forceShowPwaBanner = true;
+      }
+    }
+
+    // Auto-show installation gate overlay after 10s (for both iOS and Android)
+    document.addEventListener('DOMContentLoaded', ()=>{
+      const ua = navigator.userAgent || navigator.vendor || window.opera;
+      const isIOS = /iPad|iPhone|iPod/.test(ua);
+      const isAndroid = /Android/.test(ua);
+      const isStandalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone;
+      const dismissed = sessionStorage.getItem('pwa_reminder_dismissed') === '1';
+      const never = localStorage.getItem('pwa_banner_never') === '1';
+
+      if ((isIOS || isAndroid) && !isStandalone && !dismissed && !never) {
+        setTimeout(()=>{
+          let gate = document.getElementById('ios-pwa-gate');
+          if (gate) { 
+            showOverlay(gate); 
+            window.__forceShowPwaGate = true;
+            showPlatformInstructions(isIOS);
+          }
+        }, 10000); // 10s
+      }
+    });
+
+    function showPlatformInstructions(isIOS) {
+      const iosInstructions = document.getElementById('ios-instructions');
+      const androidInstructions = document.getElementById('android-instructions');
       
-      // Fallback initialization for older Flutter versions
-      const fallbackInit = () => {
-        console.log('🔄 Attempting fallback initialization...');
-        const script = document.createElement('script');
-        script.src = 'main.dart.js';
-        script.type = 'application/javascript';
-        script.onload = function() {
-          console.log('✅ Fallback: main.dart.js loaded');
-          document.dispatchEvent(new CustomEvent('flutter-initialized'));
-        };
-        script.onerror = function() {
-          console.error('❌ Fallback: Failed to load main.dart.js');
-        };
-        document.head.appendChild(script);
-      };
-      
-      // Wait a bit for flutter.js to initialize
-      setTimeout(initFlutter, 100);
+      if (isIOS) {
+        iosInstructions.style.display = 'block';
+        androidInstructions.style.display = 'none';
+      } else {
+        iosInstructions.style.display = 'none';
+        androidInstructions.style.display = 'block';
+      }
+    }
 
-      // Watchdog: if not initialized within 8s, show fallback overlay
-      (function() {
-        let booted = false;
-        const alt = (window.flutterConfiguration?.renderer === 'html') ? 'canvaskit' : 'html';
-        const hint = document.getElementById('renderer-hint');
-        if (hint) hint.textContent = 'Current mode: ' + (window.flutterConfiguration?.renderer || 'unknown') + ' — Alternate: ' + alt;
-        const showFallback = () => {
-          if (booted) return;
-          const el = document.getElementById('boot-fallback');
-          if (el) el.style.display = 'block';
-        };
-        const timer = setTimeout(showFallback, 8000);
-        document.addEventListener('flutter-initialized', function(){ booted = true; clearTimeout(timer); });
-
-        // Buttons
-        document.addEventListener('DOMContentLoaded', function(){
-          const reloadBtn = document.getElementById('retry-reload');
-          const switchBtn = document.getElementById('switch-renderer');
-          const clearBtn = document.getElementById('clear-sw');
-          const altRenderer = alt;
-          if (reloadBtn) reloadBtn.addEventListener('click', function(){ location.reload(); });
-          if (switchBtn) switchBtn.addEventListener('click', function(){
-            try { localStorage.setItem('web_renderer_override', altRenderer); } catch(_) {}
-            const url = new URL(window.location.href);
-            url.searchParams.set('r', altRenderer);
-            window.location.href = url.toString();
-          });
-          if (clearBtn) clearBtn.addEventListener('click', function(){ window.location.href = '/clear_sw.html'; });
-        });
-      })();
-
-      // Install overlay handlers
-      try {
-        const installedBtn = document.getElementById('pwa-installed-btn');
-        if (installedBtn) installedBtn.addEventListener('click', function(){
-          // User installed and opened this page in Safari; refresh to let SW/loader detect standalone
-          location.reload();
-        });
-
-        // Handle Continue anyway button (temporary access)
-        var skipBtn = document.getElementById('pwa-skip-btn');
-        if (skipBtn) skipBtn.addEventListener('click', function(){
-          var gate = document.getElementById('ios-pwa-gate');
-          if (gate) gate.style.display = 'none';
-          // Show a subtle reminder banner about performance
-          setTimeout(function() {
-            if (!window.document.getElementById('safari-warning')) {
-              var warning = document.createElement('div');
-              warning.id = 'safari-warning';
-              warning.style.cssText = 'position:fixed;top:0;left:0;right:0;background:#f59e0b;color:#000;text-align:center;padding:8px;font-size:12px;z-index:1000;';
-              warning.innerHTML = '⚠️ Using Safari - some features may be slow. <strong>Install app for better performance</strong>';
-              document.body.appendChild(warning);
-              setTimeout(function() { warning.remove(); }, 5000);
-            }
-          }, 3000);
-        });
-
-        // Handle Remind me later button (dismisses for this session)
-        var remindBtn = document.getElementById('pwa-remind-later-btn');
-        if (remindBtn) remindBtn.addEventListener('click', function(){
-          sessionStorage.setItem('pwa_reminder_dismissed', '1');
-          var gate = document.getElementById('ios-pwa-gate');
-          if (gate) gate.style.display = 'none';
-        });
-      } catch(_) {}
+    // Button handlers
+    document.getElementById('pwa-install-now')?.addEventListener('click', ()=>{
+      let gate=document.getElementById('ios-pwa-gate'); 
+      if(gate){ 
+        showOverlay(gate); 
+        window.__forceShowPwaGate=true;
+        const ua = navigator.userAgent || navigator.vendor || window.opera;
+        const isIOS = /iPad|iPhone|iPod/.test(ua);
+        showPlatformInstructions(isIOS);
+      }
+      let b=document.getElementById('pwa-suggestion-banner'); if(b) hideOverlay(b);
+    });
+    document.getElementById('pwa-dismiss-banner')?.addEventListener('click', ()=>{
+      let b=document.getElementById('pwa-suggestion-banner'); if(b) hideOverlay(b);
+      sessionStorage.setItem('pwa_reminder_dismissed','1');
+    });
+    document.getElementById('pwa-never-again')?.addEventListener('click', ()=>{
+      let b=document.getElementById('pwa-suggestion-banner'); if(b) hideOverlay(b);
+      localStorage.setItem('pwa_banner_never','1');
+    });
+    document.getElementById('pwa-skip-btn')?.addEventListener('click', ()=>{
+      let gate=document.getElementById('ios-pwa-gate'); if(gate) hideOverlay(gate);
+    });
+    document.getElementById('pwa-remind-later-btn')?.addEventListener('click', ()=>{
+      let gate=document.getElementById('ios-pwa-gate'); if(gate) hideOverlay(gate);
+      sessionStorage.setItem('pwa_reminder_dismissed','1');
     });
   </script>
 </body>

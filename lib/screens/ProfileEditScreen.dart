@@ -48,6 +48,12 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
   bool _paxiVisible = true;
   bool _allowCOD = true;
   double _minOrderForDelivery = 0.0;
+  // PUDO (prepaid wallet) settings for existing sellers
+  bool _pudoEnabledSeller = false;
+  String _pudoDefaultSize = 'm'; // xs|s|m|l|xl
+  String _pudoDefaultSpeed = 'standard'; // standard|express
+  final TextEditingController _pudoLockerNameController = TextEditingController();
+  final TextEditingController _pudoLockerAddressController = TextEditingController();
   
   // Financial status
   double _outstandingAmount = 0.0;
@@ -63,6 +69,23 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
   String _payoutAccountType = 'cheque';
   bool _loadingPayout = false;
   bool _savingPayout = false;
+  // Bank selection & universal branch codes (SA)
+  final Map<String, String> _bankToUniversalBranch = const {
+    'Absa Bank': '632005',
+    'African Bank': '430000',
+    'Bidvest Bank': '462005',
+    'Capitec Bank': '470010',
+    'Discovery Bank': '679000',
+    'First National Bank (FNB)': '250655',
+    'Investec Bank': '580105',
+    'Mercantile Bank': '450905',
+    'Nedbank': '198765',
+    'Sasfin Bank': '683000',
+    'Standard Bank': '051001',
+    'TymeBank': '678910',
+  };
+  late final List<String> _bankOptions = _bankToUniversalBranch.keys.toList();
+  String? _selectedBank;
   
   // Store settings for sellers
   bool _isStoreOpen = true;
@@ -78,6 +101,24 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
   double _deliveryRange = 50.0; // Default 50km range (0-1000 range slider)
   // removed custom range controller
   String? _selectedStoreCategory; // Store category for delivery range caps
+  String? _normalizeBankKey(String name) {
+    final n = name.trim().toLowerCase();
+    if (n.isEmpty) return null;
+    if (n == 'fnb' || n.contains('first national')) return 'First National Bank (FNB)';
+    if (n.contains('standard')) return 'Standard Bank';
+    if (n.contains('absa')) return 'Absa Bank';
+    if (n.contains('nedbank')) return 'Nedbank';
+    if (n.contains('capitec')) return 'Capitec Bank';
+    if (n.contains('investec')) return 'Investec Bank';
+    if (n.contains('tyme')) return 'TymeBank';
+    if (n.contains('african bank')) return 'African Bank';
+    if (n.contains('bidvest')) return 'Bidvest Bank';
+    if (n.contains('mercantile')) return 'Mercantile Bank';
+    if (n.contains('sasfin')) return 'Sasfin Bank';
+    if (n.contains('discovery')) return 'Discovery Bank';
+    return _bankToUniversalBranch.containsKey(name) ? name : null;
+  }
+
 
   double _getCategoryDeliveryCapFromData(Map<String, dynamic> data) {
     final cat = (data['storeCategory'] ?? '').toString().toLowerCase();
@@ -130,6 +171,11 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
       _kycStatus = (data['kycStatus'] as String?) ?? 'none';
       _pargoEnabled = data['pargoEnabled'] == true;
       _paxiEnabled = data['paxiEnabled'] == true;
+      _pudoEnabledSeller = data['pudoEnabled'] == true;
+      _pudoDefaultSize = (data['pudoDefaultSize'] ?? _pudoDefaultSize).toString();
+      _pudoDefaultSpeed = (data['pudoDefaultSpeed'] ?? _pudoDefaultSpeed).toString();
+      _pudoLockerNameController.text = (data['pudoLockerName'] ?? '').toString();
+      _pudoLockerAddressController.text = (data['pudoLockerAddress'] ?? '').toString();
       // Global visibility
       // Note: loaded below via config
       _allowCOD = data['allowCOD'] != false;
@@ -202,9 +248,12 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
         final d = doc.data();
         if (d != null) {
           _payoutAccountHolderController.text = (d['accountHolder'] ?? '').toString();
-          _payoutBankNameController.text = (d['bankName'] ?? '').toString();
+          final bankName = (d['bankName'] ?? '').toString();
+          _payoutBankNameController.text = bankName;
+          final normalizedKey = _normalizeBankKey(bankName);
+          _selectedBank = normalizedKey;
           _payoutAccountNumberController.text = (d['accountNumber'] ?? '').toString();
-          _payoutBranchCodeController.text = (d['branchCode'] ?? '').toString();
+          _payoutBranchCodeController.text = (d['branchCode'] ?? (normalizedKey != null ? _bankToUniversalBranch[normalizedKey] : '')).toString();
           final at = (d['accountType'] ?? _payoutAccountType).toString();
           // Normalize possible display values to canonical keys
           switch (at.toLowerCase()) {
@@ -882,6 +931,12 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
       if (_isSeller) 'deliveryEndHour': _formatTimeOfDay(_deliveryEndTime),
       if (_isSeller) 'storeOpenHour': _formatTimeOfDay(_storeOpenTime),
       if (_isSeller) 'storeCloseHour': _formatTimeOfDay(_storeCloseTime),
+      // PUDO settings
+      if (_isSeller) 'pudoEnabled': _pudoEnabledSeller,
+      if (_isSeller) 'pudoDefaultSize': _pudoDefaultSize,
+      if (_isSeller) 'pudoDefaultSpeed': _pudoDefaultSpeed,
+      if (_isSeller) 'pudoLockerName': _pudoLockerNameController.text.trim(),
+      if (_isSeller) 'pudoLockerAddress': _pudoLockerAddressController.text.trim(),
     };
     await FirebaseFirestore.instance.collection('users').doc(user.uid).update(data);
     setState(() => _loading = false);
@@ -978,6 +1033,8 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
     _storyController.dispose();
     _specialtiesController.dispose();
     _passionController.dispose();
+    _pudoLockerNameController.dispose();
+    _pudoLockerAddressController.dispose();
     // removed custom range controller
     super.dispose();
   }
@@ -1012,6 +1069,28 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
       ),
       validator: (v) => v == null || v.isEmpty ? 'Required' : null,
       maxLines: maxLines,
+    );
+  }
+
+  Widget _dropdown({
+    required String label,
+    required String value,
+    required List<String> items,
+    required ValueChanged<String?> onChanged,
+  }) {
+    return InputDecorator(
+      decoration: InputDecoration(
+        labelText: label,
+        border: const OutlineInputBorder(),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          value: value,
+          isExpanded: true,
+          items: items.map((s) => DropdownMenuItem<String>(value: s, child: Text(s.toUpperCase()))).toList(),
+          onChanged: onChanged,
+        ),
+      ),
     );
   }
 
@@ -1812,6 +1891,73 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                               title: const Text('Enable PAXI pickup points'),
                               subtitle: const Text('Let buyers pick up at PAXI locations'),
                             ),
+                            const Divider(),
+                            SwitchListTile(
+                              value: _pudoEnabledSeller,
+                              onChanged: (v) async {
+                                setState(() { _pudoEnabledSeller = v; });
+                                final user = FirebaseAuth.instance.currentUser;
+                                if (user != null) await FirebaseFirestore.instance.collection('users').doc(user.uid).update({'pudoEnabled': v});
+                              },
+                              title: const Text('Use PUDO lockers (prepaid wallet)'),
+                              subtitle: const Text('Book via PUDO app; buyer shipping can reimburse your wallet cost'),
+                            ),
+                            if (_pudoEnabledSeller) ...[
+                              const SizedBox(height: 8),
+                              Row(children: [
+                                Expanded(child: _dropdown(
+                                  label: 'Default Size',
+                                  value: _pudoDefaultSize,
+                                  items: const ['xs','s','m','l','xl'],
+                                  onChanged: (v){ if (v!=null) setState(()=> _pudoDefaultSize = v); },
+                                )),
+                                const SizedBox(width: 8),
+                                Expanded(child: _dropdown(
+                                  label: 'Default Speed',
+                                  value: _pudoDefaultSpeed,
+                                  items: const ['standard','express'],
+                                  onChanged: (v){ if (v!=null) setState(()=> _pudoDefaultSpeed = v); },
+                                )),
+                              ]),
+                              const SizedBox(height: 8),
+                              TextField(
+                                controller: _pudoLockerNameController,
+                                decoration: const InputDecoration(labelText: 'Default Locker Name (optional)', border: OutlineInputBorder()),
+                                onSubmitted: (_) async {
+                                  final user = FirebaseAuth.instance.currentUser;
+                                  if (user != null) await FirebaseFirestore.instance.collection('users').doc(user.uid).update({'pudoLockerName': _pudoLockerNameController.text.trim()});
+                                },
+                              ),
+                              const SizedBox(height: 8),
+                              TextField(
+                                controller: _pudoLockerAddressController,
+                                decoration: const InputDecoration(labelText: 'Default Locker Address (optional)', border: OutlineInputBorder()),
+                                onSubmitted: (_) async {
+                                  final user = FirebaseAuth.instance.currentUser;
+                                  if (user != null) await FirebaseFirestore.instance.collection('users').doc(user.uid).update({'pudoLockerAddress': _pudoLockerAddressController.text.trim()});
+                                },
+                              ),
+                              const SizedBox(height: 8),
+                              Align(
+                                alignment: Alignment.centerRight,
+                                child: OutlinedButton.icon(
+                                  onPressed: () async {
+                                    final user = FirebaseAuth.instance.currentUser;
+                                    if (user == null) return;
+                                    await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+                                      'pudoEnabled': _pudoEnabledSeller,
+                                      'pudoDefaultSize': _pudoDefaultSize,
+                                      'pudoDefaultSpeed': _pudoDefaultSpeed,
+                                      'pudoLockerName': _pudoLockerNameController.text.trim(),
+                                      'pudoLockerAddress': _pudoLockerAddressController.text.trim(),
+                                    }, SetOptions(merge: true));
+                                    if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('PUDO settings saved')));
+                                  },
+                                  icon: const Icon(Icons.save),
+                                  label: const Text('Save PUDO Settings'),
+                                ),
+                              ),
+                            ],
                           ],
                         ),
                       ),
@@ -2039,13 +2185,28 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                             ),
                           ),
                           const SizedBox(height: 8),
-                          TextField(
-                            controller: _payoutBankNameController,
+                          DropdownButtonFormField<String>(
+                            value: _selectedBank,
+                            isExpanded: true,
+                            items: _bankOptions
+                              .map((b) => DropdownMenuItem<String>(value: b, child: Text(b)))
+                              .toList(),
                             decoration: InputDecoration(
-                              labelText: 'Bank Name',
+                              labelText: 'Bank',
                               border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                               prefixIcon: const Icon(Icons.account_balance),
                             ),
+                            onChanged: (v) {
+                              setState(() {
+                                _selectedBank = v;
+                                _payoutBankNameController.text = v ?? '';
+                                _payoutBranchCodeController.text = v != null ? (_bankToUniversalBranch[v] ?? '') : '';
+                              });
+                            },
+                            validator: (v) {
+                              if ((v ?? '').isEmpty) return 'Select bank';
+                              return null;
+                            },
                           ),
                           const SizedBox(height: 8),
                           Row(
@@ -2065,9 +2226,11 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                               Expanded(
                                 child: TextField(
                                   controller: _payoutBranchCodeController,
+                                  readOnly: true,
                                   keyboardType: TextInputType.number,
                                   decoration: InputDecoration(
                                     labelText: 'Branch Code',
+                                    hintText: 'Auto-filled universal branch code',
                                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                                     prefixIcon: const Icon(Icons.pin),
                                   ),

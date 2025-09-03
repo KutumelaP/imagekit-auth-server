@@ -31,8 +31,10 @@ class _SellerOnboardingScreenState extends State<SellerOnboardingScreen> with Ti
   double? _buyerServiceFeeFixed;
   double? _smallOrderFee;
   double? _smallOrderThreshold;
+  double? _payfastFeePercentage;
+  double? _payfastFixedFee;
 
-  final List<OnboardingStep> _steps = [
+  List<OnboardingStep> get _steps => [
     OnboardingStep(
       title: 'Welcome to Mzansi Marketplace!',
       subtitle: 'Your journey to successful selling starts here',
@@ -56,7 +58,7 @@ class _SellerOnboardingScreenState extends State<SellerOnboardingScreen> with Ti
         'You receive 100% of earnings after order completion',
         'No holdback period - money available immediately',
         'Platform fees handled separately by admin',
-        'PayFast fees: 3.5% + R2 per transaction',
+        'PayFast fees: ${_payfastFeePercentage?.toStringAsFixed(1) ?? "3.5"}% + R${_payfastFixedFee?.toStringAsFixed(0) ?? "2"} per transaction',
         'Request payouts when you want (minimum R100)'
       ],
     ),
@@ -197,6 +199,10 @@ class _SellerOnboardingScreenState extends State<SellerOnboardingScreen> with Ti
         _buyerServiceFeeFixed = (data['buyerServiceFeeFixed'] as num?)?.toDouble();
         _smallOrderFee = (data['smallOrderFee'] as num?)?.toDouble();
         _smallOrderThreshold = (data['smallOrderThreshold'] as num?)?.toDouble();
+        
+        // PayFast fees
+        _payfastFeePercentage = (data['payfastFeePercentage'] as num?)?.toDouble();
+        _payfastFixedFee = (data['payfastFixedFee'] as num?)?.toDouble();
       });
     } catch (_) {}
   }

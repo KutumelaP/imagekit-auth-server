@@ -51,6 +51,7 @@ class _SellerOrderDetailScreenState extends State<SellerOrderDetailScreen>
   bool _notifying = false;
   bool _addingTracking = false;
   List<Map<String, dynamic>> _savedDrivers = [];
+  String? _currentOrderNumber;
 
   @override
   void initState() {
@@ -244,6 +245,7 @@ class _SellerOrderDetailScreenState extends State<SellerOrderDetailScreen>
             
           final order = snapshot.data!.data()! as Map<String, dynamic>;
           final status = order['status'] as String? ?? 'pending';
+          _currentOrderNumber = order['orderNumber']?.toString();
           final items = (order['items'] as List?) ?? [];
             final total = order['totalPrice'] ?? order['total'] ?? 0.0;
             final buyerName = _getCustomerName(order);
@@ -256,6 +258,29 @@ class _SellerOrderDetailScreenState extends State<SellerOrderDetailScreen>
           final trackingUpdates = List<Map<String, dynamic>>.from(order['trackingUpdates'] ?? []);
           final sellerId = order['sellerId'] as String?;
           final sellerName = order['sellerName'] ?? '';
+
+          // Extract enhanced delivery information (derive from order if missing)
+          String deliveryType = order['deliveryType']?.toString().toLowerCase() ?? '';
+          final orderType = order['orderType']?.toString().toLowerCase() ?? '';
+          final pickupPointType = order['pickupPointType']?.toString().toLowerCase();
+          if (deliveryType.isEmpty) {
+            if (pickupPointType == 'paxi') deliveryType = 'paxi';
+            else if (pickupPointType == 'pargo') deliveryType = 'pargo';
+            else if (orderType.isNotEmpty) deliveryType = orderType;
+          }
+
+          final paxiDetails = order['paxiDetails'] as Map<String, dynamic>?;
+          Map<String, dynamic>? paxiPickupPoint = order['paxiPickupPoint'] as Map<String, dynamic>?;
+          final pickupPointName = order['pickupPointName'] as String?;
+          final pickupPointAddress = order['pickupPointAddress'] as String?;
+          if (paxiPickupPoint == null && (pickupPointName != null || pickupPointAddress != null)) {
+            paxiPickupPoint = {
+              if (pickupPointName != null) 'name': pickupPointName,
+              if (pickupPointAddress != null) 'address': pickupPointAddress,
+            };
+          }
+          final paxiDeliverySpeed = (order['paxiDeliverySpeed'] ?? '')?.toString() ?? '';
+          final pargoPickupDetails = order['pargoPickupDetails'] as Map<String, dynamic>?;
 
           if (_savedDrivers.isEmpty && sellerId != null) {
             _loadSavedDrivers(sellerId);
@@ -275,6 +300,20 @@ class _SellerOrderDetailScreenState extends State<SellerOrderDetailScreen>
                       
                       // Customer Information Card
                       _buildCustomerInfoCard(buyerName, buyerPhone, deliveryAddress, deliveryInstructions),
+                      
+                      // Delivery Information Card (Enhanced)
+                      if (deliveryType.isNotEmpty || paxiDetails != null || pargoPickupDetails != null || pickupPointName != null)
+                        _buildDeliveryInfoCard(
+                          deliveryType: deliveryType,
+                          paxiDetails: paxiDetails,
+                          paxiPickupPoint: paxiPickupPoint,
+                          paxiDeliverySpeed: paxiDeliverySpeed,
+                          pargoPickupDetails: pargoPickupDetails,
+                          pickupPointAddress: pickupPointAddress,
+                          pickupPointName: pickupPointName,
+                          pickupPointType: pickupPointType,
+                          deliveryAddress: deliveryAddress,
+                        ),
                       
                       // Order Items Card
                       _buildOrderItemsCard(items, total),
@@ -380,7 +419,7 @@ class _SellerOrderDetailScreenState extends State<SellerOrderDetailScreen>
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'Order ${OrderUtils.formatShortOrderNumber(widget.orderId)}',
+                      'Order #${OrderUtils.formatOrderNumber(_currentOrderNumber ?? widget.orderId)}',
                       style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                         color: Colors.white,
                         fontWeight: FontWeight.bold,
@@ -451,9 +490,21 @@ class _SellerOrderDetailScreenState extends State<SellerOrderDetailScreen>
             ),
           _buildInfoRow(
             Icons.receipt_long,
-            'Order ID',
-            OrderUtils.formatShortOrderNumber(widget.orderId),
+            'Order Number',
+            OrderUtils.formatOrderNumber(order['orderNumber']?.toString() ?? widget.orderId),
           ),
+          if ((order['shippingCreditMethod'] ?? '') == 'paxi' && (order['shippingCreditAmount'] ?? 0) is num)
+            _buildInfoRow(
+              Icons.local_shipping,
+              'Shipping Credit',
+              'R${((order['shippingCreditAmount'] as num).toDouble()).toStringAsFixed(2)} • PAXI delivery (seller pays at drop-off)'
+            ),
+          if ((order['shippingCreditMethod'] ?? '') == 'pudo' && (order['shippingCreditAmount'] ?? 0) is num)
+            _buildInfoRow(
+              Icons.lock,
+              'Shipping Reimbursement',
+              'R${((order['shippingCreditAmount'] as num).toDouble()).toStringAsFixed(2)} • PUDO locker (prepaid wallet)'
+            ),
           _buildInfoRow(
             Icons.store,
             'Store',
@@ -503,6 +554,114 @@ class _SellerOrderDetailScreenState extends State<SellerOrderDetailScreen>
             _buildInfoRow(Icons.location_on, 'Delivery Address', deliveryAddress),
           if (deliveryInstructions.isNotEmpty)
             _buildInfoRow(Icons.note, 'Special Instructions', deliveryInstructions),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDeliveryInfoCard({
+    required String deliveryType,
+    Map<String, dynamic>? paxiDetails,
+    Map<String, dynamic>? paxiPickupPoint,
+    String? paxiDeliverySpeed,
+    Map<String, dynamic>? pargoPickupDetails,
+    String? pickupPointAddress,
+    String? pickupPointName,
+    String? pickupPointType,
+    String? deliveryAddress,
+  }) {
+    // Determine the appropriate icon and title based on delivery type
+    IconData deliveryIcon;
+    String deliveryTitle;
+    Color iconColor;
+
+    if (deliveryType == 'paxi') {
+      deliveryIcon = Icons.local_shipping;
+      deliveryTitle = '🚚 PAXI Pickup Details';
+      iconColor = Colors.blue;
+    } else if (deliveryType == 'pargo') {
+      deliveryIcon = Icons.store;
+      deliveryTitle = '📦 Pargo Pickup Details';
+      iconColor = Colors.green;
+    } else if (deliveryType == 'pickup') {
+      deliveryIcon = Icons.storefront;
+      deliveryTitle = '🏪 Store Pickup Details';
+      iconColor = Colors.orange;
+    } else if (deliveryType == 'delivery') {
+      deliveryIcon = Icons.delivery_dining;
+      deliveryTitle = '🚚 Delivery Details';
+      iconColor = Colors.red;
+    } else {
+      deliveryIcon = Icons.info_outline;
+      deliveryTitle = '📋 Delivery Information';
+      iconColor = Colors.grey;
+    }
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.08),
+            blurRadius: 15,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(deliveryIcon, color: iconColor, size: 24),
+              const SizedBox(width: 8),
+              Text(
+                deliveryTitle,
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: Theme.of(context).colorScheme.onSurface,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          
+          // PAXI Delivery Details
+          if (deliveryType == 'paxi' && paxiPickupPoint != null) ...[
+            _buildInfoRow(Icons.location_on, 'Pickup Point', paxiPickupPoint['name'] ?? 'PAXI Pickup Point'),
+            _buildInfoRow(Icons.home, 'Address', paxiPickupPoint['address'] ?? 'Address not specified'),
+            if (paxiDeliverySpeed != null && paxiDeliverySpeed.isNotEmpty)
+              _buildInfoRow(
+                Icons.speed, 
+                'Delivery Speed', 
+                paxiDeliverySpeed == 'express' ? 'Express (3-5 days)' : 'Standard (7-9 days)'
+              ),
+            _buildInfoRow(Icons.inventory, 'Package Size', 'Maximum 10kg'),
+            _buildInfoRow(Icons.info, 'Service', 'PAXI - Reliable pickup point delivery'),
+          ] else if (deliveryType == 'pargo' && pargoPickupDetails != null) ...[
+            // Pargo Pickup Details
+            _buildInfoRow(Icons.store, 'Pickup Point', pargoPickupDetails['pickupPointName'] ?? 'Pargo Pickup Point'),
+            _buildInfoRow(Icons.home, 'Address', pargoPickupDetails['pickupPointAddress'] ?? 'Address not specified'),
+            _buildInfoRow(Icons.info, 'Service', 'Pargo - Convenient pickup point delivery'),
+          ] else if (deliveryType == 'pickup' && pickupPointName != null) ...[
+            // Store Pickup Details
+            _buildInfoRow(Icons.storefront, 'Pickup Location', pickupPointName),
+            if (pickupPointAddress != null && pickupPointAddress.isNotEmpty)
+              _buildInfoRow(Icons.home, 'Address', pickupPointAddress),
+            _buildInfoRow(Icons.info, 'Service', 'Store Pickup - Collect from our store'),
+          ] else if (deliveryType == 'delivery' && deliveryAddress != null && deliveryAddress.isNotEmpty) ...[
+            // Merchant Delivery Details
+            _buildInfoRow(Icons.location_on, 'Delivery Address', deliveryAddress),
+            _buildInfoRow(Icons.info, 'Service', 'Merchant Delivery - We deliver to your address'),
+          ] else ...[
+            // Fallback for unknown delivery types
+            _buildInfoRow(Icons.help_outline, 'Delivery Type', deliveryType.isNotEmpty ? deliveryType.toUpperCase() : 'Not specified'),
+            if (deliveryAddress != null && deliveryAddress.isNotEmpty)
+              _buildInfoRow(Icons.location_on, 'Address', deliveryAddress),
+          ],
         ],
       ),
     );

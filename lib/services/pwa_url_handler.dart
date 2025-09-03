@@ -49,7 +49,8 @@ class PWAUrlHandler {
   /// Generate shareable store URL
   static String generateStoreUrl(String storeId, {String? baseUrl}) {
     final base = baseUrl ?? _getCurrentBaseUrl();
-    return '$base/store/$storeId';
+    // 🚀 Store list page filtered to a specific store (hash route for robust web deep link)
+    return '$base/#/stores?storeId=$storeId';
   }
 
   /// Generate shareable store products URL  

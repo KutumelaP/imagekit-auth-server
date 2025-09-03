@@ -610,10 +610,8 @@ class _StunningProductDetailState extends State<StunningProductDetail>
 
   Widget _buildProductDetails(bool isMobile) {
     final details = [
-      {'label': 'Product ID', 'value': widget.product['id'] ?? 'N/A'},
       {'label': 'Category', 'value': widget.product['category'] ?? 'Unknown'},
       {'label': 'Subcategory', 'value': widget.product['subcategory'] ?? 'Unknown'},
-      {'label': 'Added', 'value': _formatTimestamp(widget.product['timestamp'])},
     ];
 
     return Container(

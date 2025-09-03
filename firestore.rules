@@ -4,9 +4,17 @@ service cloud.firestore {
 
     // Helper function to check if user is admin
     function isAdmin() {
-      return request.auth != null &&
-        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+      return request.auth != null && (
+        (
+          exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'
+        ) ||
+        (
+          // Support Firebase custom claims
+          (request.auth.token.admin == true) ||
+          (request.auth.token.role == 'admin')
+        )
+      );
     }
 
     // Helper function to check if user is seller
@@ -117,6 +125,8 @@ service cloud.firestore {
     // CONFIG - Allow unauthenticated access for app initialization
     match /config/{docId} {
       allow read: if true;
+      // Allow admin dashboard to update platform settings
+      allow write: if isAdmin();
     }
 
     // CATEGORIES - Allow unauthenticated read for browsing
@@ -328,14 +338,14 @@ service cloud.firestore {
 
     // PLATFORM_RECEIVABLES - For seller payout tracking
     match /platform_receivables/{sellerId} {
-      // Sellers can read their own receivables, buyers can read for COD gating
-      allow read: if request.auth != null;
-      // Only system functions can write (via admin functions)
+      // Sellers can read their own receivables only
+      allow read: if request.auth != null && request.auth.uid == sellerId;
+      // Only system functions/admin can write
       allow write: if isAdmin();
       
       // Entries subcollection
       match /entries/{entryId} {
-        allow read: if request.auth != null;
+        allow read: if request.auth != null && request.auth.uid == sellerId;
         allow write: if isAdmin();
       }
     }
@@ -457,7 +467,17 @@ service cloud.firestore {
 
     // Other admin_settings remain admin-only
     match /admin_settings/{settingId} {
-      allow read, write: if isAdmin();
+      // Allow authenticated reads for non-sensitive settings that the app needs
+      allow read: if request.auth != null;
+      allow write: if isAdmin();
+    }
+
+    // Shipping providers (global switches like PUDO)
+    match /admin_settings/shipping_providers {
+      // App needs to read to decide whether to show carrier options and prices
+      allow read: if request.auth != null;
+      // Only admins can change these
+      allow write: if isAdmin();
     }
 
     match /delivery_zones/{zoneId} {
@@ -608,6 +628,16 @@ service cloud.firestore {
     match /payment_methods/{methodId} {
       allow read: if true;
       allow write: if isAdmin();
+    }
+
+    // FCM_TOKENS - For Firebase Cloud Messaging tokens
+    match /fcm_tokens/{tokenId} {
+      // Allow users to read/write their own FCM tokens
+      allow read, write: if request.auth != null && resource.data.userId == request.auth.uid;
+      // Allow users to create their own FCM tokens
+      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
+      // Allow admins to read/write all FCM tokens
+      allow read, write: if isAdmin();
     }
   }
 } 

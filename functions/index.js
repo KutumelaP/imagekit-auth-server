@@ -220,7 +220,15 @@ exports.payfastNotify = functions.https.onRequest(async (req, res) => {
             } catch (_) {}
             const gross = Math.round(Number(totalPrice) * 100) / 100;
             const commission = Math.round(gross * commissionPct * 100) / 100;
-            const net = Math.round((gross - commission) * 100) / 100;
+            let shippingCredit = 0;
+            try {
+              const method = String(order?.shippingCreditMethod || '').toLowerCase();
+              const settlement = String(order?.shippingSettlementMode || '').toLowerCase();
+              if (settlement === 'prepaid_wallet' || ['paxi','pudo'].includes(method)) {
+                shippingCredit = Number(order?.shippingCreditAmount || 0);
+              }
+            } catch (_) {}
+            const net = Math.round((gross - commission + shippingCredit) * 100) / 100;
             const eref = db
               .collection('platform_receivables')
               .doc(sellerId)
@@ -3527,14 +3535,28 @@ exports.updatePaymentStatus = functions.https.onCall(async (data, context) => {
               method: paymentMethod.toLowerCase().includes('cash') ? 'COD' : 'online',
               gross: totalPrice,
               commission: platformFee,
-              net: sellerPayout,
+              net: (function(){
+                const method = String(orderData?.shippingCreditMethod || '').toLowerCase();
+                const settlement = String(orderData?.shippingSettlementMode || '').toLowerCase();
+                const credit = (settlement === 'prepaid_wallet' || ['paxi','pudo'].includes(method))
+                  ? Number(orderData?.shippingCreditAmount || 0)
+                  : 0;
+                return Number(sellerPayout) + credit;
+              })(),
               status: 'available', // Available for payout
               createdAt: admin.firestore.FieldValue.serverTimestamp(),
               updatedAt: admin.firestore.FieldValue.serverTimestamp(),
               orderData: {
                 totalPrice: totalPrice,
                 platformFee: platformFee,
-                sellerPayout: sellerPayout,
+                sellerPayout: (function(){
+                  const method = String(orderData?.shippingCreditMethod || '').toLowerCase();
+                  const settlement = String(orderData?.shippingSettlementMode || '').toLowerCase();
+                  const credit = (settlement === 'prepaid_wallet' || ['paxi','pudo'].includes(method))
+                    ? Number(orderData?.shippingCreditAmount || 0)
+                    : 0;
+                  return Number(sellerPayout) + credit;
+                })(),
                 paymentMethod: paymentMethod,
                 orderType: orderData.orderType || 'unknown',
                 productCategory: orderData.productCategory || 'other'

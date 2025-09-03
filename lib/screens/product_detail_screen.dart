@@ -289,8 +289,6 @@ class ProductDetailScreen extends StatelessWidget {
                   _buildDetailSection(
                     'Product Details',
                     [
-                      _buildDetailRow('Product ID', product['id'] ?? 'N/A'),
-                      _buildDetailRow('Added', _formatTimestamp(product['timestamp'])),
                       _buildDetailRow('Status', product['status'] ?? 'active'),
                     ],
                   ),
