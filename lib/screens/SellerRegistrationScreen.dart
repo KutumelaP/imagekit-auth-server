@@ -2223,7 +2223,7 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
                             const SizedBox(height: 8),
                             SwitchListTile(
                               title: const Text('Use PUDO (prepaid wallet)'),
-                              subtitle: const Text('You book via PUDO app; we reimburse shipping if buyer is charged.'),
+                              subtitle: const Text('You book via PUDO app; we reimburse shipping if buyer is charged. If both Offer Delivery and PUDO are enabled and the platform has Smart PUDO routing ON, eligible home deliveries may be routed to PUDO locker‑to‑door automatically.'),
                               value: _pudoEnabled,
                               onChanged: (v) => setState(() => _pudoEnabled = v),
                               activeColor: AppTheme.primaryGreen,
