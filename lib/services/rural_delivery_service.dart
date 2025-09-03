@@ -217,7 +217,8 @@ class RuralDeliveryService {
 
   /// Check if location is in rural area
   static bool isRuralArea(double distance) {
-    return distance > 10.0;
+    // Treat as rural only for extended distances; urban-first classification is handled in UI code
+    return distance > 15.0;
   }
 
   /// Get available community drivers for area
