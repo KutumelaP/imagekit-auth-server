@@ -216,14 +216,42 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
                 
                 // Order Summary Card
                 SliverToBoxAdapter(
-                  child: FutureBuilder<Widget>(
-                    future: _buildOrderSummaryCard(data, timestamp, orderItems, total),
-                    builder: (context, snapshot) {
-                      if (snapshot.connectionState == ConnectionState.waiting) {
-                        return const Center(child: CircularProgressIndicator());
-                      }
-                      return snapshot.data ?? const SizedBox.shrink();
-                    },
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if ((data['deliveryMode'] as String?) == 'pudo_locker_to_door')
+                        Container(
+                          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: AppTheme.deepTeal.withOpacity(0.05),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: AppTheme.deepTeal.withOpacity(0.25), width: 1),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.lock, color: AppTheme.deepTeal, size: 18),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'Delivery: Locker-to-door (PUDO) — ${(data['pudoSpeed'] ?? 'standard').toString().toUpperCase()}, ${(data['pudoSize'] ?? 'm').toString().toUpperCase()}',
+                                  style: const TextStyle(color: AppTheme.deepTeal, fontSize: 13, fontWeight: FontWeight.w600),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      FutureBuilder<Widget>(
+                        future: _buildOrderSummaryCard(data, timestamp, orderItems, total),
+                        builder: (context, snapshot) {
+                          if (snapshot.connectionState == ConnectionState.waiting) {
+                            return const Center(child: CircularProgressIndicator());
+                          }
+                          return snapshot.data ?? const SizedBox.shrink();
+                        },
+                      ),
+                    ],
                   ),
                 ),
                 

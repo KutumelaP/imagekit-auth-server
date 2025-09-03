@@ -3760,7 +3760,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       }
     } catch (_) {}
   }
-
   bool _isStoreCurrentlyOpen() {
     // First check: Manual store toggle (seller can manually close store)
     if (_storeOpen == false) {
@@ -4436,7 +4435,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       return false;
     }
   }
-
   void _showBankDetailsDialog({String? orderNumber}) {
     showDialog(
       context: context,
@@ -5163,7 +5161,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       return false;
     }
   }
-
   Future<void> _processPayFastPayment() async {
     if (mounted) setState(() => _isLoading = true);
 
@@ -8486,7 +8483,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               ),
             ),
           ],
-        ],
+        ),
       ),
     );
   }
@@ -9674,7 +9671,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       ),
     );
   }
-
   Widget _buildOrderSummary(double grandTotal) {
     return Container(
       padding: EdgeInsets.all(ResponsiveUtils.getHorizontalPadding(context)),
@@ -10236,4 +10232,3 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     return 'Secure payment processing';
   }
 }
-
