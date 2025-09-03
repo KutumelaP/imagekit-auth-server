@@ -139,6 +139,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   
   // PAXI delivery speed selection
   String? _selectedPaxiDeliverySpeed; // 'standard' or 'express'
+  Map<String, dynamic>? _pendingPudo; // holds auto PUDO plan when enabled
 
   // Go-live safety flags
   bool _enableAutoDriverAssignment = false; // OFF for launch
@@ -3202,6 +3203,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       bool paxiVisible = true;
       bool platformDeliveryEnabled = true; // Default fallback
       bool autoDriverAssignmentEnabled = false;
+      bool autoPudoRoutingEnabled = false;
       
       try {
         final platformCfg = await FirebaseFirestore.instance.collection('config').doc('platform').get();
@@ -3211,6 +3213,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           paxiVisible = (cfg['paxiVisible'] != false);
           platformDeliveryEnabled = (cfg['platformDeliveryEnabled'] != false);
           autoDriverAssignmentEnabled = (cfg['autoDriverAssignmentEnabled'] == true);
+          autoPudoRoutingEnabled = (cfg['autoPudoRoutingEnabled'] == true);
         }
       } catch (_) {}
       
@@ -3227,6 +3230,30 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
       // Set kill switch based on platform config
       _enableAutoDriverAssignment = autoDriverAssignmentEnabled;
+
+      // Auto PUDO Locker-to-Door routing: only for non-food carts and if enabled
+      if (autoPudoRoutingEnabled && _productCategory.toLowerCase() != 'food' && _isDelivery) {
+        try {
+          // Determine size/speed defaults (simple heuristic)
+          final String pudoSpeed = 'standard';
+          final String pudoSize = 'm';
+          final double pudoFee = PaxiConfig.getPrice('standard'); // placeholder until Pudo pricing table wired
+
+          // Attach to state for order creation
+          _selectedPaxiDeliverySpeed = null; // ensure PAXI not applied to delivery
+          _deliveryFee = (_deliveryFee ?? 0.0) > 0 ? _deliveryFee : pudoFee;
+
+          // Persist planned PUDO details in local vars for order write
+          _pendingPudo = {
+            'mode': 'pudo_locker_to_door',
+            'size': pudoSize,
+            'speed': pudoSpeed,
+            'fee': pudoFee,
+          };
+        } catch (e) {
+          debugPrint('PUDO auto-routing skipped: $e');
+        }
+      }
 
       _sellerPargoEnabled = (seller['pargoEnabled'] ?? false) && pargoVisible;
       _sellerPaxiEnabled = (seller['paxiEnabled'] ?? false) && paxiVisible;
@@ -5532,6 +5559,15 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         'buyerServiceFee': _computeBuyerServiceFeeAmount(subtotal: widget.totalPrice),
         'smallOrderFee': _computeSmallOrderFeeAmount(subtotal: widget.totalPrice),
         
+        // 🚚 PUDO LOCKER-TO-DOOR (auto routing) - if present
+        ...(_pendingPudo != null ? {
+          'deliveryMode': _pendingPudo!['mode'],
+          'pudoSize': _pendingPudo!['size'],
+          'pudoSpeed': _pendingPudo!['speed'],
+          'pudoFee': _pendingPudo!['fee'],
+          // locker selection can be added later when UI allows changing origin locker
+        } : {}),
+
         // 🚚 PAXI DELIVERY SPEED INFORMATION (for all orders)
         'paxiDeliverySpeed': _selectedPaxiDeliverySpeed,
         'paxiDeliverySpeedName': _selectedPaxiDeliverySpeed != null 

@@ -48,15 +48,19 @@ exports.onOrderStatusChange = functions.runWith({ timeoutSeconds: 60, memory: '2
         dispatched: 'Order dispatched',
         in_transit: 'Your order is on the way',
         ready_for_pickup: 'Ready for pickup',
+        locker_deposited: 'Parcel deposited at locker',
+        out_for_delivery: 'Out for delivery',
         delivered: 'Order delivered',
       };
       const bodies = {
         driver_assigned: `Driver ${(after.assignedDriver && after.assignedDriver.name) || ''} is assigned to your order.`,
         dispatched: 'Your order has left the store.',
         in_transit: 'Track your order for live updates.',
-        ready_for_pickup: after.pickupPointType === 'paxi'
+        ready_for_pickup: (after.pickupPointType === 'paxi' || after.deliveryMode === 'pudo_locker_to_door')
           ? 'Collect at PAXI counter with your order number and ID.'
           : 'Your order is ready for pickup.',
+        locker_deposited: 'Your parcel has been deposited at the locker.',
+        out_for_delivery: 'Courier is on the way to your address.',
         delivered: 'Enjoy! Please rate your experience.',
       };
 

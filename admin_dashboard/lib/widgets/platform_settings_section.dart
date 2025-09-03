@@ -36,6 +36,7 @@ class _PlatformSettingsSectionState extends State<PlatformSettingsSection> {
   bool _maintenanceMode = false;
   // Delivery/assignment controls
   bool _autoDriverAssignmentEnabled = false;
+  bool _autoPudoRoutingEnabled = false;
 
   @override
   void initState() {
@@ -65,6 +66,7 @@ class _PlatformSettingsSectionState extends State<PlatformSettingsSection> {
         _eftAccountNumberController.text = data['eftAccountNumber'] ?? '';
         _eftBranchCodeController.text = data['eftBranchCode'] ?? '';
         _autoDriverAssignmentEnabled = data['autoDriverAssignmentEnabled'] == true;
+        _autoPudoRoutingEnabled = data['autoPudoRoutingEnabled'] == true;
       });
     }
   }
@@ -83,6 +85,7 @@ class _PlatformSettingsSectionState extends State<PlatformSettingsSection> {
         'paxiVisible': _paxiVisible,
         'forcePudoDoorVisible': _forcePudoDoorVisible,
         'autoDriverAssignmentEnabled': _autoDriverAssignmentEnabled,
+        'autoPudoRoutingEnabled': _autoPudoRoutingEnabled,
         'eftAccountName': _eftAccountNameController.text.trim(),
         'eftBankName': _eftBankNameController.text.trim(),
         'eftAccountNumber': _eftAccountNumberController.text.trim(),
@@ -260,6 +263,16 @@ class _PlatformSettingsSectionState extends State<PlatformSettingsSection> {
                               title: const Text('Enable Auto Driver Assignment', softWrap: false, overflow: TextOverflow.ellipsis),
                               value: _autoDriverAssignmentEnabled,
                               onChanged: (v) => setState(() => _autoDriverAssignmentEnabled = v),
+                            ),
+                          ),
+                          SizedBox(
+                            width: 260,
+                            child: SwitchListTile(
+                              dense: true,
+                              contentPadding: EdgeInsets.zero,
+                              title: const Text('Enable Auto PUDO Routing', softWrap: false, overflow: TextOverflow.ellipsis),
+                              value: _autoPudoRoutingEnabled,
+                              onChanged: (v) => setState(() => _autoPudoRoutingEnabled = v),
                             ),
                           ),
                           SizedBox(
