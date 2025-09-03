@@ -91,7 +91,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   double? _smallOrderThreshold; // e.g., R100.00
   int? _deliveryTimeMinutes;
   String? _selectedPaymentMethod;
-  bool _isDelivery = true; // Default to delivery, user can change to pickup
+  bool _isDelivery = true; // Default; will auto-switch to pickup when delivery not allowed
   bool _deliveryAllowed = true; // Whether delivery is allowed by seller/platform settings
   String _storeAddress = ''; // Store address for pickup
   
@@ -3227,6 +3227,11 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       print('  - seller sellerDeliveryEnabled: ${seller['sellerDeliveryEnabled']}');
       print('  - platform platformDeliveryEnabled: $platformDeliveryEnabled');
       print('  - Final _deliveryAllowed: $_deliveryAllowed');
+
+      // If delivery is not allowed, ensure UI defaults to Pickup
+      if (!_deliveryAllowed && _isDelivery) {
+        _isDelivery = false;
+      }
 
       // Set kill switch based on platform config
       _enableAutoDriverAssignment = autoDriverAssignmentEnabled;
