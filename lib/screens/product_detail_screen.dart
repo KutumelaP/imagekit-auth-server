@@ -4,6 +4,9 @@ import '../widgets/safe_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
 import '../providers/cart_provider.dart';
+import '../services/subcategory_suggestions_service.dart';
+import '../services/category_normalizer.dart';
+import 'product_browsing_screen.dart';
 
 class ProductDetailScreen extends StatelessWidget {
   final Map<String, dynamic> product;
@@ -223,7 +226,63 @@ class ProductDetailScreen extends StatelessWidget {
                       ],
                   ),
 
-                        const SizedBox(height: 16),
+                        const SizedBox(height: 8),
+                  
+                  // Subcategory quick filter dropdown
+                  FutureBuilder<List<String>>(
+                    future: SubcategorySuggestionsService.fetchForCategory(
+                      CategoryNormalizer.normalizeCategory(product['category']?.toString() ?? ''),
+                    ),
+                    builder: (context, snapshot) {
+                      final List<String> base = [];
+                      final String cat = CategoryNormalizer.normalizeCategory(product['category']?.toString() ?? '');
+                      // Merge constants if available
+                      try {
+                        // AppConstants may have a categoryMap
+                        // ignore: unnecessary_cast
+                        final dynamic map = AppConstants.categoryMap;
+                        if (map is Map<String, List<String>> && map[cat] != null) {
+                          base.addAll(map[cat]!);
+                        }
+                      } catch (_) {}
+                      final List<String> saved = snapshot.data ?? [];
+                      final List<String> all = { ...base, ...saved }.toList()..sort((a,b)=>a.toLowerCase().compareTo(b.toLowerCase()));
+                      if (all.isEmpty) return const SizedBox.shrink();
+                      final String? current = product['subcategory']?.toString();
+                      return Padding(
+                        padding: const EdgeInsets.only(top: 8.0),
+                        child: InputDecorator(
+                          decoration: const InputDecoration(
+                            labelText: 'Explore more in this category',
+                            border: OutlineInputBorder(),
+                            contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                          ),
+                          child: DropdownButtonHideUnderline(
+                            child: DropdownButton<String>(
+                              isExpanded: true,
+                              value: all.contains(current) ? current : null,
+                              hint: const Text('Select subcategory'),
+                              items: all.map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(),
+                              onChanged: (value) {
+                                if (value == null) return;
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) => ProductBrowsingScreen(
+                                      categoryFilter: cat,
+                                      storeId: product['ownerId'] ?? product['sellerId'],
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+
+                  const SizedBox(height: 16),
 
                   // Category and Subcategory
                   Row(
