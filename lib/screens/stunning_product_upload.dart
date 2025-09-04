@@ -10,6 +10,7 @@ import 'package:http/http.dart' as http;
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:path/path.dart' as path;
 import '../theme/app_theme.dart';
+import '../services/category_normalizer.dart';
 import '../constants/app_constants.dart';
 
 class StunningProductUpload extends StatefulWidget {
@@ -532,7 +533,7 @@ class _StunningProductUploadState extends State<StunningProductUpload>
         'price': price,
         'quantity': quantity,
         'category': selectedCategory,
-        'subcategory': selectedSubcategory,
+        'subcategory': CategoryNormalizer.normalizeSubcategory(selectedSubcategory),
         'condition': selectedCondition,
         'imageUrl': imageUrl,
         'storeId': widget.storeId,

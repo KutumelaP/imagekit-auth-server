@@ -9,6 +9,7 @@ import 'package:path/path.dart' as path;
 import 'dart:io';
 import 'dart:convert';
 import '../theme/app_theme.dart';
+import '../services/category_normalizer.dart';
 
 class SmartProductUploadScreen extends StatefulWidget {
   final String? storeId;
@@ -487,7 +488,8 @@ class _SmartProductUploadScreenState extends State<SmartProductUploadScreen> {
       }
 
       // Create product data
-      final finalSubcategory = _isCustomSubcategory ? _customSubcategory!.trim() : _selectedSubcategory!.trim();
+      final finalSubcategoryRaw = _isCustomSubcategory ? _customSubcategory!.trim() : _selectedSubcategory!.trim();
+      final finalSubcategory = CategoryNormalizer.normalizeSubcategory(finalSubcategoryRaw);
       
       print('🔍 DEBUG: Uploading product with subcategory: $finalSubcategory');
       print('🔍 DEBUG: Is custom subcategory: $_isCustomSubcategory');

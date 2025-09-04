@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../services/category_normalizer.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -850,17 +851,20 @@ class _ProductBrowsingScreenState extends State<ProductBrowsingScreen>
         }
       }
       
-      // Apply category filter
+      // Apply category filter (canonical)
       if (widget.categoryFilter != null && widget.categoryFilter!.isNotEmpty) {
-        final productCategory = (data['category'] as String?) ?? '';
+        final productCategory = CategoryNormalizer.normalizeCategory((data['category'] as String?) ?? '');
         if (productCategory.toLowerCase() != widget.categoryFilter!.toLowerCase()) {
           return false;
         }
       }
       
-      // Apply subcategory filter
-      if (_filterSubcategory != null && data['subcategory'] != _filterSubcategory) {
-        return false;
+      // Apply subcategory filter (canonical)
+      if (_filterSubcategory != null) {
+        final productSub = CategoryNormalizer.normalizeSubcategory((data['subcategory'] as String?) ?? '');
+        if (productSub != _filterSubcategory) {
+          return false;
+        }
       }
       
       // Apply advanced filters

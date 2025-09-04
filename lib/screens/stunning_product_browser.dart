@@ -6,6 +6,7 @@ import '../theme/app_theme.dart';
 import '../widgets/safe_network_image.dart';
 import '../constants/app_constants.dart';
 import '../providers/cart_provider.dart';
+import '../services/category_normalizer.dart';
 import 'stunning_product_detail.dart';
 import 'package:flutter/services.dart';
 
@@ -126,14 +127,14 @@ class _StunningProductBrowserState extends State<StunningProductBrowser>
 
       final snapshot = await query.get();
       
-      // Process products and extract categories
+      // Process products and extract canonical categories/subcategories
       final Set<String> categorySet = <String>{};
       final Map<String, Set<String>> subcategorySet = <String, Set<String>>{};
       
       for (final doc in snapshot.docs) {
         final data = doc.data() as Map<String, dynamic>;
-        final category = data['category']?.toString();
-        final subcategory = data['subcategory']?.toString();
+        final category = CategoryNormalizer.normalizeCategory(data['category']?.toString());
+        final subcategory = CategoryNormalizer.normalizeSubcategory(data['subcategory']?.toString());
         
         if (category != null) {
           categorySet.add(category);
@@ -146,9 +147,9 @@ class _StunningProductBrowserState extends State<StunningProductBrowser>
 
       setState(() {
         products = snapshot.docs;
-        categories = categorySet.toList()..sort();
+        categories = CategoryNormalizer.canonicalizeList(categorySet);
         subcategoriesMap = subcategorySet.map(
-          (key, value) => MapEntry(key, value.toList()..sort()),
+          (key, value) => MapEntry(key, CategoryNormalizer.canonicalizeList(value)),
         );
         isLoading = false;
       });
@@ -172,17 +173,17 @@ class _StunningProductBrowserState extends State<StunningProductBrowser>
         }
       }
       
-      // Category filter
+      // Category filter (canonical)
       if (selectedCategory != 'All' && selectedCategory.isNotEmpty) {
-        final productCategory = (data['category'] as String?) ?? '';
+        final productCategory = CategoryNormalizer.normalizeCategory(data['category'] as String?);
         if (productCategory.toLowerCase() != selectedCategory.toLowerCase()) {
           return false;
         }
       }
       
-      // Subcategory filter
+      // Subcategory filter (canonical)
       if (selectedSubcategory != null && selectedSubcategory!.isNotEmpty) {
-        final productSubcategory = (data['subcategory'] as String?) ?? '';
+        final productSubcategory = CategoryNormalizer.normalizeSubcategory(data['subcategory'] as String?);
         if (productSubcategory.toLowerCase() != selectedSubcategory!.toLowerCase()) {
           return false;
         }
@@ -880,22 +881,42 @@ class _StunningProductBrowserState extends State<StunningProductBrowser>
             
             // Price Range
             Text('Price Range', style: AppTheme.titleMedium),
-            RangeSlider(
-              values: RangeValues(minPrice, maxPrice),
-              min: 0,
-              max: 10000,
-              divisions: 100,
-              labels: RangeLabels(
-                'R${minPrice.toStringAsFixed(0)}',
-                'R${maxPrice.toStringAsFixed(0)}',
-              ),
-              onChanged: (values) {
+            Builder(builder: (context) {
+              // Clamp to slider bounds and enforce start <= end to avoid assertion errors
+              double clampedMin = minPrice.isFinite ? minPrice.clamp(0.0, 10000.0) : 0.0;
+              double clampedMax = maxPrice.isFinite ? maxPrice.clamp(0.0, 10000.0) : 10000.0;
+              if (clampedMax < clampedMin) {
+                final tmp = clampedMin;
+                clampedMin = clampedMax;
+                clampedMax = tmp;
+              }
+              // Keep state in sync with clamped values
+              if (clampedMin != minPrice || clampedMax != maxPrice) {
                 setState(() {
-                  minPrice = values.start;
-                  maxPrice = values.end;
+                  minPrice = clampedMin;
+                  maxPrice = clampedMax;
                 });
-              },
-            ),
+              }
+              return RangeSlider(
+                values: RangeValues(clampedMin, clampedMax),
+                min: 0,
+                max: 10000,
+                divisions: 100,
+                labels: RangeLabels(
+                  'R${clampedMin.toStringAsFixed(0)}',
+                  'R${clampedMax.toStringAsFixed(0)}',
+                ),
+                onChanged: (values) {
+                  double start = values.start.clamp(0.0, 10000.0);
+                  double end = values.end.clamp(0.0, 10000.0);
+                  if (end < start) end = start;
+                  setState(() {
+                    minPrice = start;
+                    maxPrice = end;
+                  });
+                },
+              );
+            }),
             
             const SizedBox(height: 20),
             
