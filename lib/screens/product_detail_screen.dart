@@ -284,8 +284,10 @@ class ProductDetailScreen extends StatelessWidget {
 
                   const SizedBox(height: 16),
 
-                  // Category and Subcategory
-                  Row(
+                  // Category and Subcategory (wrap to avoid overflow)
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
                     children: [
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -301,7 +303,6 @@ class ProductDetailScreen extends StatelessWidget {
                           ),
                         ),
                       ),
-                      const SizedBox(width: 8),
                       if (product['subcategory'] != null)
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
