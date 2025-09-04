@@ -396,8 +396,11 @@ class _StunningProductDetailState extends State<StunningProductDetail>
         
         const SizedBox(height: 8),
         
-        // Category and Stock Row
-        Row(
+        // Category and Stock - wrap to avoid overflow on narrow screens
+        Wrap(
+          spacing: 12,
+          runSpacing: 8,
+          crossAxisAlignment: WrapCrossAlignment.center,
           children: [
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -413,13 +416,8 @@ class _StunningProductDetailState extends State<StunningProductDetail>
                 ),
               ),
             ),
-            
-            const SizedBox(width: 12),
-            
             _buildConditionBadge(),
-            
-            const SizedBox(width: 12),
-            
+
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               decoration: BoxDecoration(
