@@ -9,6 +9,7 @@ import 'package:path/path.dart' as path;
 import 'dart:io';
 import 'dart:convert';
 import '../theme/app_theme.dart';
+import '../services/subcategory_suggestions_service.dart';
 import '../services/category_normalizer.dart';
 
 class SmartProductUploadScreen extends StatefulWidget {
@@ -32,6 +33,7 @@ class _SmartProductUploadScreenState extends State<SmartProductUploadScreen> {
   
   String? _suggestedCategory;
   String? _suggestedSubcategory;
+  List<String> _savedSuggestions = [];
   String? _selectedCategory;
   String? _selectedSubcategory;
   String? _customSubcategory;
@@ -534,6 +536,11 @@ class _SmartProductUploadScreenState extends State<SmartProductUploadScreen> {
       
       print('🔍 DEBUG: Product saved successfully with ID: ${docRef.id}');
 
+      // Persist custom subcategory to suggestions for future use
+      if (_isCustomSubcategory && _selectedCategory != null) {
+        await SubcategorySuggestionsService.addSuggestion(_selectedCategory!, finalSubcategory);
+      }
+
       if (mounted) {
         String successMessage = 'Product uploaded successfully!';
         if (_isCustomSubcategory) {
@@ -718,12 +725,14 @@ class _SmartProductUploadScreenState extends State<SmartProductUploadScreen> {
                     child: Text(category),
                   );
                 }).toList(),
-                onChanged: (value) {
+                onChanged: (value) async {
                   if (value != null) {
                     setState(() {
                       _selectedCategory = value;
                       _selectedSubcategory = null; // Reset subcategory
                     });
+                    final list = await SubcategorySuggestionsService.fetchForCategory(value);
+                    if (mounted) setState(() => _savedSuggestions = list);
                   }
                 },
                 validator: (value) {
@@ -764,7 +773,7 @@ class _SmartProductUploadScreenState extends State<SmartProductUploadScreen> {
                         value: null,
                         child: Text('Select subcategory...'),
                       ),
-                      ...getSubcategoriesForCategory(_selectedCategory!).map((subcategory) {
+                      ...{...getSubcategoriesForCategory(_selectedCategory!), ..._savedSuggestions}.map((subcategory) {
                         return DropdownMenuItem(
                           value: subcategory,
                           child: Text(subcategory),

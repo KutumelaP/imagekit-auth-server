@@ -12,6 +12,7 @@ import 'package:path/path.dart' as path;
 import '../theme/app_theme.dart';
 import '../services/category_normalizer.dart';
 import '../constants/app_constants.dart';
+import '../services/subcategory_suggestions_service.dart';
 
 class StunningProductUpload extends StatefulWidget {
   final String storeId;
@@ -547,6 +548,11 @@ class _StunningProductUploadState extends State<StunningProductUpload>
       await FirebaseFirestore.instance
           .collection(AppConstants.productsCollection)
           .add(productData);
+
+      // Save custom subcategory into suggestions list for this category
+      if (_subcategoryController.text.trim().isNotEmpty) {
+        await SubcategorySuggestionsService.addSuggestion(selectedCategory, _subcategoryController.text.trim());
+      }
 
       setState(() {
         isUploading = false;
