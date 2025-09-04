@@ -7,6 +7,7 @@ import '../providers/cart_provider.dart';
 import '../services/subcategory_suggestions_service.dart';
 import '../services/category_normalizer.dart';
 import 'product_browsing_screen.dart';
+import '../constants/app_constants.dart';
 
 class ProductDetailScreen extends StatelessWidget {
   final Map<String, dynamic> product;
