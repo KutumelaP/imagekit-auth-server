@@ -13,6 +13,7 @@ import '../theme/app_theme.dart';
 import '../services/category_normalizer.dart';
 import '../constants/app_constants.dart';
 import '../services/subcategory_suggestions_service.dart';
+import '../services/subcategory_suggestions_service.dart';
 
 class StunningProductUpload extends StatefulWidget {
   final String storeId;
@@ -104,6 +105,7 @@ class _StunningProductUploadState extends State<StunningProductUpload>
   // State Variables
   String selectedCategory = 'Food';
   String selectedSubcategory = 'Baked Goods';
+  List<String> _savedSuggestions = [];
   String selectedCondition = 'New'; // New, Second Hand, Refurbished
   bool _categoryLocked = false; // lock category if loaded from store
   File? selectedImage;
@@ -135,7 +137,13 @@ class _StunningProductUploadState extends State<StunningProductUpload>
       if (mounted) {
         setState(() {});
       }
+      _loadSavedSubcategories();
     });
+  }
+
+  Future<void> _loadSavedSubcategories() async {
+    final list = await SubcategorySuggestionsService.fetchForCategory(selectedCategory);
+    if (mounted) setState(() => _savedSuggestions = list);
   }
 
   // Load store category from store registration
@@ -1211,13 +1219,14 @@ class _StunningProductUploadState extends State<StunningProductUpload>
                 label: 'Category',
                 icon: Icons.category,
                 items: AppConstants.categories,
-                onChanged: (value) {
+                onChanged: (value) async {
                   if (value != null) {
                     setState(() {
                       selectedCategory = value;
                       selectedSubcategory = AppConstants.categoryMap[value]?.first ?? 'Other';
                       _subcategoryController.text = selectedSubcategory;
                     });
+                    await _loadSavedSubcategories();
                   }
                 },
                 validator: (value) {
@@ -1250,8 +1259,8 @@ class _StunningProductUploadState extends State<StunningProductUpload>
             
             const SizedBox(height: 16),
             
-            // Suggested subcategories based on category
-            if (AppConstants.categoryMap[selectedCategory] != null) ...[
+            // Suggested subcategories based on category + saved suggestions
+            if (AppConstants.categoryMap[selectedCategory] != null || _savedSuggestions.isNotEmpty) ...[
               Text(
                 'Suggested subcategories:',
                 style: AppTheme.bodyMedium.copyWith(
@@ -1263,7 +1272,10 @@ class _StunningProductUploadState extends State<StunningProductUpload>
               Wrap(
                 spacing: 8,
                 runSpacing: 8,
-                children: AppConstants.categoryMap[selectedCategory]!
+                children: ([
+                  ...?AppConstants.categoryMap[selectedCategory],
+                  ..._savedSuggestions
+                ]).toSet().toList()
                     .map((subcategory) => GestureDetector(
                           onTap: () {
                             setState(() {
