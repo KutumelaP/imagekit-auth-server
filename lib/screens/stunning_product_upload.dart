@@ -542,7 +542,7 @@ class _StunningProductUploadState extends State<StunningProductUpload>
         'price': price,
         'quantity': quantity,
         'category': selectedCategory,
-        'subcategory': CategoryNormalizer.normalizeSubcategory(selectedSubcategory),
+        'subcategory': selectedSubcategory,
         'condition': selectedCondition,
         'imageUrl': imageUrl,
         'storeId': widget.storeId,

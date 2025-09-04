@@ -6,7 +6,7 @@ import '../theme/app_theme.dart';
 import '../widgets/safe_network_image.dart';
 import '../constants/app_constants.dart';
 import '../providers/cart_provider.dart';
-import '../services/category_normalizer.dart';
+// Removed normalizer usage; use raw values
 import 'stunning_product_detail.dart';
 import 'package:flutter/services.dart';
 
@@ -133,8 +133,8 @@ class _StunningProductBrowserState extends State<StunningProductBrowser>
       
       for (final doc in snapshot.docs) {
         final data = doc.data() as Map<String, dynamic>;
-        final category = CategoryNormalizer.normalizeCategory(data['category']?.toString());
-        final subcategory = CategoryNormalizer.normalizeSubcategory(data['subcategory']?.toString());
+        final category = data['category']?.toString();
+        final subcategory = data['subcategory']?.toString();
         
         if (category != null) {
           categorySet.add(category);
@@ -147,9 +147,9 @@ class _StunningProductBrowserState extends State<StunningProductBrowser>
 
       setState(() {
         products = snapshot.docs;
-        categories = CategoryNormalizer.canonicalizeList(categorySet);
+        categories = categorySet.toList()..sort((a,b)=>a.toLowerCase().compareTo(b.toLowerCase()));
         subcategoriesMap = subcategorySet.map(
-          (key, value) => MapEntry(key, CategoryNormalizer.canonicalizeList(value)),
+          (key, value) => MapEntry(key, value.toList()..sort((a,b)=>a.toLowerCase().compareTo(b.toLowerCase()))),
         );
         isLoading = false;
       });
@@ -175,7 +175,7 @@ class _StunningProductBrowserState extends State<StunningProductBrowser>
       
       // Category filter (canonical)
       if (selectedCategory != 'All' && selectedCategory.isNotEmpty) {
-        final productCategory = CategoryNormalizer.normalizeCategory(data['category'] as String?);
+        final productCategory = (data['category'] as String?) ?? '';
         if (productCategory.toLowerCase() != selectedCategory.toLowerCase()) {
           return false;
         }
@@ -183,7 +183,7 @@ class _StunningProductBrowserState extends State<StunningProductBrowser>
       
       // Subcategory filter (canonical)
       if (selectedSubcategory != null && selectedSubcategory!.isNotEmpty) {
-        final productSubcategory = CategoryNormalizer.normalizeSubcategory(data['subcategory'] as String?);
+        final productSubcategory = (data['subcategory'] as String?) ?? '';
         if (productSubcategory.toLowerCase() != selectedSubcategory!.toLowerCase()) {
           return false;
         }
