@@ -849,7 +849,7 @@ class _StunningProductBrowserState extends State<StunningProductBrowser>
       ),
       padding: const EdgeInsets.all(20),
       child: StatefulBuilder(
-        builder: (context, setState) => Column(
+        builder: (context, setState) => SingleChildScrollView(child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -889,13 +889,6 @@ class _StunningProductBrowserState extends State<StunningProductBrowser>
                 final tmp = clampedMin;
                 clampedMin = clampedMax;
                 clampedMax = tmp;
-              }
-              // Keep state in sync with clamped values
-              if (clampedMin != minPrice || clampedMax != maxPrice) {
-                setState(() {
-                  minPrice = clampedMin;
-                  maxPrice = clampedMax;
-                });
               }
               return RangeSlider(
                 values: RangeValues(clampedMin, clampedMax),
@@ -950,7 +943,7 @@ class _StunningProductBrowserState extends State<StunningProductBrowser>
               ),
             ),
           ],
-        ),
+        )),
       ),
     );
   }
