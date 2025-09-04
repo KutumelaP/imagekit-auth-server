@@ -409,6 +409,9 @@ class _StunningProductBrowserState extends State<StunningProductBrowser>
             
             // Category Chips
             if (categories.isNotEmpty) _buildCategoryChips(),
+            // Subcategory Chips (only when a category is selected)
+            if (selectedCategory != 'All' && (subcategoriesMap[selectedCategory]?.isNotEmpty == true))
+              _buildSubcategoryChips(),
             
             // Sort and Filter Row
             Row(
@@ -437,6 +440,48 @@ class _StunningProductBrowserState extends State<StunningProductBrowser>
             selectedCategory == category,
           )),
         ],
+      ),
+    );
+  }
+
+  Widget _buildSubcategoryChips() {
+    final List<String> subs = subcategoriesMap[selectedCategory] ?? const [];
+    if (subs.isEmpty) return const SizedBox.shrink();
+    return Container(
+      height: 46,
+      margin: const EdgeInsets.only(bottom: 16),
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        children: [
+          _buildSubcategoryChip('All', selectedSubcategory == null || selectedSubcategory!.isEmpty),
+          ...subs.map((sub) => _buildSubcategoryChip(sub, selectedSubcategory == sub)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSubcategoryChip(String label, bool isSelected) {
+    return Container(
+      margin: const EdgeInsets.only(right: 8),
+      child: FilterChip(
+        label: Text(label),
+        selected: isSelected,
+        onSelected: (selected) {
+          setState(() {
+            selectedSubcategory = (label == 'All') ? null : label;
+          });
+          _loadProducts();
+        },
+        backgroundColor: Colors.white,
+        selectedColor: AppTheme.deepTeal,
+        labelStyle: TextStyle(
+          color: isSelected ? Colors.white : AppTheme.deepTeal,
+          fontWeight: FontWeight.w500,
+        ),
+        side: BorderSide(color: AppTheme.cloud),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
       ),
     );
   }
