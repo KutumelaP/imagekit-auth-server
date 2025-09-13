@@ -6,10 +6,10 @@ import 'dart:convert';
 import '../firebase_options.dart';
 import 'awesome_notification_service.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:marketplace_app/utils/web_env.dart';
+import 'package:naymarket/utils/web_env.dart';
 import 'package:http/http.dart' as http;
-import 'package:marketplace_app/utils/web_js_stub.dart'
-    if (dart.library.html) 'package:marketplace_app/utils/web_js_real.dart' as js;
+import 'package:naymarket/utils/web_js_stub.dart'
+    if (dart.library.html) 'package:naymarket/utils/web_js_real.dart' as js;
 
 class FCMConfigService {
   static final FCMConfigService _instance = FCMConfigService._internal();

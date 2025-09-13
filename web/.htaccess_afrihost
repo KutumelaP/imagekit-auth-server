@@ -1,19 +1,26 @@
 # 🚀 Afrihost-Optimized .htaccess for Flutter PWA
 # This file is optimized for Afrihost hosting with enhanced performance
 
-# Enable URL rewriting for SPA routing
+# Enable URL rewriting for SPA routing and API proxies
 <IfModule mod_rewrite.c>
     RewriteEngine On
-    
-    # Handle Angular/React/Flutter routing - redirect all requests to index.html
+
+    # --- API proxy endpoints under your domain (/api/*) ---
+    # Map clean paths to PHP proxies you will upload to public_html/api/
+    RewriteRule ^api/payfastReturn$ api/payfastReturn.php [L]
+    RewriteRule ^api/payfastCancel$ api/payfastCancel.php [L]
+    RewriteRule ^api/payfastNotify$ api/payfastNotify.php [L]
+    RewriteRule ^api/payfastFormRedirect$ api/payfastFormRedirect.php [L]
+
+    # Handle Flutter SPA routing – redirect all non-file, non-dir paths to index.html
     RewriteCond %{REQUEST_FILENAME} !-f
     RewriteCond %{REQUEST_FILENAME} !-d
     RewriteRule ^(.*)$ index.html [QSA,L]
-    
+
     # Force HTTPS (uncomment if you have SSL)
     # RewriteCond %{HTTPS} off
     # RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
-    
+
     # Remove trailing slashes
     RewriteCond %{REQUEST_FILENAME} !-d
     RewriteCond %{THE_REQUEST} /+[^?\s]*[?\s]

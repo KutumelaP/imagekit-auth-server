@@ -92,8 +92,11 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
   bool _pudoEnabled = false;
   String _pudoDefaultSize = 'm';
   String _pudoDefaultSpeed = 'standard';
-  final TextEditingController _pudoLockerNameController = TextEditingController();
-  final TextEditingController _pudoLockerAddressController = TextEditingController();
+  final TextEditingController _pudoAccountNumberController = TextEditingController();
+  final TextEditingController _pudoBusinessNameController = TextEditingController();
+  final TextEditingController _pudoContactPersonController = TextEditingController();
+  final TextEditingController _pudoContactPhoneController = TextEditingController();
+  String? _selectedPudoLocker;
 
   Widget _buildDropdown({required String label, required String value, required List<String> items, required ValueChanged<String?> onChanged}) {
     return InputDecorator(
@@ -1199,7 +1202,7 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
 
         // Show store link and QR so seller can advertise immediately
         final storeId = user.uid;
-        final base = const String.fromEnvironment('PUBLIC_BASE_URL', defaultValue: 'https://marketplace-8d6bd.web.app');
+        final base = const String.fromEnvironment('PUBLIC_BASE_URL', defaultValue: 'https://omniasa.co.za');
         final storeUrl = '$base/store/$storeId';
         if (!mounted) return;
         await showDialog(
@@ -2222,8 +2225,8 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
                             ]),
                             const SizedBox(height: 8),
                             SwitchListTile(
-                              title: const Text('Use PUDO (prepaid wallet)'),
-                              subtitle: const Text('You book via PUDO app; we reimburse shipping if buyer is charged. If both Offer Delivery and PUDO are enabled and the platform has Smart PUDO routing ON, eligible home deliveries may be routed to PUDO locker‑to‑door automatically.'),
+                              title: const Text('Use PUDO Locker-to-Door'),
+                              subtitle: const Text('Drop parcels at PUDO locker, The Courier Guy delivers to customer\'s door. Requires PUDO account with prepaid wallet. Perfect for areas beyond your delivery range.'),
                               value: _pudoEnabled,
                               onChanged: (v) => setState(() => _pudoEnabled = v),
                               activeColor: AppTheme.primaryGreen,
@@ -2248,13 +2251,62 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
                               ]),
                               const SizedBox(height: 8),
                               TextField(
-                                controller: _pudoLockerNameController,
-                                decoration: const InputDecoration(labelText: 'Default Locker Name (optional)', border: OutlineInputBorder()),
+                                controller: _pudoAccountNumberController,
+                                decoration: const InputDecoration(
+                                  labelText: 'PUDO Account Number *', 
+                                  border: OutlineInputBorder(),
+                                  hintText: 'Your PUDO account number'
+                                ),
                               ),
                               const SizedBox(height: 8),
                               TextField(
-                                controller: _pudoLockerAddressController,
-                                decoration: const InputDecoration(labelText: 'Default Locker Address (optional)', border: OutlineInputBorder()),
+                                controller: _pudoBusinessNameController,
+                                decoration: const InputDecoration(
+                                  labelText: 'Business Name on PUDO Account *', 
+                                  border: OutlineInputBorder(),
+                                  hintText: 'Must match PUDO registration'
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Row(children: [
+                                Expanded(child: TextField(
+                                  controller: _pudoContactPersonController,
+                                  decoration: const InputDecoration(
+                                    labelText: 'Contact Person', 
+                                    border: OutlineInputBorder()
+                                  ),
+                                )),
+                                const SizedBox(width: 8),
+                                Expanded(child: TextField(
+                                  controller: _pudoContactPhoneController,
+                                  decoration: const InputDecoration(
+                                    labelText: 'Contact Phone', 
+                                    border: OutlineInputBorder()
+                                  ),
+                                  keyboardType: TextInputType.phone,
+                                )),
+                              ]),
+                              const SizedBox(height: 12),
+                              Container(
+                                padding: EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: Colors.blue.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(color: Colors.blue.withOpacity(0.3)),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(children: [
+                                      Icon(Icons.info_outline, color: Colors.blue, size: 20),
+                                      SizedBox(width: 8),
+                                      Text('PUDO Process', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blue[700])),
+                                    ]),
+                                    SizedBox(height: 8),
+                                    Text('1. Customer orders & pays\n2. You get order details with delivery address\n3. You create PUDO booking via PUDO app\n4. You drop parcel at PUDO locker with your booking code\n5. The Courier Guy delivers to customer\'s door\n6. You get reimbursed for PUDO costs', 
+                                      style: TextStyle(fontSize: 13, color: Colors.blue[600])),
+                                  ],
+                                ),
                               ),
                             ],
                           ],

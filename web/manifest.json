@@ -1,6 +1,6 @@
 {
-    "name": "Mzansi Marketplace",
-    "short_name": "Mzansi",
+    "name": "OmniaSA",
+    "short_name": "OmniaSA",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#1F4654",
@@ -15,7 +15,7 @@
     "launch_handler": {
         "client_mode": "focus-existing"
     },
-    "id": "mzansi-marketplace-pwa",
+    "id": "omniasa-pwa",
     "edge_side_panel": {
         "preferred_width": 400
     },

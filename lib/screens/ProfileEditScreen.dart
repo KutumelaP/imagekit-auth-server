@@ -1799,6 +1799,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                       controller: _locationController,
                       labelText: 'Store Location',
                     ),
+                    const SizedBox(height: 16),
                     _buildThemedTextField(
                       controller: _addressLine1Controller,
                       labelText: 'Address Line 1',

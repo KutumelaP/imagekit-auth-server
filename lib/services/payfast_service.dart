@@ -14,18 +14,21 @@ class PayFastService {
   
   static bool _isProduction = true; // production mode as requested
 
-  // Callback URLs (updated to your deployed Cloud Functions URLs)
-  // Note: We'll append order ID to return URL dynamically
-  static String get returnUrl => 'https://us-central1-marketplace-8d6bd.cloudfunctions.net/payfastReturn';
-  static String cancelUrl = 'https://us-central1-marketplace-8d6bd.cloudfunctions.net/payfastCancel';
-  static String notifyUrl = 'https://us-central1-marketplace-8d6bd.cloudfunctions.net/payfastNotify';
+  // Afrihost-hosted PayFast endpoints (PHP) - using apex domain for reliability
+  static const String _afrihostBase = 'https://omniasa.co.za';
+  
+  // Callback URLs (append order ID to return URL dynamically as needed)
+  static String get returnUrl => '$_afrihostBase/payfastReturn.php';
+  static String cancelUrl = '$_afrihostBase/payfastCancel.php';
+  static String notifyUrl = '$_afrihostBase/payfastNotify.php';
 
   static void setProductionMode(bool isProduction) {
     _isProduction = isProduction;
   }
 
-  static String get _baseUrl => _isProduction ? _liveUrl : _sandboxUrl;
-  static String get formRedirectUrl => 'https://us-central1-marketplace-8d6bd.cloudfunctions.net/payfastFormRedirect';
+  static String get formRedirectUrl => '$_afrihostBase/payfastFormRedirect.php';
+  static String get returnPath => 'payfastReturn.php';
+  static String get cancelPath => 'payfastCancel.php';
   
   // Public getters for merchant credentials
   static String get merchantId => _isProduction ? _merchantId : '10000100';
@@ -95,13 +98,7 @@ class PayFastService {
       // Note: m_payment_id removed as it can cause signature validation issues
       // PayFast will generate their own payment ID
 
-      // When using Cloud Function, don't generate signature - let server handle it
-      // This prevents double signature generation issues
-      String? signature;
-      if (_passphrase.isNotEmpty && false) { // Disabled for Cloud Function usage
-        signature = _generateSignature(paymentData);
-        paymentData['signature'] = signature;
-      }
+      // Signature handled server-side by Cloud Function; do not include here
 
       // Use hosted form redirect (POST) to avoid gateway 500s on long GET URLs
       final redirectParams = Map<String, String>.from(paymentData);
@@ -110,8 +107,8 @@ class PayFastService {
         'success': true,
         'paymentUrl': formRedirectUrl,
         'paymentData': redirectParams,
-        'signature': 'server_generated', // Indicate server will generate signature
-        'httpMethod': 'POST', // Indicate this should be a POST request
+        'signature': 'server_generated',
+        'httpMethod': 'POST',
       };
     } catch (e) {
       return {

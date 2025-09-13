@@ -130,6 +130,13 @@ class OrderDetailScreen extends StatelessWidget {
                         if (pickupType != null)
                           _buildDetailRow('Pickup Type', pickupType == 'local_store' ? 'Store pickup' : pickupType.toUpperCase()),
                       ],
+                      // PUDO Locker-to-Door Details
+                      if (order['fulfillment']?['pudoDeliveryDetails'] != null) ...[
+                        const SizedBox(height: 12),
+                        Text('PUDO Locker-to-Door Details', style: AppTheme.headlineMedium),
+                        const SizedBox(height: 8),
+                        _buildPudoDeliveryDetails(order['fulfillment']['pudoDeliveryDetails']),
+                      ],
                     ],
                   ),
                 ),
@@ -293,6 +300,134 @@ class OrderDetailScreen extends StatelessWidget {
       case 'cancelled': return Icons.cancel;
       default: return Icons.help_outline;
     }
+  }
+
+  Widget _buildPudoDeliveryDetails(Map<String, dynamic> pudoDetails) {
+    final deliveryAddress = pudoDetails['deliveryAddress'] as Map<String, dynamic>?;
+    final deliveryPhone = pudoDetails['deliveryPhone'] as String?;
+    
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppTheme.info.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: AppTheme.info.withOpacity(0.3),
+          width: 1,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                Icons.local_shipping,
+                color: AppTheme.info,
+                size: 20,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'Locker-to-Door Service',
+                style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  color: AppTheme.info,
+                  fontSize: 16,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          
+          if (deliveryAddress != null) ...[
+            _buildDetailRow(
+              'Final Delivery Address',
+              deliveryAddress['title'] ?? deliveryAddress['label'] ?? 'Address not available',
+            ),
+            if (deliveryAddress['street'] != null)
+              _buildDetailRow('Street', '${deliveryAddress['houseNumber'] ?? ''} ${deliveryAddress['street']}'),
+            if (deliveryAddress['city'] != null)
+              _buildDetailRow('City', deliveryAddress['city']),
+            if (deliveryAddress['postalCode'] != null)
+              _buildDetailRow('Postal Code', deliveryAddress['postalCode']),
+          ],
+          
+          if (deliveryPhone != null && deliveryPhone.isNotEmpty)
+            _buildDetailRow('Delivery Contact', deliveryPhone),
+          
+          const SizedBox(height: 8),
+          
+          // Process explanation
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: AppTheme.angel,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: AppTheme.info.withOpacity(0.2),
+                width: 1,
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Delivery Process:',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: AppTheme.info,
+                    fontSize: 14,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                _buildProcessStep('1', 'Seller drops at PUDO locker'),
+                _buildProcessStep('2', 'PUDO collects from locker'),
+                _buildProcessStep('3', 'PUDO delivers to your address'),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildProcessStep(String number, String description) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        children: [
+          Container(
+            width: 18,
+            height: 18,
+            decoration: BoxDecoration(
+              color: AppTheme.info,
+              borderRadius: BorderRadius.circular(9),
+            ),
+            child: Center(
+              child: Text(
+                number,
+                style: TextStyle(
+                  color: AppTheme.angel,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              description,
+              style: TextStyle(
+                color: AppTheme.info,
+                fontSize: 12,
+                fontWeight: FontWeight.w400,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 

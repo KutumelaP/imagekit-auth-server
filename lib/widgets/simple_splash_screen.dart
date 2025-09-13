@@ -116,7 +116,7 @@ class _SimpleSplashScreenState extends State<SimpleSplashScreen>
                     child: Column(
                       children: [
                         Text(
-                          'Mzansi',
+                          'OmniaSA',
                           style: GoogleFonts.poppins(
                             fontSize: 36,
                             fontWeight: FontWeight.bold,

@@ -496,7 +496,7 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
             ),
             const SizedBox(height: 32),
             const Text(
-              'Mzansi Marketplace',
+              'OmniaSA',
               style: TextStyle(
                 fontSize: 28,
                 fontWeight: FontWeight.bold,
@@ -842,7 +842,7 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
         ),
         const Expanded(
           child: Text(
-            'Mzansi Marketplace',
+            'OmniaSA',
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),

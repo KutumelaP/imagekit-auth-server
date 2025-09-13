@@ -26,6 +26,22 @@
         "destination": "/admin_dashboard/index.html"
       },
       {
+        "source": "/api/payfastFormRedirect",
+        "function": "payfastFormRedirect"
+      },
+      {
+        "source": "/api/payfastReturn",
+        "function": "payfastReturn"
+      },
+      {
+        "source": "/api/payfastCancel",
+        "function": "payfastCancel"
+      },
+      {
+        "source": "/api/payfastNotify",
+        "function": "payfastNotify"
+      },
+      {
         "source": "**",
         "destination": "/index.html"
       }

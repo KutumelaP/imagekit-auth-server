@@ -1,6 +1,6 @@
 class AppConstants {
   // App Information
-  static const String appName = 'Mzansi Marketplace';
+  static const String appName = 'OmniaSA';
   static const String appVersion = '1.0.0';
   
   // Image Configuration

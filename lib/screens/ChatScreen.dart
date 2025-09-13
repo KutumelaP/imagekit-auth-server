@@ -168,32 +168,37 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  // Mark messages as read
+  // Mark messages as read (scan recent messages to avoid Firestore whereIn limits)
   Future<void> _markMessagesAsRead(String currentUserId) async {
     try {
       print('🔔 Marking messages as read for user: $currentUserId');
       
-      // Get all messages from the other user that are not read
+      // Fetch recent messages and update those from the other user that aren't read yet
       final messagesQuery = await FirebaseFirestore.instance
           .collection('chats')
           .doc(widget.chatId)
           .collection('messages')
-          .where('senderId', isNotEqualTo: currentUserId)
-          .where('status', whereIn: ['sent', 'delivered'])
+          .orderBy('timestamp', descending: true)
+          .limit(200)
           .get();
 
       if (messagesQuery.docs.isNotEmpty) {
         final batch = FirebaseFirestore.instance.batch();
         
         for (final doc in messagesQuery.docs) {
-          batch.update(doc.reference, {
-            'status': 'read',
-            'readAt': FieldValue.serverTimestamp(),
-          });
+          final data = doc.data() as Map<String, dynamic>;
+          final senderId = data['senderId'] as String?;
+          final status = (data['status'] as String?) ?? 'sent';
+          if (senderId != null && senderId != currentUserId && (status == 'sent' || status == 'delivered')) {
+            batch.update(doc.reference, {
+              'status': 'read',
+              'readAt': FieldValue.serverTimestamp(),
+            });
+          }
         }
         
         await batch.commit();
-        print('🔔 Marked ${messagesQuery.docs.length} messages as read');
+        print('🔔 Marked messages as read where applicable');
       }
     } catch (e) {
       print('❌ Error marking messages as read: $e');
@@ -339,21 +344,19 @@ class _ChatScreenState extends State<ChatScreen> {
                 if (lastBuyerTs != null) {
                   final buyerTs = lastBuyerTs.toDate();
                   final sellerTs = DateTime.now();
-                  if (buyerTs != null) {
-                    final deltaMinutes = sellerTs.difference(buyerTs).inMinutes;
-                    final userRef = FirebaseFirestore.instance.collection('users').doc(sellerId);
-                    print('🧭 ResponseTime: deltaMinutes=$deltaMinutes — updating rolling average at users/$sellerId');
-                    try {
-                      await FirebaseFirestore.instance.runTransaction((tx) async {
-                        final snap = await tx.get(userRef);
-                        final existing = (snap.data()?['avgResponseMinutes'] as num?)?.toDouble();
-                        final newAvg = existing == null ? deltaMinutes.toDouble() : ((existing * 4 + deltaMinutes) / 5);
-                        tx.update(userRef, {'avgResponseMinutes': newAvg.round()});
-                      });
-                      print('🧭 ResponseTime: avgResponseMinutes write OK');
-                    } catch (e) {
-                      print('❌ ResponseTime: failed to write avgResponseMinutes for $sellerId — $e');
-                    }
+                  final deltaMinutes = sellerTs.difference(buyerTs).inMinutes;
+                  final userRef = FirebaseFirestore.instance.collection('users').doc(sellerId);
+                  print('🧭 ResponseTime: deltaMinutes=$deltaMinutes — updating rolling average at users/$sellerId');
+                  try {
+                    await FirebaseFirestore.instance.runTransaction((tx) async {
+                      final snap = await tx.get(userRef);
+                      final existing = (snap.data()?['avgResponseMinutes'] as num?)?.toDouble();
+                      final newAvg = existing == null ? deltaMinutes.toDouble() : ((existing * 4 + deltaMinutes) / 5);
+                      tx.update(userRef, {'avgResponseMinutes': newAvg.round()});
+                    });
+                    print('🧭 ResponseTime: avgResponseMinutes write OK');
+                  } catch (e) {
+                    print('❌ ResponseTime: failed to write avgResponseMinutes for $sellerId — $e');
                   }
                 } else {
                   print('🧭 ResponseTime: no prior buyer message found in last 50; skipping update');

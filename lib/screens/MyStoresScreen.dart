@@ -354,9 +354,9 @@ class _MyStoresScreenState extends State<MyStoresScreen> {
 	}
 
 	Future<void> _shareStore(String storeId, String storeName) async {
-		    final base = const String.fromEnvironment('PUBLIC_BASE_URL', defaultValue: 'https://marketplace-8d6bd.web.app');
+		    final base = const String.fromEnvironment('PUBLIC_BASE_URL', defaultValue: 'https://omniasa.co.za');
 		final url = '$base/store/$storeId';
-		await Share.share('Check out $storeName on Mzansi Marketplace\n$url');
+		await Share.share('Check out $storeName on OmniaSA\n$url');
 	}
 
 	Future<void> _openWhatsApp(String? contact, String storeName) async {
@@ -370,7 +370,7 @@ class _MyStoresScreenState extends State<MyStoresScreen> {
 			phone = '+27$phone';
 		}
 		final digits = phone.replaceAll('+', '');
-		final msg = 'Hi $storeName, I found your store on Mzansi Marketplace and would like to chat.';
+		final msg = 'Hi $storeName, I found your store on OmniaSA and would like to chat.';
 		final native = Uri.parse('whatsapp://send?phone=$digits&text=${Uri.encodeComponent(msg)}');
 		if (await canLaunchUrl(native)) {
 			final ok = await launchUrl(native, mode: LaunchMode.externalNonBrowserApplication);

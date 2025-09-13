@@ -43,6 +43,7 @@ exports.onOrderStatusChange = functions.runWith({ timeoutSeconds: 60, memory: '2
       const curr = String(after.status || '').toLowerCase();
       if (!curr || prev === curr) return null;
 
+      // Map both courier/platform statuses and seller app statuses
       const titles = {
         driver_assigned: 'Driver assigned',
         dispatched: 'Order dispatched',
@@ -51,7 +52,14 @@ exports.onOrderStatusChange = functions.runWith({ timeoutSeconds: 60, memory: '2
         locker_deposited: 'Parcel deposited at locker',
         out_for_delivery: 'Out for delivery',
         delivered: 'Order delivered',
+        // Seller-facing statuses
+        confirmed: 'Order confirmed',
+        preparing: 'Order preparing',
+        ready: 'Order ready',
+        shipped: 'Order shipped',
+        cancelled: 'Order cancelled',
       };
+
       const bodies = {
         driver_assigned: `Driver ${(after.assignedDriver && after.assignedDriver.name) || ''} is assigned to your order.`,
         dispatched: 'Your order has left the store.',
@@ -62,18 +70,61 @@ exports.onOrderStatusChange = functions.runWith({ timeoutSeconds: 60, memory: '2
         locker_deposited: 'Your parcel has been deposited at the locker.',
         out_for_delivery: 'Courier is on the way to your address.',
         delivered: 'Enjoy! Please rate your experience.',
+        // Seller-facing bodies
+        confirmed: 'Your order has been confirmed by the seller.',
+        preparing: 'The seller is preparing your order.',
+        ready: 'Your order is ready for pickup or dispatch.',
+        shipped: 'Your order has been shipped.',
+        cancelled: 'Your order has been cancelled.',
       };
 
       const title = titles[curr];
-      if (!title) return null;
+      const body = bodies[curr];
+      if (!title || !body) return null;
 
-      await db.collection('push_notifications').add({
-        to: after.buyerId,
+      const orderId = context.params.orderId;
+      const buyerId = after.buyerId;
+      if (!buyerId) return null;
+
+      // Always create in-app notification
+      await db.collection('notifications').add({
+        userId: buyerId,
         title,
-        body: bodies[curr],
-        data: { type: 'order', orderId: context.params.orderId, status: curr },
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        body,
+        type: 'order_status',
+        orderId,
+        read: false,
+        timestamp: admin.firestore.FieldValue.serverTimestamp(),
       });
+
+      // Attempt push via FCM token
+      try {
+        const buyerDoc = await db.collection('users').doc(String(buyerId)).get();
+        const fcmToken = buyerDoc.exists ? (buyerDoc.data().fcmToken || null) : null;
+        if (!fcmToken) {
+          console.log('[onOrderStatusChange] Buyer has no FCM token, stored in-app notification only');
+          return null;
+        }
+
+        await db.collection('push_notifications').add({
+          to: fcmToken,
+          notification: {
+            title,
+            body,
+          },
+          data: {
+            type: 'order_status',
+            orderId,
+            status: curr,
+            orderNumber: after.orderNumber || '',
+          },
+          timestamp: admin.firestore.FieldValue.serverTimestamp(),
+          priority: 'high',
+        });
+      } catch (pushErr) {
+        console.warn('[onOrderStatusChange] Push enqueue failed, in-app notification already stored', pushErr);
+      }
+
       return null;
     } catch (e) {
       console.error('[onOrderStatusChange] failed', e);
@@ -512,7 +563,8 @@ exports.payfastFormRedirect = functions.https.onRequest(async (req, res) => {
       // Compute signature server-side (override any client-provided value)
       const passphrase = (process.env.PAYFAST_PASSPHRASE ?? 'PeterKutumela2025').trim();
       const merchantId = String(postData.merchant_id || '');
-      const usePassphrase = false; // Signature disabled in PayFast account settings
+      // Enable passphrase usage unless explicitly disabled via env
+      const usePassphrase = String(process.env.USE_PAYFAST_PASSPHRASE || '1') !== '0';
       // Build signature in PayFast documented field order (not alphabetical).
       // Define preferred order segments; include only non-empty fields in this order,
       // then append any remaining allowed fields in their encountered order, excluding 'signature'.
@@ -552,9 +604,8 @@ exports.payfastFormRedirect = functions.https.onRequest(async (req, res) => {
       // Append URL-encoded passphrase when required (production)
       const toSign = usePassphrase ? `${encoded}&passphrase=${pfEncode(passphrase)}` : encoded;
       const signature = crypto.createHash('md5').update(toSign).digest('hex');
-      if (usePassphrase) {
-        postData.signature = signature;
-      }
+      // Always include signature; PayFast will validate accordingly
+      postData.signature = signature;
       const sigMode = usePassphrase ? 'with_passphrase' : 'no_passphrase';
       console.log('[payfastFormRedirect] sig_set=true mode=', sigMode, ' merchant_id=', merchantId);
       console.log('[payfastFormRedirect] ALL_POST_DATA=', JSON.stringify(postData, null, 2));
@@ -2922,6 +2973,7 @@ async function computeSellerAvailableBalance(sellerId) {
   let net = 0;
   const orderIds = [];
   const entryIds = [];
+  const seenEntryIds = new Set();
   
   // Add traditional available entries
   availableSnap.docs.forEach((doc) => {
@@ -2937,6 +2989,7 @@ async function computeSellerAvailableBalance(sellerId) {
       net += n;
       if (e.orderId) orderIds.push(e.orderId);
       entryIds.push(doc.id);
+      seenEntryIds.add(doc.id);
     }
   });
   
@@ -2945,9 +2998,11 @@ async function computeSellerAvailableBalance(sellerId) {
     const e = doc.data() || {};
     // Skip if locked to a payout
     if (e.payoutLockId) return;
+    // Avoid double-counting COD entries that are already included as 'available'
+    if (seenEntryIds.has(doc.id)) return;
     const g = Number(e.gross || 0);
-    const c = Number(e.commission || 0);
-    const n = Number(e.net || (g - c));
+    const c = Number(e.amount != null ? e.amount : (e.commission || 0));
+    const n = Number(e.net || Math.max(0, g - c));
     if (g > 0) { // If there's any COD transaction
       gross += g;
       commission += c;
@@ -3056,16 +3111,19 @@ async function computeSellerCodBalance(sellerId) {
   entriesSnap.docs.forEach((doc) => {
     const e = doc.data() || {};
     const gross = Number(e.gross || 0);
-    const commission = Number(e.commission || 0);
+    // Some legacy entries store commission in 'amount'. Prefer 'amount', fall back to 'commission'.
+    const commission = Number(e.amount != null ? e.amount : (e.commission || 0));
     const net = Number(e.net || 0);
     const status = e.status || '';
 
     if (gross > 0) {
       cashCollected += gross;
       if (status === 'due') {
+        // Owed to platform = commission (or amount) for due COD entries
         commissionOwed += commission;
       } else if (status === 'available') {
-        netAvailable += net;
+        // Seller's net share available
+        netAvailable += (net || Math.max(0, gross - commission));
       }
       orders.push({
         orderId: e.orderId,

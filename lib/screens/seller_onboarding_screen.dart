@@ -36,7 +36,7 @@ class _SellerOnboardingScreenState extends State<SellerOnboardingScreen> with Ti
 
   List<OnboardingStep> get _steps => [
     OnboardingStep(
-      title: 'Welcome to Mzansi Marketplace!',
+      title: 'Welcome to OmniaSA!',
       subtitle: 'Your journey to successful selling starts here',
       icon: Icons.store,
       color: AppTheme.primaryGreen,

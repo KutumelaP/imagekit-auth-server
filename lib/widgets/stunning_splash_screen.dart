@@ -405,7 +405,7 @@ class _StunningSplashScreenState extends State<StunningSplashScreen>
         child: Column(
           children: [
             Text(
-              'Mzansi',
+              'OmniaSA',
               style: GoogleFonts.poppins(
                 fontSize: 52,
                 fontWeight: FontWeight.bold,

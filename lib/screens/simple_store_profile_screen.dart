@@ -137,8 +137,8 @@ class _SimpleStoreProfileScreenState extends State<SimpleStoreProfileScreen>
     }
 
     final message = description.isNotEmpty
-        ? 'Check out $storeName on Mzansi Marketplace – $description\n$shareUrl'
-        : 'Check out $storeName on Mzansi Marketplace\n$shareUrl';
+        ? 'Check out $storeName on OmniaSA – $description\n$shareUrl'
+        : 'Check out $storeName on OmniaSA\n$shareUrl';
     try {
       await Share.share(message);
       // Offer QR code dialog
@@ -1591,7 +1591,7 @@ class _SimpleStoreProfileScreenState extends State<SimpleStoreProfileScreen>
     final phoneDigits = phone.replaceAll('+', '');
 
     final storeName = widget.store['storeName'] as String? ?? 'Store';
-    final preset = 'Hi $storeName, I found your store on Mzansi Marketplace and would like to chat.';
+    final preset = 'Hi $storeName, I found your store on OmniaSA and would like to chat.';
     
     // 1) Try native WhatsApp scheme
     final whatsappUri = Uri.parse('whatsapp://send?phone=$phoneDigits&text=${Uri.encodeComponent(preset)}');

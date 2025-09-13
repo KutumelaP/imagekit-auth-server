@@ -8,6 +8,7 @@ class CartItem {
   final String sellerName; // Store name for display
   final String storeCategory; // Store category (Food, Clothing, etc.)
   final DateTime addedAt;
+  final int? availableStock; // Available stock for this product (null = unlimited)
 
   CartItem({
     required this.id,
@@ -19,6 +20,7 @@ class CartItem {
     required this.sellerName,
     required this.storeCategory,
     DateTime? addedAt,
+    this.availableStock,
   }) : addedAt = addedAt ?? DateTime.now();
 
   CartItem copyWith({
@@ -31,6 +33,7 @@ class CartItem {
     String? sellerName,
     String? storeCategory,
     DateTime? addedAt,
+    int? availableStock,
   }) {
     return CartItem(
       id: id ?? this.id,
@@ -42,6 +45,7 @@ class CartItem {
       sellerName: sellerName ?? this.sellerName,
       storeCategory: storeCategory ?? this.storeCategory,
       addedAt: addedAt ?? this.addedAt,
+      availableStock: availableStock ?? this.availableStock,
     );
   }
 
@@ -56,6 +60,7 @@ class CartItem {
       'sellerName': sellerName,
       'storeCategory': storeCategory,
       'addedAt': addedAt.millisecondsSinceEpoch,
+      'availableStock': availableStock,
     };
   }
 
@@ -70,12 +75,13 @@ class CartItem {
       sellerName: map['sellerName'] ?? '',
       storeCategory: map['storeCategory'] ?? '',
       addedAt: DateTime.fromMillisecondsSinceEpoch(map['addedAt'] ?? 0),
+      availableStock: map['availableStock'],
     );
   }
 
   @override
   String toString() {
-    return 'CartItem(id: $id, name: $name, price: $price, quantity: $quantity, imageUrl: $imageUrl, sellerId: $sellerId, sellerName: $sellerName, storeCategory: $storeCategory, addedAt: $addedAt)';
+    return 'CartItem(id: $id, name: $name, price: $price, quantity: $quantity, imageUrl: $imageUrl, sellerId: $sellerId, sellerName: $sellerName, storeCategory: $storeCategory, addedAt: $addedAt, availableStock: $availableStock)';
   }
 
   @override
@@ -90,7 +96,8 @@ class CartItem {
         other.sellerId == sellerId &&
         other.sellerName == sellerName &&
         other.storeCategory == storeCategory &&
-        other.addedAt == addedAt;
+        other.addedAt == addedAt &&
+        other.availableStock == availableStock;
   }
 
   @override
@@ -103,6 +110,7 @@ class CartItem {
         sellerId.hashCode ^
         sellerName.hashCode ^
         storeCategory.hashCode ^
-        addedAt.hashCode;
+        addedAt.hashCode ^
+        (availableStock?.hashCode ?? 0);
   }
 } 

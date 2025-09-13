@@ -28,14 +28,16 @@ import 'screens/simple_home_screen.dart';
 import 'screens/product_search_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/CartScreen.dart';
+// Removed legacy CheckoutScreen import; using CheckoutV2Screen
 import 'screens/OrderHistoryScreen.dart';
 import 'screens/ProfileEditScreen.dart';
 import 'screens/AdminReviewModerationScreen.dart';
 import 'screens/CacheManagementScreen.dart';
 import 'screens/seller_product_management.dart';
+import 'screens/payment_webview.dart';
 import 'screens/SellerOrderDetailScreen.dart';
 import 'screens/SellerOrdersListScreen.dart';
-import 'screens/CheckoutScreen.dart';
+import 'screens/checkout_v2/checkout_v2_screen.dart';
 import 'screens/AdminRoute.dart';
 import 'screens/StoreProfileRouteLoader.dart';
 import 'screens/MyStoresScreen.dart';
@@ -44,6 +46,7 @@ import 'screens/PaymentSuccessScreen.dart';
 import 'screens/stunning_product_browser.dart';
 import 'screens/store_page.dart';
 import 'screens/web_desktop_block_screen.dart';
+// payment webview route is generated dynamically; screen imported above
 
 import 'dart:async';
 import 'utils/safari_optimizer.dart';
@@ -180,7 +183,7 @@ class MyApp extends StatelessWidget {
           '/home': (context) => SimpleHomeScreen(),
           // 🚀 REMOVED: /stores route from here - handled by onGenerateRoute instead
           '/login': (context) => LoginScreen(),
-          '/cart': (context) => CartScreen(),
+          '/cart': (context) => const CartScreen(),
           '/order-history': (context) => OrderHistoryScreen(),
           '/profile': (context) => ProfileEditScreen(),
           '/admin-review-moderation': (context) => AdminReviewModerationScreen(),
@@ -349,6 +352,24 @@ class MyApp extends StatelessWidget {
         onGenerateRoute: (settings) {
           // Handle routes with parameters
           
+          // 🚀 NEW: Payment WebView route
+          if (settings.name == '/paymentWebview') {
+            final args = settings.arguments as Map?;
+            final url = args?['url'] as String?;
+            final successPath = args?['successPath'] as String?;
+            final cancelPath = args?['cancelPath'] as String?;
+            if (url != null) {
+              return MaterialPageRoute(
+                builder: (_) => PaymentWebViewScreen(
+                  url: url,
+                  successPath: successPath,
+                  cancelPath: cancelPath,
+                ),
+                settings: settings,
+              );
+            }
+          }
+          
           // 🚀 NEW: Handle /stores route for store browsing
           if (settings.name != null && settings.name!.startsWith('/stores')) {
             if (kDebugMode) {
@@ -475,7 +496,7 @@ class MyApp extends StatelessWidget {
             final args = settings.arguments as Map<String, dynamic>?;
             final totalPrice = args?['totalPrice'] as double? ?? 0.0;
             return MaterialPageRoute(
-              builder: (context) => CheckoutScreen(totalPrice: totalPrice),
+              builder: (context) => CheckoutV2Screen(totalPrice: totalPrice),
             );
           }
           if (settings.name == '/admin-route') {
@@ -579,13 +600,15 @@ class _SplashWrapperState extends State<SplashWrapper> {
       if (!mounted) return;
       final last = await RoutePersistenceObserver.getLastRoute();
       
-      // Don't redirect if we're on a store route
-      if (last != null && last.startsWith('/store/')) {
-        if (kDebugMode) print('🔗 Last route is store route: $last, skipping redirect');
-        return;
+      String target = (last != null && last.isNotEmpty) ? last : '/home';
+      if (target.startsWith('/store/')) {
+        if (kDebugMode) print('🔗 Restoring store route: $target');
       }
-      
-      final target = (last != null && last.isNotEmpty) ? last : '/home';
+      // Guard against restoring transient routes that require runtime arguments
+      if (target == '/paymentWebview' || target.startsWith('/paymentWebview') || target == '/checkout') {
+        if (kDebugMode) print('🛑 Skipping restore of $target; redirecting to /home');
+        target = '/home';
+      }
       if (!mounted) return;
       
       if (kDebugMode) print('🔄 Redirecting to last route: $target');

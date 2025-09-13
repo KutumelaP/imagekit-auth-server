@@ -1,7 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:marketplace_app/utils/web_js_stub.dart'
-    if (dart.library.html) 'package:marketplace_app/utils/web_js_real.dart' as js;
+import 'package:naymarket/utils/web_js_stub.dart'
+    if (dart.library.html) 'package:naymarket/utils/web_js_real.dart' as js;
 
 /// 🚀 Service for handling PWA URLs and deep linking
 class PWAUrlHandler {
@@ -63,12 +63,12 @@ class PWAUrlHandler {
   static String _getCurrentBaseUrl() {
     if (kIsWeb) {
       try {
-        return js.context.callMethod('eval', ['window.location.origin']) ?? 'https://marketplace-8d6bd.web.app';
+        return js.context.callMethod('eval', ['window.location.origin']) ?? 'https://omniasa.co.za';
       } catch (e) {
-        return 'https://marketplace-8d6bd.web.app';
+        return 'https://omniasa.co.za';
       }
     }
-    return 'https://marketplace-8d6bd.web.app';
+    return 'https://omniasa.co.za';
   }
 
   /// Handle incoming PWA navigation from service worker
@@ -98,7 +98,7 @@ class PWAUrlHandler {
   static Future<void> shareStoreLink(String storeId, String storeName) async {
     try {
       final url = generateStoreUrl(storeId);
-      final text = 'Check out $storeName on Mzansi Marketplace!';
+      final text = 'Check out $storeName on OmniaSA!';
       
       if (kIsWeb) {
         await _webShare(url, text, storeName);
@@ -208,18 +208,18 @@ class PWAUrlHandler {
     
     try {
       js.context.callMethod('eval', ['''
-        document.title = '$storeName - Mzansi Marketplace';
+        document.title = '$storeName - OmniaSA';
         
         // Update meta description
         var metaDesc = document.querySelector('meta[name="description"]');
         if (metaDesc) {
-          metaDesc.setAttribute('content', 'Shop at $storeName on Mzansi Marketplace - Your local SA marketplace for food and goods');
+          metaDesc.setAttribute('content', 'Shop at $storeName on OmniaSA - Your local SA marketplace for food and goods');
         }
         
         // Update og:title
         var ogTitle = document.querySelector('meta[property="og:title"]');
         if (ogTitle) {
-          ogTitle.setAttribute('content', '$storeName - Mzansi Marketplace');
+          ogTitle.setAttribute('content', '$storeName - OmniaSA');
         }
       ''']);
     } catch (e) {

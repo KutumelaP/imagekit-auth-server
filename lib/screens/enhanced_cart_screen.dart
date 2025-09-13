@@ -1,22 +1,14 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
 import '../theme/app_theme.dart';
-import '../widgets/safe_network_image.dart';
-import '../widgets/home_navigation_button.dart';
-import '../widgets/bottom_action_bar.dart';
-import '../screens/CheckoutScreen.dart';
 import '../providers/cart_provider.dart';
+import '../models/cart_item.dart';
 import '../services/optimized_checkout_service.dart';
 import 'package:flutter/services.dart';
 
-import '../widgets/loading_widget.dart';
-import '../constants/app_constants.dart';
-import '../models/cart_item.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import '../theme/app_theme.dart' show SafeUI, ResponsiveUtils;
-import '../widgets/bottom_action_bar.dart';
+import 'checkout_v2/checkout_v2_screen.dart';
 
 class EnhancedCartScreen extends StatefulWidget {
   const EnhancedCartScreen({super.key});
@@ -37,7 +29,8 @@ class _EnhancedCartScreenState extends State<EnhancedCartScreen>
     super.initState();
     
     // Pre-warm checkout cache for faster navigation
-    OptimizedCheckoutService.prewarmCache();
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) OptimizedCheckoutService.prewarmCache(user.uid);
     
     _slideController = AnimationController(
       duration: const Duration(milliseconds: 600),
@@ -396,11 +389,18 @@ class _EnhancedCartScreenState extends State<EnhancedCartScreen>
                 
                 // Add Button
                 IconButton(
-                  onPressed: () => cartProvider.updateQuantity(
-                    item.id,
-                    item.quantity + 1,
+                  onPressed: cartProvider.canIncrementQuantity(item.id) 
+                    ? () => cartProvider.updateQuantity(
+                        item.id,
+                        item.quantity + 1,
+                      )
+                    : null,
+                  icon: Icon(
+                    Icons.add_circle_outline, 
+                    color: cartProvider.canIncrementQuantity(item.id) 
+                      ? Color(0xFF2E7D32) 
+                      : Colors.grey,
                   ),
-                  icon: Icon(Icons.add_circle_outline, color: Color(0xFF2E7D32)),
                   iconSize: 24,
                 ),
               ],
@@ -495,13 +495,10 @@ class _EnhancedCartScreenState extends State<EnhancedCartScreen>
             width: double.infinity,
             child: ElevatedButton.icon(
               onPressed: () {
-                Navigator.push(
+                Navigator.pushNamed(
                   context,
-                  MaterialPageRoute(
-                    builder: (context) => CheckoutScreen(
-                      totalPrice: cartProvider.totalPrice,
-                    ),
-                  ),
+                  '/checkout',
+                  arguments: {'totalPrice': cartProvider.totalPrice},
                 );
               },
               icon: const Icon(Icons.shopping_cart_checkout),
@@ -764,12 +761,16 @@ class _EnhancedCartScreenState extends State<EnhancedCartScreen>
                                   ),
                                 ),
                                 IconButton(
-                                  onPressed: () {
-                                    cartProvider.updateQuantity(item.id, item.quantity + 1);
-                                  },
+                                  onPressed: cartProvider.canIncrementQuantity(item.id) 
+                                    ? () {
+                                        cartProvider.updateQuantity(item.id, item.quantity + 1);
+                                      }
+                                    : null,
                                   icon: Icon(
                                     Icons.add,
-                                    color: AppTheme.deepTeal,
+                                    color: cartProvider.canIncrementQuantity(item.id) 
+                                      ? AppTheme.deepTeal 
+                                      : Colors.grey,
                                     size: ResponsiveUtils.getIconSize(context, baseSize: 16),
                                   ),
                                   constraints: const BoxConstraints(
@@ -937,13 +938,10 @@ class _EnhancedCartScreenState extends State<EnhancedCartScreen>
         ),
         ActionButton(
           onPressed: () {
-            Navigator.push(
+            Navigator.pushNamed(
               context,
-              MaterialPageRoute(
-                builder: (context) => CheckoutScreen(
-                  totalPrice: cartProvider.totalPrice,
-                ),
-              ),
+              '/checkout',
+              arguments: {'totalPrice': cartProvider.totalPrice},
             );
           },
           icon: const Icon(Icons.shopping_cart_checkout),

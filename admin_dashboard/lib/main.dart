@@ -4,14 +4,15 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'admin_dashboard_screen.dart';
 import 'firebase_options.dart';
-import 'SellerOrderDetailScreen.dart';
-import 'widgets/admin_dashboard_content.dart';
+
 import 'widgets/modern_seller_dashboard_section.dart';
 import 'services/notification_service.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'dart:async';
 import 'theme/admin_theme.dart';
 import 'widgets/kyc_review_list.dart';
+import 'utils/mobile_detector.dart';
+import 'screens/mobile_block_screen.dart';
 
 final ValueNotifier<ThemeMode> themeModeNotifier = ValueNotifier(ThemeMode.system);
 
@@ -252,6 +253,11 @@ class MyApp extends StatelessWidget {
 class AuthGate extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
+    // Check if device should be blocked before authentication
+    if (MobileDetector.shouldBlockAdminDashboard(context)) {
+      return const MobileBlockScreen();
+    }
+
     return StreamBuilder<User?>(
       stream: FirebaseAuth.instance.authStateChanges(),
       builder: (context, snapshot) {
@@ -279,7 +285,6 @@ class AuthGate extends StatelessWidget {
             }
             final data = userSnapshot.data!.data() as Map<String, dynamic>?;
             final role = data?['role'];
-            final subRole = data?['subRole'];
             if (role == null) {
               return const Scaffold(body: Center(child: Text('No role found for user. Please contact support.')));
             }
@@ -375,7 +380,7 @@ class _PlatformLoginScreenState extends State<PlatformLoginScreen> {
                     ),
                     SizedBox(height: 20),
                     Text(
-                      'Mzansi Marketplace',
+                      'OmniaSA',
                       style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                         fontWeight: FontWeight.bold,
                         color: Colors.white,

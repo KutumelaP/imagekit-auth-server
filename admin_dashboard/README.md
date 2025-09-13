@@ -1,8 +1,8 @@
-# 🏪 Admin Dashboard - Mzansi Marketplace
+# 🏪 Admin Dashboard - OmniaSA
 
 ## **📋 Overview**
 
-A comprehensive admin dashboard for managing the Mzansi Marketplace platform. Built with Flutter for web/desktop, providing powerful tools for platform administration, seller management, and financial oversight.
+A comprehensive admin dashboard for managing the OmniaSA platform. Built with Flutter for web/desktop, providing powerful tools for platform administration, seller management, and financial oversight.
 
 ## **🚀 Features**
 
@@ -194,6 +194,6 @@ flutter build linux --release
 
 ---
 
-**Built for Mzansi Marketplace Administration** 🏪
+**Built for OmniaSA Administration** 🏪
 
 *This dashboard provides comprehensive platform management capabilities with a focus on security, usability, and performance.*

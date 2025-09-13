@@ -3,7 +3,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:async';
 import 'package:flutter/foundation.dart';
-import '../utils/safari_optimizer.dart';
 import '../services/awesome_notification_service.dart' as an;
 import '../services/notification_service.dart';
 
@@ -117,20 +116,26 @@ class _NotificationBadgeState extends State<NotificationBadge> {
           .snapshots(includeMetadataChanges: false)
           .listen((snapshot) async {
         try {
-          // Use NotificationService to get accurate count instead of local counting
-          final notificationService = NotificationService();
-          final unread = await notificationService.getUnreadCountForUser(currentUserId);
+          // Count only non-chat notifications for the badge (exclude chat_message)
+          int unread = 0;
+          for (final doc in snapshot.docs) {
+            final data = doc.data();
+            final type = (data['type'] ?? '').toString();
+            if (type != 'chat_message') {
+              unread += 1;
+            }
+          }
           
           // Local fallback system popup for newly added order notifications
           for (final change in snapshot.docChanges) {
             if (change.type == DocumentChangeType.added) {
               final doc = change.doc;
               if (_seenNotificationIds.add(doc.id)) {
-                final data = doc.data() as Map<String, dynamic>;
-                final type = data['type'] as String? ?? '';
+                final Map<String, dynamic>? data = doc.data();
+                final type = (data?['type'] ?? '').toString();
                 if (!kIsWeb && type == 'new_order_seller') {
-                  final body = data['body'] as String? ?? 'You have a new order';
-                  final orderId = (data['data'] as Map<String, dynamic>?)?['orderId'] as String? ?? '';
+                  final body = (data?['body'] as String?) ?? 'You have a new order';
+                  final orderId = (data?['data'] as Map<String, dynamic>?)?['orderId'] as String? ?? '';
                   // Only create notification if orderId is not empty
                   if (orderId.isNotEmpty) {
                     await an.AwesomeNotificationService().showOrderNotification(
@@ -139,8 +144,6 @@ class _NotificationBadgeState extends State<NotificationBadge> {
                       orderId: orderId,
                       type: 'new_order_seller',
                     );
-                  } else {
-                    print('⚠️ Skipping notification creation: orderId is empty');
                   }
                 }
               }
@@ -159,8 +162,6 @@ class _NotificationBadgeState extends State<NotificationBadge> {
       }, onError: (error) {
         if (error.toString().contains('permission-denied')) {
           print('❌ Permission denied for notifications stream (logged once)');
-        } else {
-          print('❌ Error in notifications stream: $error');
         }
       });
 
@@ -189,36 +190,7 @@ class _NotificationBadgeState extends State<NotificationBadge> {
     }
   }
 
-  Future<void> _getUnreadCountOnce(String userId) async {
-    try {
-      final snapshot = await FirebaseFirestore.instance
-          .collection('notifications')
-          .where('userId', isEqualTo: userId)
-          .where('read', isEqualTo: false)
-          .get();
-
-      int unreadCount = 0;
-      for (var doc in snapshot.docs) {
-        final data = doc.data() as Map<String, dynamic>;
-        final type = data['type'] as String? ?? '';
-        
-        // Only count non-chat notifications
-        if (type != 'chat_message') {
-          unreadCount++;
-        }
-      }
-
-      if (mounted) {
-        setState(() {
-          _unreadCount = unreadCount;
-          _isInitialized = true;
-        });
-        print('🔔 Badge fallback updated: $_unreadCount unread notifications');
-      }
-    } catch (e) {
-      print('❌ Error in badge fallback: $e');
-    }
-  }
+  // Fallback counting method removed (unused)
 
   // Public method to refresh badge count
   void refreshBadgeCount() {

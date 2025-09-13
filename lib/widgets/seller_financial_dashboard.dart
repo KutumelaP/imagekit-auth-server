@@ -2,8 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../theme/app_theme.dart';
-import '../utils/responsive_utils.dart';
-import '../screens/CheckoutScreen.dart';
+import '../screens/checkout_v2/checkout_v2_screen.dart';
 
 class SellerFinancialDashboard extends StatefulWidget {
   const SellerFinancialDashboard({Key? key}) : super(key: key);
@@ -487,10 +486,7 @@ class _SellerFinancialDashboardState extends State<SellerFinancialDashboard> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => CheckoutScreen(
-          isWalletTopUp: true,
-          prefilledAmount: _outstandingAmount,
-        ),
+        builder: (context) => CheckoutV2Screen(totalPrice: _outstandingAmount),
       ),
     );
   }

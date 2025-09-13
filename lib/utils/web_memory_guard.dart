@@ -1,6 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:marketplace_app/utils/web_html_stub.dart'
+import 'package:naymarket/utils/web_html_stub.dart'
     if (dart.library.html) 'dart:html' as html;
 
 /// WebMemoryGuard reduces memory pressure on iOS Safari by:

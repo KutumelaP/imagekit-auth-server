@@ -13,6 +13,22 @@
     AddOutputFilterByType DEFLATE text/html text/plain text/xml text/css text/javascript application/javascript application/json
 </IfModule>
 
+# SPA routing and API proxy rules
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # API proxies to Cloud Functions (mask backend under your domain)
+    RewriteRule ^api/payfastReturn$ https://us-central1-marketplace-8d6bd.cloudfunctions.net/payfastReturn [P,L]
+    RewriteRule ^api/payfastCancel$ https://us-central1-marketplace-8d6bd.cloudfunctions.net/payfastCancel [P,L]
+    RewriteRule ^api/payfastNotify$ https://us-central1-marketplace-8d6bd.cloudfunctions.net/payfastNotify [P,L]
+    RewriteRule ^api/payfastFormRedirect$ https://us-central1-marketplace-8d6bd.cloudfunctions.net/payfastFormRedirect [P,L]
+
+    # SPA: send non-file routes to index.html
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule ^(.*)$ index.html [QSA,L]
+</IfModule>
+
 # Browser caching
 <IfModule mod_expires.c>
     ExpiresActive on

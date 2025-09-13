@@ -126,6 +126,7 @@ class CartProvider extends ChangeNotifier {
         sellerId: sellerId,
         sellerName: sellerName,
         storeCategory: storeCategory,
+        availableStock: availableStock,
       ));
     }
     
@@ -279,7 +280,16 @@ class CartProvider extends ChangeNotifier {
       final storeItems = _storeCarts[_currentStoreId]!;
       final index = storeItems.indexWhere((item) => item.id == productId);
       if (index >= 0) {
-        storeItems[index] = storeItems[index].copyWith(quantity: quantity);
+        final item = storeItems[index];
+        
+        // Check stock availability if provided
+        if (item.availableStock != null && quantity > item.availableStock!) {
+          // Don't allow quantity to exceed available stock
+          print('🛑 Stock limit reached: Cannot set quantity $quantity, only ${item.availableStock} available');
+          return;
+        }
+        
+        storeItems[index] = item.copyWith(quantity: quantity);
         notifyListeners();
         _saveToLocal();
         
@@ -289,6 +299,22 @@ class CartProvider extends ChangeNotifier {
         }
       }
     }
+  }
+
+  // Check if an item can be incremented (has stock available)
+  bool canIncrementQuantity(String productId) {
+    if (_currentStoreId != null) {
+      final storeItems = _storeCarts[_currentStoreId]!;
+      final index = storeItems.indexWhere((item) => item.id == productId);
+      if (index >= 0) {
+        final item = storeItems[index];
+        // If no stock info, allow increment (unlimited stock)
+        if (item.availableStock == null) return true;
+        // Check if current quantity is less than available stock
+        return item.quantity < item.availableStock!;
+      }
+    }
+    return false;
   }
 
   void clearCart() {

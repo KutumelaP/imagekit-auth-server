@@ -122,7 +122,7 @@ class _PostLoginScreenState extends State<PostLoginScreen> with TickerProviderSt
             ),
             SizedBox(height: ResponsiveUtils.getVerticalPadding(context) * 0.5),
             SafeUI.safeText(
-              'You\'ve successfully logged in to Mzansi Marketplace',
+              'You\'ve successfully logged in to OmniaSA',
               style: TextStyle(
                 fontSize: ResponsiveUtils.getTitleSize(context) - 2,
                 color: AppTheme.mediumGrey,
@@ -206,7 +206,7 @@ class _PostLoginScreenState extends State<PostLoginScreen> with TickerProviderSt
             // Register as Seller Button
             _buildOptionButton(
               title: 'Register as Seller',
-              subtitle: 'Start selling on Mzansi',
+              subtitle: 'Start selling on OmniaSA',
               icon: Icons.store_outlined,
               color: AppTheme.primaryGreen,
               onTap: () {

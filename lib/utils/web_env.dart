@@ -1,6 +1,6 @@
 import 'package:flutter/foundation.dart';
-import 'package:marketplace_app/utils/web_js_stub.dart'
-    if (dart.library.html) 'package:marketplace_app/utils/web_js_real.dart' as js;
+import 'package:naymarket/utils/web_js_stub.dart'
+    if (dart.library.html) 'package:naymarket/utils/web_js_real.dart' as js;
 
 class WebEnv {
   static bool get isWeb => kIsWeb;

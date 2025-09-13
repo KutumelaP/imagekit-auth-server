@@ -4,13 +4,13 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/foundation.dart';
-import 'package:marketplace_app/utils/web_js_stub.dart'
-    if (dart.library.html) 'package:marketplace_app/utils/web_js_real.dart' as js;
+import 'package:naymarket/utils/web_js_stub.dart'
+    if (dart.library.html) 'package:naymarket/utils/web_js_real.dart' as js;
 import 'sound_service.dart';
 import 'package:flutter_tts/flutter_tts.dart';
-import 'package:marketplace_app/utils/web_env.dart';
+import 'package:naymarket/utils/web_env.dart';
 import 'package:flutter_app_badger/flutter_app_badger.dart'
-  if (dart.library.html) 'package:marketplace_app/utils/badger_stub.dart';
+  if (dart.library.html) 'package:naymarket/utils/badger_stub.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'dart:async';
 
@@ -956,7 +956,7 @@ class NotificationService {
       if (kIsWeb) {
         _showWebNotification(
           title: 'Test Notification',
-          body: 'This is a test notification from Mzansi Marketplace',
+          body: 'This is a test notification from OmniaSA',
           icon: '/icons/Icon-192.png',
           tag: 'test_${DateTime.now().millisecondsSinceEpoch}',
           payload: {

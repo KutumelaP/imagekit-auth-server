@@ -1,6 +1,6 @@
 import 'package:flutter/foundation.dart';
-import 'package:marketplace_app/utils/web_js_stub.dart'
-    if (dart.library.html) 'package:marketplace_app/utils/web_js_real.dart' as js;
+import 'package:naymarket/utils/web_js_stub.dart'
+    if (dart.library.html) 'package:naymarket/utils/web_js_real.dart' as js;
 
 /// 🧪 Service for testing awesome PWA notifications
 class NotificationTestService {
@@ -16,7 +16,7 @@ class NotificationTestService {
       js.context.callMethod('eval', ['''
         if (Notification.permission === 'granted') {
           new Notification('🧪 Test Notification', {
-            body: 'This is a basic test notification from Mzansi Marketplace!',
+            body: 'This is a basic test notification from OmniaSA!',
             icon: '/icons/Icon-192.png',
             badge: '/icons/Icon-192.png',
             tag: 'test_basic',

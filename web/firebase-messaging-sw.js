@@ -34,7 +34,7 @@ if (messaging) {
       console.log('🔥 Received background message:', payload);
       
       const data = payload?.data || {};
-      const title = payload?.notification?.title || 'Mzansi Marketplace';
+      const title = payload?.notification?.title || 'OmniaSA';
       const body = payload?.notification?.body || '';
       const type = data.type || 'general';
 

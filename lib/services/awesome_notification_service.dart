@@ -435,7 +435,7 @@ class AwesomeNotificationService {
           id: DateTime.now().millisecondsSinceEpoch.remainder(100000),
           channelKey: 'basic_channel',
           title: 'Test Notification',
-          body: 'This is a test notification from Mzansi Marketplace',
+          body: 'This is a test notification from OmniaSA',
           notificationLayout: NotificationLayout.Default,
           payload: {
             'type': 'test',

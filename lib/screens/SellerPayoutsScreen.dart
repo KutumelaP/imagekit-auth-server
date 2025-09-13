@@ -12,6 +12,8 @@ import 'package:path_provider/path_provider.dart';
 import 'dart:typed_data';
 import '../theme/app_theme.dart';
 import '../services/receipt_service.dart';
+import '../services/payfast_service.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class SellerPayoutsScreen extends StatefulWidget {
   const SellerPayoutsScreen({super.key});
@@ -128,14 +130,7 @@ class _SellerPayoutsScreenState extends State<SellerPayoutsScreen> {
       final res = await functions.httpsCallable('getSellerAvailableBalance').call({ 'userId': user.uid });
       final data = Map<String, dynamic>.from(res.data as Map);
       
-      // Debug logging
-      print('🔍 DEBUG: Cloud Function Response:');
-      print('  Raw response: ${res.data}');
-      print('  Parsed data: $data');
-      print('  Gross: ${data['gross']}');
-      print('  Commission: ${data['commission']}');
-      print('  Net: ${data['net']}');
-      print('  Min: ${data['minPayoutAmount']}');
+      // Minimal logging in production — remove verbose debug
       
       setState(() {
         _gross = (data['gross'] ?? 0).toDouble();
@@ -145,12 +140,7 @@ class _SellerPayoutsScreenState extends State<SellerPayoutsScreen> {
         _commissionPct = ((data['commissionPct'] ?? 0) as num).toDouble();
         _codWallet = Map<String, dynamic>.from(data['codWallet'] ?? {});
         
-        // Debug logging after setState
-        print('🔍 DEBUG: Values set in setState:');
-        print('  _gross: $_gross');
-        print('  _commission: $_commission');
-        print('  _net: $_net');
-        print('  _min: $_min');
+        // Minimal logging in production
       });
     } catch (e) {
       if (mounted) {
@@ -1491,11 +1481,43 @@ class _SellerPayoutsScreenState extends State<SellerPayoutsScreen> {
 
 
   void _payOutstandingFees() {
-    // Navigate to payment screen for outstanding fees
-    Navigator.pushNamed(context, '/checkout', arguments: {
-      'isWalletTopUp': true,
-      'prefilledAmount': _outstandingAmount,
-      'paymentReason': 'outstanding_fees',
+    // Initiate wallet top-up directly for outstanding fees using PayFast
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    final double amount = _outstandingAmount > 0 ? _outstandingAmount : 50.0;
+    // Use same creation flow as checkout top-up (server form redirect)
+    PayFastService.createPayment(
+      amount: amount.toStringAsFixed(2),
+      itemName: 'Wallet Top-up: Outstanding Fees',
+      itemDescription: 'Pay outstanding platform fees',
+      customerEmail: user.email ?? 'user@example.com',
+      customerFirstName: (user.displayName ?? 'User').split(' ').first,
+      customerLastName: (user.displayName ?? '').split(' ').skip(1).join(' '),
+      customerPhone: '0606304683',
+      customString1: 'WALLET_${user.uid}',
+      customString2: user.uid, // settle this seller's dues
+      customString3: user.uid,
+      customString4: 'wallet_topup',
+    ).then((paymentResult) async {
+      if (paymentResult['success'] == true) {
+        try {
+          final url = paymentResult['paymentUrl'] as String;
+          final Map<String, dynamic> pd = Map<String, dynamic>.from(paymentResult['paymentData'] as Map);
+          final qp = pd.map((k, v) => MapEntry(k, v.toString()));
+          final redirect = Uri.parse(url).replace(queryParameters: qp).toString();
+          await launchUrl(Uri.parse(redirect), webOnlyWindowName: '_self');
+        } catch (e) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Payment redirect failed: $e')));
+          }
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Payment setup failed: ${paymentResult['error'] ?? 'Unknown error'}')),
+          );
+        }
+      }
     });
   }
 

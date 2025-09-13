@@ -1,0 +1,543 @@
+import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import '../../services/delivery_fee_service.dart';
+import '../../utils/delivery_time_utils.dart';
+import '../../services/checkout_validation_service.dart';
+import '../../services/seller_delivery_management_service.dart';
+import '../../services/production_order_service.dart';
+
+class CheckoutV2ViewModel extends ChangeNotifier {
+  CheckoutV2ViewModel({required this.totalPrice, required List<Map<String, dynamic>> cartItems}) {
+    // Initialize current user
+    currentUserId = FirebaseAuth.instance.currentUser?.uid;
+    // Inject real cart items BEFORE loading settings
+    this.cartItems = cartItems;
+    // Load seller delivery settings
+    _loadSellerDeliverySettings();
+  }
+
+  final double totalPrice;
+
+  // UI state
+  bool isDelivery = true;
+  String productCategory = 'other';
+  double distanceKm = 0.0;
+  double? deliveryFee;
+  int? etaMinutes;
+  bool isLoading = false;
+  String? error;
+  
+  // Seller delivery availability
+  bool sellerOffersDelivery = false;
+  bool sellerOffersPaxi = false;
+  bool sellerOffersPudo = false;
+  bool sellerOffersPargo = false;
+  bool isLoadingSellerInfo = true;
+
+  // Store hours
+  bool isStoreOpenFlag = true;
+  String? sellerOpenHour;   // e.g., '08:00'
+  String? sellerCloseHour;  // e.g., '17:00'
+  
+  // COD and compliance
+  bool allowCOD = false;
+  String? kycStatus; // 'pending' | 'approved' | etc.
+  bool get codEnabledForSeller => allowCOD && (kycStatus?.toLowerCase() == 'approved');
+
+  bool get isStoreOpenNow {
+    try {
+      if ((sellerOpenHour == null || sellerCloseHour == null) || sellerOpenHour!.trim().isEmpty || sellerCloseHour!.trim().isEmpty) {
+        return isStoreOpenFlag;
+      }
+      final open = _parseTodayTime(sellerOpenHour!);
+      final close = _parseTodayTime(sellerCloseHour!);
+      if (open == null || close == null) return isStoreOpenFlag;
+      final now = DateTime.now();
+      if (open.isBefore(close)) {
+        // Same-day window
+        return now.isAfter(open) && now.isBefore(close);
+      } else {
+        // Overnight window (e.g., 20:00 -> 06:00)
+        return now.isAfter(open) || now.isBefore(close);
+      }
+    } catch (_) {
+      return isStoreOpenFlag;
+    }
+  }
+
+  DateTime? _parseTodayTime(String hhmm) {
+    try {
+      final base = DateTime.now();
+      final parts = hhmm.split(':');
+      if (parts.length < 2) return null;
+      final h = int.tryParse(parts[0]);
+      final m = int.tryParse(parts[1].replaceAll(RegExp(r'[^0-9]'), ''));
+      if (h == null || m == null) return null;
+      return DateTime(base.year, base.month, base.day, h, m);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // Inputs
+  String? addressText;
+  String? selectedServiceFilter; // 'paxi' | 'pargo' | 'store'
+  String? selectedPaxiSpeed; // 'standard' | 'express'
+  String? currentUserId;
+  List<String> excludedZones = [];
+  double? minOrderForDelivery;
+  String? sellerDeliveryPreference; // 'system' | 'custom'
+  double? sellerFeePerKm;
+
+  // NEW: Advanced checkout features
+  Map<String, dynamic>? selectedPickupPoint;
+  Map<String, dynamic>? selectedAddress;
+  Map<String, dynamic>? productHandlingInstructions;
+  String selectedPaymentMethod = 'payfast'; // 'payfast', 'eft', 'cod'
+  
+  // PUDO-specific delivery details
+  Map<String, dynamic>? pudoDeliveryAddress;
+  String? pudoDeliveryPhone;
+  
+  // Customer information
+  String? firstName;
+  String? lastName;
+  
+  // Special handling instructions from buyer to seller
+  String? specialHandlingInstructions;
+  
+  // Real cart items injected by the screen
+  List<Map<String, dynamic>> cartItems = [];
+
+  // State helpers (avoid calling notifyListeners from UI)
+  void setLoading(bool value) {
+    isLoading = value;
+    notifyListeners();
+  }
+
+  void setError(String? value) {
+    error = value;
+    notifyListeners();
+  }
+
+  Future<void> computeFeesAndEta({required bool isUrbanArea, double? urbanFee}) async {
+    final pref = sellerDeliveryPreference ?? 'custom';
+    final perKm = sellerFeePerKm ?? 5.0;
+
+    final result = DeliveryFeeService.compute(
+      distanceKm: distanceKm,
+      productCategory: productCategory,
+      sellerDeliveryPreference: pref,
+      sellerFlatFee: 0.0,
+      sellerFeePerKm: perKm,
+      sellerMinFee: 0.0,
+      isUrbanArea: isUrbanArea,
+      urbanFee: urbanFee,
+    );
+    deliveryFee = result.fee;
+
+    etaMinutes = DeliveryTimeUtils.calculateRealisticDeliveryTime(
+      distanceKm: distanceKm,
+      basePrepTimeMinutes: 15,
+      currentTime: DateTime.now(),
+    );
+    notifyListeners();
+  }
+
+  Future<bool> validate() async {
+    try {
+      // Ensure we have the latest user ID
+      currentUserId = FirebaseAuth.instance.currentUser?.uid;
+      
+      print('🔍 DEBUG: Validating checkout with currentUserId: $currentUserId');
+      
+      // Validate customer name information
+      if (firstName == null || firstName!.trim().isEmpty) {
+        error = 'Please enter your first name';
+        notifyListeners();
+        return false;
+      }
+      
+      if (lastName == null || lastName!.trim().isEmpty) {
+        error = 'Please enter your last name';
+        notifyListeners();
+        return false;
+      }
+      
+      final res = await CheckoutValidationService.validate(
+        excludedZones: excludedZones,
+        addressText: addressText ?? '',
+        totalPrice: totalPrice,
+        currentUserId: currentUserId,
+        minOrderForDelivery: minOrderForDelivery,
+        selectedServiceFilter: selectedServiceFilter,
+        selectedPaxiDeliverySpeed: selectedPaxiSpeed,
+        selectedPickupPoint: selectedPickupPoint,
+        pudoDeliveryAddress: pudoDeliveryAddress,
+        pudoDeliveryPhone: pudoDeliveryPhone,
+        isDelivery: isDelivery,
+        firestore: FirebaseFirestore.instance,
+      );
+      
+      if (!res.isValid) {
+        error = res.errorMessage ?? 'Validation failed';
+        notifyListeners();
+        return false;
+      }
+      
+      // Additional validations for new features
+      if (!isDelivery && selectedPickupPoint == null) {
+        error = 'Please select a pickup point';
+        notifyListeners();
+        return false;
+      }
+      
+      if (selectedPaymentMethod.isEmpty) {
+        error = 'Please select a payment method';
+        notifyListeners();
+        return false;
+      }
+
+      // Enforce COD gate by KYC
+      if (selectedPaymentMethod == 'cod' && !codEnabledForSeller) {
+        error = 'Cash on Delivery is unavailable for this seller.';
+        notifyListeners();
+        return false;
+      }
+      
+      error = null;
+      notifyListeners();
+      return true;
+    } catch (e) {
+      error = 'Validation error: $e';
+      notifyListeners();
+      return false;
+    }
+  }
+
+  void setIsDelivery(bool v) {
+    isDelivery = v;
+    notifyListeners();
+  }
+
+  void setDistance(double km) {
+    distanceKm = km;
+    notifyListeners();
+  }
+
+  void setProductCategory(String cat) {
+    productCategory = cat;
+    notifyListeners();
+  }
+
+  void setAddress(String text) {
+    addressText = text;
+    notifyListeners();
+  }
+  
+  // NEW: Advanced checkout methods
+  
+  void setSelectedPickupPoint(Map<String, dynamic>? point) {
+    selectedPickupPoint = point;
+    notifyListeners();
+  }
+  
+  void setSelectedAddress(Map<String, dynamic>? address) {
+    selectedAddress = address;
+    notifyListeners();
+  }
+  
+  void setPaymentMethod(String method) {
+    selectedPaymentMethod = method;
+    notifyListeners();
+  }
+  
+  void setPaxiDeliverySpeed(String? speed) {
+    selectedPaxiSpeed = speed;
+    notifyListeners();
+  }
+  
+  void setPudoDeliveryAddress(Map<String, dynamic>? address) {
+    pudoDeliveryAddress = address;
+    notifyListeners();
+  }
+  
+  void setPudoDeliveryPhone(String? phone) {
+    pudoDeliveryPhone = phone;
+    notifyListeners();
+  }
+  
+  // Customer information setters
+  void setFirstName(String? name) {
+    firstName = name?.trim();
+    notifyListeners();
+  }
+  
+  void setLastName(String? name) {
+    lastName = name?.trim();
+    notifyListeners();
+  }
+  
+  // Get full customer name
+  String getFullName() {
+    final first = firstName?.trim() ?? '';
+    final last = lastName?.trim() ?? '';
+    if (first.isEmpty && last.isEmpty) return 'Customer';
+    if (first.isEmpty) return last;
+    if (last.isEmpty) return first;
+    return '$first $last';
+  }
+  
+  void setSpecialHandlingInstructions(String? instructions) {
+    specialHandlingInstructions = instructions;
+    notifyListeners();
+  }
+  
+  double calculateTotal() {
+    double total = totalPrice;
+    
+    if (isDelivery && deliveryFee != null) {
+      total += deliveryFee!;
+    } else if (!isDelivery && selectedPickupPoint != null) {
+      final pickupFee = selectedPickupPoint!['fees']['collection'] ?? 0.0;
+      total += pickupFee as double;
+    }
+    
+    // Service fee (3.5%)
+    total += totalPrice * 0.035;
+    
+    return total;
+  }
+  
+  double get grandTotal => calculateTotal();
+  
+  void loadProductHandlingInstructions() {
+    if (cartItems.isNotEmpty) {
+      final firstItem = cartItems.first;
+      productHandlingInstructions = SellerDeliveryManagementService.generateProductHandlingInstructions(
+        productCategory: firstItem['category'] ?? 'other',
+        productName: firstItem['name'] ?? '',
+        productDetails: firstItem,
+      );
+      notifyListeners();
+    }
+  }
+  
+  /// Check if seller offers delivery service
+  Future<void> _loadSellerDeliverySettings() async {
+    try {
+      isLoadingSellerInfo = true;
+      notifyListeners();
+      
+      // Get seller ID from cart items
+      if (cartItems.isNotEmpty) {
+        final sellerId = cartItems.first['sellerId'];
+        print('🔍 DEBUG: Loading seller data for sellerId: $sellerId');
+        print('🔍 DEBUG: Cart items: $cartItems');
+        
+        if (sellerId != null) {
+          // Fetch seller document from Firestore
+          final sellerDoc = await FirebaseFirestore.instance
+              .collection('users')
+              .doc(sellerId)
+              .get();
+              
+          print('🔍 DEBUG: Seller document exists: ${sellerDoc.exists}');
+          
+          if (sellerDoc.exists) {
+            final sellerData = sellerDoc.data()!;
+            
+            // Check if seller offers delivery (strict: require seller's flag)
+            sellerOffersDelivery = sellerData['deliveryAvailable'] ??
+                                   sellerData['offersDelivery'] ?? false;
+            
+            // Check if seller offers pickup services
+            sellerOffersPaxi = sellerData['paxiEnabled'] ?? false;
+            sellerOffersPudo = sellerData['pudoEnabled'] ?? false;
+            sellerOffersPargo = sellerData['pargoEnabled'] ?? false;
+            
+            // If seller doesn't offer delivery, force pickup mode
+            if (!sellerOffersDelivery) {
+              isDelivery = false;
+            }
+            
+            // Load other seller settings
+            sellerDeliveryPreference = sellerData['deliveryMode'] ?? sellerData['deliveryPreference'] ?? 'system';
+            sellerFeePerKm = (sellerData['sellerDeliveryFeePerKm'] ?? sellerData['deliveryFeePerKm'])?.toDouble();
+            minOrderForDelivery = sellerData['minOrderForDelivery']?.toDouble();
+
+            // Store hours and open flag
+            isStoreOpenFlag = sellerData['isStoreOpen'] ?? sellerData['storeOpen'] ?? true;
+            sellerOpenHour = (sellerData['storeOpenHour'] ?? '').toString();
+            sellerCloseHour = (sellerData['storeCloseHour'] ?? '').toString();
+
+            // COD and KYC
+            final codDisabled = sellerData['codDisabled'] == true;
+            allowCOD = (sellerData['allowCOD'] == true) && !codDisabled;
+            kycStatus = (sellerData['kycStatus'] ?? '').toString();
+            
+            // If COD was selected but not allowed, revert to PayFast
+            if (selectedPaymentMethod == 'cod' && !codEnabledForSeller) {
+              selectedPaymentMethod = 'payfast';
+            }
+            
+            print('✅ Seller services loaded:');
+            print('   - Delivery: $sellerOffersDelivery (deliveryAvailable: ${sellerData['deliveryAvailable']})');
+            print('   - PAXI: $sellerOffersPaxi (paxiEnabled: ${sellerData['paxiEnabled']})');
+            print('   - PUDO: $sellerOffersPudo (pudoEnabled: ${sellerData['pudoEnabled']})');
+            print('   - PARGO: $sellerOffersPargo (pargoEnabled: ${sellerData['pargoEnabled']})');
+            print('📊 Available services: ${[
+              if (sellerOffersDelivery) 'Delivery',
+              if (sellerOffersPaxi) 'PAXI', 
+              if (sellerOffersPudo) 'PUDO',
+              if (sellerOffersPargo) 'PARGO'
+            ].join(', ')}');
+          } else {
+            print('❌ DEBUG: Seller document does not exist for sellerId: $sellerId');
+          }
+        } else {
+          print('❌ DEBUG: No sellerId found in cart items');
+        }
+      } else {
+        print('❌ DEBUG: Cart items is empty');
+      }
+    } catch (e) {
+      print('❌ Error loading seller delivery settings: $e');
+      // Default to pickup only if error
+      sellerOffersDelivery = false;
+      isDelivery = false;
+      
+      // TEMPORARY: For testing when seller ID is wrong, enable services manually
+      print('🔧 TEMPORARY: Enabling PAXI/PUDO for testing since seller data failed to load');
+      sellerOffersPaxi = true;
+      sellerOffersPudo = true;
+    } finally {
+      isLoadingSellerInfo = false;
+      notifyListeners();
+    }
+  }
+  
+  Future<void> submitOrder(BuildContext context) async {
+    // Ensure we have the latest user ID before submitting
+    currentUserId = FirebaseAuth.instance.currentUser?.uid;
+    
+    print('🔍 DEBUG: Submitting order with currentUserId: $currentUserId');
+    
+    // Load product handling instructions before submission
+    loadProductHandlingInstructions();
+    
+    // Use PRODUCTION-GRADE order service
+    final result = await ProductionOrderService.submitProductionOrder(
+      cartItems: cartItems,
+      isDelivery: isDelivery,
+      paymentMethod: selectedPaymentMethod,
+      deliveryAddress: addressText,
+      selectedPickupPoint: selectedPickupPoint,
+      productHandlingInstructions: productHandlingInstructions,
+      specialHandlingInstructions: specialHandlingInstructions,
+      selectedPaxiSpeed: selectedPaxiSpeed,
+      pudoDeliveryAddress: pudoDeliveryAddress,
+      pudoDeliveryPhone: pudoDeliveryPhone,
+      customerFirstName: firstName,
+      customerLastName: lastName,
+      context: context,
+    );
+    
+    if (!result['success']) {
+      throw Exception(result['message'] ?? 'Order submission failed');
+    }
+    
+    print('✅ Production order completed: ${result['orderId']}');
+
+    // Handle PayFast redirect for card payments
+    if (selectedPaymentMethod == 'payfast') {
+      final payment = result['payment'] as Map<String, dynamic>?;
+      if (payment != null && payment['success'] == true) {
+        final paymentUrl = payment['paymentUrl'] as String?;
+        final paymentData = (payment['paymentData'] as Map?)?.map((k, v) => MapEntry(k.toString(), v.toString()));
+        final method = payment['httpMethod'] as String?;
+        if (paymentUrl != null && paymentData != null) {
+          // Prefer POST via the Cloud Function bridge; if that's not feasible in-app, build GET fallback
+          String finalUrl;
+          if ((method ?? 'POST').toUpperCase() == 'POST') {
+            // Build GET as a fallback for WebView; the CF will also accept GET
+            final query = paymentData.entries
+                .map((e) => '${Uri.encodeQueryComponent(e.key)}=${Uri.encodeQueryComponent(e.value)}')
+                .join('&');
+            finalUrl = '$paymentUrl?$query';
+          } else {
+            final query = paymentData.entries
+                .map((e) => '${Uri.encodeQueryComponent(e.key)}=${Uri.encodeQueryComponent(e.value)}')
+                .join('&');
+            finalUrl = '$paymentUrl?$query';
+          }
+
+          // Open WebView to complete payment
+          if (context.mounted) {
+            // Debug: log the PayFast URL and expected return/cancel paths
+            // Helps verify that we are using Cloud Functions endpoints
+            // and not the Hosting proxied URLs
+            // Example expected: https://us-central1-marketplace-8d6bd.cloudfunctions.net/payfastFormRedirect?... 
+            // Success/Cancel detection: contains 'payfastReturn' / 'payfastCancel'
+            // ignore: avoid_print
+            print('🧭 PAYFAST URL → '+finalUrl);
+            final navResult = await Navigator.of(context).pushNamed(
+              '/paymentWebview',
+              arguments: {
+                'url': finalUrl,
+                // Afrihost PHP endpoint path detection
+                'successPath': 'payfastReturn.php',
+                'cancelPath': 'payfastCancel.php',
+              },
+            );
+            // If payment succeeded via return URL, mark order paid and finalize
+            if (navResult is Map && navResult['status'] == 'success') {
+              try {
+                final orderId = result['orderId'] as String?;
+                if (orderId != null) {
+                  final db = FirebaseFirestore.instance;
+                  await db.collection('orders').doc(orderId).set({
+                    'payment': {
+                      'method': 'payfast',
+                      'status': 'paid',
+                      'currency': 'ZAR',
+                      'gateway': 'payfast',
+                      'paidViaReturn': true,
+                    },
+                    'status': 'paid',
+                    'paidAt': FieldValue.serverTimestamp(),
+                    'updatedAt': FieldValue.serverTimestamp(),
+                    'statusHistory': FieldValue.arrayUnion([
+                      {
+                        'status': 'paid',
+                        'timestamp': FieldValue.serverTimestamp(),
+                        'note': 'Marked paid via PayFast return',
+                      }
+                    ]),
+                  }, SetOptions(merge: true));
+
+                  await ProductionOrderService.finalizePostPayment(
+                    orderId: orderId,
+                    cartItems: cartItems,
+                    isDelivery: isDelivery,
+                    deliveryAddress: addressText,
+                    selectedPickupPoint: selectedPickupPoint,
+                    productHandlingInstructions: productHandlingInstructions,
+                    customerFirstName: firstName,
+                    customerLastName: lastName,
+                  );
+                }
+              } catch (e) {
+                // ignore: avoid_print
+                print('⚠️ Post-payment finalization error: $e');
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+

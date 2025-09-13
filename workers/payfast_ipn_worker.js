@@ -80,9 +80,9 @@ async function handleMeta(request, env) {
     const base = env.PUBLIC_BASE_URL || 'https://marketplace-8d6bd.web.app';
     const url = `${base}/store/${id}`;
     const html = `<!doctype html><html><head><meta charset="utf-8" />
-    <title>${name} – Mzansi Marketplace</title>
+    <title>${name} – OmniaSA</title>
     <meta name="description" content="${escapeHtml(desc)}" />
-    <meta property="og:title" content="${escapeHtml(name)} – Mzansi Marketplace" />
+    <meta property="og:title" content="${escapeHtml(name)} – OmniaSA" />
     <meta property="og:description" content="${escapeHtml(desc)}" />
     <meta property="og:type" content="website" />
     <meta property="og:url" content="${url}" />

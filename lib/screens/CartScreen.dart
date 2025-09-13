@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
-import '../screens/CheckoutScreen.dart';
 import '../providers/cart_provider.dart';
 import '../services/optimized_checkout_service.dart';
 import '../theme/app_theme.dart';
@@ -183,8 +182,15 @@ class _CartScreenState extends State<CartScreen> {
                                     style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                                   ),
                                   IconButton(
-                                    icon: Icon(Icons.add_circle_outline, color: AppTheme.primaryGreen),
-                                    onPressed: () => cartProvider.updateQuantity(cartItem.id, cartItem.quantity + 1),
+                                    icon: Icon(
+                                      Icons.add_circle_outline, 
+                                      color: cartProvider.canIncrementQuantity(cartItem.id) 
+                                        ? AppTheme.primaryGreen 
+                                        : Colors.grey,
+                                    ),
+                                    onPressed: cartProvider.canIncrementQuantity(cartItem.id) 
+                                      ? () => cartProvider.updateQuantity(cartItem.id, cartItem.quantity + 1)
+                                      : null,
                                   ),
                                   IconButton(
                                     icon: Icon(Icons.delete_outline, color: AppTheme.primaryRed),
@@ -221,11 +227,10 @@ class _CartScreenState extends State<CartScreen> {
                       ),
                       ActionButton(
                         onPressed: cartItems.isNotEmpty ? () {
-                          Navigator.push(
+                          Navigator.pushNamed(
                             context,
-                            MaterialPageRoute(
-                              builder: (_) => CheckoutScreen(totalPrice: cartProvider.totalPrice),
-                            ),
+                            '/checkout',
+                            arguments: {'totalPrice': cartProvider.totalPrice},
                           );
                         } : null,
                         icon: const Icon(Icons.shopping_cart_checkout),

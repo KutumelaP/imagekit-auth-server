@@ -23,11 +23,49 @@ class RuralDeliveryWidget extends StatefulWidget {
 class _RuralDeliveryWidgetState extends State<RuralDeliveryWidget> {
   String? _selectedOption;
   List<Map<String, dynamic>> _deliveryOptions = [];
+  bool _hasCommunityDrivers = false;
 
   @override
   void initState() {
     super.initState();
     _loadDeliveryOptions();
+    _checkDrivers();
+  }
+
+  Future<void> _checkDrivers() async {
+    try {
+      // Use a modest radius based on distance (cap to 20km)
+      final double radius = widget.distance.clamp(5.0, 20.0);
+      final List<Map<String, dynamic>> community = await RuralDeliveryService.getCommunityDrivers(
+        latitude: 0.0, // TODO: pass real coords from parent if available
+        longitude: 0.0,
+        radius: radius,
+      );
+      final List<Map<String, dynamic>> rural = await RuralDeliveryService.getRuralDrivers(
+        latitude: 0.0,
+        longitude: 0.0,
+        radius: radius,
+      );
+      if (mounted) setState(() {
+        _hasCommunityDrivers = (community.isNotEmpty || rural.isNotEmpty);
+        if (!_hasCommunityDrivers) {
+          // Remove community option if present
+          _deliveryOptions.removeWhere((o) => o['key'] == 'community');
+        } else if (_deliveryOptions.indexWhere((o) => o['key'] == 'community') == -1 && widget.isRuralArea) {
+          // Ensure community option exists if rural and drivers exist
+          _deliveryOptions.add({
+            'name': 'Community Delivery',
+            'fee': 30.0,
+            'time': '60-90 minutes',
+            'description': 'Local driver delivery',
+            'icon': '🤝',
+            'recommended': false,
+            'key': 'community',
+            'available': true,
+          });
+        }
+      });
+    } catch (_) {}
   }
 
   void _loadDeliveryOptions() {
@@ -35,7 +73,12 @@ class _RuralDeliveryWidgetState extends State<RuralDeliveryWidget> {
       distance: widget.distance,
       isRuralArea: widget.isRuralArea,
     );
-    
+
+    // Gate community option until drivers exist
+    if (!_hasCommunityDrivers) {
+      _deliveryOptions.removeWhere((o) => o['key'] == 'community');
+    }
+
     // Set pickup as default
     _selectedOption = 'pickup';
   }
@@ -116,7 +159,7 @@ class _RuralDeliveryWidgetState extends State<RuralDeliveryWidget> {
           ..._deliveryOptions.map((option) => _buildDeliveryOption(option)),
 
           // Rural Area Benefits
-          if (widget.isRuralArea) _buildRuralBenefits(),
+          if (widget.isRuralArea && _hasCommunityDrivers) _buildRuralBenefits(),
 
           // Distance-based Pricing
           _buildDistancePricing(),
@@ -177,28 +220,37 @@ class _RuralDeliveryWidgetState extends State<RuralDeliveryWidget> {
                   children: [
                     Row(
                       children: [
-                        Text(
-                          option['name'],
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            color: isSelected ? AppTheme.deepTeal : AppTheme.darkGrey,
+                        Expanded(
+                          child: Text(
+                            option['name'],
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: isSelected ? AppTheme.deepTeal : AppTheme.darkGrey,
+                            ),
                           ),
                         ),
                         if (isRecommended) ...[
                           const SizedBox(width: 8),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: Colors.green,
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: const Text(
-                              'RECOMMENDED',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 8,
-                                fontWeight: FontWeight.bold,
+                          Flexible(
+                            fit: FlexFit.loose,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: Colors.green,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: const Text(
+                                'RECOMMENDED',
+                                overflow: TextOverflow.fade,
+                                softWrap: false,
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 8,
+                                  fontWeight: FontWeight.bold,
+                                ),
                               ),
                             ),
                           ),

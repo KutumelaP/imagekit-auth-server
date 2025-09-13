@@ -93,6 +93,25 @@ class AppTheme {
     ),
   ];
   
+  // Card and button elevation shadows
+  static const List<BoxShadow> cardElevation = [
+    BoxShadow(
+      color: Color(0x12000000),
+      blurRadius: 8,
+      offset: Offset(0, 4),
+      spreadRadius: 0,
+    ),
+  ];
+  
+  static const List<BoxShadow> buttonElevation = [
+    BoxShadow(
+      color: Color(0x30000000),
+      blurRadius: 12,
+      offset: Offset(0, 6),
+      spreadRadius: 0,
+    ),
+  ];
+  
   // Complementary accent gradients (for cards and specific elements)
   static const List<Color> warmAccent = [Color(0xFFFF8A50), Color(0xFFFFB388)];
   static const List<Color> coolAccent = [Color(0xFF4FC3F7), Color(0xFF81D4FA)];

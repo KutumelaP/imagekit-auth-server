@@ -130,7 +130,7 @@ class _EmbeddedSupportChatState extends State<EmbeddedSupportChat>
       scheme: 'mailto',
       path: email,
       queryParameters: {
-        'subject': 'Support Request - Mzansi Marketplace',
+        'subject': 'Support Request - OmniaSA',
         'body': 'Hi there,\n\nI need help with:\n\nOrder ID (if applicable): \nIssue Description: \n\nThank you!',
       },
     );

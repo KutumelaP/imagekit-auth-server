@@ -1,11 +1,11 @@
-# 🍽️ Food Marketplace App - 10/10 Production Ready
+# 🛒 NayMarket - South African Multi-Category Marketplace
 
 [![Flutter](https://img.shields.io/badge/Flutter-3.16.0-blue.svg)](https://flutter.dev/)
 [![Firebase](https://img.shields.io/badge/Firebase-10.0.0-orange.svg)](https://firebase.google.com/)
 [![Tests](https://img.shields.io/badge/Tests-Passing-green.svg)](https://flutter.dev/docs/testing)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-A **production-ready** Flutter marketplace application connecting local food vendors with customers. Built with modern architecture, comprehensive testing, and enterprise-grade features.
+A **production-ready** Flutter marketplace application connecting local vendors with customers across South Africa. Supporting Food, Electronics, Clothing, and Other categories. Built with modern architecture, comprehensive testing, and enterprise-grade features.
 
 ## 🌟 **10/10 Features**
 

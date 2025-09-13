@@ -5,7 +5,11 @@ class RoutePersistenceObserver extends NavigatorObserver {
   static const String _lastRouteKey = 'last_route_v1';
   static const String _lastRouteTimeKey = 'last_route_time_v1';
 
-  final Set<String> _ignoreRoutes = {'', '/', '/splash'};
+  final Set<String> _ignoreRoutes = {
+    '', '/', '/splash',
+    '/paymentWebview',
+    '/checkout',  // Don't auto-redirect to checkout (transient screen)
+  };
 
   Future<void> _save(String? routeName) async {
     try {
