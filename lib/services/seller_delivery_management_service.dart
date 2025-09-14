@@ -753,44 +753,4 @@ Please confirm your delivery method in the seller dashboard!
     }
   }
 
-  /// 🧪 TESTING ONLY: Reset delivery status to confirmed_by_seller for re-testing
-  static Future<Map<String, dynamic>> resetDeliveryForTesting({
-    required String orderId,
-  }) async {
-    try {
-      print('🔄 TESTING: Resetting delivery status for order: $orderId');
-      
-      // Reset order status
-      await _firestore.collection('orders').doc(orderId).update({
-        'status': 'confirmed',
-        'trackingStartedAt': FieldValue.delete(),
-        'trackingStartedBy': FieldValue.delete(),
-        'driverLocation': FieldValue.delete(),
-        'lastLocationUpdate': FieldValue.delete(),
-      });
-
-      // Reset seller delivery task status
-      final taskDoc = await _firestore.collection('seller_delivery_tasks').doc(orderId).get();
-      if (taskDoc.exists) {
-        await _firestore.collection('seller_delivery_tasks').doc(orderId).update({
-          'status': 'confirmed_by_seller',
-          'startedAt': FieldValue.delete(),
-          'deliveryUpdates': FieldValue.delete(),
-        });
-        print('✅ Seller delivery task reset to confirmed_by_seller');
-      }
-
-      print('✅ Order reset - you can now test "Start Tracking" again');
-      return {
-        'success': true,
-        'message': 'Delivery reset for testing - you can click Start Tracking again',
-      };
-    } catch (e) {
-      print('❌ Error resetting delivery: $e');
-      return {
-        'success': false,
-        'message': 'Failed to reset delivery: $e',
-      };
-    }
-  }
 }

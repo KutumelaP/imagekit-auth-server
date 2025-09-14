@@ -977,30 +977,6 @@ class _DriverAppScreenState extends State<DriverAppScreen> {
                 ),
               ),
             ),
-            const SizedBox(height: 8),
-            // 🧪 TESTING ONLY: Reset button to test tracking again
-            Container(
-              width: double.infinity,
-              height: 36,
-              child: OutlinedButton.icon(
-                onPressed: () => _resetDeliveryForTesting(orderId),
-                icon: Icon(Icons.refresh, size: 16, color: Colors.orange),
-                label: Text(
-                  '🧪 Reset for Testing',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                    color: Colors.orange,
-                  ),
-                ),
-                style: OutlinedButton.styleFrom(
-                  side: BorderSide(color: Colors.orange, width: 1),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                ),
-              ),
-            ),
             const SizedBox(height: 12),
             // Secondary action - Call Customer
             Container(
@@ -1057,30 +1033,6 @@ class _DriverAppScreenState extends State<DriverAppScreen> {
                 ),
               ),
             ),
-            const SizedBox(height: 8),
-            // 🧪 TESTING: Reset button for in-progress orders
-            Container(
-              width: double.infinity,
-              height: 36,
-              child: OutlinedButton.icon(
-                onPressed: () => _resetDeliveryForTesting(orderId),
-                icon: Icon(Icons.refresh, size: 16, color: Colors.orange),
-                label: Text(
-                  '🧪 Reset for Testing',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                    color: Colors.orange,
-                  ),
-                ),
-                style: OutlinedButton.styleFrom(
-                  side: BorderSide(color: Colors.orange, width: 1),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                ),
-              ),
-            ),
             const SizedBox(height: 12),
             // Secondary action - Call Customer
             Container(
@@ -1133,30 +1085,6 @@ class _DriverAppScreenState extends State<DriverAppScreen> {
                     ),
                   ),
                 ],
-              ),
-            ),
-            const SizedBox(height: 8),
-            // 🧪 TESTING: Reset button for completed orders
-            Container(
-              width: double.infinity,
-              height: 36,
-              child: OutlinedButton.icon(
-                onPressed: () => _resetDeliveryForTesting(orderId),
-                icon: Icon(Icons.refresh, size: 16, color: Colors.orange),
-                label: Text(
-                  '🧪 Reset for Testing',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                    color: Colors.orange,
-                  ),
-                ),
-                style: OutlinedButton.styleFrom(
-                  side: BorderSide(color: Colors.orange, width: 1),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                ),
               ),
             ),
           ],
@@ -1433,39 +1361,6 @@ class _DriverAppScreenState extends State<DriverAppScreen> {
     }
   }
 
-  /// 🧪 TESTING ONLY: Reset delivery status to test tracking again
-  Future<void> _resetDeliveryForTesting(String orderId) async {
-    try {
-      final result = await SellerDeliveryManagementService.resetDeliveryForTesting(
-        orderId: orderId,
-      );
-      
-      if (result['success']) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('🔄 ${result['message']}'),
-            backgroundColor: Colors.orange,
-          ),
-        );
-        _loadPendingOrders(); // Refresh to show reset status
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('❌ Reset failed: ${result['message']}'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    } catch (e) {
-      print('❌ Error resetting delivery: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('❌ Reset error: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
-    }
-  }
 
   /// 🚀 NEW: Show OTP dialog for seller-assigned deliveries
   Future<String?> _showOTPDialog() async {

@@ -557,17 +557,6 @@ class _SellerDeliveryDashboardState extends State<SellerDeliveryDashboard> {
                   ),
                 ),
               
-              if (status == 'confirmed_by_seller')
-                Expanded(
-                  child: ElevatedButton(
-                    onPressed: () => _startDelivery(orderId),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.green,
-                      foregroundColor: Colors.white,
-                    ),
-                    child: Text('Start Delivery'),
-                  ),
-                ),
               
               if (status != 'delivery_in_progress')
                 SizedBox(width: 8),
@@ -780,19 +769,6 @@ class _SellerDeliveryDashboardState extends State<SellerDeliveryDashboard> {
           // Action Buttons for Active Deliveries
           Row(
             children: [
-              if (status == 'confirmed_by_seller')
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: () => _startDelivery(orderId),
-                    icon: Icon(Icons.play_arrow, size: 16),
-                    label: Text('Start Delivery'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppTheme.primaryOrange,
-                      foregroundColor: Colors.white,
-                      padding: EdgeInsets.symmetric(vertical: 8),
-                    ),
-                  ),
-                ),
               
               if (status == 'delivery_in_progress') ...[
                 Expanded(
@@ -932,44 +908,11 @@ class _SellerDeliveryDashboardState extends State<SellerDeliveryDashboard> {
           setState(() {
             task['status'] = 'confirmed_by_seller';
           });
-          _showSuccessSnackBar('Delivery confirmed. Tap Start Delivery to begin tracking.');
+          _showSuccessSnackBar('Delivery confirmed. Driver will start tracking from their app.');
           _loadDashboardData();
         },
       ),
     );
-  }
-
-  Future<void> _startDelivery(String orderId) async {
-    try {
-      // Start GPS tracking first
-      _showSuccessSnackBar('Starting GPS tracking...');
-      final trackingStarted = await _locationService.startTracking(orderId);
-      
-      if (!trackingStarted) {
-        _showErrorSnackBar('Could not start GPS tracking. Please enable location services.');
-        return;
-      }
-
-      final result = await SellerDeliveryManagementService.sellerStartDelivery(
-        orderId: orderId,
-        sellerId: _sellerId!,
-        notes: 'Delivery started by seller with GPS tracking',
-      );
-      
-      if (result['success']) {
-        _showSuccessSnackBar('🛰️ Delivery started with live GPS tracking!');
-        print('🔍 DEBUG: Delivery started successfully, reloading dashboard...');
-        _loadDashboardData();
-      } else {
-        // Stop tracking if delivery start failed
-        await _locationService.stopTracking();
-        _showErrorSnackBar('Failed to start delivery');
-      }
-    } catch (e) {
-      // Stop tracking on error
-      await _locationService.stopTracking();
-      _showErrorSnackBar('Error starting delivery: $e');
-    }
   }
 
   void _showCompleteDeliveryDialog(Map<String, dynamic> task) {
