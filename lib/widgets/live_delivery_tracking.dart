@@ -33,6 +33,12 @@ class _LiveDeliveryTrackingState extends State<LiveDeliveryTracking> {
 
   @override
   Widget build(BuildContext context) {
+    // 🚀 DEBUG: Log delivery address passed to widget
+    print('🔍 LIVE TRACKING WIDGET DEBUG:');
+    print('   - Order ID: ${widget.orderId}');
+    print('   - Delivery Address: "${widget.deliveryAddress}"');
+    print('   - Delivery Coordinates: ${widget.deliveryCoordinates}');
+    
     return Card(
       elevation: 8,
       shape: RoundedRectangleBorder(

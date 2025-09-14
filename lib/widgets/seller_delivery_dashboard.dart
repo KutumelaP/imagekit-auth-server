@@ -936,17 +936,39 @@ class _SellerDeliveryDashboardState extends State<SellerDeliveryDashboard> {
   }
 
   void _showTrackingDialog(String orderId) {
-    // Find the task to get delivery address
-    final tasks = (_dashboardData?['pendingTasks'] as List?) ?? [];
-    final task = tasks.isNotEmpty 
-        ? tasks.firstWhere(
+    // Find the task to get delivery address - check both pending and active deliveries
+    final pendingTasks = (_dashboardData?['pendingTasks'] as List?) ?? [];
+    final activeDeliveries = (_dashboardData?['activeDeliveries'] as List?) ?? [];
+    final allTasks = [...pendingTasks, ...activeDeliveries];
+    
+    final task = allTasks.isNotEmpty 
+        ? allTasks.firstWhere(
             (t) => t['orderId'] == orderId,
             orElse: () => <String, dynamic>{},
           )
         : <String, dynamic>{};
     
-    final deliveryAddress = task?['deliveryDetails']?['address'] ?? 'Unknown address';
-    final coordinates = task?['deliveryDetails']?['coordinates'];
+    // 🚀 DEBUG: Check what's in deliveryDetails
+    print('🔍 TRACKING DIALOG DEBUG for $orderId:');
+    print('   - Task found: ${task.isNotEmpty}');
+    if (task.isNotEmpty) {
+      print('   - Task keys: ${task.keys.toList()}');
+      final deliveryDetails = task['deliveryDetails'];
+      print('   - DeliveryDetails: $deliveryDetails');
+      if (deliveryDetails != null) {
+        print('   - DeliveryDetails keys: ${(deliveryDetails as Map).keys.toList()}');
+      }
+    }
+    
+    // Try multiple possible field names for the delivery address
+    final deliveryDetails = task['deliveryDetails'] as Map<String, dynamic>?;
+    final deliveryAddress = deliveryDetails?['address'] 
+                         ?? deliveryDetails?['deliveryAddress'] 
+                         ?? deliveryDetails?['buyerAddress']
+                         ?? deliveryDetails?['fullAddress']
+                         ?? 'Unknown address';
+    final coordinates = deliveryDetails?['coordinates'] 
+                     ?? deliveryDetails?['deliveryCoordinates'];
     
     showDialog(
       context: context,
