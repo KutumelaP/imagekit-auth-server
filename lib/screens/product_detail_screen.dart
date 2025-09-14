@@ -3,6 +3,7 @@ import '../theme/app_theme.dart';
 import '../widgets/safe_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
+import 'dart:math' as math;
 import '../providers/cart_provider.dart';
 import '../services/subcategory_suggestions_service.dart';
 import 'product_browsing_screen.dart';
@@ -514,16 +515,14 @@ class ProductDetailScreen extends StatelessWidget {
   }
 
   int _getProductStock(Map<String, dynamic> product) {
-    final stock = product['stock'];
-    final quantity = product['quantity'];
+    // 🔧 FIX: Use the higher value between quantity and stock to resolve inconsistencies
+    final quantity = product['quantity'] ?? 0;
+    final stockField = product['stock'] ?? 0;
+    final quantityNum = (quantity is num) ? quantity.toInt() : (int.tryParse(quantity.toString()) ?? 0);
+    final stockNum = (stockField is num) ? stockField.toInt() : (int.tryParse(stockField.toString()) ?? 0);
     
-    if (stock != null) {
-      return int.tryParse(stock.toString()) ?? 0;
-    } else if (quantity != null) {
-      return int.tryParse(quantity.toString()) ?? 0;
-    }
-    
-    return 0;
+    // Take the maximum of both fields to handle inconsistencies
+    return math.max(quantityNum, stockNum);
   }
 
 

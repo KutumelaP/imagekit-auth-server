@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
+import 'dart:math' as math;
 import '../providers/cart_provider.dart';
 import '../theme/app_theme.dart';
 import '../widgets/safe_network_image.dart';
@@ -177,16 +178,14 @@ class _StunningProductDetailState extends State<StunningProductDetail>
   }
 
   int _getProductStock() {
-    final stock = widget.product['stock'];
-    final productQuantity = widget.product['quantity'];
+    // 🔧 FIX: Use the higher value between quantity and stock to resolve inconsistencies
+    final quantity = widget.product['quantity'] ?? 0;
+    final stockField = widget.product['stock'] ?? 0;
+    final quantityNum = (quantity is num) ? quantity.toInt() : (int.tryParse(quantity.toString()) ?? 0);
+    final stockNum = (stockField is num) ? stockField.toInt() : (int.tryParse(stockField.toString()) ?? 0);
     
-    if (stock != null) {
-      return int.tryParse(stock.toString()) ?? 0;
-    } else if (productQuantity != null) {
-      return int.tryParse(productQuantity.toString()) ?? 0;
-    }
-    
-    return 0;
+    // Take the maximum of both fields to handle inconsistencies
+    return math.max(quantityNum, stockNum);
   }
 
   @override
