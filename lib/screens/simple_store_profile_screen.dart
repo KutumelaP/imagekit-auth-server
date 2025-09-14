@@ -94,7 +94,7 @@ class _SimpleStoreProfileScreenState extends State<SimpleStoreProfileScreen>
     final envUtmMedium = const String.fromEnvironment('UTM_MEDIUM', defaultValue: '');
     final envUtmCampaign = const String.fromEnvironment('UTM_CAMPAIGN', defaultValue: '');
           // Web fallback
-      final webBase = const String.fromEnvironment('PUBLIC_BASE_URL', defaultValue: 'https://marketplace-8d6bd.web.app');
+      final webBase = const String.fromEnvironment('PUBLIC_BASE_URL', defaultValue: 'https://www.omniasa.co.za');
       final deepLink = (storeId != null) ? '$webBase/#/stores?storeId=$storeId' : webBase;
     // Try lightweight Firebase Dynamic Links (no SDK) if LINKS_DOMAIN is provided
     final linksDomain = const String.fromEnvironment('DYNAMIC_LINKS_DOMAIN', defaultValue: ''); // e.g. https://links.yourdomain
@@ -454,7 +454,7 @@ class _SimpleStoreProfileScreenState extends State<SimpleStoreProfileScreen>
   Future<void> _showQrDialog() async {
     final shareUrl = (() {
       final storeId = widget.store['storeId'] as String?;
-      final webBase = const String.fromEnvironment('PUBLIC_BASE_URL', defaultValue: 'https://marketplace-8d6bd.web.app');
+      final webBase = const String.fromEnvironment('PUBLIC_BASE_URL', defaultValue: 'https://www.omniasa.co.za');
       final deepLink = (storeId != null) ? '$webBase/#/stores?storeId=$storeId' : webBase;
       final utmSource = const String.fromEnvironment('UTM_SOURCE', defaultValue: '');
       final utmMedium = const String.fromEnvironment('UTM_MEDIUM', defaultValue: '');

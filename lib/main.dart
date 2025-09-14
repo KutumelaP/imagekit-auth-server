@@ -46,6 +46,7 @@ import 'screens/PaymentSuccessScreen.dart';
 import 'screens/stunning_product_browser.dart';
 import 'screens/store_page.dart';
 import 'screens/web_desktop_block_screen.dart';
+import 'screens/admin_redirect_screen.dart';
 // payment webview route is generated dynamically; screen imported above
 
 import 'dart:async';
@@ -186,6 +187,7 @@ class MyApp extends StatelessWidget {
           '/cart': (context) => const CartScreen(),
           '/order-history': (context) => OrderHistoryScreen(),
           '/profile': (context) => ProfileEditScreen(),
+          '/admin': (context) => const AdminRedirectScreen(),
           '/admin-review-moderation': (context) => AdminReviewModerationScreen(),
           '/cache-management': (context) => CacheManagementScreen(),
           '/my-products': (context) => SellerProductManagement(),
