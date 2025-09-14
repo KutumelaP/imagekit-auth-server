@@ -206,7 +206,7 @@ class PargoTrackingService {
 • Ask for assistance if needed
 • Keep your collection receipt
 
-❓ Need Help? Contact: support@mzansimarketplace.com
+❓ Need Help? Contact: support@omniasa.com
     ''';
   }
 

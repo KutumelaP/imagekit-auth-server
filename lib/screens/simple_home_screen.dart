@@ -1411,7 +1411,7 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
           boxShadow: AppTheme.complementaryElevation,
         ),
         child: const Text(
-          'Welcome to Mzansi',
+          'Welcome to omniaSA',
           style: TextStyle(
             fontSize: 18,
             fontWeight: FontWeight.w600,

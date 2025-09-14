@@ -77,7 +77,7 @@ class DriverSimpleAuthService {
         ? '000000'
         : (sellerSanitized.length >= 8 ? sellerSanitized.substring(0, 8) : sellerSanitized.padRight(8, '0'));
     // Use production domain for driver emails
-    return '$safeName.driver.$idPart@mzansimarketplace.co.za';
+    return '$safeName.driver.$idPart@omniasa.co.za';
   }
 
   /// Generate a strong password for driver authentication
@@ -135,8 +135,8 @@ class DriverSimpleAuthService {
               final driverName = driverData['name']?.toString() ?? 'driver';
               final cleanName = driverName.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
               final safeName = cleanName.isEmpty ? 'driver' : cleanName;
-              final fallbackEmail = '$safeName.driver.$timestamp@mzansimarketplace.co.za';
-              final fallbackPassword = 'MzansiDriver${timestamp}!';
+              final fallbackEmail = '$safeName.driver.$timestamp@omniasa.co.za';
+              final fallbackPassword = 'omniaSADriver${timestamp}!';
               
               print('🔄 Trying robust fallback: $fallbackEmail');
               userCredential = await _auth.createUserWithEmailAndPassword(

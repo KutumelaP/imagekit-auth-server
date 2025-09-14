@@ -58,7 +58,7 @@ class RobustImage extends StatelessWidget {
         memCacheHeight: height != null && height!.isFinite ? height!.toInt() : null,
         // Add retry logic
         httpHeaders: const {
-          'User-Agent': 'Mzansi-Marketplace-App/1.0',
+          'User-Agent': 'omniaSA-App/1.0',
         },
         // Optimized cache settings for large caches
         maxWidthDiskCache: 2048, // Increased for better quality

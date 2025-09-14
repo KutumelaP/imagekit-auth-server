@@ -115,7 +115,7 @@ class PaxiService {
             headers: {
               'Content-Type': 'application/json',
               'Accept': 'application/json',
-              'User-Agent': 'Mozilla/5.0 (compatible; MzansiMarketplace/1.0)',
+              'User-Agent': 'Mozilla/5.0 (compatible; omniaSA/1.0)',
             },
           ).timeout(const Duration(seconds: 10));
           

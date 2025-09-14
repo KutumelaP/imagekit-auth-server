@@ -68,7 +68,7 @@ class OptimizedImage extends StatelessWidget {
       filterQuality: filterQuality,
       cacheKey: cacheKey,
       httpHeaders: {
-        'User-Agent': 'Mzansi-Marketplace-App/1.0',
+        'User-Agent': 'omniaSA-App/1.0',
         ...?httpHeaders,
       },
       maxWidthDiskCache: 1024,

@@ -2067,7 +2067,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       final response = await http.get(
         Uri.parse(url),
         headers: {
-          'User-Agent': 'MzansiMarketplace/1.0 (https://marketplace-8d6bd.web.app)',
+          'User-Agent': 'omniaSA/1.0 (https://marketplace-8d6bd.web.app)',
         },
       );
       
@@ -2341,7 +2341,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       final response = await http.get(
         Uri.parse(url),
         headers: {
-          'User-Agent': 'MzansiMarketplace/1.0 (https://marketplace-8d6bd.web.app)',
+          'User-Agent': 'omniaSA/1.0 (https://marketplace-8d6bd.web.app)',
         },
       );
       
@@ -2450,7 +2450,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       final response = await http.get(
         Uri.parse(url),
         headers: {
-          'User-Agent': 'MzansiMarketplace/1.0 (https://marketplace-8d6bd.web.app)',
+          'User-Agent': 'omniaSA/1.0 (https://marketplace-8d6bd.web.app)',
         },
       );
 

@@ -62,7 +62,7 @@ class SafeNetworkImage extends StatelessWidget {
         memCacheWidth: width != null && width!.isFinite ? width!.toInt() : null,
         memCacheHeight: height != null && height!.isFinite ? height!.toInt() : null,
         httpHeaders: const {
-          'User-Agent': 'Mzansi-Marketplace-App/1.0',
+          'User-Agent': 'omniaSA-App/1.0',
         },
         maxWidthDiskCache: 1024,
         maxHeightDiskCache: 1024,
@@ -149,7 +149,7 @@ class SafeNetworkImage extends StatelessWidget {
       final response = await http.get(
         Uri.parse(imageUrl!),
         headers: {
-          'User-Agent': 'Mzansi-Marketplace-App/1.0',
+          'User-Agent': 'omniaSA-App/1.0',
           'Accept': 'image/*',
         },
       ).timeout(const Duration(seconds: 10));
@@ -182,7 +182,7 @@ class SafeNetworkImage extends StatelessWidget {
           return errorWidget ?? _buildFallbackImage();
         },
         httpHeaders: const {
-          'User-Agent': 'Mzansi-Marketplace-App/1.0',
+          'User-Agent': 'omniaSA-App/1.0',
         },
         cacheKey: _generateCacheKey(_getReliablePlaceholderUrl()),
       ),

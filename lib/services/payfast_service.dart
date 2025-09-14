@@ -83,8 +83,8 @@ class PayFastService {
         'item_name': itemName.length > 100 ? itemName.substring(0, 100) : itemName,
         'item_description': itemDescription.isNotEmpty ? itemDescription : itemName,
         'email_address': customerEmail,
-        'name_first': customerFirstName.isNotEmpty ? customerFirstName : 'Mzansi',
-        'name_last': customerLastName.isNotEmpty ? customerLastName : 'Marketplace',
+        'name_first': customerFirstName.isNotEmpty ? customerFirstName : 'omniaSA',
+        'name_last': customerLastName.isNotEmpty ? customerLastName : 'Customer',
         'cell_number': customerPhone.isNotEmpty ? customerPhone : '0606304683',
       };
 
