@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
+import 'dart:math' as math;
 import '../theme/app_theme.dart';
 import '../widgets/safe_network_image.dart';
 import '../constants/app_constants.dart';
@@ -197,8 +198,13 @@ class _StunningProductBrowserState extends State<StunningProductBrowser>
       
       // Stock filter
       if (inStockOnly) {
-        final stock = data['quantity'] ?? data['stock'] ?? 0;
-        if ((stock as num) <= 0) {
+        final quantity = data['quantity'] ?? 0;
+        final stockField = data['stock'] ?? 0;
+        final quantityNum = (quantity is num) ? quantity.toInt() : (int.tryParse(quantity.toString()) ?? 0);
+        final stockNum = (stockField is num) ? stockField.toInt() : (int.tryParse(stockField.toString()) ?? 0);
+        final stock = math.max(quantityNum, stockNum);
+        
+        if (stock <= 0) {
           return false;
         }
       }
@@ -574,8 +580,12 @@ class _StunningProductBrowserState extends State<StunningProductBrowser>
   Widget _buildProductCard(QueryDocumentSnapshot doc, bool isMobile) {
     final data = doc.data() as Map<String, dynamic>;
     final productData = {...data, 'id': doc.id};
-    final stock = data['quantity'] ?? data['stock'] ?? 0;
-    final isOutOfStock = (stock as num) <= 0;
+    final quantity = data['quantity'] ?? 0;
+    final stockField = data['stock'] ?? 0;
+    final quantityNum = (quantity is num) ? quantity.toInt() : (int.tryParse(quantity.toString()) ?? 0);
+    final stockNum = (stockField is num) ? stockField.toInt() : (int.tryParse(stockField.toString()) ?? 0);
+    final stock = math.max(quantityNum, stockNum);
+    final isOutOfStock = stock <= 0;
     
     return GestureDetector(
       onTap: () => Navigator.push(
@@ -792,20 +802,15 @@ class _StunningProductBrowserState extends State<StunningProductBrowser>
   }
 
   Widget _buildStockIndicator(Map<String, dynamic> data) {
-    final stock = data['quantity'] ?? data['stock'] ?? 0;
-    final isInStock = (stock as num) > 0;
+    // 🔧 FIX: Use the higher value between quantity and stock to resolve inconsistencies
+    final quantity = data['quantity'] ?? 0;
+    final stockField = data['stock'] ?? 0;
+    final quantityNum = (quantity is num) ? quantity.toInt() : (int.tryParse(quantity.toString()) ?? 0);
+    final stockNum = (stockField is num) ? stockField.toInt() : (int.tryParse(stockField.toString()) ?? 0);
     
-    // 🚀 DEBUG: Log stock discrepancy
-    if (!isInStock) {
-      print('🔍 STOCK DEBUG for ${data['name'] ?? 'Unknown'}:');
-      print('   - Product ID: ${data['id']}');
-      print('   - Raw quantity: ${data['quantity']} (${data['quantity'].runtimeType})');
-      print('   - Raw stock: ${data['stock']} (${data['stock'].runtimeType})');
-      print('   - Resolved stock: $stock (${stock.runtimeType})');
-      print('   - Has quantity field: ${data.containsKey('quantity')}');
-      print('   - Has stock field: ${data.containsKey('stock')}');
-      print('   - All product fields: ${data.keys.toList()}');
-    }
+    // Take the maximum of both fields to handle inconsistencies
+    final stock = math.max(quantityNum, stockNum);
+    final isInStock = stock > 0;
     
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -1028,8 +1033,13 @@ class _StunningProductBrowserState extends State<StunningProductBrowser>
       }
       
       // Check stock availability
-      final stock = data['quantity'] ?? data['stock'] ?? 0;
-      if ((stock as num) <= 0) {
+      final quantity = data['quantity'] ?? 0;
+      final stockField = data['stock'] ?? 0;
+      final quantityNum = (quantity is num) ? quantity.toInt() : (int.tryParse(quantity.toString()) ?? 0);
+      final stockNum = (stockField is num) ? stockField.toInt() : (int.tryParse(stockField.toString()) ?? 0);
+      final stock = math.max(quantityNum, stockNum);
+      
+      if (stock <= 0) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('${data['name'] ?? 'This product'} is out of stock!'),
