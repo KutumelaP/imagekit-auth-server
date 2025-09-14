@@ -328,11 +328,11 @@
           </div>
         </div>
         <div id="android-instructions" style="display: none;">
-          <h1>Install OmniaSA</h1>
-          <p>Add this app to your Home Screen or install as a PWA for the best performance.</p>
+          <h1>Download OmniaSA App</h1>
+          <p>Download the full Android app for the best experience with push notifications, offline access, and native performance.</p>
           <div class="btn-row">
-            <button class="btn" id="pwa-installed-btn">I've installed it</button>
-            <button class="link" id="pwa-skip-btn">Continue anyway</button>
+            <button class="btn" id="pwa-download-apk-btn">Download APK</button>
+            <button class="link" id="pwa-skip-btn">Continue in browser</button>
             <button class="link" id="pwa-remind-later-btn">Remind me later</button>
           </div>
         </div>
@@ -345,8 +345,8 @@
     <div class="banner-content">
       <div class="banner-icon-wrapper">📱</div>
       <div class="banner-text">
-        <div class="banner-title">Install OmniaSA</div>
-        <div class="banner-subtitle">Get faster loading & work offline</div>
+        <div class="banner-title" id="banner-title">Install OmniaSA</div>
+        <div class="banner-subtitle" id="banner-subtitle">Get faster loading & work offline</div>
       </div>
       <div class="banner-actions">
         <button class="install-btn" id="pwa-install-now">Install App</button>
@@ -395,13 +395,24 @@
     function updateBannerButton() {
       const ua = navigator.userAgent || navigator.vendor || window.opera;
       const isIOS = /iPad|iPhone|iPod/.test(ua);
+      const isAndroid = /Android/.test(ua);
       const installBtn = document.getElementById('pwa-install-now');
+      const bannerTitle = document.getElementById('banner-title');
+      const bannerSubtitle = document.getElementById('banner-subtitle');
       
       if (installBtn) {
-        if (isIOS) {
+        if (isAndroid) {
+          installBtn.textContent = 'Download APK';
+          if (bannerTitle) bannerTitle.textContent = 'Download OmniaSA App';
+          if (bannerSubtitle) bannerSubtitle.textContent = 'Get the full app experience';
+        } else if (isIOS) {
           installBtn.textContent = 'Add to Home';
+          if (bannerTitle) bannerTitle.textContent = 'Install OmniaSA';
+          if (bannerSubtitle) bannerSubtitle.textContent = 'Get faster loading & work offline';
         } else {
           installBtn.textContent = 'Install App';
+          if (bannerTitle) bannerTitle.textContent = 'Install OmniaSA';
+          if (bannerSubtitle) bannerSubtitle.textContent = 'Get faster loading & work offline';
         }
       }
     }
@@ -451,15 +462,30 @@
 
     // Button handlers
     document.getElementById('pwa-install-now')?.addEventListener('click', ()=>{
-      let gate=document.getElementById('ios-pwa-gate'); 
-      if(gate){ 
-        showOverlay(gate); 
-        window.__forceShowPwaGate=true;
-        const ua = navigator.userAgent || navigator.vendor || window.opera;
-        const isIOS = /iPad|iPhone|iPod/.test(ua);
-        showPlatformInstructions(isIOS);
+      const ua = navigator.userAgent || navigator.vendor || window.opera;
+      const isAndroid = /Android/.test(ua);
+      
+      if (isAndroid) {
+        // Download APK for Android
+        window.open('app-release.apk', '_blank');
+        let b=document.getElementById('pwa-suggestion-banner'); if(b) hideOverlay(b);
+      } else {
+        // Show PWA installation for iOS/other
+        let gate=document.getElementById('ios-pwa-gate'); 
+        if(gate){ 
+          showOverlay(gate); 
+          window.__forceShowPwaGate=true;
+          const isIOS = /iPad|iPhone|iPod/.test(ua);
+          showPlatformInstructions(isIOS);
+        }
+        let b=document.getElementById('pwa-suggestion-banner'); if(b) hideOverlay(b);
       }
-      let b=document.getElementById('pwa-suggestion-banner'); if(b) hideOverlay(b);
+    });
+    
+    // APK download button handler
+    document.getElementById('pwa-download-apk-btn')?.addEventListener('click', ()=>{
+      window.open('app-release.apk', '_blank');
+      let gate=document.getElementById('ios-pwa-gate'); if(gate) hideOverlay(gate);
     });
     document.getElementById('pwa-dismiss-banner')?.addEventListener('click', ()=>{
       let b=document.getElementById('pwa-suggestion-banner'); if(b) hideOverlay(b);

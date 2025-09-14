@@ -4,13 +4,13 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/foundation.dart';
-import 'package:naymarket/utils/web_js_stub.dart'
-    if (dart.library.html) 'package:naymarket/utils/web_js_real.dart' as js;
+import 'package:omniasa/utils/web_js_stub.dart'
+    if (dart.library.html) 'package:omniasa/utils/web_js_real.dart' as js;
 import 'sound_service.dart';
 import 'package:flutter_tts/flutter_tts.dart';
-import 'package:naymarket/utils/web_env.dart';
+import 'package:omniasa/utils/web_env.dart';
 import 'package:flutter_app_badger/flutter_app_badger.dart'
-  if (dart.library.html) 'package:naymarket/utils/badger_stub.dart';
+  if (dart.library.html) 'package:omniasa/utils/badger_stub.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'dart:async';
 

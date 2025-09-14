@@ -1,0 +1,11 @@
+# 🔐 OmniaSA Production Keystore Configuration
+# 
+# Instructions:
+# 1. Generate keystore: keytool -genkey -v -keystore omniasa-release-key.keystore -alias omniasa -keyalg RSA -keysize 2048 -validity 10000
+# 2. Place keystore file in: android/app/omniasa-release-key.keystore
+# 3. Update the values below with your actual keystore details
+
+storePassword=YOUR_KEYSTORE_PASSWORD_HERE
+keyPassword=YOUR_KEY_PASSWORD_HERE
+keyAlias=omniasa
+storeFile=../app/omniasa-release-key.keystore

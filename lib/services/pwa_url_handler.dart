@@ -1,7 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:naymarket/utils/web_js_stub.dart'
-    if (dart.library.html) 'package:naymarket/utils/web_js_real.dart' as js;
+import 'package:omniasa/utils/web_js_stub.dart'
+    if (dart.library.html) 'package:omniasa/utils/web_js_real.dart' as js;
 
 /// 🚀 Service for handling PWA URLs and deep linking
 class PWAUrlHandler {

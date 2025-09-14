@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:naymarket/theme/app_theme.dart';
+import 'package:omniasa/theme/app_theme.dart';
 
 class ErrorBoundary extends StatefulWidget {
   final Widget child;
