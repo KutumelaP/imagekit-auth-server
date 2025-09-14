@@ -802,13 +802,12 @@ class _StunningProductBrowserState extends State<StunningProductBrowser>
   }
 
   Widget _buildStockIndicator(Map<String, dynamic> data) {
-    // 🔧 FIX: Use the higher value between quantity and stock to resolve inconsistencies
+    // Use the higher value between quantity and stock to resolve inconsistencies
     final quantity = data['quantity'] ?? 0;
     final stockField = data['stock'] ?? 0;
     final quantityNum = (quantity is num) ? quantity.toInt() : (int.tryParse(quantity.toString()) ?? 0);
     final stockNum = (stockField is num) ? stockField.toInt() : (int.tryParse(stockField.toString()) ?? 0);
     
-    // Take the maximum of both fields to handle inconsistencies
     final stock = math.max(quantityNum, stockNum);
     final isInStock = stock > 0;
     
