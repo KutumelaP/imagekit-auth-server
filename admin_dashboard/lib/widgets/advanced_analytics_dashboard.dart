@@ -61,16 +61,25 @@ class _AdvancedAnalyticsDashboardState extends State<AdvancedAnalyticsDashboard>
       double totalRevenue = 0;
       for (final o in docs) {
         final ts = (o['timestamp'] as Timestamp).toDate();
-        final amount = (o['totalPrice'] ?? o['totalAmount'] ?? 0).toDouble();
-        totalRevenue += amount;
-        if (_selectedPeriod == '24h') {
-          final diff = range.end.difference(ts).inHours; // 0..23 from end
-          final hourIndex = 23 - diff.clamp(0, 23);
-          if (hourIndex >= 0 && hourIndex < 24) buckets[hourIndex] += amount;
-        } else {
-          final dayDiff = range.end.difference(DateTime(ts.year, ts.month, ts.day)).inDays; // 0..N
-          final idxFromStart = buckets.length - 1 - dayDiff.clamp(0, buckets.length - 1);
-          if (idxFromStart >= 0 && idxFromStart < buckets.length) buckets[idxFromStart] += amount;
+        final status = (o['status'] ?? '').toString();
+        
+        // Only count platform revenue from completed, delivered, or confirmed orders
+        if (status == 'completed' || status == 'delivered' || status == 'confirmed') {
+          final platformFee = (o['platformFee'] ?? 0).toDouble();
+          final buyerServiceFee = (o['buyerServiceFee'] ?? 0).toDouble();
+          final smallOrderFee = (o['smallOrderFee'] ?? 0).toDouble();
+          final amount = platformFee + buyerServiceFee + smallOrderFee;
+          totalRevenue += amount;
+          
+          if (_selectedPeriod == '24h') {
+            final diff = range.end.difference(ts).inHours; // 0..23 from end
+            final hourIndex = 23 - diff.clamp(0, 23);
+            if (hourIndex >= 0 && hourIndex < 24) buckets[hourIndex] += amount;
+          } else {
+            final dayDiff = range.end.difference(DateTime(ts.year, ts.month, ts.day)).inDays; // 0..N
+            final idxFromStart = buckets.length - 1 - dayDiff.clamp(0, buckets.length - 1);
+            if (idxFromStart >= 0 && idxFromStart < buckets.length) buckets[idxFromStart] += amount;
+          }
         }
       }
 
@@ -887,11 +896,18 @@ class _AdvancedAnalyticsDashboardState extends State<AdvancedAnalyticsDashboard>
       final usersSnapshot = await widget.firestore.collection('users').get();
       final users = usersSnapshot.docs;
       
-      // Calculate revenue
+      // Calculate platform revenue (only from completed, delivered, confirmed orders)
       double totalRevenue = 0;
       for (var order in orders) {
         final orderData = order.data() as Map<String, dynamic>;
-        totalRevenue += (orderData['totalAmount'] ?? 0.0);
+        final status = (orderData['status'] ?? '').toString();
+        
+        if (status == 'completed' || status == 'delivered' || status == 'confirmed') {
+          final platformFee = (orderData['platformFee'] ?? 0.0) as num;
+          final buyerServiceFee = (orderData['buyerServiceFee'] ?? 0.0) as num;
+          final smallOrderFee = (orderData['smallOrderFee'] ?? 0.0) as num;
+          totalRevenue += (platformFee + buyerServiceFee + smallOrderFee).toDouble();
+        }
       }
       
       // Calculate metrics

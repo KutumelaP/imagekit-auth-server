@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'OrderTrackingScreen.dart';
+import 'customer_order_tracking_screen.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
 import '../theme/app_theme.dart';
@@ -248,6 +249,24 @@ class OrderDetailScreen extends StatelessWidget {
                         context,
                         MaterialPageRoute(
                           builder: (_) => OrderTrackingScreen(orderId: orderId),
+                        ),
+                      );
+                    },
+                    label: const Text('Track Order'),
+                  ),
+                ] else if ((status == 'delivery_in_progress' || status == 'confirmed') && orderType != 'pickup') ...[
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppTheme.deepTeal,
+                      foregroundColor: AppTheme.angel,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                    icon: const Icon(Icons.location_on),
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => CustomerOrderTrackingScreen(orderId: orderId),
                         ),
                       );
                     },

@@ -4,6 +4,9 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:geolocator/geolocator.dart';
 import 'dart:async';
 import '../services/delivery_fulfillment_service.dart';
+import '../services/driver_authentication_service.dart';
+import '../services/driver_simple_auth_service.dart';
+import 'driver_login_screen.dart';
 import '../theme/app_theme.dart';
 import '../widgets/bottom_action_bar.dart';
 
@@ -20,6 +23,7 @@ class _DriverAppScreenState extends State<DriverAppScreen> {
   
   String? _driverId;
   Map<String, dynamic>? _driverData;
+  Map<String, dynamic>? _driverProfile;
   List<Map<String, dynamic>> _pendingOrders = [];
   Map<String, dynamic>? _currentOrder;
   bool _isOnline = false;
@@ -45,16 +49,34 @@ class _DriverAppScreenState extends State<DriverAppScreen> {
     try {
       final user = _auth.currentUser;
       if (user == null) {
-        // Handle driver login
+        print('❌ No authenticated user - redirecting to login');
+        setState(() => _isLoading = false);
+        // Redirect to driver login
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (context) => const DriverLoginScreen(),
+            ),
+          );
+        });
         return;
       }
 
-      // Get driver data
-      final driverDoc = await _firestore.collection('drivers').doc(user.uid).get();
-      if (driverDoc.exists) {
+      print('🔍 Initializing driver for user: ${user.uid}');
+
+      // Use simple driver authentication first
+      final simpleProfile = await DriverSimpleAuthService.getCurrentDriverProfile();
+      
+      final driverProfile = simpleProfile ?? await DriverAuthenticationService.detectDriverProfile();
+      
+      if (driverProfile != null) {
+        print('✅ Driver profile detected: ${driverProfile['driverType']}');
+        
         setState(() {
-          _driverId = user.uid;
-          _driverData = driverDoc.data();
+          _driverProfile = driverProfile;
+          _driverId = driverProfile['driverId'];
+          _driverData = driverProfile['driverData'];
           _isOnline = _driverData?['isOnline'] ?? false;
           _isLoading = false;
         });
@@ -64,34 +86,43 @@ class _DriverAppScreenState extends State<DriverAppScreen> {
           _startLocationTracking();
         }
       } else {
-        // Driver not found in database
+        print('❌ No driver profile found - redirecting to login');
         setState(() => _isLoading = false);
+        // Redirect to driver login
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (context) => const DriverLoginScreen(),
+            ),
+          );
+        });
       }
     } catch (e) {
-      print('Error initializing driver: $e');
+      print('❌ Error initializing driver: $e');
       setState(() => _isLoading = false);
     }
   }
 
   Future<void> _loadPendingOrders() async {
     try {
-      final ordersQuery = await _firestore
-          .collection('orders')
-          .where('assignedDriverId', isEqualTo: _driverId)
-          .where('status', whereIn: ['pending', 'confirmed', 'ready'])
-          .get();
+      if (_driverProfile == null) {
+        print('❌ No driver profile available');
+        return;
+      }
 
+      print('🔍 Loading orders for driver type: ${_driverProfile!['driverType']}');
+      
+      // Use comprehensive order loading
+      final orders = await DriverAuthenticationService.getDriverOrders(_driverProfile!);
+      
       setState(() {
-        _pendingOrders = ordersQuery.docs.map((doc) {
-          final data = doc.data();
-          return {
-            'orderId': doc.id,
-            ...data,
-          };
-        }).toList();
+        _pendingOrders = orders;
       });
+      
+      print('✅ Loaded ${orders.length} pending orders');
     } catch (e) {
-      print('Error loading pending orders: $e');
+      print('❌ Error loading pending orders: $e');
     }
   }
 
@@ -239,17 +270,69 @@ class _DriverAppScreenState extends State<DriverAppScreen> {
 
     if (_driverData == null) {
       return Scaffold(
+        appBar: AppBar(
+          title: Text('Driver Registration Required'),
+          backgroundColor: AppTheme.deepTeal,
+          foregroundColor: Colors.white,
+        ),
         body: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.error_outline, size: 64, color: AppTheme.error),
-              const SizedBox(height: 16),
-              Text('Driver not found', style: AppTheme.headlineMedium),
-              const SizedBox(height: 8),
-              Text('Please contact admin to register as a driver', 
-                   style: AppTheme.bodyMedium),
-            ],
+          child: Padding(
+            padding: const EdgeInsets.all(24.0),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.local_shipping_outlined, size: 84, color: AppTheme.cloud),
+                const SizedBox(height: 24),
+                Text(
+                  'Driver Profile Not Found',
+                  style: AppTheme.headlineMedium.copyWith(
+                    color: AppTheme.deepTeal,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'To use the driver app, you need to be registered as a driver.',
+                  style: AppTheme.bodyLarge,
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Contact your seller/admin to add you as a driver, or register as an independent driver.',
+                  style: AppTheme.bodyMedium.copyWith(color: AppTheme.mediumGrey),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 32),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: _showDriverRegistrationDialog,
+                    icon: const Icon(Icons.person_add),
+                    label: const Text('Register as Independent Driver'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppTheme.deepTeal,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.arrow_back),
+                    label: const Text('Go Back'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppTheme.deepTeal,
+                      side: BorderSide(color: AppTheme.deepTeal),
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       );
@@ -634,12 +717,15 @@ class _DriverAppScreenState extends State<DriverAppScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            Text('Type: ${_driverProfile?['driverType'] ?? 'Unknown'}'),
             Text('Name: ${_driverData!['name'] ?? 'Unknown'}'),
             Text('Phone: ${_driverData!['phone'] ?? 'No phone'}'),
             Text('Email: ${_driverData!['email'] ?? 'No email'}'),
             Text('Rating: ${(_driverData!['rating'] ?? 0.0).toStringAsFixed(1)}⭐'),
             Text('Vehicle: ${_driverData!['vehicle'] ?? 'No vehicle info'}'),
             Text('Status: ${_isOnline ? 'Online' : 'Offline'}'),
+            if (_driverProfile?['sellerId'] != null)
+              Text('Seller: ${_driverProfile!['sellerId']}'),
           ],
         ),
         actions: [
@@ -650,5 +736,110 @@ class _DriverAppScreenState extends State<DriverAppScreen> {
         ],
       ),
     );
+  }
+
+  void _showDriverRegistrationDialog() {
+    final nameController = TextEditingController();
+    final phoneController = TextEditingController();
+    String selectedVehicleType = 'car';
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Register as Driver'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: nameController,
+                decoration: const InputDecoration(
+                  labelText: 'Full Name',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: phoneController,
+                decoration: const InputDecoration(
+                  labelText: 'Phone Number',
+                  border: OutlineInputBorder(),
+                ),
+                keyboardType: TextInputType.phone,
+              ),
+              const SizedBox(height: 16),
+              DropdownButtonFormField<String>(
+                value: selectedVehicleType,
+                decoration: const InputDecoration(
+                  labelText: 'Vehicle Type',
+                  border: OutlineInputBorder(),
+                ),
+                items: const [
+                  DropdownMenuItem(value: 'car', child: Text('Car')),
+                  DropdownMenuItem(value: 'motorcycle', child: Text('Motorcycle')),
+                  DropdownMenuItem(value: 'bicycle', child: Text('Bicycle')),
+                  DropdownMenuItem(value: 'van', child: Text('Van')),
+                  DropdownMenuItem(value: 'truck', child: Text('Truck')),
+                ],
+                onChanged: (value) => selectedVehicleType = value!,
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final name = nameController.text.trim();
+              final phone = phoneController.text.trim();
+              
+              if (name.isNotEmpty && phone.isNotEmpty) {
+                Navigator.pop(context);
+                await _registerAsDriver(name, phone, selectedVehicleType);
+              }
+            },
+            child: const Text('Register'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _registerAsDriver(String name, String phone, String vehicleType) async {
+    try {
+      final result = await DriverAuthenticationService.registerGlobalDriver(
+        name: name,
+        phone: phone,
+        vehicleType: vehicleType,
+      );
+
+      if (result['success']) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Driver registration successful!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        // Reinitialize to load new driver profile
+        _initializeDriver();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Registration failed: ${result['message']}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Registration error: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 } 

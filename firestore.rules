@@ -215,6 +215,14 @@ service cloud.firestore {
       allow read, write: if isAuthenticated() || isAdmin();
     }
 
+    // SELLER DELIVERY TASKS - Sellers can manage their own tasks
+    match /seller_delivery_tasks/{orderId} {
+      allow read: if isAuthenticated() && (resource.data.sellerId == request.auth.uid || isAdmin());
+      allow create: if isAuthenticated() && (request.resource.data.sellerId == request.auth.uid || isAdmin());
+      allow update: if isAuthenticated() && (resource.data.sellerId == request.auth.uid || isAdmin());
+      allow delete: if isAdmin();
+    }
+
     match /rural_drivers/{driverId} {
       allow read, write: if isAuthenticated() || isAdmin();
     }
@@ -490,6 +498,14 @@ service cloud.firestore {
 
     // This catches any collection we might have missed
     // Authenticated users can create, read their own data
+    // Admins can do everything
+    match /{document=**} {
+      allow read, write: if isAdmin();
+      allow read, create: if isAuthenticated();
+    }
+  }
+}
+
     // Admins can do everything
     match /{document=**} {
       allow read, write: if isAdmin();

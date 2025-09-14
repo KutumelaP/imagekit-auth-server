@@ -36,11 +36,17 @@ class HereMapsAddressService {
       
       final url = Uri.parse('$_autocompleteUrl/autosuggest').replace(queryParameters: queryParams);
       
+      print('🌍 HERE Maps API request: $url');
+      
       final response = await http.get(url);
+      
+      print('🌍 HERE Maps response: ${response.statusCode}');
       
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         final items = data['items'] as List? ?? [];
+        
+        print('🌍 HERE Maps found ${items.length} items');
         
         return items.map<Map<String, dynamic>>((item) {
           final address = item['address'] ?? {};
@@ -245,19 +251,56 @@ class HereMapsAddressService {
     final city = address['city']?.toString() ?? '';
     final state = address['state']?.toString() ?? '';
     final countryName = address['countryName']?.toString() ?? '';
+    final title = address['title']?.toString() ?? '';
+    final label = address['label']?.toString() ?? '';
     
-    // Check if it's in South Africa
-    if (!countryName.toLowerCase().contains('south africa') && 
-        state.toLowerCase() != 'gauteng' &&
-        state.toLowerCase() != 'western cape' &&
-        state.toLowerCase() != 'kwazulu-natal') {
-      return false;
+    print('🔍 Validating address: title="$title", city="$city", state="$state", country="$countryName"');
+    
+    // Much more permissive validation - accept if any of these conditions are met:
+    
+    // 1. Has South Africa in country name
+    if (countryName.toLowerCase().contains('south africa')) {
+      print('✅ Valid: Contains South Africa in country');
+      return true;
     }
     
-    // Must have city and some address components
-    return city.isNotEmpty && 
-           (address['street']?.toString().isNotEmpty == true ||
-            address['district']?.toString().isNotEmpty == true);
+    // 2. Has a South African province
+    final southAfricanProvinces = [
+      'gauteng', 'western cape', 'kwazulu-natal', 'eastern cape',
+      'free state', 'limpopo', 'mpumalanga', 'north west', 'northern cape'
+    ];
+    
+    if (southAfricanProvinces.any((province) => 
+        state.toLowerCase().contains(province))) {
+      print('✅ Valid: Contains SA province');
+      return true;
+    }
+    
+    // 3. Has a major South African city
+    final southAfricanCities = [
+      'cape town', 'johannesburg', 'durban', 'pretoria', 'port elizabeth',
+      'bloemfontein', 'east london', 'pietermaritzburg', 'kimberley', 'polokwane'
+    ];
+    
+    if (southAfricanCities.any((saCity) => 
+        city.toLowerCase().contains(saCity) || 
+        title.toLowerCase().contains(saCity) ||
+        label.toLowerCase().contains(saCity))) {
+      print('✅ Valid: Contains SA city');
+      return true;
+    }
+    
+    // 4. If we're searching in South Africa context and has basic address info
+    if ((title.isNotEmpty || city.isNotEmpty) && 
+        (address['street']?.toString().isNotEmpty == true ||
+         address['district']?.toString().isNotEmpty == true ||
+         label.isNotEmpty)) {
+      print('✅ Valid: Has basic address components');
+      return true;
+    }
+    
+    print('❌ Invalid: Does not meet any criteria');
+    return false;
   }
   
   /// Calculate delivery zone based on address

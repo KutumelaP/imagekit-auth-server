@@ -215,6 +215,23 @@ service cloud.firestore {
       allow read, write: if isAuthenticated() || isAdmin();
     }
 
+    // SELLER DELIVERY TASKS - Sellers can manage their own tasks
+    match /seller_delivery_tasks/{orderId} {
+      allow read: if isAuthenticated() && (
+        (resource != null && resource.data.sellerId == request.auth.uid) || 
+        isAdmin()
+      );
+      allow create: if isAuthenticated() && (
+        request.resource.data.sellerId == request.auth.uid || 
+        isAdmin()
+      );
+      allow update: if isAuthenticated() && (
+        (resource != null && resource.data.sellerId == request.auth.uid) || 
+        isAdmin()
+      );
+      allow delete: if isAdmin();
+    }
+
     match /rural_drivers/{driverId} {
       allow read, write: if isAuthenticated() || isAdmin();
     }

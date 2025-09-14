@@ -49,21 +49,27 @@ class _SmartAddressInputState extends State<SmartAddressInput> {
 
   void _onTextChanged() {
     final query = _controller.text.trim();
+    print('🔍 Text changed: "$query" (length: ${query.length})');
     
     // Cancel previous search
     _searchTimer?.cancel();
     
     if (query.length < 3) {
+      print('🔍 Query too short, hiding suggestions');
       setState(() {
         _suggestions = [];
         _showSuggestions = false;
         _isLoading = false;
+        _selectedAddress = null; // Reset selection
       });
       return;
     }
     
+    print('🔍 Starting search timer for: "$query"');
+    
     // Debounce search
     _searchTimer = Timer(Duration(milliseconds: 500), () {
+      print('🔍 Timer triggered, searching...');
       _searchAddresses(query);
     });
     
@@ -71,6 +77,7 @@ class _SmartAddressInputState extends State<SmartAddressInput> {
       _isLoading = true;
       _showSuggestions = true;
     });
+    print('🔍 Set loading=true, showSuggestions=true');
   }
 
   void _onFocusChanged() {
@@ -82,6 +89,8 @@ class _SmartAddressInputState extends State<SmartAddressInput> {
   }
 
   Future<void> _searchAddresses(String query) async {
+    print('🔍 Starting address search for: "$query"');
+    
     try {
       final results = await HereMapsAddressService.searchAddresses(
         query: query,
@@ -91,37 +100,80 @@ class _SmartAddressInputState extends State<SmartAddressInput> {
         longitude: 28.1881,
       );
       
+      print('🔍 HERE Maps returned ${results.length} results');
+      
       // Filter for valid South African addresses
       final validAddresses = results.where((address) => 
           HereMapsAddressService.isValidSouthAfricanAddress(address)
       ).toList();
       
+      print('🔍 After filtering: ${validAddresses.length} valid addresses');
+      
       if (mounted) {
         setState(() {
           _suggestions = validAddresses;
           _isLoading = false;
+          _showSuggestions = validAddresses.isNotEmpty; // Ensure dropdown shows
         });
+        print('🔍 Dropdown state: suggestions=${_suggestions.length}, show=$_showSuggestions');
       }
     } catch (e) {
-      print('Address search error: $e');
+      print('❌ Address search error: $e');
+      // Show error to user - they need to know why address search failed
       if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Address search failed. You can still type your address manually.'),
+            backgroundColor: Colors.orange,
+            duration: Duration(seconds: 3),
+          ),
+        );
         setState(() {
-          _suggestions = [];
+          // Show some generic South African location suggestions as fallback
+          _suggestions = [
+            {
+              'title': query,
+              'label': '$query, South Africa',
+              'street': query,
+              'city': 'Manual Entry',
+              'countryName': 'South Africa',
+              'latitude': -25.7461,
+              'longitude': 28.1881,
+              'isManualEntry': true,
+            }
+          ];
           _isLoading = false;
+          _showSuggestions = true; // Still show dropdown with manual option
         });
       }
     }
   }
 
   void _selectAddress(Map<String, dynamic> address) {
+    print('🔍 Address selected: $address');
+    
+    final formattedAddress = HereMapsAddressService.formatAddressForDisplay(address);
+    print('🔍 Formatted address: "$formattedAddress"');
+    
+    // Fallback if formatting returns empty
+    final displayText = formattedAddress.isNotEmpty 
+        ? formattedAddress 
+        : (address['title']?.toString() ?? address['label']?.toString() ?? 'Selected address');
+    
+    print('🔍 Display text: "$displayText"');
+    
     setState(() {
       _selectedAddress = address;
-      _controller.text = HereMapsAddressService.formatAddressForDisplay(address);
+      _controller.text = displayText;
       _showSuggestions = false;
+      // _addressConfirmed = true; // Mark address as confirmed - removed unused
     });
     
     _focusNode.unfocus();
+    
+    print('🔍 Calling onAddressSelected callback with confirmed address...');
     widget.onAddressSelected(address);
+    print('🔍 Address selection complete - confirmed: true');
   }
 
   Future<void> _useCurrentLocation() async {
@@ -183,7 +235,7 @@ class _SmartAddressInputState extends State<SmartAddressInput> {
             controller: _controller,
             focusNode: _focusNode,
             decoration: InputDecoration(
-              hintText: widget.hintText ?? 'Enter your delivery address',
+              hintText: widget.hintText ?? 'Type your delivery address (suggestions will appear)',
               prefixIcon: Icon(
                 Icons.location_on,
                 color: _selectedAddress != null ? AppTheme.success : AppTheme.deepTeal,
@@ -204,6 +256,18 @@ class _SmartAddressInputState extends State<SmartAddressInput> {
                         ),
                       ),
                     ),
+                  IconButton(
+                    icon: Icon(Icons.search, color: AppTheme.deepTeal),
+                    onPressed: () {
+                      // Force test search
+                      final query = _controller.text.trim();
+                      if (query.isNotEmpty) {
+                        print('🔍 Force search triggered for: "$query"');
+                        _searchAddresses(query);
+                      }
+                    },
+                    tooltip: 'Search addresses',
+                  ),
                   IconButton(
                     icon: Icon(Icons.my_location, color: AppTheme.deepTeal),
                     onPressed: _useCurrentLocation,
@@ -226,11 +290,33 @@ class _SmartAddressInputState extends State<SmartAddressInput> {
                 });
               }
             },
+            onChanged: (text) {
+              // Allow manual address entry if user types enough text
+              if (text.length >= 10 && _suggestions.isEmpty) {
+                // Treat as manual address entry
+                final manualAddress = {
+                  'title': text,
+                  'label': text,
+                  'street': text,
+                  'city': 'Manual Entry',
+                  'countryName': 'South Africa',
+                  'latitude': -25.7461, // Default SA coordinates
+                  'longitude': 28.1881,
+                  'isManualEntry': true,
+                };
+                
+                setState(() {
+                  _selectedAddress = manualAddress;
+                });
+                
+                widget.onAddressSelected(manualAddress);
+              }
+            },
           ),
         ),
         
-        // Address suggestions
-        if (_showSuggestions && _suggestions.isNotEmpty)
+        // Address suggestions (always show if we have suggestions)
+        if (_suggestions.isNotEmpty)
           Container(
             margin: EdgeInsets.only(top: 8),
             decoration: BoxDecoration(
@@ -284,7 +370,10 @@ class _SmartAddressInputState extends State<SmartAddressInput> {
                     color: Colors.grey[400],
                     size: 16,
                   ),
-                  onTap: () => _selectAddress(address),
+                  onTap: () {
+                    print('🔍 ListTile tapped for address: ${address['title']}');
+                    _selectAddress(address);
+                  },
                 );
               },
             ),

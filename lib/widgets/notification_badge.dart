@@ -161,7 +161,27 @@ class _NotificationBadgeState extends State<NotificationBadge> {
         }
       }, onError: (error) {
         if (error.toString().contains('permission-denied')) {
-          print('❌ Permission denied for notifications stream (logged once)');
+          print('❌ Permission denied for notifications stream - checking authentication');
+          // Verify user authentication and permissions
+          final user = FirebaseAuth.instance.currentUser;
+          if (user == null) {
+            print('⚠️ User not authenticated - notifications disabled');
+            return;
+          }
+          
+          // Check if user has proper authentication
+          user.getIdTokenResult().then((tokenResult) {
+            final isAuthenticated = tokenResult.token != null;
+            if (!isAuthenticated) {
+              print('⚠️ User token invalid - re-authenticate required');
+            } else {
+              print('✅ User authenticated but may lack notification permissions');
+            }
+          }).catchError((e) {
+            print('❌ Error verifying user token: $e');
+          });
+        } else {
+          print('❌ Notification stream error: $error');
         }
       });
 

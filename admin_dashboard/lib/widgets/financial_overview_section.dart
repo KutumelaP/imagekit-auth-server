@@ -94,13 +94,31 @@ class _FinancialOverviewSectionState extends State<FinancialOverviewSection> {
       int totalOrders = 0;
 
       // Get all orders to calculate total platform earnings
-      final ordersSnap = await FirebaseFirestore.instance
+      // Include completed, delivered, and confirmed orders for revenue calculation
+      final completedOrdersSnap = await FirebaseFirestore.instance
           .collection('orders')
           .where('status', isEqualTo: 'completed')
           .get();
+      
+      final deliveredOrdersSnap = await FirebaseFirestore.instance
+          .collection('orders')
+          .where('status', isEqualTo: 'delivered')
+          .get();
+          
+      final confirmedOrdersSnap = await FirebaseFirestore.instance
+          .collection('orders')
+          .where('status', isEqualTo: 'confirmed')
+          .get();
+      
+      // Combine all revenue-generating orders
+      final List<QueryDocumentSnapshot<Map<String, dynamic>>> allRevenueOrders = [
+        ...completedOrdersSnap.docs,
+        ...deliveredOrdersSnap.docs,
+        ...confirmedOrdersSnap.docs,
+      ];
       // Deprecated: fixed commission percentage. We now use per-order stored values and buyer fees.
 
-      for (final orderDoc in ordersSnap.docs) {
+      for (final orderDoc in allRevenueOrders) {
         final orderData = orderDoc.data();
         final paymentMethod = (orderData['paymentMethod'] ?? '').toString().toLowerCase();
         final commission = (orderData['platformFee'] as num?)?.toDouble() ?? 0.0;

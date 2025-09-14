@@ -172,6 +172,20 @@ class _NotificationListScreenState extends State<NotificationListScreen> with Wi
       });
     } catch (e) {
       print('❌ Error loading notifications: $e');
+      // Check if it's a permission error
+      if (e.toString().contains('permission-denied')) {
+        print('⚠️ Permission denied loading notifications - checking user authentication');
+        final user = FirebaseAuth.instance.currentUser;
+        if (user != null) {
+          user.getIdTokenResult().then((tokenResult) {
+            print('🔍 User authenticated: ${tokenResult.token != null}');
+          }).catchError((authError) {
+            print('❌ Auth verification error: $authError');
+          });
+        } else {
+          print('❌ No authenticated user found');
+        }
+      }
       setState(() => _isLoading = false);
     }
   }

@@ -123,19 +123,43 @@ class _SellerOrderDetailScreenState extends State<SellerOrderDetailScreen> {
     }
   }
 
-  Future<String> _getBuyerLabel(String? buyerId, String? buyerName, String? buyerEmail) async {
-    // First try buyerName from order data
-    if (buyerName != null && buyerName.isNotEmpty) return buyerName;
-    // Then try buyerEmail
-    if (buyerEmail != null && buyerEmail.isNotEmpty) return buyerEmail;
-    // Finally try to fetch from users collection
-    if (buyerId == null || buyerId.isEmpty) return 'Unknown Customer';
-    // Fetch from Firestore
-    final doc = await FirebaseFirestore.instance.collection('users').doc(buyerId).get();
-    final data = doc.data();
-    if (data == null) return 'Unknown Customer';
-    if (data['name'] != null && data['name'].toString().isNotEmpty) return data['name'];
-    if (data['email'] != null && data['email'].toString().isNotEmpty) return data['email'];
+  String _getCustomerName(Map<String, dynamic> order) {
+    final buyerDetails = order['buyerDetails'] as Map<String, dynamic>?;
+    if (buyerDetails != null) {
+      if (buyerDetails['fullName'] != null && buyerDetails['fullName'].toString().isNotEmpty) {
+        return buyerDetails['fullName'].toString();
+      }
+      final firstName = buyerDetails['firstName']?.toString() ?? '';
+      final lastName = buyerDetails['lastName']?.toString() ?? '';
+      if (firstName.isNotEmpty || lastName.isNotEmpty) {
+        return '$firstName $lastName'.trim();
+      }
+      if (buyerDetails['displayName'] != null && buyerDetails['displayName'].toString().isNotEmpty) {
+        return buyerDetails['displayName'].toString();
+      }
+      if (buyerDetails['email'] != null && buyerDetails['email'].toString().isNotEmpty) {
+        return buyerDetails['email'].toString();
+      }
+    }
+    // Fallback to legacy fields
+    if (order['buyerName'] != null && order['buyerName'].toString().isNotEmpty) {
+      return order['buyerName'].toString();
+    }
+    if (order['name'] != null && order['name'].toString().isNotEmpty) {
+      return order['name'].toString();
+    }
+    if (order['buyerEmail'] != null && order['buyerEmail'].toString().isNotEmpty) {
+      return order['buyerEmail'].toString();
+    }
+    // Finally try phone (top-level or buyerDetails)
+    final phoneTop = order['phone']?.toString();
+    final phoneBd = (order['buyerDetails'] is Map) ? (order['buyerDetails']['phone']?.toString()) : null;
+    final phone = (phoneTop != null && phoneTop.isNotEmpty) ? phoneTop : (phoneBd ?? '');
+    if (phone.isNotEmpty) {
+      try {
+        return phone.length >= 4 ? 'Customer (${phone.substring(phone.length - 4)})' : 'Customer ($phone)';
+      } catch (_) {}
+    }
     return 'Unknown Customer';
   }
 
@@ -181,8 +205,6 @@ class _SellerOrderDetailScreenState extends State<SellerOrderDetailScreen> {
           final total = order['totalPrice'] ?? order['total'] ?? '';
           final driver = order['driver'] as Map<String, dynamic>?;
           final buyerId = order['buyerId'] as String?;
-          final buyerName = order['buyerName'] ?? '';
-          final buyerEmail = order['buyerEmail'] ?? '';
           final buyerPhone = order['buyerPhone'] ?? '';
           final deliveryAddress = order['deliveryAddress'] ?? '';
           final paymentMethod = (order['paymentMethods'] as List?)?.join(', ') ?? '';
@@ -262,11 +284,7 @@ class _SellerOrderDetailScreenState extends State<SellerOrderDetailScreen> {
             ),
           );
 
-          Widget customerSection = FutureBuilder<String>(
-            future: _getBuyerLabel(buyerId, buyerName, buyerEmail),
-            builder: (context, buyerSnap) {
-              final buyerLabel = buyerSnap.data ?? '';
-              return Row(
+          Widget customerSection = Row(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   CircleAvatar(
@@ -279,7 +297,7 @@ class _SellerOrderDetailScreenState extends State<SellerOrderDetailScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(buyerLabel, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+                        Text(_getCustomerName(order), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
                         if (buyerPhone.isNotEmpty)
                           Row(
                             children: [
@@ -300,8 +318,6 @@ class _SellerOrderDetailScreenState extends State<SellerOrderDetailScreen> {
                     ),
                 ],
               );
-            },
-          );
 
           Widget summarySection = Column(
             crossAxisAlignment: CrossAxisAlignment.start,

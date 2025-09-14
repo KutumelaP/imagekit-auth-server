@@ -1097,7 +1097,7 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
         'location': _locationController.text.trim(),
         'isStoreOpen': _isStoreOpen,
         'deliveryAvailable': _isDeliveryAvailable,
-        'deliveryFeePerKm': _deliveryFeeController.text.isNotEmpty ? double.parse(_deliveryFeeController.text) : 0.0,
+        'deliveryFeePerKm': _sellerDeliveryFeePerKm, // Use modern hybrid value for backward compatibility
         'minOrderForDelivery': _minOrderController.text.isNotEmpty ? double.parse(_minOrderController.text) : 0.0,
         // Hybrid delivery settings
         'deliveryMode': _deliveryMode,
@@ -2417,13 +2417,41 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
                             ],
                           ),
                         ),
-                        _buildEnhancedTextField(
-                          controller: _deliveryFeeController,
-                          label: 'Delivery Fee (R)',
-                          hint: 'Enter delivery fee per kilometer',
-                          prefixIcon: Icons.delivery_dining,
-                          keyboardType: TextInputType.number,
-                          helperText: 'This is the amount you charge per kilometer (leave blank for default R6.50/km)',
+                        Container(
+                          padding: EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: AppTheme.cloud.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: AppTheme.deepTeal.withOpacity(0.2),
+                            ),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Icon(Icons.info_outline, color: AppTheme.deepTeal, size: 20),
+                                  SizedBox(width: 8),
+                                  Text(
+                                    'Delivery Pricing',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      color: AppTheme.deepTeal,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              SizedBox(height: 8),
+                              Text(
+                                'Configure your delivery fees below in the Hybrid Delivery section, or leave default (R25 base + R6.50/km).',
+                                style: TextStyle(
+                                  color: Colors.grey[600],
+                                  fontSize: 14,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                         _buildEnhancedTextField(
                           controller: _minOrderController,
@@ -2691,14 +2719,30 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
                                   ),
                                 ),
                                 Text(
-                                  'Seller Delivery Settings',
+                                  'Delivery Pricing Configuration',
                                   style: TextStyle(
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w600,
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
                                     color: AppTheme.deepTeal,
                                   ),
                                 ),
-                                const SizedBox(height: 8),
+                                const SizedBox(height: 4),
+                                Container(
+                                  padding: EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    color: AppTheme.breeze.withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Text(
+                                    'Formula: Base Fee + (Distance × Fee per km) = Total\nExample: R25 + (5km × R6.50) = R57.50 (capped at Max Fee)',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: AppTheme.deepTeal,
+                                      fontFamily: 'monospace',
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 12),
                                 // Responsive layout for delivery settings
                                 LayoutBuilder(
                                   builder: (context, constraints) {
@@ -2717,6 +2761,7 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
                                                   hint: '25.0',
                                                   prefixIcon: Icons.attach_money,
                                                   keyboardType: TextInputType.number,
+                                                  helperText: 'Fixed fee for every delivery',
                                                   onChanged: (value) {
                                                     if (value.isNotEmpty) {
                                                       _sellerDeliveryBaseFee = double.tryParse(value) ?? 25.0;
@@ -2734,6 +2779,7 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
                                                   hint: '6.5',
                                                   prefixIcon: Icons.trending_up,
                                                   keyboardType: TextInputType.number,
+                                                  helperText: 'Charged per kilometer traveled',
                                                   onChanged: (value) {
                                                     if (value.isNotEmpty) {
                                                       _sellerDeliveryFeePerKm = double.tryParse(value) ?? 6.5;
@@ -2755,6 +2801,7 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
                                                   hint: '50.0',
                                                   prefixIcon: Icons.attach_money,
                                                   keyboardType: TextInputType.number,
+                                                  helperText: 'Maximum delivery fee cap',
                                                   onChanged: (value) {
                                                     if (value.isNotEmpty) {
                                                       _sellerDeliveryMaxFee = double.tryParse(value) ?? 50.0;
@@ -3873,4 +3920,5 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
     );
   }
 }
+
 

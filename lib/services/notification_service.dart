@@ -1281,6 +1281,13 @@ class NotificationService {
   // Mark notification as read (compatibility method)
   Future<void> markNotificationAsRead(String notificationId) async {
     try {
+      // Check authentication first
+      final user = _auth.currentUser;
+      if (user == null) {
+        print('⚠️ User not authenticated - cannot mark notification as read');
+        return;
+      }
+      
       print('🔔 Marking notification as read: $notificationId');
       await _firestore
           .collection('notifications')
@@ -1294,7 +1301,13 @@ class NotificationService {
       final msg = e.toString();
       // Soft-fail on permission issues so UX continues (rules may block updates)
       if (msg.contains('permission-denied')) {
-        print('⚠️ Permission denied marking notification as read; continuing.');
+        print('⚠️ Permission denied marking notification as read - checking user auth');
+        final user = _auth.currentUser;
+        if (user != null) {
+          user.getIdTokenResult().then((tokenResult) {
+            print('🔍 User token valid: ${tokenResult.token != null}');
+          });
+        }
         return;
       }
       print('❌ Error marking notification as read: $e');
@@ -1319,9 +1332,21 @@ class NotificationService {
           .orderBy('timestamp', descending: true)
           .snapshots();
       
-      return stream;
+      // Add error handling to the stream
+      return stream.handleError((error) {
+        if (error.toString().contains('permission-denied')) {
+          print('⚠️ Permission denied accessing notifications - user may need re-authentication');
+          currentUser.getIdTokenResult().then((tokenResult) {
+            print('🔍 Token check - valid: ${tokenResult.token != null}');
+          }).catchError((e) {
+            print('❌ Token verification failed: $e');
+          });
+        } else {
+          print('❌ Notification stream error: $error');
+        }
+      });
     } catch (e) {
-      print('❌ Error fetching notifications: $e');
+      print('❌ Error setting up notification stream: $e');
       return Stream.empty();
     }
   }

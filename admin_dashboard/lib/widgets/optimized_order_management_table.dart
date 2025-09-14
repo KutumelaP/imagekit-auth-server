@@ -215,19 +215,42 @@ class _OptimizedOrderManagementTableState extends State<OptimizedOrderManagement
   }
 
   String _getCustomerName(Map<String, dynamic> data) {
-    // First try buyerName from order data
+    final buyerDetails = data['buyerDetails'] as Map<String, dynamic>?;
+    if (buyerDetails != null) {
+      if (buyerDetails['fullName'] != null && buyerDetails['fullName'].toString().isNotEmpty) {
+        return buyerDetails['fullName'].toString();
+      }
+      final firstName = buyerDetails['firstName']?.toString() ?? '';
+      final lastName = buyerDetails['lastName']?.toString() ?? '';
+      if (firstName.isNotEmpty || lastName.isNotEmpty) {
+        return '$firstName $lastName'.trim();
+      }
+      if (buyerDetails['displayName'] != null && buyerDetails['displayName'].toString().isNotEmpty) {
+        return buyerDetails['displayName'].toString();
+      }
+      if (buyerDetails['email'] != null && buyerDetails['email'].toString().isNotEmpty) {
+        return buyerDetails['email'].toString();
+      }
+    }
+    // Fallback to legacy fields
     if (data['buyerName'] != null && data['buyerName'].toString().isNotEmpty) {
       return data['buyerName'].toString();
     }
-    // Then try name field (legacy)
-    else if (data['name'] != null && data['name'].toString().isNotEmpty) {
+    if (data['name'] != null && data['name'].toString().isNotEmpty) {
       return data['name'].toString();
     }
-    // Then try buyerEmail
-    else if (data['buyerEmail'] != null && data['buyerEmail'].toString().isNotEmpty) {
+    if (data['buyerEmail'] != null && data['buyerEmail'].toString().isNotEmpty) {
       return data['buyerEmail'].toString();
     }
-    // Finally return Unknown
+    // Finally try phone (top-level or buyerDetails)
+    final phoneTop = data['phone']?.toString();
+    final phoneBd = (data['buyerDetails'] is Map) ? (data['buyerDetails']['phone']?.toString()) : null;
+    final phone = (phoneTop != null && phoneTop.isNotEmpty) ? phoneTop : (phoneBd ?? '');
+    if (phone.isNotEmpty) {
+      try {
+        return phone.length >= 4 ? 'Customer (${phone.substring(phone.length - 4)})' : 'Customer ($phone)';
+      } catch (_) {}
+    }
     return 'Unknown Customer';
   }
 
@@ -249,7 +272,7 @@ class _OptimizedOrderManagementTableState extends State<OptimizedOrderManagement
         ]);
       }
       
-      final totalPrice = data['totalPrice'] ?? data['total'] ?? 0.0;
+      final totalPrice = data['pricing']?['grandTotal'] ?? data['totalPrice'] ?? data['total'] ?? 0.0;
       final status = data['status']?.toString() ?? 'pending';
       final customerName = _getCustomerName(data);
       
@@ -364,7 +387,7 @@ class _OptimizedOrderManagementTableState extends State<OptimizedOrderManagement
                 ),
                 const SizedBox(height: 8),
                 Text('Status: ${data['status']?.toString() ?? 'pending'}'),
-                Text('Total: R${(data['totalPrice'] ?? data['total'] ?? 0.0).toStringAsFixed(2)}'),
+                Text('Total: R${(data['pricing']?['grandTotal'] ?? data['totalPrice'] ?? data['total'] ?? 0.0).toStringAsFixed(2)}'),
                 if (data['createdAt'] != null)
                   Text('Created: ${data['createdAt'] is Timestamp ? (data['createdAt'] as Timestamp).toDate().toString() : data['createdAt'].toString()}'),
                 if (data['updatedAt'] != null)

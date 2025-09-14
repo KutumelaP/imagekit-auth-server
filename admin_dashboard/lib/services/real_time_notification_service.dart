@@ -161,12 +161,40 @@ class RealTimeNotificationService extends ChangeNotifier {
 
   /// Setup Firestore listeners for different collections
   void _setupFirestoreListeners() {
+    // Check if user is authenticated and is admin before setting up listeners
+    final user = _auth?.currentUser;
+    if (user == null) {
+      debugPrint('⚠️ User not authenticated - skipping Firestore listeners setup');
+      return;
+    }
+    
+    // Verify admin status before setting up listeners
+    user.getIdTokenResult().then((idTokenResult) {
+      final isAdmin = idTokenResult.claims?['admin'] == true || 
+                     idTokenResult.claims?['role'] == 'admin';
+      
+      if (!isAdmin) {
+        debugPrint('⚠️ User is not admin - skipping Firestore listeners setup');
+        return;
+      }
+      
+      // Setup listeners only for admin users
+      _setupAdminListeners();
+    }).catchError((e) {
+      debugPrint('❌ Error verifying admin status: $e');
+    });
+  }
+  
+  /// Setup admin-only Firestore listeners
+  void _setupAdminListeners() {
     // Listen for new orders
     _firestoreListeners.add(
       _firestore!.collection('orders')
           .where('timestamp', isGreaterThan: Timestamp.now())
           .snapshots()
-          .listen(_handleNewOrders),
+          .listen(_handleNewOrders, onError: (e) {
+            debugPrint('❌ Error listening to orders: $e');
+          }),
     );
 
     // Listen for new seller registrations
@@ -175,7 +203,9 @@ class RealTimeNotificationService extends ChangeNotifier {
           .where('role', isEqualTo: 'seller')
           .where('createdAt', isGreaterThan: Timestamp.now())
           .snapshots()
-          .listen(_handleNewSellers),
+          .listen(_handleNewSellers, onError: (e) {
+            debugPrint('❌ Error listening to sellers: $e');
+          }),
     );
 
     // Listen for payment failures
@@ -184,7 +214,9 @@ class RealTimeNotificationService extends ChangeNotifier {
           .where('status', isEqualTo: 'payment_failed')
           .where('lastUpdated', isGreaterThan: Timestamp.now())
           .snapshots()
-          .listen(_handlePaymentFailures),
+          .listen(_handlePaymentFailures, onError: (e) {
+            debugPrint('❌ Error listening to payment failures: $e');
+          }),
     );
 
     // Listen for new reviews
@@ -192,7 +224,9 @@ class RealTimeNotificationService extends ChangeNotifier {
       _firestore!.collection('reviews')
           .where('timestamp', isGreaterThan: Timestamp.now())
           .snapshots()
-          .listen(_handleNewReviews),
+          .listen(_handleNewReviews, onError: (e) {
+            debugPrint('❌ Error listening to reviews: $e');
+          }),
     );
 
     debugPrint('📡 Firestore listeners setup complete');

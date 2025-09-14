@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../utils/advanced_memory_optimizer.dart';
 import '../utils/order_utils.dart';
 import '../theme/app_theme.dart';
+import '../widgets/seller_delivery_dashboard.dart';
 import 'dart:async';
 import 'dart:math' as math;
 import 'dart:async' show TimeoutException;
@@ -270,7 +271,7 @@ class _SellerOrdersListScreenState extends State<SellerOrdersListScreen>
       // Use direct Firestore query instead of OptimizedFirestoreQuery for now
       Query query = _firestore.collection('orders')
           .where('sellerId', isEqualTo: sellerId)
-          .orderBy('timestamp', descending: true)
+          .orderBy('createdAt', descending: true)
           .limit(15);
 
       final snapshot = await query.get().timeout(
@@ -348,11 +349,11 @@ class _SellerOrdersListScreenState extends State<SellerOrdersListScreen>
       
       Query query = _firestore.collection('orders')
           .where('sellerId', isEqualTo: sellerId)
-          .orderBy('timestamp', descending: true)
+          .orderBy('createdAt', descending: true)
           .limit(15);
 
       if (lastOrder != null) {
-        query = query.startAfter([lastOrder['timestamp']]);
+        query = query.startAfter([lastOrder['createdAt'] ?? lastOrder['timestamp']]);
       }
 
       final snapshot = await query.get().timeout(
@@ -437,9 +438,19 @@ class _SellerOrdersListScreenState extends State<SellerOrdersListScreen>
           'formattedOrderNumber': formattedOrderNumber,
           'id': doc.id,
           'status': data['status'] ?? 'pending',
-          'totalPrice': (data['totalPrice'] ?? data['total'] ?? 0.0).toDouble(),
+          'totalPrice': (() {
+            try {
+              if (data['pricing'] is Map && (data['pricing']['grandTotal'] is num)) {
+                return (data['pricing']['grandTotal'] as num).toDouble();
+              }
+              final t = data['totalPrice'] ?? data['total'] ?? 0.0;
+              return (t is num) ? t.toDouble() : double.tryParse(t.toString()) ?? 0.0;
+            } catch (_) {
+              return 0.0;
+            }
+          })(),
           'items': data['items'] ?? [],
-          'timestamp': data['timestamp'] ?? Timestamp.now(),
+          'timestamp': data['createdAt'] ?? data['timestamp'] ?? Timestamp.now(),
           'orderNumber': data['orderNumber'] ?? doc.id,
           'buyerName': data['buyerName'] ?? data['name'] ?? 'Customer',
           'phone': data['phone'] ?? '',
@@ -464,6 +475,21 @@ class _SellerOrdersListScreenState extends State<SellerOrdersListScreen>
       // First try buyerName from order data (most reliable)
       if (data['buyerName'] != null && data['buyerName'].toString().isNotEmpty) {
         return data['buyerName'].toString();
+      }
+
+      // New structure: buyerDetails map written by production orders
+      if (data['buyerDetails'] is Map) {
+        final bd = Map<String, dynamic>.from(data['buyerDetails'] as Map);
+        final full = (bd['fullName'] ?? '').toString();
+        if (full.isNotEmpty) return full;
+        final first = (bd['firstName'] ?? '').toString();
+        final last = (bd['lastName'] ?? '').toString();
+        final combined = ((first + ' ' + last).trim());
+        if (combined.isNotEmpty) return combined;
+        final display = (bd['displayName'] ?? '').toString();
+        if (display.isNotEmpty) return display;
+        final emailInBd = (bd['email'] ?? '').toString();
+        if (emailInBd.isNotEmpty) return emailInBd;
       }
       
       // Then try name field (legacy field)
@@ -518,10 +544,12 @@ class _SellerOrdersListScreenState extends State<SellerOrdersListScreen>
         }
       }
       
-      // If all else fails, try to extract from phone number
-      if (data['phone'] != null && data['phone'].toString().isNotEmpty) {
+      // If all else fails, try to extract from phone number (top-level or buyerDetails)
+      final phoneTop = data['phone']?.toString();
+      final phoneBd = (data['buyerDetails'] is Map) ? (data['buyerDetails']['phone']?.toString()) : null;
+      final phone = (phoneTop != null && phoneTop.isNotEmpty) ? phoneTop : (phoneBd ?? '');
+      if (phone.isNotEmpty) {
         try {
-          final phone = data['phone'].toString();
           if (phone.length >= 4) {
             return 'Customer (${phone.substring(phone.length - 4)})';
           }
@@ -623,6 +651,25 @@ class _SellerOrdersListScreenState extends State<SellerOrdersListScreen>
           ),
         ),
         actions: [
+          Container(
+            margin: EdgeInsets.only(right: 8),
+            decoration: BoxDecoration(
+              color: AppTheme.white.withOpacity(0.2),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: IconButton(
+              icon: Icon(Icons.local_shipping, color: AppTheme.white),
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const SellerDeliveryDashboard(),
+                  ),
+                );
+              },
+              tooltip: 'Driver Dashboard',
+            ),
+          ),
           Container(
             margin: EdgeInsets.only(right: 8),
             decoration: BoxDecoration(
@@ -995,7 +1042,37 @@ class _SellerOrdersListScreenState extends State<SellerOrdersListScreen>
   Widget _buildCleanOrderCard(Map<String, dynamic> order) {
     try {
       final status = order['status'] ?? 'pending';
-      final customerName = order['buyerName'] ?? order['name'] ?? order['customerName'] ?? 'Customer';
+      String customerName = (() {
+        String pickNonEmpty(dynamic v) => (v is String && v.trim().isNotEmpty) ? v.trim() : '';
+        // Prefer processed customerName if non-empty
+        String n = pickNonEmpty(order['customerName']);
+        if (n.isNotEmpty) return n;
+        // Then buyerName/name
+        n = pickNonEmpty(order['buyerName']);
+        if (n.isNotEmpty) return n;
+        n = pickNonEmpty(order['name']);
+        if (n.isNotEmpty) return n;
+        // Then buyerDetails fields
+        if (order['buyerDetails'] is Map) {
+          final bd = Map<String, dynamic>.from(order['buyerDetails'] as Map);
+          n = pickNonEmpty(bd['fullName']);
+          if (n.isNotEmpty) return n;
+          final first = pickNonEmpty(bd['firstName']);
+          final last = pickNonEmpty(bd['lastName']);
+          final combined = ('$first $last').trim();
+          if (combined.isNotEmpty) return combined;
+          n = pickNonEmpty(bd['displayName']);
+          if (n.isNotEmpty) return n;
+          n = pickNonEmpty(bd['email']);
+          if (n.isNotEmpty) return n;
+        }
+        // Finally email/phone on top-level
+        n = pickNonEmpty(order['buyerEmail']);
+        if (n.isNotEmpty) return n;
+        final phoneTop = pickNonEmpty(order['phone']);
+        if (phoneTop.isNotEmpty) return 'Customer (${phoneTop.substring(phoneTop.length > 4 ? phoneTop.length - 4 : 0)})';
+        return 'Customer';
+      })();
       final total = (order['totalPrice'] ?? order['total'] ?? 0.0).toDouble();
       final timestamp = order['timestamp'];
       final orderId = order['id'] ?? '';

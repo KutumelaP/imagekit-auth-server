@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../../providers/cart_provider.dart';
 import '../../theme/app_theme.dart';
@@ -503,23 +504,84 @@ class _AddressOrPickup extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 16),
-          // Only show delivery address input if seller offers delivery AND user selected delivery
-          if (vm.isDelivery && vm.sellerOffersDelivery)
+          // Delivery Section
+          if (vm.isDelivery && vm.sellerOffersDelivery) ...[
             SmartAddressInput(
               hintText: 'Search for your delivery address...',
               onAddressSelected: (address) {
+                print('🔍 Checkout: onAddressSelected called with: $address');
                 if (address != null) {
-                  vm.setAddress(HereMapsAddressService.formatAddressForDisplay(address));
+                  final formattedAddress = HereMapsAddressService.formatAddressForDisplay(address);
+                  print('🔍 Checkout: Formatted address: "$formattedAddress"');
+                  
+                  // Ensure we have a non-empty address
+                  final finalAddress = formattedAddress.isNotEmpty 
+                      ? formattedAddress 
+                      : (address['title']?.toString() ?? address['label']?.toString() ?? 'Selected Address');
+                  
+                  print('🔍 Checkout: Final address to save: "$finalAddress"');
+                  
+                  // Set address in ViewModel
+                  vm.setAddress(finalAddress);
                   vm.setSelectedAddress(address);
                   
                   // Calculate delivery fee based on real address
                   final deliveryZone = HereMapsAddressService.getDeliveryZone(address);
                   final isUrban = deliveryZone.contains('metro') || deliveryZone.contains('urban');
+                  print('🔍 Checkout: Delivery zone: $deliveryZone, isUrban: $isUrban');
+                  
                   vm.computeFeesAndEta(isUrbanArea: isUrban);
+                  
+                  print('🔍 Checkout: Address selection complete - saved: "$finalAddress"');
+                } else {
+                  print('❌ Checkout: Address is null!');
                 }
               },
-            )
-          else ...[
+            ),
+            
+            // Show selected address confirmation
+            if (vm.addressText != null && vm.addressText!.isNotEmpty)
+              Container(
+                margin: EdgeInsets.only(top: 12),
+                padding: EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.green.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.green.withOpacity(0.3)),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.check_circle, color: Colors.green, size: 20),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Delivery Address Confirmed',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              color: Colors.green[700],
+                              fontSize: 14,
+                            ),
+                          ),
+                          Text(
+                            vm.addressText!,
+                            style: TextStyle(
+                              color: Colors.green[600],
+                              fontSize: 13,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+          
+          // Pickup Section (separate from delivery)
+          if (!vm.isDelivery) ...[
             _PickupPointSelector(vm: vm),
             if (vm.selectedPickupPoint != null && vm.selectedPickupPoint!['type'] == 'paxi')
               PaxiSpeedSelector(vm: vm),
@@ -726,7 +788,7 @@ class _PlaceOrderEnhanced extends StatelessWidget {
                 vm.setLoading(true);
                 vm.setError(null);
 
-                final ok = await vm.validate();
+                final ok = await vm.validateAndStepUp(context);
                 if (!ok) {
                   vm.setLoading(false);
                   return;
@@ -734,7 +796,7 @@ class _PlaceOrderEnhanced extends StatelessWidget {
 
                 // Submit order with all services integration
                 try {
-                  await vm.submitOrder(context);
+                  final result = await vm.submitOrder(context);
                   if (context.mounted) {
                     if (vm.selectedPaymentMethod == 'payfast') {
                       // Do not pop checkout; user will complete payment in WebView
@@ -754,6 +816,69 @@ class _PlaceOrderEnhanced extends StatelessWidget {
                           ),
                         ),
                       );
+                    } else if (vm.selectedPaymentMethod == 'eft') {
+                      final eft = result['payment'] as Map<String, dynamic>?;
+                      final ref = eft?['reference'] ?? 'N/A';
+                      final amount = (result['total'] ?? vm.grandTotal) as double?;
+                      final bank = (eft?['bankDetails'] ?? const {}) as Map<String, dynamic>;
+                      final bankName = (bank['bank'] ?? 'Bank').toString();
+                      final acc = (bank['account'] ?? 'Account').toString();
+                      final branch = (bank['branch'] ?? 'Branch').toString();
+                      final holder = (bank['accountHolder'] ?? 'Account Holder').toString();
+                      await showDialog(
+                        context: context,
+                        builder: (_) => AlertDialog(
+                          title: Row(
+                            children: const [
+                              Icon(Icons.account_balance, color: Colors.teal),
+                              SizedBox(width: 8),
+                              Flexible(
+                                child: Text(
+                                  'Bank Transfer (EFT)',
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                          content: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text('Use these details to complete your bank transfer:'),
+                              const SizedBox(height: 12),
+                              _kvRow('Bank', bankName, canCopy: true),
+                              _kvRow('Account Holder', holder, canCopy: true),
+                              _kvRow('Account Number', acc, canCopy: true),
+                              _kvRow('Branch Code', branch, canCopy: true),
+                              const Divider(height: 20),
+                              _kvRow('Amount', 'R${(amount ?? 0).toStringAsFixed(2)}'),
+                              _kvRow('Reference', ref, canCopy: true),
+                              const SizedBox(height: 12),
+                              const Text('We will process your order once payment reflects. Send proof if requested.'),
+                            ],
+                          ),
+                          actions: [
+                            TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Close')),
+                          ],
+                        ),
+                      );
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Row(
+                            children: const [
+                              Icon(Icons.check_circle, color: Colors.white),
+                              SizedBox(width: 6),
+                              Text('Order placed. EFT details sent.'),
+                            ],
+                          ),
+                          backgroundColor: Colors.green,
+                          behavior: SnackBarBehavior.floating,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                        ),
+                      );
+                      Navigator.of(context).pop();
                     } else {
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
@@ -1745,7 +1870,7 @@ class _ProductHandlingInstructions extends StatelessWidget {
           TextField(
             maxLines: 3,
             decoration: InputDecoration(
-              hintText: 'Enter special handling instructions...',
+              hintText: 'Enter special handling instructions (optional - can be left empty)...',
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
                 borderSide: BorderSide(color: AppTheme.deepTeal.withOpacity(0.3)),
@@ -1757,6 +1882,20 @@ class _ProductHandlingInstructions extends StatelessWidget {
               filled: true,
               fillColor: AppTheme.angel,
               contentPadding: EdgeInsets.all(12),
+              suffixIcon: IconButton(
+                icon: Icon(Icons.clear, color: AppTheme.mediumGrey),
+                onPressed: () {
+                  // Clear the text field
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    final textField = FocusScope.of(context).focusedChild;
+                    if (textField != null) {
+                      textField.unfocus();
+                    }
+                  });
+                  vm.setSpecialHandlingInstructions(null);
+                },
+                tooltip: 'Clear instructions',
+              ),
             ),
             onChanged: (value) {
               vm.setSpecialHandlingInstructions(value.trim().isEmpty ? null : value);
@@ -1857,7 +1996,18 @@ class _PaymentMethodSelection extends StatelessWidget {
                   SizedBox(width: 6),
                   Expanded(
                     child: Text(
-                      'Cash on Delivery unavailable (KYC not approved or disabled).',
+                      (() {
+                        if ((vm.kycStatus ?? '').toLowerCase() != 'approved') {
+                          return 'Cash on Delivery unavailable: KYC not approved.';
+                        }
+                        if (vm.sellerOutstandingFees > 0.0) {
+                          return 'Cash on Delivery unavailable: outstanding fees R${vm.sellerOutstandingFees.toStringAsFixed(2)}';
+                        }
+                        if (!vm.allowCOD) {
+                          return 'Cash on Delivery disabled by seller.';
+                        }
+                        return 'Cash on Delivery unavailable.';
+                      })(),
                       style: TextStyle(fontSize: 12, color: Colors.orange[800]),
                     ),
                   ),
@@ -1868,6 +2018,45 @@ class _PaymentMethodSelection extends StatelessWidget {
       ),
     );
   }
+}
+
+Widget _kvRow(String label, String value, {bool canCopy = false}) {
+  return Padding(
+    padding: const EdgeInsets.only(bottom: 6),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Flexible(
+          flex: 4,
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontWeight: FontWeight.w600),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          flex: 6,
+          child: Text(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontFamily: 'monospace'),
+          ),
+        ),
+        if (canCopy)
+          IconButton(
+            tooltip: 'Copy',
+            icon: const Icon(Icons.copy, size: 18),
+            onPressed: () {
+              Clipboard.setData(ClipboardData(text: value));
+            },
+          ),
+      ],
+    ),
+  );
 }
 
 class _PaymentMethodTile extends StatelessWidget {
@@ -2286,6 +2475,64 @@ class _CustomerInformation extends StatelessWidget {
                       ),
                     ),
                   ],
+                ),
+              ),
+            ],
+          ),
+          
+          SizedBox(height: 16),
+          
+          // Phone number field
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Phone Number *',
+                style: TextStyle(
+                  color: AppTheme.deepTeal,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              SizedBox(height: 8),
+              TextField(
+                onChanged: vm.setCustomerPhone,
+                keyboardType: TextInputType.phone,
+                decoration: InputDecoration(
+                  hintText: 'Enter phone number (e.g., 0123456789)',
+                  hintStyle: TextStyle(
+                    color: AppTheme.breeze.withOpacity(0.6),
+                    fontSize: 14,
+                  ),
+                  filled: true,
+                  fillColor: AppTheme.angel,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide.none,
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(
+                      color: AppTheme.whisper.withOpacity(0.6),
+                      width: 1,
+                    ),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(
+                      color: AppTheme.deepTeal,
+                      width: 2,
+                    ),
+                  ),
+                  contentPadding: EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 14,
+                  ),
+                ),
+                style: TextStyle(
+                  color: AppTheme.deepTeal,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
                 ),
               ),
             ],

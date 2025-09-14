@@ -251,8 +251,20 @@ class _SellerOrderDetailScreenState extends State<SellerOrderDetailScreen>
             final buyerName = _getCustomerName(order);
           final buyerPhone = order['buyerPhone'] ?? '';
           final deliveryAddress = order['deliveryAddress'] ?? '';
-            final paymentMethod = (order['paymentMethods'] as List?)?.join(', ') ?? 'Not specified';
-          final paymentStatus = order['paymentStatus'] ?? 'unpaid';
+            final paymentMethod = (() {
+              // Prefer new structure under payment.map
+              if (order['payment'] is Map) {
+                final pm = (order['payment']['method'] ?? order['payment']['gateway'] ?? '').toString();
+                if (pm.isNotEmpty) return pm;
+              }
+              // Legacy fields
+              final list = (order['paymentMethods'] as List?)?.map((e) => e.toString()).toList();
+              if (list != null && list.isNotEmpty) return list.join(', ');
+              final single = order['paymentMethod']?.toString();
+              if (single != null && single.isNotEmpty) return single;
+              return 'Not specified';
+            })();
+            final paymentStatus = order['paymentStatus'] ?? (order['payment']?['status'] ?? 'unpaid');
           final deliveryInstructions = order['deliveryInstructions'] ?? '';
             final timestamp = order['timestamp'] is Timestamp ? (order['timestamp'] as Timestamp).toDate() : null;
           final trackingUpdates = List<Map<String, dynamic>>.from(order['trackingUpdates'] ?? []);
@@ -803,9 +815,12 @@ class _SellerOrderDetailScreenState extends State<SellerOrderDetailScreen>
   }
 
   Widget _buildPaymentInfoCard(DocumentReference orderRef, Map<String, dynamic> order, String paymentMethod, String paymentStatus, dynamic total) {
-    final isPaid = paymentStatus.toLowerCase() == 'paid' || paymentStatus.toLowerCase() == 'completed';
+    final isPaid = paymentStatus.toString().toLowerCase() == 'paid' || paymentStatus.toString().toLowerCase() == 'completed';
     final methods = (order['paymentMethods'] as List?)?.map((e) => e.toString().toLowerCase()).toList() ?? [];
-    final isCOD = methods.any((m) => m.contains('cash')) || (order['paymentMethod']?.toString().toLowerCase().contains('cash') ?? false);
+    final methodStr = paymentMethod.toString().toLowerCase();
+    final isCOD = methods.any((m) => m.contains('cash')) || methodStr.contains('cod') || methodStr.contains('cash');
+    final isEFT = methods.any((m) => m.contains('eft') || m.contains('bank') || m.contains('transfer'))
+        || methodStr.contains('eft') || methodStr.contains('bank') || methodStr.contains('transfer');
     
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -896,6 +911,23 @@ class _SellerOrderDetailScreenState extends State<SellerOrderDetailScreen>
                 ),
               ),
             ),
+          if (isEFT && !isPaid)
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: _updating ? null : () => _markEftAsPaid(orderRef),
+                icon: _updating
+                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                    : const Icon(Icons.check_circle_outline),
+                label: Text(_updating ? 'Updating...' : 'Mark as Paid (EFT)'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.primaryGreen,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+            ),
         ],
       ),
     );
@@ -941,6 +973,61 @@ class _SellerOrderDetailScreenState extends State<SellerOrderDetailScreen>
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: const Text('Marked as paid (cash)'), backgroundColor: AppTheme.success),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to mark as paid: $e'), backgroundColor: AppTheme.error),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _updating = false);
+    }
+  }
+
+  Future<void> _markEftAsPaid(DocumentReference orderRef) async {
+    setState(() => _updating = true);
+    try {
+      await orderRef.update({
+        'paymentStatus': 'completed',
+        'eftPaid': true,
+        'paidAt': FieldValue.serverTimestamp(),
+      });
+
+      // Create or ensure receivable entry for this paid order
+      try {
+        await FirebaseFunctions.instance
+            .httpsCallable('createReceivableEntry')
+            .call({'orderId': orderRef.id});
+      } catch (e) {
+        // Non-fatal: log and continue
+        debugPrint('createReceivableEntry failed: $e');
+      }
+
+      // Timeline update
+      final currentUser = FirebaseAuth.instance.currentUser;
+      String sellerName = 'Seller';
+      if (currentUser != null) {
+        final userDoc = await FirebaseFirestore.instance.collection('users').doc(currentUser.uid).get();
+        if (userDoc.exists) {
+          final data = userDoc.data() as Map<String, dynamic>;
+          sellerName = data['displayName'] ?? data['storeName'] ?? data['email']?.split('@')[0] ?? 'Seller';
+        }
+      }
+      await orderRef.update({
+        'trackingUpdates': FieldValue.arrayUnion([
+          {
+            'description': 'EFT received. Marked PAID.',
+            'timestamp': Timestamp.now(),
+            'by': sellerName,
+          }
+        ]),
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: const Text('Marked as paid (EFT)'), backgroundColor: AppTheme.success),
         );
       }
     } catch (e) {
@@ -1320,13 +1407,36 @@ class _SellerOrderDetailScreenState extends State<SellerOrderDetailScreen>
     if (order['buyerName'] != null && order['buyerName'].toString().isNotEmpty) {
       return order['buyerName'].toString();
     }
+    // New structure: buyerDetails map
+    if (order['buyerDetails'] is Map) {
+      final bd = Map<String, dynamic>.from(order['buyerDetails'] as Map);
+      final full = (bd['fullName'] ?? '').toString();
+      if (full.isNotEmpty) return full;
+      final first = (bd['firstName'] ?? '').toString();
+      final last = (bd['lastName'] ?? '').toString();
+      final combined = ('$first $last').trim();
+      if (combined.isNotEmpty) return combined;
+      final display = (bd['displayName'] ?? '').toString();
+      if (display.isNotEmpty) return display;
+      final emailInBd = (bd['email'] ?? '').toString();
+      if (emailInBd.isNotEmpty) return emailInBd;
+    }
     // Then try name field (legacy)
-    else if (order['name'] != null && order['name'].toString().isNotEmpty) {
+    if (order['name'] != null && order['name'].toString().isNotEmpty) {
       return order['name'].toString();
     }
     // Then try buyerEmail
-    else if (order['buyerEmail'] != null && order['buyerEmail'].toString().isNotEmpty) {
+    if (order['buyerEmail'] != null && order['buyerEmail'].toString().isNotEmpty) {
       return order['buyerEmail'].toString();
+    }
+    // Finally try phone (top-level or buyerDetails)
+    final phoneTop = order['phone']?.toString();
+    final phoneBd = (order['buyerDetails'] is Map) ? (order['buyerDetails']['phone']?.toString()) : null;
+    final phone = (phoneTop != null && phoneTop.isNotEmpty) ? phoneTop : (phoneBd ?? '');
+    if (phone.isNotEmpty) {
+      try {
+        return phone.length >= 4 ? 'Customer (${phone.substring(phone.length - 4)})' : 'Customer ($phone)';
+      } catch (_) {}
     }
     // Finally return Unknown
     return 'Unknown Customer';
@@ -1339,24 +1449,27 @@ class _SellerOrderDetailScreenState extends State<SellerOrderDetailScreen>
       final orderData = await orderRef.get();
       final orderDoc = orderData.data() as Map<String, dynamic>;
       
-      // Validate required fields
-      final buyerId = orderDoc['buyerId'] as String?;
-      final orderNumber = orderDoc['orderNumber'] as String?;
-      final totalPrice = (orderDoc['totalPrice'] as num?)?.toDouble();
+      // Resolve essential fields with safe fallbacks for new schema
+      final buyerId = (orderDoc['buyerId'] as String?) ?? '';
+      final resolvedOrderNumber = (orderDoc['orderNumber']?.toString() ?? orderDoc['orderId']?.toString() ?? orderRef.id);
+      double? resolvedTotal;
+      try {
+        if (orderDoc['pricing'] is Map && (orderDoc['pricing']['grandTotal'] is num)) {
+          resolvedTotal = (orderDoc['pricing']['grandTotal'] as num).toDouble();
+        } else if (orderDoc['totalPrice'] is num) {
+          resolvedTotal = (orderDoc['totalPrice'] as num).toDouble();
+        } else if (orderDoc['total'] is num) {
+          resolvedTotal = (orderDoc['total'] as num).toDouble();
+        }
+      } catch (_) {}
       
-      print('🔍 Order data validation:');
-      print('  - Buyer ID: ${buyerId ?? 'NULL'}');
-      print('  - Order Number: ${orderNumber ?? 'NULL'}');
-      print('  - Total Price: ${totalPrice ?? 'NULL'}');
+      print('🔍 Order data normalization:');
+      print('  - Buyer ID: ${buyerId.isEmpty ? 'NULL' : buyerId}');
+      print('  - Order Number: ${resolvedOrderNumber.isEmpty ? 'NULL' : resolvedOrderNumber}');
+      print('  - Total: ${resolvedTotal ?? 'NULL'}');
       
-      if (buyerId == null || buyerId.isEmpty) {
+      if (buyerId.isEmpty) {
         throw Exception('Buyer ID is missing or empty');
-      }
-      if (orderNumber == null || orderNumber.isEmpty) {
-        throw Exception('Order number is missing or empty');
-      }
-      if (totalPrice == null) {
-        throw Exception('Total price is missing');
       }
       final currentUser = FirebaseAuth.instance.currentUser;
       
@@ -1549,7 +1662,7 @@ class _SellerOrderDetailScreenState extends State<SellerOrderDetailScreen>
             // Commit all stock reductions atomically
             if (reducedItems > 0) {
               await batch.commit();
-              print('✅ Stock reduced for $reducedItems products in order $orderNumber');
+              print('✅ Stock reduced for $reducedItems products in order $resolvedOrderNumber');
               
               // Add stock reduction note to tracking
               final stockUpdate = {
@@ -1584,9 +1697,9 @@ class _SellerOrderDetailScreenState extends State<SellerOrderDetailScreen>
         await FirebaseAdminService().sendOrderStatusNotification(
           userId: buyerId,
           orderId: orderRef.id,
-          orderNumber: orderNumber,
+          orderNumber: resolvedOrderNumber,
           status: newStatus,
-          totalPrice: totalPrice,
+          totalPrice: resolvedTotal ?? 0.0,
         );
         
         print('✅ Status update notification sent successfully');

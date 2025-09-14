@@ -137,7 +137,7 @@ class DashboardCacheService extends ChangeNotifier {
       final startOfDay = DateTime(now.year, now.month, now.day);
       final todayOrders = await firestore
           .collection('orders')
-          .where('timestamp', isGreaterThanOrEqualTo: Timestamp.fromDate(startOfDay))
+          .where('createdAt', isGreaterThanOrEqualTo: Timestamp.fromDate(startOfDay))
           .count()
           .get();
 
@@ -193,12 +193,12 @@ class DashboardCacheService extends ChangeNotifier {
     final startOf30Days = now.subtract(const Duration(days: 30));
     final todayOrders = await firestore
         .collection('orders')
-        .where('timestamp', isGreaterThanOrEqualTo: Timestamp.fromDate(startOfDay))
+        .where('createdAt', isGreaterThanOrEqualTo: Timestamp.fromDate(startOfDay))
         .get();
     final allOrders = await firestore.collection('orders').get();
     final last30Orders = await firestore
         .collection('orders')
-        .where('timestamp', isGreaterThanOrEqualTo: Timestamp.fromDate(startOf30Days))
+        .where('createdAt', isGreaterThanOrEqualTo: Timestamp.fromDate(startOf30Days))
         .get();
     
     // Fetch reviews for today
@@ -232,8 +232,8 @@ class DashboardCacheService extends ChangeNotifier {
 
     for (var doc in last30Orders.docs) {
       final data = doc.data();
-      // GMV approximation: prefer totalPrice, else orderTotal, else totalAmount
-      final num gmvComponent = (data['totalPrice'] ?? data['orderTotal'] ?? data['totalAmount'] ?? 0.0) as num;
+      // GMV approximation: prefer pricing.grandTotal, then totalPrice, else orderTotal, else totalAmount
+      final num gmvComponent = (data['pricing']?['grandTotal'] ?? data['totalPrice'] ?? data['orderTotal'] ?? data['totalAmount'] ?? 0.0) as num;
       last30Gmv += gmvComponent.toDouble();
       final fee = (data['platformFee'] ?? 0.0) as num;
       if (fee == 0.0) {
@@ -267,7 +267,7 @@ class DashboardCacheService extends ChangeNotifier {
   Future<List<Map<String, dynamic>>> _fetchRecentActivity(FirebaseFirestore firestore) async {
     final ordersQuery = await firestore
         .collection('orders')
-        .orderBy('timestamp', descending: true)
+        .orderBy('createdAt', descending: true)
         .limit(10)
         .get();
 

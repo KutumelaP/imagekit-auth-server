@@ -9,6 +9,7 @@ import 'seller_delivery_management_service.dart';
 import 'real_pickup_service.dart';
 import 'otp_verification_service.dart';
 import 'whatsapp_integration_service.dart';
+import 'notification_service.dart';
 import 'payfast_service.dart';
 
 class ProductionOrderService {
@@ -74,6 +75,7 @@ class ProductionOrderService {
     String? pudoDeliveryPhone,
     String? customerFirstName,
     String? customerLastName,
+    String? customerPhone,
     required BuildContext context,
   }) async {
     try {
@@ -151,7 +153,8 @@ class ProductionOrderService {
           'fullName': _getFullCustomerName(customerFirstName, customerLastName),
           'displayName': user.displayName, // Keep original for reference
           'email': user.email,
-          'phone': user.phoneNumber,
+          // Prefer Auth phone, fallback to provided checkout phone (e.g., EFT/PUDO input)
+          'phone': user.phoneNumber ?? pudoDeliveryPhone,
         },
         'sellerId': cartItems.first['sellerId'] ?? 'unknown_seller',
         'items': cartItems.map((item) => {
@@ -278,7 +281,7 @@ class ProductionOrderService {
               'buyerName': _getFullCustomerName(customerFirstName, customerLastName),
               'buyerFirstName': customerFirstName?.trim() ?? '',
               'buyerLastName': customerLastName?.trim() ?? '',
-              'buyerPhone': user.phoneNumber ?? '',
+              'buyerPhone': customerPhone?.trim() ?? user.phoneNumber ?? '',
               'address': deliveryAddress ?? '',
               'coordinates': userLocation != null ? {
                 'lat': userLocation.latitude,
@@ -501,19 +504,40 @@ class ProductionOrderService {
   static Future<Map<String, dynamic>> _processEFTPayment(String orderId, double amount) async {
     // Generate unique EFT reference
     final reference = 'OMN${orderId.substring(3, 8)}';
-    
+
+    // Load bank details from admin settings
+    Map<String, dynamic> bank = {
+      'bank': 'FNB',
+      'account': '62841234567',
+      'branch': '250655',
+      'accountHolder': 'OmniaSA (Pty) Ltd',
+      'reference': reference,
+    };
+
+    try {
+      final adminDoc = await _firestore.collection('admin_settings').doc('payment_settings').get();
+      if (adminDoc.exists) {
+        final d = adminDoc.data() ?? {};
+        final adminBank = (d['eftBankDetails'] ?? d['bankDetails'] ?? {}) as Map<String, dynamic>;
+        bank = {
+          'bank': (adminBank['bank'] ?? bank['bank']).toString(),
+          'account': (adminBank['account'] ?? adminBank['accountNumber'] ?? bank['account']).toString(),
+          'branch': (adminBank['branch'] ?? adminBank['branchCode'] ?? bank['branch']).toString(),
+          'accountHolder': (adminBank['accountHolder'] ?? adminBank['accountName'] ?? bank['accountHolder']).toString(),
+          'reference': reference,
+        };
+      }
+    } catch (e) {
+      // Fallback to defaults on error
+      print('⚠️ Could not load admin EFT bank details: $e');
+    }
+
     return {
       'success': true,
       'method': 'eft',
       'reference': reference,
       'amount': amount,
-      'bankDetails': {
-        'bank': 'FNB',
-        'account': '62841234567',
-        'branch': '250655',
-        'accountHolder': 'OmniaSA (Pty) Ltd',
-        'reference': reference,
-      },
+      'bankDetails': bank,
       'message': 'Use reference: $reference for payment',
     };
   }
@@ -522,6 +546,7 @@ class ProductionOrderService {
   
   static Future<void> _sendOrderNotifications(String orderId, User user, List<Map<String, dynamic>> items, String? otp, double total, String? customerFirstName, String? customerLastName) async {
     try {
+      final sellerId = items.isNotEmpty ? (items.first['sellerId']?.toString() ?? '') : '';
       // Customer notification
       if (user.phoneNumber != null) {
         await WhatsAppIntegrationService.sendOrderConfirmation(
@@ -542,6 +567,31 @@ class ProductionOrderService {
         items: items,
         deliveryAddress: 'Customer address',
       );
+
+      // System app notifications (in-app/badge)
+      try {
+        final sellerName = items.first['sellerName']?.toString() ?? 'Store';
+        final buyerName = _getFullCustomerName(customerFirstName, customerLastName);
+        if (sellerId.isNotEmpty) {
+          await NotificationService().sendNewOrderNotificationToSeller(
+            sellerId: sellerId,
+            orderId: orderId,
+            buyerName: buyerName,
+            orderTotal: total,
+            sellerName: sellerName,
+          );
+        }
+        if (user.uid.isNotEmpty) {
+          await NotificationService().sendOrderStatusNotificationToBuyer(
+            buyerId: user.uid,
+            orderId: orderId,
+            status: 'created',
+            sellerName: sellerName,
+          );
+        }
+      } catch (e) {
+        print('NotificationService error: $e');
+      }
     } catch (e) {
       print('Notification error: $e');
     }
@@ -601,3 +651,4 @@ class ProductionOrderService {
     return '$first $last';
   }
 }
+

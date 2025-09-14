@@ -43,6 +43,7 @@ class WhatsAppIntegrationService {
     required String driverPhone,
     required String estimatedArrival,
     required String trackingUrl,
+    String? deliveryOTP,
   }) async {
     try {
       final message = _buildDeliveryNotificationMessage(
@@ -51,6 +52,7 @@ class WhatsAppIntegrationService {
         driverPhone: driverPhone,
         estimatedArrival: estimatedArrival,
         trackingUrl: trackingUrl,
+        deliveryOTP: deliveryOTP,
       );
       
       return await _sendWhatsAppMessage(
@@ -228,6 +230,7 @@ Need help? Reply to this message!
     required String driverPhone,
     required String estimatedArrival,
     required String trackingUrl,
+    String? deliveryOTP,
   }) {
     return '''🚚 *Your order is on the way!*
 
@@ -238,7 +241,7 @@ Need help? Reply to this message!
 
 📍 *Track live:* $trackingUrl
 
-🔐 Have your OTP ready for delivery verification!
+${deliveryOTP != null ? '🔐 *Delivery OTP:* $deliveryOTP\n(Share this with the driver during delivery)\n' : '🔐 Have your OTP ready for delivery verification!'}
 
 *OmniaSA Delivery* 🇿🇦''';
   }

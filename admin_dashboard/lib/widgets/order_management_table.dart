@@ -71,7 +71,8 @@ class _OrderManagementTableState extends State<OrderManagementTable> {
         query = query.where('sellerId', isEqualTo: _selectedSeller);
       }
       
-      query = query.orderBy('timestamp', descending: true).limit(20);
+      // Order by document ID to include both legacy (timestamp) and new (createdAt) orders
+      query = query.orderBy(FieldPath.documentId, descending: true).limit(20);
       
       final snapshot = await query.get();
       final processedOrders = await _processOrders(snapshot.docs);
@@ -118,10 +119,11 @@ class _OrderManagementTableState extends State<OrderManagementTable> {
         query = query.where('sellerId', isEqualTo: _selectedSeller);
       }
       
-      query = query.orderBy('timestamp', descending: true).limit(20);
+      // Order by document ID to include both legacy (timestamp) and new (createdAt) orders
+      query = query.orderBy(FieldPath.documentId, descending: true).limit(20);
 
       if (lastOrder != null) {
-        query = query.startAfter([lastOrder['timestamp']]);
+        query = query.startAfter([lastOrder['id']]);
       }
 
       final snapshot = await query.get();
@@ -173,19 +175,42 @@ class _OrderManagementTableState extends State<OrderManagementTable> {
   }
 
   String _getCustomerName(Map<String, dynamic> data) {
-    // First try buyerName from order data
+    final buyerDetails = data['buyerDetails'] as Map<String, dynamic>?;
+    if (buyerDetails != null) {
+      if (buyerDetails['fullName'] != null && buyerDetails['fullName'].toString().isNotEmpty) {
+        return buyerDetails['fullName'].toString();
+      }
+      final firstName = buyerDetails['firstName']?.toString() ?? '';
+      final lastName = buyerDetails['lastName']?.toString() ?? '';
+      if (firstName.isNotEmpty || lastName.isNotEmpty) {
+        return '$firstName $lastName'.trim();
+      }
+      if (buyerDetails['displayName'] != null && buyerDetails['displayName'].toString().isNotEmpty) {
+        return buyerDetails['displayName'].toString();
+      }
+      if (buyerDetails['email'] != null && buyerDetails['email'].toString().isNotEmpty) {
+        return buyerDetails['email'].toString();
+      }
+    }
+    // Fallback to legacy fields
     if (data['buyerName'] != null && data['buyerName'].toString().isNotEmpty) {
       return data['buyerName'].toString();
     }
-    // Then try name field (legacy)
-    else if (data['name'] != null && data['name'].toString().isNotEmpty) {
+    if (data['name'] != null && data['name'].toString().isNotEmpty) {
       return data['name'].toString();
     }
-    // Then try buyerEmail
-    else if (data['buyerEmail'] != null && data['buyerEmail'].toString().isNotEmpty) {
+    if (data['buyerEmail'] != null && data['buyerEmail'].toString().isNotEmpty) {
       return data['buyerEmail'].toString();
     }
-    // Finally return Unknown
+    // Finally try phone (top-level or buyerDetails)
+    final phoneTop = data['phone']?.toString();
+    final phoneBd = (data['buyerDetails'] is Map) ? (data['buyerDetails']['phone']?.toString()) : null;
+    final phone = (phoneTop != null && phoneTop.isNotEmpty) ? phoneTop : (phoneBd ?? '');
+    if (phone.isNotEmpty) {
+      try {
+        return phone.length >= 4 ? 'Customer (${phone.substring(phone.length - 4)})' : 'Customer ($phone)';
+      } catch (_) {}
+    }
     return 'Unknown Customer';
   }
 
@@ -383,11 +408,11 @@ class _OrderManagementTableState extends State<OrderManagementTable> {
                       ),
                     )),
                     DataCell(Text(
-                      'R${(data['totalPrice'] ?? data['total'] ?? 0.0).toStringAsFixed(2)}',
+                      'R${(_extractTotal(data)).toStringAsFixed(2)}',
                       style: TextStyle(fontFamily: 'Inter', color: Theme.of(context).colorScheme.onSurface)
                     )),
                     DataCell(Text(
-                      _formatTimestamp(data['timestamp']),
+                      _formatTimestamp(data['createdAt'] ?? data['timestamp']),
                       style: TextStyle(fontFamily: 'Inter', color: Theme.of(context).colorScheme.onSurface)
                     )),
                     DataCell(Row(
@@ -449,10 +474,29 @@ class _OrderManagementTableState extends State<OrderManagementTable> {
       if (timestamp is Timestamp) {
         final date = timestamp.toDate();
         return '${date.day}/${date.month}/${date.year}';
+      } else if (timestamp is DateTime) {
+        final date = timestamp;
+        return '${date.day}/${date.month}/${date.year}';
       }
       return 'N/A';
     } catch (e) {
       return 'N/A';
+    }
+  }
+
+  double _extractTotal(Map<String, dynamic> data) {
+    try {
+      // Prefer pricing.grandTotal, fallback to total or totalPrice
+      if (data['pricing'] is Map) {
+        final p = data['pricing'] as Map;
+        final v = p['grandTotal'];
+        if (v is num) return v.toDouble();
+      }
+      final total = data['total'] ?? data['totalPrice'] ?? 0.0;
+      if (total is num) return total.toDouble();
+      return double.tryParse(total.toString()) ?? 0.0;
+    } catch (_) {
+      return 0.0;
     }
   }
 

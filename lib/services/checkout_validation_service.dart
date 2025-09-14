@@ -29,13 +29,23 @@ class CheckoutValidationService {
       final db = firestore ?? FirebaseFirestore.instance;
 
       // 1) Zone exclusion check
-      if (excludedZones.isNotEmpty) {
+      if (excludedZones.isNotEmpty && addressText.isNotEmpty) {
         final address = addressText.toLowerCase();
         final blocked = excludedZones.any((z) => address.contains(z.toLowerCase()));
         if (blocked) {
           return CheckoutValidationResult.error('Delivery is not available to your address');
         }
       }
+      
+      // 1.5) Basic address validation for delivery
+      print('🔍 Validation: isDelivery=$isDelivery, addressText="$addressText", length=${addressText.length}');
+      
+      if (isDelivery && (addressText.isEmpty || addressText.length < 5)) {
+        print('❌ Validation: Address validation failed - empty or too short');
+        return CheckoutValidationResult.error('Please enter a valid delivery address');
+      }
+      
+      print('✅ Validation: Address validation passed');
 
       // 2) Minimum order for delivery
       if (isDelivery && minOrderForDelivery != null && totalPrice < minOrderForDelivery) {

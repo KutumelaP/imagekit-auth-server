@@ -3881,7 +3881,11 @@ exports.createPayoutBatch = functions.https.onCall(async (data, context) => {
 });
 
 // Weekly auto-batch (disabled unless env set)
-exports.autoCreatePayoutBatch = functions.pubsub.schedule('0 8 * * 1').onRun(async () => {
+// Runs every Friday at 08:00 SAST
+exports.autoCreatePayoutBatch = functions.pubsub
+  .schedule('0 8 * * 5')
+  .timeZone('Africa/Johannesburg')
+  .onRun(async () => {
   try {
     const enabled = String(process.env.AUTO_BATCH_ENABLED || 'false').toLowerCase() === 'true';
     if (!enabled) return null;
@@ -3894,8 +3898,8 @@ exports.autoCreatePayoutBatch = functions.pubsub.schedule('0 8 * * 1').onRun(asy
   return null;
 });
 
-// === Export Nedbank CSV for manual bank payouts ===
-exports.exportNedbankCsv = functions.https.onCall(async (data, context) => {
+// === Export Capitec CSV for manual bank payouts ===
+exports.exportCapitecCsv = functions.https.onCall(async (data, context) => {
   if (!context.auth) throw new functions.https.HttpsError('unauthenticated', 'Sign in required');
   const isAdmin = context.auth.token?.admin === true || context.auth.token?.role === 'admin';
   if (!isAdmin) throw new functions.https.HttpsError('permission-denied', 'Admin only');
@@ -4037,19 +4041,46 @@ exports.createReceivableEntry = functions.https.onCall(async (data, context) => 
     
     const orderData = orderSnap.data() || {};
     const sellerId = orderData.sellerId;
-    const totalPrice = Number(orderData.totalPrice || 0);
-    const platformFee = Number(orderData.platformFee || 0);
-    const sellerPayout = Number(orderData.sellerPayout || 0);
-    const paymentMethod = orderData.paymentMethod || 'unknown';
-    const paymentStatus = orderData.paymentStatus || 'unknown';
+    
+    // Handle both legacy and new order structures
+    const totalPrice = Number(
+      orderData.pricing?.grandTotal || 
+      orderData.totalPrice || 
+      orderData.total || 
+      0
+    );
+    
+    // Get payment method from new or legacy structure
+    const paymentMethod = 
+      orderData.payment?.method || 
+      orderData.payment?.gateway || 
+      orderData.paymentMethod || 
+      (Array.isArray(orderData.paymentMethods) ? orderData.paymentMethods[0] : '') || 
+      'unknown';
+    
+    // Get payment status from new or legacy structure  
+    const paymentStatus = 
+      orderData.paymentStatus || 
+      orderData.payment?.status || 
+      'unknown';
+    
+    console.log('[createReceivableEntry] Order data:', {
+      sellerId,
+      totalPrice,
+      paymentMethod,
+      paymentStatus,
+      hasPricing: !!orderData.pricing,
+      hasPayment: !!orderData.payment
+    });
     
     if (!sellerId || totalPrice <= 0) {
       throw new functions.https.HttpsError('failed-precondition', 'Invalid order data');
     }
     
-    // Only create receivable entries for paid/confirmed orders
-    if (paymentStatus !== 'paid' && paymentStatus !== 'confirmed') {
-      throw new functions.https.HttpsError('failed-precondition', `Order payment status is '${paymentStatus}', expected 'paid' or 'confirmed'`);
+    // Only create receivable entries for paid/completed/confirmed orders
+    const validStatuses = ['paid', 'completed', 'confirmed'];
+    if (!validStatuses.includes(paymentStatus)) {
+      throw new functions.https.HttpsError('failed-precondition', `Order payment status is '${paymentStatus}', expected one of: ${validStatuses.join(', ')}`);
     }
     
     // Check if receivable entry already exists
@@ -4064,23 +4095,38 @@ exports.createReceivableEntry = functions.https.onCall(async (data, context) => 
       return { success: true, message: 'Receivable entry already exists' };
     }
     
+    // Calculate commission using the tiered pricing system (Smart Commission)
+    const gross = Math.round(totalPrice * 100) / 100;
+    const { commission, net, smallOrderFee, tier } = await computeCommissionWithSettings({ 
+      gross, 
+      order: { 
+        totalPrice: gross, 
+        orderType: orderData.orderType || 'pickup',
+        deliveryModelPreference: orderData.deliveryModelPreference || 'merchant'
+      } 
+    });
+    
     // Create the receivable entry
     const receivableData = {
       orderId: orderId,
-      orderNumber: orderData.orderNumber || orderId,
+      orderNumber: orderData.orderNumber || orderData.orderId || orderId,
       sellerId: sellerId,
       buyerId: orderData.buyerId,
-      method: paymentMethod.toLowerCase().includes('cash') ? 'COD' : 'online',
-      gross: totalPrice,
-      commission: platformFee,
-      net: sellerPayout,
+      method: paymentMethod.toLowerCase().includes('cash') ? 'COD' : 
+              paymentMethod.toLowerCase().includes('eft') ? 'EFT' : 'online',
+      gross: gross,
+      commission: commission,
+      net: net,
+      smallOrderFee: smallOrderFee || 0,
+      tier: tier || 'unknown',
+      commissionType: 'tiered_pricing',
       status: 'available', // Available for payout
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       orderData: {
-        totalPrice: totalPrice,
-        platformFee: platformFee,
-        sellerPayout: sellerPayout,
+        totalPrice: gross,
+        platformFee: commission,
+        sellerPayout: net,
         paymentMethod: paymentMethod,
         orderType: orderData.orderType || 'unknown',
         productCategory: orderData.productCategory || 'other'
@@ -4089,7 +4135,7 @@ exports.createReceivableEntry = functions.https.onCall(async (data, context) => 
     
     await receivableRef.set(receivableData);
     
-    console.log('[createReceivableEntry] Successfully created receivable entry for orderId:', orderId, 'sellerId:', sellerId);
+    console.log('[createReceivableEntry] Successfully created receivable entry for orderId:', orderId, 'sellerId:', sellerId, 'gross:', gross, 'commission:', commission, 'net:', net);
     
     return { 
       success: true, 

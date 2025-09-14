@@ -439,7 +439,7 @@ class _AdminPayoutsSectionState extends State<AdminPayoutsSection> {
             OutlinedButton.icon(
               onPressed: () async {
                 try {
-                  final res = await _functions.httpsCallable('exportNedbankCsv').call(<String, dynamic>{});
+                  final res = await _functions.httpsCallable('exportCapitecCsv').call(<String, dynamic>{});
                   final data = res.data ?? {};
                   final csv = (data['csv'] ?? '') as String;
                   if (csv.isEmpty) {
@@ -451,7 +451,7 @@ class _AdminPayoutsSectionState extends State<AdminPayoutsSection> {
                   await showDialog(
                     context: context,
                     builder: (ctx) => AlertDialog(
-                      title: const Text('Nedbank CSV Export'),
+                      title: const Text('Capitec CSV Export'),
                       content: SizedBox(
                         width: 700,
                         child: Column(
@@ -490,7 +490,7 @@ class _AdminPayoutsSectionState extends State<AdminPayoutsSection> {
                             final blob = html.Blob([csv], 'text/csv');
                             final url = html.Url.createObjectUrlFromBlob(blob);
                             final anchor = html.AnchorElement(href: url)
-                              ..setAttribute('download', 'nedbank_payouts_${DateTime.now().millisecondsSinceEpoch}.csv')
+                              ..setAttribute('download', 'capitec_payouts_${DateTime.now().millisecondsSinceEpoch}.csv')
                               ..click();
                             html.Url.revokeObjectUrl(url);
                             
@@ -511,7 +511,7 @@ class _AdminPayoutsSectionState extends State<AdminPayoutsSection> {
                 }
               },
               icon: const Icon(Icons.file_download_outlined),
-              label: const Text('Export Nedbank CSV'),
+              label: const Text('Export Capitec CSV'),
             ),
             const SizedBox(width: 8),
             FilledButton.icon(

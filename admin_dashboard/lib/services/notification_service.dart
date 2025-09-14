@@ -328,6 +328,23 @@ class AdminNotificationService {
   // Validate and clean up stale notifications
   Future<void> validateAndCleanupNotifications() async {
     try {
+      // Check if user is authenticated and is admin
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) {
+        print('⚠️ User not authenticated - skipping notification validation');
+        return;
+      }
+      
+      // Get the user's custom claims to verify admin status
+      final idTokenResult = await user.getIdTokenResult();
+      final isAdmin = idTokenResult.claims?['admin'] == true || 
+                     idTokenResult.claims?['role'] == 'admin';
+      
+      if (!isAdmin) {
+        print('⚠️ User is not admin - skipping notification validation');
+        return;
+      }
+      
       final notifications = await _firestore
           .collection('notifications')
           .get();

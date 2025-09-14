@@ -96,12 +96,36 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
   Future<void> _initializeNotificationService() async {
     try {
-      await _notificationService.initialize(
-        FirebaseFirestore.instance,
-        FirebaseAuth.instance,
-      );
+      // Wait for authentication state to be ready
+      final auth = FirebaseAuth.instance;
+      
+      // Listen for auth state changes and initialize only when user is authenticated
+      auth.authStateChanges().listen((User? user) async {
+        if (user != null) {
+          try {
+            // Verify user has admin privileges before initializing notifications
+            final idTokenResult = await user.getIdTokenResult();
+            final isAdmin = idTokenResult.claims?['admin'] == true || 
+                           idTokenResult.claims?['role'] == 'admin';
+            
+            if (isAdmin) {
+              debugPrint('🔔 Initializing notifications for admin user: ${user.email}');
+              await _notificationService.initialize(
+                FirebaseFirestore.instance,
+                auth,
+              );
+            } else {
+              debugPrint('⚠️ User ${user.email} is not admin - notifications disabled');
+            }
+          } catch (e) {
+            debugPrint('❌ Error verifying admin status: $e');
+          }
+        } else {
+          debugPrint('🔔 User not authenticated - notifications disabled');
+        }
+      });
     } catch (e) {
-      debugPrint('Failed to initialize notification service: $e');
+      debugPrint('❌ Failed to setup notification service: $e');
     }
   }
 

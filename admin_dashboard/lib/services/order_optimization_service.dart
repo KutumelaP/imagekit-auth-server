@@ -190,12 +190,41 @@ class OrderOptimizationService {
   }
 
   String _getCustomerName(Map<String, dynamic> data) {
+    final buyerDetails = data['buyerDetails'] as Map<String, dynamic>?;
+    if (buyerDetails != null) {
+      if (buyerDetails['fullName'] != null && buyerDetails['fullName'].toString().isNotEmpty) {
+        return buyerDetails['fullName'].toString();
+      }
+      final firstName = buyerDetails['firstName']?.toString() ?? '';
+      final lastName = buyerDetails['lastName']?.toString() ?? '';
+      if (firstName.isNotEmpty || lastName.isNotEmpty) {
+        return '$firstName $lastName'.trim();
+      }
+      if (buyerDetails['displayName'] != null && buyerDetails['displayName'].toString().isNotEmpty) {
+        return buyerDetails['displayName'].toString();
+      }
+      if (buyerDetails['email'] != null && buyerDetails['email'].toString().isNotEmpty) {
+        return buyerDetails['email'].toString();
+      }
+    }
+    // Fallback to legacy fields
     if (data['buyerName'] != null && data['buyerName'].toString().isNotEmpty) {
       return data['buyerName'].toString();
-    } else if (data['name'] != null && data['name'].toString().isNotEmpty) {
+    }
+    if (data['name'] != null && data['name'].toString().isNotEmpty) {
       return data['name'].toString();
-    } else if (data['buyerEmail'] != null && data['buyerEmail'].toString().isNotEmpty) {
+    }
+    if (data['buyerEmail'] != null && data['buyerEmail'].toString().isNotEmpty) {
       return data['buyerEmail'].toString();
+    }
+    // Finally try phone (top-level or buyerDetails)
+    final phoneTop = data['phone']?.toString();
+    final phoneBd = (data['buyerDetails'] is Map) ? (data['buyerDetails']['phone']?.toString()) : null;
+    final phone = (phoneTop != null && phoneTop.isNotEmpty) ? phoneTop : (phoneBd ?? '');
+    if (phone.isNotEmpty) {
+      try {
+        return phone.length >= 4 ? 'Customer (${phone.substring(phone.length - 4)})' : 'Customer ($phone)';
+      } catch (_) {}
     }
     return 'Unknown Customer';
   }

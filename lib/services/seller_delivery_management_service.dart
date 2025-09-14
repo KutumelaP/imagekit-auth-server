@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'otp_verification_service.dart';
 import 'whatsapp_integration_service.dart';
 
@@ -79,7 +80,7 @@ class SellerDeliveryManagementService {
         'confirmedAt': FieldValue.serverTimestamp(),
         'sellerActions': FieldValue.arrayUnion([{
           'action': 'confirmed_delivery',
-          'timestamp': FieldValue.serverTimestamp(),
+          'timestamp': Timestamp.now(),
           'method': deliveryMethod,
           'estimatedTime': estimatedDeliveryTime,
         }]),
@@ -132,7 +133,7 @@ class SellerDeliveryManagementService {
         'startedAt': FieldValue.serverTimestamp(),
         'sellerActions': FieldValue.arrayUnion([{
           'action': 'started_delivery',
-          'timestamp': FieldValue.serverTimestamp(),
+          'timestamp': Timestamp.now(),
           'notes': notes,
           'photoUrl': photoUrl,
         }]),
@@ -159,6 +160,7 @@ class SellerDeliveryManagementService {
           driverPhone: driverDetails?['phone'] ?? '',
           estimatedArrival: taskData['estimatedDeliveryTime'] ?? 'Soon',
           trackingUrl: 'https://omniasa.co.za/track/$orderId',
+          deliveryOTP: taskData['deliveryOTP'],
         );
       }
       
@@ -213,7 +215,7 @@ class SellerDeliveryManagementService {
         },
         'sellerActions': FieldValue.arrayUnion([{
           'action': 'delivery_completed',
-          'timestamp': FieldValue.serverTimestamp(),
+          'timestamp': Timestamp.now(),
           'otpUsed': enteredOTP,
           'delivererId': delivererId,
         }]),
@@ -246,13 +248,52 @@ class SellerDeliveryManagementService {
   /// Get seller's delivery dashboard data
   static Future<Map<String, dynamic>> getSellerDeliveryDashboard(String sellerId) async {
     try {
-      // Get pending delivery tasks
-      final pendingTasks = await _firestore
+      // Get delivery tasks and cross-reference with order payment status
+      final allTasks = await _firestore
           .collection('seller_delivery_tasks')
           .where('sellerId', isEqualTo: sellerId)
           .where('status', whereIn: ['pending_seller_action', 'confirmed_by_seller', 'delivery_in_progress'])
           .orderBy('createdAt', descending: true)
           .get();
+
+      // Filter tasks to only show those with paid orders
+      List<Map<String, dynamic>> pendingTasks = [];
+      
+      for (final taskDoc in allTasks.docs) {
+        final taskData = taskDoc.data();
+        final orderId = taskData['orderId'];
+        
+        // Check if the order is paid and ready for delivery
+        final orderDoc = await _firestore.collection('orders').doc(orderId).get();
+        if (orderDoc.exists) {
+          final orderData = orderDoc.data()!;
+          final paymentStatus = orderData['payment']?['status'] ?? 'pending';
+          final orderStatus = orderData['status'] ?? 'pending';
+          final fulfillmentType = orderData['fulfillmentType'] ?? 'pickup';
+          
+          // Only show delivery orders that are paid and confirmed
+          final paymentStatus2 = orderData['paymentStatus'] ?? 'pending';
+          final fulfillmentType2 = orderData['fulfillment']?['type'] ?? 'pickup';
+          
+          final isPaid = paymentStatus == 'paid' || paymentStatus == 'completed' || paymentStatus == 'success' || paymentStatus2 == 'completed';
+          final isReadyForDelivery = orderStatus == 'confirmed' || orderStatus == 'ready' || orderStatus == 'preparing' || orderStatus == 'delivery_confirmed' || orderStatus == 'out_for_delivery';
+          final isDeliveryOrder = fulfillmentType == 'delivery' || fulfillmentType2 == 'delivery';
+          final isInProgress = taskData['status'] == 'delivery_in_progress';
+          
+          if (isPaid && isDeliveryOrder && (isReadyForDelivery || isInProgress)) {
+            // Use the correct payment status - prefer the root level paymentStatus
+            final displayPaymentStatus = paymentStatus2 != 'pending' ? paymentStatus2 : paymentStatus;
+            
+            pendingTasks.add({
+              'taskId': taskDoc.id,
+              'orderId': orderId,
+              'orderStatus': orderStatus,
+              'paymentStatus': displayPaymentStatus,
+              ...taskData,
+            });
+          }
+        }
+      }
       
       // Get recent completed deliveries
       final recentDeliveries = await _firestore
@@ -267,19 +308,18 @@ class SellerDeliveryManagementService {
       final totalDeliveries = recentDeliveries.docs.length;
       final avgDeliveryTime = _calculateAverageDeliveryTime(recentDeliveries.docs);
       
+      print('✅ Delivery dashboard loaded: ${pendingTasks.length} pending, $totalDeliveries completed');
+
       return {
         'success': true,
-        'pendingTasks': pendingTasks.docs.map((doc) => {
-          'orderId': doc.id,
-          ...doc.data(),
-        }).toList(),
+        'pendingTasks': pendingTasks, // Already processed list with payment status
         'recentDeliveries': recentDeliveries.docs.map((doc) => {
           'orderId': doc.id,
           ...doc.data(),
         }).toList(),
         'stats': {
           'totalDeliveries': totalDeliveries,
-          'pendingCount': pendingTasks.docs.length,
+          'pendingCount': pendingTasks.length,
           'averageDeliveryTime': avgDeliveryTime,
         },
       };
@@ -428,12 +468,18 @@ class SellerDeliveryManagementService {
   }
   
   static Future<void> _notifyBuyerDeliveryConfirmed({
-    required String buyerPhone,
+    String? buyerPhone, // Made optional since phone isn't collected at checkout
     required String orderId,
     required String estimatedTime,
     required Map<String, dynamic>? driverDetails,
   }) async {
     try {
+      // Skip notification if no phone number available
+      if (buyerPhone == null || buyerPhone.isEmpty) {
+        print('⚠️ Skipping buyer notification - no phone number available');
+        return;
+      }
+      
       final message = '''✅ *Delivery Confirmed!*
 
 📋 *Order:* #$orderId

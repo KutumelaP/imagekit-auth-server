@@ -44,7 +44,8 @@ class CheckoutV2ViewModel extends ChangeNotifier {
   // COD and compliance
   bool allowCOD = false;
   String? kycStatus; // 'pending' | 'approved' | etc.
-  bool get codEnabledForSeller => allowCOD && (kycStatus?.toLowerCase() == 'approved');
+  double sellerOutstandingFees = 0.0;
+  bool get codEnabledForSeller => allowCOD && (kycStatus?.toLowerCase() == 'approved') && (sellerOutstandingFees <= 0.0);
 
   bool get isStoreOpenNow {
     try {
@@ -104,6 +105,7 @@ class CheckoutV2ViewModel extends ChangeNotifier {
   // Customer information
   String? firstName;
   String? lastName;
+  String? customerPhone;
   
   // Special handling instructions from buyer to seller
   String? specialHandlingInstructions;
@@ -119,6 +121,21 @@ class CheckoutV2ViewModel extends ChangeNotifier {
 
   void setError(String? value) {
     error = value;
+    notifyListeners();
+  }
+  
+  void setFirstName(String value) {
+    firstName = value.trim().isEmpty ? null : value.trim();
+    notifyListeners();
+  }
+  
+  void setLastName(String value) {
+    lastName = value.trim().isEmpty ? null : value.trim();
+    notifyListeners();
+  }
+  
+  void setCustomerPhone(String value) {
+    customerPhone = value.trim().isEmpty ? null : value.trim();
     notifyListeners();
   }
 
@@ -166,6 +183,8 @@ class CheckoutV2ViewModel extends ChangeNotifier {
         return false;
       }
       
+      print('🔍 ViewModel: Validating with addressText: "$addressText", isDelivery: $isDelivery');
+      
       final res = await CheckoutValidationService.validate(
         excludedZones: excludedZones,
         addressText: addressText ?? '',
@@ -180,6 +199,8 @@ class CheckoutV2ViewModel extends ChangeNotifier {
         isDelivery: isDelivery,
         firestore: FirebaseFirestore.instance,
       );
+      
+      print('🔍 ViewModel: Validation result: ${res.isValid}, error: ${res.errorMessage}');
       
       if (!res.isValid) {
         error = res.errorMessage ?? 'Validation failed';
@@ -202,7 +223,15 @@ class CheckoutV2ViewModel extends ChangeNotifier {
 
       // Enforce COD gate by KYC
       if (selectedPaymentMethod == 'cod' && !codEnabledForSeller) {
-        error = 'Cash on Delivery is unavailable for this seller.';
+        if ((kycStatus ?? '').toLowerCase() != 'approved') {
+          error = 'Cash on Delivery unavailable: seller identity verification pending.';
+        } else if (sellerOutstandingFees > 0.0) {
+          error = 'Cash on Delivery unavailable: outstanding fees R${sellerOutstandingFees.toStringAsFixed(2)}';
+        } else if (!allowCOD) {
+          error = 'Cash on Delivery disabled by this seller.';
+        } else {
+          error = 'Cash on Delivery is unavailable.';
+        }
         notifyListeners();
         return false;
       }
@@ -212,6 +241,83 @@ class CheckoutV2ViewModel extends ChangeNotifier {
       return true;
     } catch (e) {
       error = 'Validation error: $e';
+      notifyListeners();
+      return false;
+    }
+  }
+
+  Future<bool> validateAndStepUp(BuildContext context) async {
+    final isValid = await validate();
+    if (!isValid) return false;
+    final stepOk = await _requirePasswordReauthIfNeeded(context);
+    return stepOk;
+  }
+
+  Future<bool> _requirePasswordReauthIfNeeded(BuildContext context) async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) return true;
+      final email = user.email;
+      // Basic conditions to require step-up (no Cloud Functions needed)
+      final requiresStepUp = selectedPaymentMethod == 'payfast' || totalPrice >= 500.0 || (user.emailVerified == false);
+      if (!requiresStepUp) return true;
+      if (email == null || email.isEmpty) return true; // phone-only accounts: skip
+
+      final controller = TextEditingController();
+      bool cancelled = false;
+      final ok = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) {
+          return AlertDialog(
+            title: const Text('Confirm your identity'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('For your security, please enter your password to continue.'),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: controller,
+                  obscureText: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Password',
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () { cancelled = true; Navigator.of(ctx).pop(false); },
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: () async {
+                  final pwd = controller.text;
+                  if (pwd.isEmpty) return;
+                  Navigator.of(ctx).pop(true);
+                },
+                child: const Text('Confirm'),
+              ),
+            ],
+          );
+        },
+      );
+
+      if (ok != true) {
+        if (!cancelled) {
+          error = 'Verification cancelled.';
+          notifyListeners();
+        }
+        return false;
+      }
+
+      final cred = EmailAuthProvider.credential(email: email, password: controller.text);
+      await user.reauthenticateWithCredential(cred);
+      error = null;
+      notifyListeners();
+      return true;
+    } catch (e) {
+      error = 'Verification failed: $e';
       notifyListeners();
       return false;
     }
@@ -233,7 +339,9 @@ class CheckoutV2ViewModel extends ChangeNotifier {
   }
 
   void setAddress(String text) {
+    print('🔍 ViewModel: Setting addressText to: "$text"');
     addressText = text;
+    print('🔍 ViewModel: addressText is now: "$addressText"');
     notifyListeners();
   }
   
@@ -269,16 +377,7 @@ class CheckoutV2ViewModel extends ChangeNotifier {
     notifyListeners();
   }
   
-  // Customer information setters
-  void setFirstName(String? name) {
-    firstName = name?.trim();
-    notifyListeners();
-  }
-  
-  void setLastName(String? name) {
-    lastName = name?.trim();
-    notifyListeners();
-  }
+  // Customer information setters (removed duplicates)
   
   // Get full customer name
   String getFullName() {
@@ -377,6 +476,7 @@ class CheckoutV2ViewModel extends ChangeNotifier {
             final codDisabled = sellerData['codDisabled'] == true;
             allowCOD = (sellerData['allowCOD'] == true) && !codDisabled;
             kycStatus = (sellerData['kycStatus'] ?? '').toString();
+            sellerOutstandingFees = (sellerData['outstandingFees'] ?? sellerData['outstandingDue'] ?? 0.0).toDouble();
             
             // If COD was selected but not allowed, revert to PayFast
             if (selectedPaymentMethod == 'cod' && !codEnabledForSeller) {
@@ -419,7 +519,7 @@ class CheckoutV2ViewModel extends ChangeNotifier {
     }
   }
   
-  Future<void> submitOrder(BuildContext context) async {
+  Future<Map<String, dynamic>> submitOrder(BuildContext context) async {
     // Ensure we have the latest user ID before submitting
     currentUserId = FirebaseAuth.instance.currentUser?.uid;
     
@@ -442,6 +542,7 @@ class CheckoutV2ViewModel extends ChangeNotifier {
       pudoDeliveryPhone: pudoDeliveryPhone,
       customerFirstName: firstName,
       customerLastName: lastName,
+      customerPhone: customerPhone,
       context: context,
     );
     
@@ -538,6 +639,7 @@ class CheckoutV2ViewModel extends ChangeNotifier {
         }
       }
     }
+    return Map<String, dynamic>.from(result);
   }
 }
 
