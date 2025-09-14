@@ -795,6 +795,18 @@ class _StunningProductBrowserState extends State<StunningProductBrowser>
     final stock = data['quantity'] ?? data['stock'] ?? 0;
     final isInStock = (stock as num) > 0;
     
+    // 🚀 DEBUG: Log stock discrepancy
+    if (!isInStock) {
+      print('🔍 STOCK DEBUG for ${data['name'] ?? 'Unknown'}:');
+      print('   - Product ID: ${data['id']}');
+      print('   - Raw quantity: ${data['quantity']} (${data['quantity'].runtimeType})');
+      print('   - Raw stock: ${data['stock']} (${data['stock'].runtimeType})');
+      print('   - Resolved stock: $stock (${stock.runtimeType})');
+      print('   - Has quantity field: ${data.containsKey('quantity')}');
+      print('   - Has stock field: ${data.containsKey('stock')}');
+      print('   - All product fields: ${data.keys.toList()}');
+    }
+    
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(

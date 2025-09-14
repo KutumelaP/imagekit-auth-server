@@ -584,6 +584,19 @@ class _SellerProductManagementState extends State<SellerProductManagement> {
       final qty = (p['quantity'] ?? p['stock'] ?? 0) is int 
           ? (p['quantity'] ?? p['stock'] ?? 0) as int 
           : int.tryParse('${p['quantity'] ?? p['stock'] ?? 0}') ?? 0;
+      
+      // 🚀 DEBUG: Log stock comparison for first few products
+      if (_products.indexOf(p) < 3) {
+        print('🔍 SELLER STOCK DEBUG for ${p['name'] ?? 'Unknown'}:');
+        print('   - Product ID: ${p['id']}');
+        print('   - Raw quantity: ${p['quantity']} (${p['quantity'].runtimeType})');
+        print('   - Raw stock: ${p['stock']} (${p['stock'].runtimeType})');
+        print('   - Resolved qty: $qty');
+        print('   - Is out of stock: ${qty == 0}');
+        print('   - Has quantity field: ${p.containsKey('quantity')}');
+        print('   - Has stock field: ${p.containsKey('stock')}');
+      }
+      
       return qty == 0;
     }).length;
     
