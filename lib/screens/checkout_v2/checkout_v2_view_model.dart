@@ -325,6 +325,15 @@ class CheckoutV2ViewModel extends ChangeNotifier {
 
   void setIsDelivery(bool v) {
     isDelivery = v;
+    
+    // Trigger delivery fee calculation when switching to delivery mode
+    if (v && addressText != null && addressText!.isNotEmpty) {
+      calculateDeliveryFee();
+    } else if (!v) {
+      // Clear delivery fee when switching to pickup mode
+      deliveryFee = null;
+    }
+    
     notifyListeners();
   }
 
@@ -338,10 +347,59 @@ class CheckoutV2ViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> calculateDeliveryFee() async {
+    if (!isDelivery || addressText == null || addressText!.isEmpty) {
+      deliveryFee = null;
+      return;
+    }
+
+    try {
+      print('🔍 DEBUG: Calculating delivery fee for address: $addressText');
+      
+      // For now, use a default distance and calculate delivery fee
+      // In a real app, you'd geocode the address and calculate actual distance
+      final double defaultDistance = distanceKm > 0 ? distanceKm : 5.0;
+      
+      final result = DeliveryFeeService.compute(
+        distanceKm: defaultDistance,
+        productCategory: productCategory,
+        sellerDeliveryPreference: sellerDeliveryPreference ?? 'system',
+        sellerFeePerKm: sellerFeePerKm,
+        sellerMinFee: 15.0,
+        isUrbanArea: false, // You could implement location detection here
+        urbanFee: null,
+      );
+      
+      deliveryFee = result.fee;
+      distanceKm = result.distanceKm;
+      
+      // Calculate estimated delivery time
+      etaMinutes = DeliveryTimeUtils.calculateRealisticDeliveryTime(
+        distanceKm: distanceKm,
+        basePrepTimeMinutes: 15,
+        currentTime: DateTime.now(),
+      );
+      
+      print('✅ Delivery fee calculated: R${deliveryFee!.toStringAsFixed(2)} for ${distanceKm}km');
+      notifyListeners();
+    } catch (e) {
+      print('❌ Error calculating delivery fee: $e');
+      // Set default fee as fallback
+      deliveryFee = 15.0;
+      notifyListeners();
+    }
+  }
+
   void setAddress(String text) {
     print('🔍 ViewModel: Setting addressText to: "$text"');
     addressText = text;
     print('🔍 ViewModel: addressText is now: "$addressText"');
+    
+    // Trigger delivery fee calculation when address is set
+    if (text.isNotEmpty && isDelivery) {
+      calculateDeliveryFee();
+    }
+    
     notifyListeners();
   }
   
@@ -515,6 +573,12 @@ class CheckoutV2ViewModel extends ChangeNotifier {
       sellerOffersPudo = true;
     } finally {
       isLoadingSellerInfo = false;
+      
+      // Trigger initial delivery fee calculation if delivery is enabled and we have an address
+      if (isDelivery && addressText != null && addressText!.isNotEmpty) {
+        calculateDeliveryFee();
+      }
+      
       notifyListeners();
     }
   }
