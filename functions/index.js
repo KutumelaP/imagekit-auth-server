@@ -192,20 +192,38 @@ exports.payfastNotify = functions.https.onRequest(async (req, res) => {
       }),
     };
     
-    // Find the order by orderNumber (not document ID)
-    console.log('[payfastNotify] Looking for order with orderNumber:', orderId);
-    const orderQuery = await db.collection('orders').where('orderNumber', '==', orderId).limit(1).get();
-    
-    if (orderQuery.empty) {
-      console.warn('[payfastNotify] Order not found with orderNumber:', orderId);
+    // Find the order robustly: try document ID, then orderNumber, then orderId field
+    let orderDoc = null;
+    // 1) Try document by ID (our mobile app uses orderId as the document ID)
+    const directRef = db.collection('orders').doc(orderId);
+    const directSnap = await directRef.get();
+    if (directSnap.exists) {
+      orderDoc = directSnap;
+      console.log('[payfastNotify] Found order by document ID:', orderId);
+    } else {
+      // 2) Try orderNumber field
+      console.log('[payfastNotify] Looking for order with orderNumber:', orderId);
+      const orderQuery = await db.collection('orders').where('orderNumber', '==', orderId).limit(1).get();
+      if (!orderQuery.empty) {
+        orderDoc = orderQuery.docs[0];
+        console.log('[payfastNotify] Found order by orderNumber with document ID:', orderDoc.id);
+      } else {
+        // 3) Try orderId field (some schemas store a duplicate of the ID)
+        const altQuery = await db.collection('orders').where('orderId', '==', orderId).limit(1).get();
+        if (!altQuery.empty) {
+          orderDoc = altQuery.docs[0];
+          console.log('[payfastNotify] Found order by orderId field with document ID:', orderDoc.id);
+        }
+      }
+    }
+
+    if (!orderDoc) {
+      console.warn('[payfastNotify] Order not found by ID, orderNumber, or orderId field:', orderId);
       res.status(404).send('order not found');
       return;
     }
-    
-    const orderDoc = orderQuery.docs[0];
-    console.log('[payfastNotify] Found order with document ID:', orderDoc.id);
+
     console.log('[payfastNotify] Updating order with:', JSON.stringify(updates));
-    
     await orderDoc.ref.set(updates, { merge: true });
     console.log('[payfastNotify] Order updated successfully');
     
@@ -249,7 +267,7 @@ exports.payfastNotify = functions.https.onRequest(async (req, res) => {
         const order = orderDoc.data() || {};
         const sellerId = order.sellerId;
         const buyerId = order.buyerId;
-        const totalPrice = order.totalPrice || 0;
+        const totalPrice = Number((order.pricing && order.pricing.grandTotal) || order.totalPrice || order.total || 0);
         // Net-off any COD receivables for this seller
         try {
           if (sellerId) {
@@ -3260,7 +3278,10 @@ exports.markCodPaid = functions.https.onCall(async (data, context) => {
   }
 
   // Derive amounts with tiered pricing system (Smart Commission)
-  const gross = Number(order.totalPrice || order.total || order.paymentAmount || 0) || 0;
+  const gross = Number(
+    (order.pricing && order.pricing.grandTotal) ||
+    order.totalPrice || order.total || order.paymentAmount || 0
+  ) || 0;
   const { commission, net, smallOrderFee, tier } = await computeCommissionWithSettings({ gross, order });
 
   // Create debt entry: seller owes platform the commission
@@ -3626,11 +3647,17 @@ exports.reconcileEftCsv = functions.https.onCall(async (data, context) => {
       const odata = osnap.data() || {};
       const status = String(odata.status || '').toLowerCase();
       const paymentStatus = String(odata.paymentStatus || '').toLowerCase();
-      const total = Number(odata.totalPrice || odata.total || 0);
+      const total = Number((odata.pricing && odata.pricing.grandTotal) || odata.totalPrice || odata.total || 0);
       if (paymentStatus === 'paid') { matched.push({ orderId, amount, note: 'already_paid' }); continue; }
       if (Math.abs(total - amount) > 0.01) { unmatched.push({ orderId, amount, expected: total, reason: 'amount_mismatch' }); continue; }
       await oref.set({ paymentMethod: 'eft', paymentStatus: 'paid', updatedAt: admin.firestore.FieldValue.serverTimestamp(), trackingUpdates: admin.firestore.FieldValue.arrayUnion({ by: 'admin', description: 'EFT payment received and reconciled', timestamp: new Date().toISOString() }) }, { merge: true });
       await db.collection('recent_payments').add({ orderId, method: 'eft', amount, reconciledAt: admin.firestore.FieldValue.serverTimestamp(), by: context.auth.uid });
+      // Ensure receivable entry exists for reconciled EFT payments
+      try {
+        await exports.createReceivableEntry.run({ data: { orderId } });
+      } catch (e) {
+        console.warn('[reconcileEftCsv] createReceivableEntry failed', e?.message || e);
+      }
       matched.push({ orderId, amount });
     } catch (e) {
       unmatched.push({ reference: refRaw, amount, error: String(e.message || e) });
@@ -3677,7 +3704,7 @@ exports.updatePaymentStatus = functions.https.onCall(async (data, context) => {
       try {
         const orderData = orderSnap.data() || {};
         const sellerId = orderData.sellerId;
-        const totalPrice = Number(orderData.totalPrice || 0);
+        const totalPrice = Number((orderData.pricing && orderData.pricing.grandTotal) || orderData.totalPrice || orderData.total || 0);
         const platformFee = Number(orderData.platformFee || 0);
         const sellerPayout = Number(orderData.sellerPayout || 0);
         const paymentMethod = orderData.paymentMethod || 'unknown';
@@ -3765,6 +3792,12 @@ exports.adminMarkEftPaid = functions.https.onCall(async (data, context) => {
     throw new functions.https.HttpsError('failed-precondition', 'Amount mismatch; enable override to force');
   }
   await oref.set({ paymentMethod: 'eft', paymentStatus: 'paid', updatedAt: admin.firestore.FieldValue.serverTimestamp(), trackingUpdates: admin.firestore.FieldValue.arrayUnion({ by: 'admin', description: 'EFT payment marked paid', timestamp: new Date().toISOString() }) }, { merge: true });
+  try {
+    // Ensure receivable entry exists for EFT paid orders (use new helper)
+    await exports.createReceivableEntry.run({ data: { orderId } });
+  } catch (e) {
+    console.warn('[adminMarkEftPaid] createReceivableEntry failed', e?.message || e);
+  }
   await db.collection('recent_payments').add({ orderId, method: 'eft', amount, reconciledAt: admin.firestore.FieldValue.serverTimestamp(), by: context.auth.uid, override });
   return { ok: true };
 });

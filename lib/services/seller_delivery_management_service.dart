@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'otp_verification_service.dart';
 import 'whatsapp_integration_service.dart';
 
@@ -72,6 +71,10 @@ class SellerDeliveryManagementService {
     required String estimatedDeliveryTime,
   }) async {
     try {
+      print('🚀 CONFIRMING DELIVERY: $orderId');
+      print('   - Method: $deliveryMethod');
+      print('   - Driver: ${driverDetails['name']} (${driverDetails['driverId']})');
+      
       await _firestore.collection('seller_delivery_tasks').doc(orderId).update({
         'status': 'confirmed_by_seller',
         'actualDeliveryMethod': deliveryMethod,
@@ -86,12 +89,33 @@ class SellerDeliveryManagementService {
         }]),
       });
       
-      // Update main order
+      print('✅ Delivery task updated to confirmed_by_seller status');
+      
+      // Update main order with driver assignment for driver app access
       await _firestore.collection('orders').doc(orderId).update({
-        'status': 'delivery_confirmed',
+        'status': 'driver_assigned',
         'deliveryMethod': deliveryMethod,
         'estimatedDeliveryTime': estimatedDeliveryTime,
+        'assignedDriver': {
+          'driverId': driverDetails['driverId'],
+          'name': driverDetails['name'],
+          'phone': driverDetails['phone'],
+          'type': 'seller_assigned',
+          'sellerId': sellerId,
+          'assignedAt': FieldValue.serverTimestamp(),
+        },
+        'deliveryType': 'seller_delivery',
       });
+
+      // 🚀 NEW: If using own_driver, make order available in driver app
+      if (deliveryMethod == 'own_driver' && driverDetails['driverId'] != null) {
+        await _assignOrderToSellerDriver(
+          orderId: orderId,
+          sellerId: sellerId,
+          driverId: driverDetails['driverId'],
+          driverDetails: driverDetails,
+        );
+      }
       
       // Notify buyer that seller confirmed delivery
       final orderDoc = await _firestore.collection('orders').doc(orderId).get();
@@ -117,6 +141,33 @@ class SellerDeliveryManagementService {
         'success': false,
         'error': e.toString(),
       };
+    }
+  }
+
+  /// 🚀 NEW: Assign order to seller's driver for driver app access
+  static Future<void> _assignOrderToSellerDriver({
+    required String orderId,
+    required String sellerId,
+    required String driverId,
+    required Map<String, dynamic> driverDetails,
+  }) async {
+    try {
+      // Update the driver document to show they have a pending order
+      await _firestore
+          .collection('users')
+          .doc(sellerId)
+          .collection('drivers')
+          .doc(driverId)
+          .update({
+        'currentOrder': orderId,
+        'isAvailable': false,
+        'status': 'assigned',
+        'lastAssignedAt': FieldValue.serverTimestamp(),
+      });
+
+      print('✅ Order $orderId assigned to seller driver $driverId');
+    } catch (e) {
+      print('❌ Error assigning order to seller driver: $e');
     }
   }
   
@@ -227,6 +278,51 @@ class SellerDeliveryManagementService {
         'deliveredAt': FieldValue.serverTimestamp(),
         'deliveryCompleted': true,
       });
+
+      // 🚀 NEW: Update seller's driver status back to available
+      final taskDoc = await _firestore.collection('seller_delivery_tasks').doc(orderId).get();
+      if (taskDoc.exists) {
+        final taskData = taskDoc.data()!;
+        final driverDetails = taskData['driverDetails'] as Map<String, dynamic>?;
+        final sellerId = taskData['sellerId'];
+        
+        if (driverDetails?['driverId'] != null && sellerId != null) {
+          try {
+            // 🚀 CRITICAL FIX: Calculate driver earnings from delivery fee
+            final orderDoc = await _firestore.collection('orders').doc(orderId).get();
+            double driverEarnings = 0.0;
+            
+            if (orderDoc.exists) {
+              final orderData = orderDoc.data()!;
+              // Extract delivery fee from order data
+              final deliveryFee = (orderData['pricing'] as Map<String, dynamic>?)?['deliveryFee']?.toDouble() 
+                               ?? orderData['deliveryFee']?.toDouble() 
+                               ?? 0.0;
+              
+              // Driver gets 80% of delivery fee (same as platform drivers)
+              driverEarnings = deliveryFee * 0.8;
+              print('📊 Calculated driver earnings: R$driverEarnings (80% of R$deliveryFee delivery fee)');
+            }
+
+            await _firestore
+                .collection('users')
+                .doc(sellerId)
+                .collection('drivers')
+                .doc(driverDetails!['driverId'])
+                .update({
+              'status': 'available',           // ✅ Change back to available
+              'isAvailable': true,             // ✅ Make available for new assignments  
+              'currentOrder': null,            // ✅ Clear current order
+              'lastCompletedAt': FieldValue.serverTimestamp(),
+              'completedOrders': FieldValue.increment(1),
+              'earnings': FieldValue.increment(driverEarnings), // 🚀 FIXED: Add driver earnings!
+            });
+            print('✅ Driver ${driverDetails['driverId']} status updated to available with R$driverEarnings earnings');
+          } catch (e) {
+            print('⚠️ Could not update driver status: $e');
+          }
+        }
+      }
       
       return {
         'success': true,
@@ -249,19 +345,29 @@ class SellerDeliveryManagementService {
   static Future<Map<String, dynamic>> getSellerDeliveryDashboard(String sellerId) async {
     try {
       // Get delivery tasks and cross-reference with order payment status
+      // 🚀 EXPANDED: Include more statuses to track deliveries through the entire flow
       final allTasks = await _firestore
           .collection('seller_delivery_tasks')
           .where('sellerId', isEqualTo: sellerId)
-          .where('status', whereIn: ['pending_seller_action', 'confirmed_by_seller', 'delivery_in_progress'])
+          .where('status', whereIn: [
+            'pending_seller_action',    // Waiting for seller to confirm
+            'confirmed_by_seller',      // Seller confirmed, ready to start
+            'delivery_in_progress',     // Driver is delivering
+            'out_for_delivery',         // Alternative in-progress status
+            'picked_up',                // Driver picked up order
+            'en_route'                  // Driver en route to customer
+          ])
           .orderBy('createdAt', descending: true)
           .get();
 
       // Filter tasks to only show those with paid orders
       List<Map<String, dynamic>> pendingTasks = [];
+      List<Map<String, dynamic>> activeDeliveries = [];
       
       for (final taskDoc in allTasks.docs) {
         final taskData = taskDoc.data();
         final orderId = taskData['orderId'];
+        final taskStatus = taskData['status'] ?? '';
         
         // Check if the order is paid and ready for delivery
         final orderDoc = await _firestore.collection('orders').doc(orderId).get();
@@ -278,19 +384,42 @@ class SellerDeliveryManagementService {
           final isPaid = paymentStatus == 'paid' || paymentStatus == 'completed' || paymentStatus == 'success' || paymentStatus2 == 'completed';
           final isReadyForDelivery = orderStatus == 'confirmed' || orderStatus == 'ready' || orderStatus == 'preparing' || orderStatus == 'delivery_confirmed' || orderStatus == 'out_for_delivery';
           final isDeliveryOrder = fulfillmentType == 'delivery' || fulfillmentType2 == 'delivery';
-          final isInProgress = taskData['status'] == 'delivery_in_progress';
+          final isInProgress = ['delivery_in_progress', 'out_for_delivery', 'picked_up', 'en_route'].contains(taskStatus);
           
-          if (isPaid && isDeliveryOrder && (isReadyForDelivery || isInProgress)) {
+          // 🚀 DEBUG: Log each order's criteria
+          print('🔍 Order $orderId criteria:');
+          print('   - Task Status: $taskStatus');
+          print('   - Payment: $paymentStatus / $paymentStatus2 → isPaid: $isPaid');
+          print('   - Order Status: $orderStatus → isReady: $isReadyForDelivery');
+          print('   - Fulfillment: $fulfillmentType / $fulfillmentType2 → isDelivery: $isDeliveryOrder');
+          print('   - Progress: $isInProgress');
+          
+          // 🚀 TEMPORARY: Relax criteria for debugging
+          final shouldShow = isPaid && isDeliveryOrder && (isReadyForDelivery || isInProgress);
+          final debugShow = true; // Temporarily show all tasks for debugging
+          
+          if (shouldShow || debugShow) {
+            if (!shouldShow) {
+              print('   - ⚠️ SHOWING FOR DEBUG ONLY (normally would be filtered out)');
+            }
             // Use the correct payment status - prefer the root level paymentStatus
             final displayPaymentStatus = paymentStatus2 != 'pending' ? paymentStatus2 : paymentStatus;
             
-            pendingTasks.add({
+            final taskItem = {
               'taskId': taskDoc.id,
               'orderId': orderId,
               'orderStatus': orderStatus,
               'paymentStatus': displayPaymentStatus,
               ...taskData,
-            });
+            };
+            
+            // 🚀 NEW: Separate pending actions from active deliveries
+            if (taskStatus == 'pending_seller_action') {
+              pendingTasks.add(taskItem);
+            } else {
+              // confirmed_by_seller, delivery_in_progress, etc.
+              activeDeliveries.add(taskItem);
+            }
           }
         }
       }
@@ -308,11 +437,21 @@ class SellerDeliveryManagementService {
       final totalDeliveries = recentDeliveries.docs.length;
       final avgDeliveryTime = _calculateAverageDeliveryTime(recentDeliveries.docs);
       
-      print('✅ Delivery dashboard loaded: ${pendingTasks.length} pending, $totalDeliveries completed');
+      print('✅ Delivery dashboard loaded:');
+      print('   - ${pendingTasks.length} pending tasks');
+      print('   - ${activeDeliveries.length} active deliveries');
+      print('   - $totalDeliveries completed deliveries');
+      print('   - Total tasks fetched: ${allTasks.docs.length}');
+      
+      // Debug: Show what was filtered out
+      if (allTasks.docs.length > (pendingTasks.length + activeDeliveries.length)) {
+        print('⚠️ Some tasks were filtered out - checking payment/fulfillment criteria');
+      }
 
       return {
         'success': true,
-        'pendingTasks': pendingTasks, // Already processed list with payment status
+        'pendingTasks': pendingTasks,
+        'activeDeliveries': activeDeliveries, // Already processed list with payment status
         'recentDeliveries': recentDeliveries.docs.map((doc) => {
           'orderId': doc.id,
           ...doc.data(),
@@ -547,5 +686,111 @@ Please confirm your delivery method in the seller dashboard!
     }
     
     return validDeliveries > 0 ? totalMinutes / validDeliveries : 0.0;
+  }
+
+  /// Start delivery tracking for assigned order
+  static Future<Map<String, dynamic>> startDelivery({
+    required String orderId,
+    required String driverName,
+  }) async {
+    try {
+      // Update the order status to delivery_in_progress
+      await _firestore.collection('orders').doc(orderId).update({
+        'status': 'delivery_in_progress',
+        'trackingStartedAt': FieldValue.serverTimestamp(),
+        'trackingStartedBy': driverName,
+      });
+
+      // Update seller delivery task if it exists
+      final taskDoc = await _firestore.collection('seller_delivery_tasks').doc(orderId).get();
+      if (taskDoc.exists) {
+        final taskData = taskDoc.data()!;
+        
+        await _firestore.collection('seller_delivery_tasks').doc(orderId).update({
+          'status': 'delivery_in_progress',
+          'startedAt': FieldValue.serverTimestamp(),
+          'deliveryUpdates': FieldValue.arrayUnion([
+            {
+              'timestamp': Timestamp.now(),
+              'action': 'tracking_started',
+              'performer': driverName,
+              'details': 'Driver started delivery tracking',
+            }
+          ]),
+        });
+        
+        // 🚀 NEW: Send WhatsApp notification to buyer when driver starts tracking
+        final deliveryDetails = taskData['deliveryDetails'] as Map<String, dynamic>?;
+        final driverDetails = taskData['driverDetails'] as Map<String, dynamic>?;
+        
+        if (deliveryDetails?['buyerPhone'] != null && deliveryDetails!['buyerPhone'].toString().isNotEmpty) {
+          await WhatsAppIntegrationService.sendDeliveryNotification(
+            orderId: orderId,
+            buyerPhone: deliveryDetails['buyerPhone'],
+            driverName: driverName,
+            driverPhone: driverDetails?['phone'] ?? '',
+            estimatedArrival: taskData['estimatedDeliveryTime']?.toString() ?? '30 minutes',
+            trackingUrl: 'https://omniasa.co.za/track/$orderId',
+            deliveryOTP: taskData['deliveryOTP'],
+          );
+          
+          print('✅ WhatsApp delivery notification sent to buyer');
+        } else {
+          print('⚠️ No buyer phone number - WhatsApp notification skipped');
+        }
+      }
+
+      return {
+        'success': true,
+        'message': 'Delivery tracking started successfully',
+      };
+    } catch (e) {
+      print('❌ Error starting delivery: $e');
+      return {
+        'success': false,
+        'message': 'Failed to start delivery tracking: $e',
+      };
+    }
+  }
+
+  /// 🧪 TESTING ONLY: Reset delivery status to confirmed_by_seller for re-testing
+  static Future<Map<String, dynamic>> resetDeliveryForTesting({
+    required String orderId,
+  }) async {
+    try {
+      print('🔄 TESTING: Resetting delivery status for order: $orderId');
+      
+      // Reset order status
+      await _firestore.collection('orders').doc(orderId).update({
+        'status': 'confirmed',
+        'trackingStartedAt': FieldValue.delete(),
+        'trackingStartedBy': FieldValue.delete(),
+        'driverLocation': FieldValue.delete(),
+        'lastLocationUpdate': FieldValue.delete(),
+      });
+
+      // Reset seller delivery task status
+      final taskDoc = await _firestore.collection('seller_delivery_tasks').doc(orderId).get();
+      if (taskDoc.exists) {
+        await _firestore.collection('seller_delivery_tasks').doc(orderId).update({
+          'status': 'confirmed_by_seller',
+          'startedAt': FieldValue.delete(),
+          'deliveryUpdates': FieldValue.delete(),
+        });
+        print('✅ Seller delivery task reset to confirmed_by_seller');
+      }
+
+      print('✅ Order reset - you can now test "Start Tracking" again');
+      return {
+        'success': true,
+        'message': 'Delivery reset for testing - you can click Start Tracking again',
+      };
+    } catch (e) {
+      print('❌ Error resetting delivery: $e');
+      return {
+        'success': false,
+        'message': 'Failed to reset delivery: $e',
+      };
+    }
   }
 }

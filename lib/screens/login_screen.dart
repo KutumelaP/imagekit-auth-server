@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import '../services/biometric_stepup.dart';
+import 'driver_login_screen.dart';
 
 import '../providers/user_provider.dart';
 import '../constants/app_constants.dart';
@@ -581,21 +582,40 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
             ),
             SizedBox(height: ResponsiveUtils.getVerticalPadding(context) * 1.5),
 
-            // Forgot Password link
-            Align(
-              alignment: Alignment.centerRight,
-              child: TextButton(
-                onPressed: _loading ? null : _showForgotPasswordDialog,
-                child: SafeUI.safeText(
-                  'Forgot password?',
-                  style: TextStyle(
-                    fontSize: ResponsiveUtils.getTitleSize(context) - 4,
-                    color: AppTheme.deepTeal,
-                    fontWeight: FontWeight.w600,
+            // Forgot Password and Driver Login links
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                TextButton(
+                  onPressed: _loading ? null : () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const DriverLoginScreen()),
+                    );
+                  },
+                  child: SafeUI.safeText(
+                    'Login as Driver',
+                    style: TextStyle(
+                      fontSize: ResponsiveUtils.getTitleSize(context) - 4,
+                      color: AppTheme.deepTeal,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    maxLines: 1,
                   ),
-                  maxLines: 1,
                 ),
-              ),
+                TextButton(
+                  onPressed: _loading ? null : _showForgotPasswordDialog,
+                  child: SafeUI.safeText(
+                    'Forgot password?',
+                    style: TextStyle(
+                      fontSize: ResponsiveUtils.getTitleSize(context) - 4,
+                      color: AppTheme.deepTeal,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    maxLines: 1,
+                  ),
+                ),
+              ],
             ),
             SizedBox(height: ResponsiveUtils.getVerticalPadding(context)),
 
@@ -891,6 +911,7 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
     );
   }
 
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -930,6 +951,9 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
                     
                     // Terms Section
                     _buildTermsSection(),
+                    
+                    SizedBox(height: ResponsiveUtils.getVerticalPadding(context)),
+                    
                     
                     SizedBox(height: ResponsiveUtils.getVerticalPadding(context) * 2),
                   ],

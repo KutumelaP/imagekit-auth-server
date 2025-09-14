@@ -30,13 +30,21 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    // Helper function to check if user is a driver
+    function isDriver() {
+      return request.auth != null && (
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.userType == 'driver'
+      );
+    }
+
     // =====================================================
     // 🔥 COMPREHENSIVE PERMISSION RULES - NO MORE ERRORS!
     // =====================================================
 
     // USERS - Full user management
     match /users/{userId} {
-      allow read: if true; // Public read for browsing stores
+      allow read: if true; // Public read for browsing stores and driver authentication
       allow create: if isAuthenticated() && (
         request.auth.uid == userId ||
         isAdmin() ||
@@ -47,6 +55,28 @@ service cloud.firestore {
         isAdmin()
       );
       allow delete: if isAdmin();
+      
+      // SELLER-OWNED DRIVERS - Critical for driver authentication
+      match /drivers/{driverId} {
+        // Allow read for driver authentication (anyone can search for drivers to login)
+        allow read: if true;
+        // Allow sellers to manage their own drivers
+        allow create, update: if isAuthenticated() && (
+          request.auth.uid == userId || // Seller managing their drivers
+          isAdmin()
+        );
+        // Allow drivers to update their own linked status after login
+        allow update: if isAuthenticated() && (
+          request.auth.uid == userId || // Seller
+          isAdmin() ||
+          // Driver updating their own record after successful login
+          (resource.data.userId == request.auth.uid)
+        );
+        allow delete: if isAuthenticated() && (
+          request.auth.uid == userId || // Seller can delete their drivers
+          isAdmin()
+        );
+      }
       
       // User subcollections
       match /{subcollection=**} {
@@ -211,8 +241,16 @@ service cloud.firestore {
     // 🚚 DELIVERY & LOGISTICS
     // =====================================================
 
+    // GLOBAL DRIVERS - For system-wide driver management
     match /drivers/{driverId} {
-      allow read, write: if isAuthenticated() || isAdmin();
+      allow read: if true; // Public read for driver lookup during authentication
+      allow create, update: if isAuthenticated() && (
+        isAdmin() ||
+        isDriver() ||
+        // Allow driver creation during authentication process
+        request.auth.uid == driverId
+      );
+      allow delete: if isAdmin();
     }
 
     // SELLER DELIVERY TASKS - Sellers can manage their own tasks

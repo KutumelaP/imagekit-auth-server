@@ -651,23 +651,59 @@ class _SellerOrdersListScreenState extends State<SellerOrdersListScreen>
           ),
         ),
         actions: [
+          // 🚀 ENHANCED: More prominent driver assignment button with visual indicator
           Container(
             margin: EdgeInsets.only(right: 8),
             decoration: BoxDecoration(
-              color: AppTheme.white.withOpacity(0.2),
-              borderRadius: BorderRadius.circular(20),
+              gradient: LinearGradient(
+                colors: [AppTheme.primaryOrange, AppTheme.deepTeal],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(25),
+              boxShadow: [
+                BoxShadow(
+                  color: AppTheme.primaryOrange.withOpacity(0.3),
+                  blurRadius: 8,
+                  offset: Offset(0, 2),
+                ),
+              ],
             ),
-            child: IconButton(
-              icon: Icon(Icons.local_shipping, color: AppTheme.white),
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const SellerDeliveryDashboard(),
+            child: Stack(
+              children: [
+                IconButton(
+                  icon: Icon(Icons.local_shipping, color: AppTheme.white, size: 24),
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const SellerDeliveryDashboard(),
+                      ),
+                    );
+                  },
+                  tooltip: '🚚 Assign Drivers to Orders',
+                ),
+                // Pulsing indicator for new user attention
+                Positioned(
+                  right: 8,
+                  top: 8,
+                  child: Container(
+                    width: 8,
+                    height: 8,
+                    decoration: BoxDecoration(
+                      color: AppTheme.success,
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: AppTheme.success.withOpacity(0.6),
+                          blurRadius: 4,
+                          spreadRadius: 1,
+                        ),
+                      ],
+                    ),
                   ),
-                );
-              },
-              tooltip: 'Driver Dashboard',
+                ),
+              ],
             ),
           ),
           Container(
@@ -758,6 +794,79 @@ class _SellerOrdersListScreenState extends State<SellerOrdersListScreen>
                       _buildFilterButton('Ready', 'ready', Icons.local_shipping, _selectedStatus == 'ready'),
                       _buildFilterButton('Delivered', 'delivered', Icons.done_all, _selectedStatus == 'delivered'),
                     ],
+                  ),
+                ],
+              ),
+            ),
+
+            // 🚀 NEW: Driver Assignment Guidance Banner
+            Container(
+              margin: EdgeInsets.fromLTRB(16, 0, 16, 16),
+              padding: EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [AppTheme.primaryOrange.withOpacity(0.1), AppTheme.deepTeal.withOpacity(0.1)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: AppTheme.primaryOrange.withOpacity(0.3),
+                  width: 1,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: AppTheme.primaryOrange.withOpacity(0.1),
+                    blurRadius: 8,
+                    offset: Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    padding: EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [AppTheme.primaryOrange, AppTheme.deepTeal],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(
+                      Icons.local_shipping,
+                      color: AppTheme.white,
+                      size: 24,
+                    ),
+                  ),
+                  SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '🚚 Need to assign drivers?',
+                          style: AppTheme.bodyLarge.copyWith(
+                            fontWeight: FontWeight.w700,
+                            color: AppTheme.deepTeal,
+                          ),
+                        ),
+                        SizedBox(height: 4),
+                        Text(
+                          'Tap the delivery truck icon above to manage drivers and assign them to your orders.',
+                          style: AppTheme.bodyMedium.copyWith(
+                            color: AppTheme.darkGrey,
+                            height: 1.3,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Icon(
+                    Icons.arrow_upward,
+                    color: AppTheme.primaryOrange,
+                    size: 20,
                   ),
                 ],
               ),

@@ -113,7 +113,9 @@ class DriverLocationService {
         'orderId': _currentOrderId,
       });
 
-      print('📍 Location updated: ${position.latitude}, ${position.longitude}');
+      print('📍 Location updated for order $_currentOrderId: ${position.latitude}, ${position.longitude}');
+      print('   - Speed: ${position.speed} m/s');
+      print('   - Accuracy: ${position.accuracy} meters');
     } catch (e) {
       print('❌ Failed to update location: $e');
     }

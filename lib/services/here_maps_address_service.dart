@@ -182,15 +182,24 @@ class HereMapsAddressService {
         // Remove types parameter as 'houseNumber' is not supported
       });
       
+      print('🌍 HERE API URL: $url');
+      
       final response = await http.get(url);
+      
+      print('🌍 HERE API Response: ${response.statusCode}');
+      print('🌍 HERE API Body: ${response.body}');
       
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         final items = data['items'] as List? ?? [];
         
+        print('🌍 HERE API Items found: ${items.length}');
+        
         if (items.isNotEmpty) {
           final item = items.first;
           final address = item['address'] ?? {};
+          
+          print('🌍 HERE API Address: ${address}');
           
           return {
             'title': item['title'] ?? '',
@@ -206,10 +215,14 @@ class HereMapsAddressService {
             'latitude': latitude,
             'longitude': longitude,
           };
+        } else {
+          print('❌ HERE API: No items found in response');
         }
+      } else {
+        print('❌ HERE API Error: ${response.statusCode} - ${response.body}');
       }
     } catch (e) {
-      print('Reverse geocoding error: $e');
+      print('❌ Reverse geocoding error: $e');
     }
     return null;
   }
@@ -408,5 +421,20 @@ class HereMapsAddressService {
     }
     
     return components.join(', ');
+  }
+
+  /// Format a short display name for coordinates (compact, user-friendly)
+  /// Priority: title → district + city → city → label fallback
+  static String formatShortDisplayName(Map<String, dynamic> address) {
+    final title = address['title']?.toString() ?? '';
+    final district = address['district']?.toString() ?? '';
+    final city = address['city']?.toString() ?? '';
+    final label = address['label']?.toString() ?? '';
+
+    if (title.isNotEmpty) return title;
+    if (district.isNotEmpty && city.isNotEmpty) return '$district, $city';
+    if (city.isNotEmpty) return city;
+    if (label.isNotEmpty) return label.split(',').take(2).join(', ');
+    return 'Current location';
   }
 }

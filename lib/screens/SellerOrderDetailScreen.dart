@@ -944,10 +944,22 @@ class _SellerOrderDetailScreenState extends State<SellerOrderDetailScreen>
 
       // Credit receivable ledger for COD so earnings reflect immediately
       try {
-        await FirebaseFunctions.instance.httpsCallable('markCodPaid').call({ 'orderId': orderRef.id });
+        final result = await FirebaseFunctions.instance.httpsCallable('markCodPaid').call({ 'orderId': orderRef.id });
+        print('✅ markCodPaid succeeded: ${result.data}');
       } catch (e) {
         // Non-fatal: UI will still show paid; balance may refresh on finalize
-        print('markCodPaid failed: $e');
+        print('❌ markCodPaid failed: $e');
+        
+        // Show user that earnings calculation might be delayed
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text('Payment marked, but earnings calculation may be delayed. Check your balance later.'),
+              backgroundColor: AppTheme.warning,
+              duration: const Duration(seconds: 4),
+            ),
+          );
+        }
       }
 
       // Optional: add a timeline update for transparency

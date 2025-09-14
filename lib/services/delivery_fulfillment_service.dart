@@ -1,12 +1,10 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:geolocator/geolocator.dart';
 import 'dart:async';
 import 'notification_service.dart';
 
 class DeliveryFulfillmentService {
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  static final FirebaseAuth _auth = FirebaseAuth.instance;
 
   /// **1. AUTOMATED DRIVER ASSIGNMENT**
   /// Automatically assigns the best available driver to an order
@@ -94,11 +92,12 @@ class DeliveryFulfillmentService {
     double deliveryLat, double deliveryLng,
   ) async {
     try {
-      // Get all rural drivers
+      // Get all rural drivers that are available AND online
       final driversSnapshot = await _firestore
           .collection('drivers')
           .where('isRuralDriver', isEqualTo: true)
           .where('isAvailable', isEqualTo: true)
+          .where('isOnline', isEqualTo: true)
           .get();
 
       List<Map<String, dynamic>> availableDrivers = [];
@@ -152,11 +151,12 @@ class DeliveryFulfillmentService {
     String category,
   ) async {
     try {
-      // Get urban drivers with category-specific capabilities
+      // Get urban drivers with category-specific capabilities that are available AND online
       final driversSnapshot = await _firestore
           .collection('drivers')
           .where('isUrbanDriver', isEqualTo: true)
           .where('isAvailable', isEqualTo: true)
+          .where('isOnline', isEqualTo: true)
           .get();
 
       List<Map<String, dynamic>> availableDrivers = [];
@@ -437,7 +437,9 @@ class DeliveryFulfillmentService {
 
     double weeklyEarnings = 0.0;
     for (var doc in ordersSnapshot.docs) {
-      final deliveryFee = doc.data()['deliveryFee'] ?? 0.0;
+      final data = doc.data();
+      final pricing = data['pricing'] as Map<String, dynamic>?;
+      final deliveryFee = pricing?['deliveryFee']?.toDouble() ?? data['deliveryFee']?.toDouble() ?? 0.0;
       weeklyEarnings += deliveryFee * 0.8; // Driver gets 80%
     }
 
@@ -457,10 +459,49 @@ class DeliveryFulfillmentService {
 
     double monthlyEarnings = 0.0;
     for (var doc in ordersSnapshot.docs) {
-      final deliveryFee = doc.data()['deliveryFee'] ?? 0.0;
+      final data = doc.data();
+      final pricing = data['pricing'] as Map<String, dynamic>?;
+      final deliveryFee = pricing?['deliveryFee']?.toDouble() ?? data['deliveryFee']?.toDouble() ?? 0.0;
       monthlyEarnings += deliveryFee * 0.8; // Driver gets 80%
     }
 
     return monthlyEarnings;
+  }
+
+  /// **13. GET COMPLETED DELIVERIES HISTORY**
+  static Future<List<Map<String, dynamic>>> getDriverDeliveryHistory(String driverId) async {
+    try {
+      final ordersSnapshot = await _firestore
+          .collection('orders')
+          .where('assignedDriver.driverId', isEqualTo: driverId)
+          .where('status', isEqualTo: 'delivered')
+          .orderBy('deliveredAt', descending: true)
+          .limit(50) // Last 50 deliveries
+          .get();
+
+      List<Map<String, dynamic>> deliveries = [];
+      for (var doc in ordersSnapshot.docs) {
+        final data = doc.data();
+        final pricing = data['pricing'] as Map<String, dynamic>?;
+        final buyerDetails = data['buyerDetails'] as Map<String, dynamic>?;
+        final deliveryFee = pricing?['deliveryFee']?.toDouble() ?? data['deliveryFee']?.toDouble() ?? 0.0;
+        final earnings = deliveryFee * 0.8;
+
+        deliveries.add({
+          'orderId': doc.id,
+          'orderNumber': data['orderId']?.toString().substring(0, 8) ?? doc.id.substring(0, 8),
+          'customerName': buyerDetails?['fullName'] ?? 'Customer',
+          'deliveredAt': data['deliveredAt'],
+          'deliveryFee': deliveryFee,
+          'earnings': earnings,
+          'totalAmount': pricing?['grandTotal']?.toDouble() ?? 0.0,
+        });
+      }
+
+      return deliveries;
+    } catch (e) {
+      print('🔍 DEBUG: Error getting delivery history: $e');
+      return [];
+    }
   }
 } 

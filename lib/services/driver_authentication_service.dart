@@ -89,6 +89,7 @@ class DriverAuthenticationService {
             return {
               'driverType': 'seller_owned',
               'driverId': driverDoc.id,
+              'driverDocId': driverDoc.id, // Add to top level for easy access
               'sellerId': sellerId,
               'driverData': {
                 ...driverData,
@@ -266,6 +267,9 @@ class DriverAuthenticationService {
       final driverType = driverProfile['driverType'];
       final driverId = driverProfile['driverId'];
 
+      print('🔍 DEBUG: Getting orders for driver type: $driverType, driverId: $driverId');
+      print('🔍 DEBUG: Driver profile: $driverProfile');
+
       if (driverType == 'global') {
         // Global driver - check assignedDriverId
         final ordersQuery = await _firestore
@@ -279,19 +283,112 @@ class DriverAuthenticationService {
           ...doc.data(),
         }).toList();
       } else if (driverType == 'seller_owned') {
-        // Seller-owned driver - check seller delivery tasks
+        // 🚀 NEW: Seller-owned driver - check main orders collection for seller-assigned orders
         final sellerId = driverProfile['sellerId'];
-        final tasksQuery = await _firestore
-            .collection('seller_delivery_tasks')
-            .where('sellerId', isEqualTo: sellerId)
-            .where('driverDetails.userId', isEqualTo: driverId)
-            .where('status', whereIn: ['confirmed_by_seller', 'delivery_in_progress'])
+        final driverData = driverProfile['driverData'] as Map<String, dynamic>;
+        // Use the correct driverDocId - should be the Firestore document ID, not Firebase UID
+        final driverDocId = driverProfile.containsKey('driverDocId') 
+            ? driverProfile['driverDocId'] 
+            : driverData['driverDocId'] ?? driverProfile['driverId'];
+        
+        print('🔍 DEBUG: Driver profile: $driverProfile');
+        print('🔍 DEBUG: Looking for orders assigned to seller driver: $driverDocId');
+        print('🔍 DEBUG: Seller ID: $sellerId');
+        
+        // Get orders from main orders collection where this driver is assigned
+        final ordersQuery = await _firestore
+            .collection('orders')
+            .where('assignedDriver.driverId', isEqualTo: driverDocId)
+            .where('assignedDriver.type', isEqualTo: 'seller_assigned')
+            .where('status', whereIn: ['driver_assigned', 'delivery_in_progress', 'picked_up', 'out_for_delivery'])
             .get();
 
-        return tasksQuery.docs.map((doc) => {
-          'orderId': doc.id,
-          ...doc.data(),
-        }).toList();
+        print('🔍 DEBUG: Found ${ordersQuery.docs.length} seller-assigned orders');
+
+        // Get seller name from seller document
+        String sellerName = 'Unknown Store';
+        try {
+          final sellerDoc = await _firestore.collection('users').doc(sellerId).get();
+          if (sellerDoc.exists) {
+            final sellerData = sellerDoc.data()!;
+            sellerName = sellerData['name'] ?? sellerData['businessName'] ?? sellerData['storeName'] ?? 'Unknown Store';
+          }
+        } catch (e) {
+          print('⚠️ Could not fetch seller name: $e');
+        }
+
+        // Process orders with async address fetching
+        final List<Map<String, dynamic>> orders = [];
+        
+        for (final doc in ordersQuery.docs) {
+          final data = doc.data();
+          
+          // Extract correct data from nested structures
+          final buyerDetails = data['buyerDetails'] as Map<String, dynamic>?;
+          final pricing = data['pricing'] as Map<String, dynamic>?;
+          final fulfillment = data['fulfillment'] as Map<String, dynamic>?;
+          final items = data['items'] as List?;
+          
+          // Get delivery address - use same logic as seller dashboard but enhance it
+          String deliveryAddress = 'No delivery address provided';
+          
+          // First check fulfillment.address (new format)
+          if (fulfillment?['address'] != null && fulfillment!['address'].toString().isNotEmpty) {
+            deliveryAddress = fulfillment!['address'].toString();
+          }
+          // Then check root level address field (old format)
+          else if (data['address'] != null && data['address'].toString().isNotEmpty) {
+            deliveryAddress = data['address'].toString();
+          }
+          // Then check delivery task address
+          else {
+            // Try to get from seller delivery task
+            try {
+              final taskDoc = await _firestore.collection('seller_delivery_tasks').doc(doc.id).get();
+              if (taskDoc.exists) {
+                final taskData = taskDoc.data() as Map<String, dynamic>;
+                final taskAddress = taskData['deliveryDetails']?['address'];
+                if (taskAddress != null && taskAddress.toString().isNotEmpty) {
+                  deliveryAddress = taskAddress.toString();
+                }
+              }
+            } catch (e) {
+              print('⚠️ Could not fetch delivery task address: $e');
+            }
+          }
+          
+          // Finally, use coordinates as fallback with better formatting
+          if (deliveryAddress == 'No delivery address provided' && fulfillment?['coordinates'] != null) {
+            final coords = fulfillment!['coordinates'] as Map<String, dynamic>;
+            final lat = coords['lat']?.toDouble() ?? 0.0;
+            final lng = coords['lng']?.toDouble() ?? 0.0;
+            
+            // Use GPS with approximate area (you could implement reverse geocoding here)
+            if (lat != 0.0 && lng != 0.0) {
+              deliveryAddress = '📍 Customer GPS Location\nLat: ${lat.toStringAsFixed(4)}, Lng: ${lng.toStringAsFixed(4)}\n(Navigate to these coordinates)';
+            }
+          }
+          
+          orders.add({
+            'orderId': doc.id,
+            'orderNumber': data['orderId'] ?? doc.id.substring(0, 8),
+            'status': data['status'],
+            'storeName': sellerName, // Use the fetched seller name
+            'customerName': buyerDetails?['fullName'] ?? buyerDetails?['firstName'] ?? 'Unknown Customer',
+            'deliveryAddress': deliveryAddress,
+            'items': items ?? [],
+            'totalAmount': pricing?['grandTotal']?.toDouble() ?? 0.0,
+            'deliveryFee': pricing?['deliveryFee']?.toDouble() ?? 0.0,
+            'createdAt': data['createdAt'],
+            'assignedBy': 'seller',
+            'sellerId': sellerId,
+            'customerPhone': buyerDetails?['phone'] ?? buyerDetails?['email'],
+            'sellerPhone': data['sellerPhone'],
+          });
+        }
+
+        print('🔍 DEBUG: Returning ${orders.length} seller-assigned orders for driver app');
+        return orders;
       }
 
       return [];

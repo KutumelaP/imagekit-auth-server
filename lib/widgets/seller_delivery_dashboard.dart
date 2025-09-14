@@ -5,7 +5,6 @@ import '../services/seller_delivery_management_service.dart';
 import '../services/driver_location_service.dart';
 import '../theme/app_theme.dart';
 import 'live_delivery_tracking.dart';
-import 'add_phone_dialog.dart';
 
 class SellerDeliveryDashboard extends StatefulWidget {
   const SellerDeliveryDashboard({Key? key}) : super(key: key);
@@ -50,9 +49,23 @@ class _SellerDeliveryDashboardState extends State<SellerDeliveryDashboard> {
         
         // Debug: Show loaded tasks
         final pendingTasks = result['pendingTasks'] ?? [];
-        print('✅ Dashboard loaded: ${pendingTasks.length} pending tasks');
+        final activeDeliveries = result['activeDeliveries'] ?? [];
+        print('✅ Dashboard loaded: ${pendingTasks.length} pending tasks, ${activeDeliveries.length} active deliveries');
+        
         for (final task in pendingTasks) {
-          print('🔍 TASK: ${task['orderId']} - Task Status: ${task['status']} - Order Status: ${task['orderStatus']}');
+          print('🔍 PENDING: ${task['orderId']} - Status: ${task['status']} - Order: ${task['orderStatus']}');
+        }
+        
+        for (final delivery in activeDeliveries) {
+          print('🔍 ACTIVE: ${delivery['orderId']} - Status: ${delivery['status']} - Order: ${delivery['orderStatus']}');
+        }
+        
+        // 🚀 Additional debugging
+        if (activeDeliveries.isEmpty && pendingTasks.isEmpty) {
+          print('⚠️ NO TASKS FOUND - This suggests either:');
+          print('   1. No delivery tasks exist for this seller');
+          print('   2. Tasks exist but don\'t meet payment/fulfillment criteria');
+          print('   3. Status filtering is too restrictive');
         }
       } else {
         setState(() => _isLoading = false);
@@ -80,6 +93,7 @@ class _SellerDeliveryDashboardState extends State<SellerDeliveryDashboard> {
     }
 
     final pendingTasks = _dashboardData?['pendingTasks'] as List? ?? [];
+    final activeDeliveries = _dashboardData?['activeDeliveries'] as List? ?? [];
     final recentDeliveries = _dashboardData?['recentDeliveries'] as List? ?? [];
     final stats = _dashboardData?['stats'] as Map<String, dynamic>? ?? {};
 
@@ -113,10 +127,16 @@ class _SellerDeliveryDashboardState extends State<SellerDeliveryDashboard> {
               
               SizedBox(height: 24),
               
-              // Pending Delivery Tasks
+              // Pending Delivery Tasks (needs seller action)
               _buildPendingTasksSection(pendingTasks),
               
               SizedBox(height: 24),
+
+              // 🚀 NEW: Active Deliveries (confirmed & in progress)
+              if (activeDeliveries.isNotEmpty) ...[
+                _buildActiveDeliveriesSection(activeDeliveries),
+                SizedBox(height: 24),
+              ],
               
               // Recent Deliveries
               _buildRecentDeliveriesSection(recentDeliveries),
@@ -637,6 +657,188 @@ class _SellerDeliveryDashboardState extends State<SellerDeliveryDashboard> {
     );
   }
 
+  Widget _buildActiveDeliveriesSection(List activeDeliveries) {
+    return Card(
+      elevation: 4,
+      child: Padding(
+        padding: EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.delivery_dining, color: AppTheme.primaryOrange),
+                SizedBox(width: 8),
+                Text(
+                  'Active Deliveries',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: AppTheme.primaryOrange,
+                  ),
+                ),
+                Spacer(),
+                Container(
+                  padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: AppTheme.primaryOrange.withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    '${activeDeliveries.length}',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: AppTheme.primaryOrange,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            SizedBox(height: 16),
+            
+            ListView.separated(
+              shrinkWrap: true,
+              physics: NeverScrollableScrollPhysics(),
+              itemCount: activeDeliveries.length,
+              separatorBuilder: (context, index) => Divider(),
+              itemBuilder: (context, index) {
+                final delivery = activeDeliveries[index];
+                return _buildActiveDeliveryCard(delivery);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildActiveDeliveryCard(Map<String, dynamic> delivery) {
+    final orderId = delivery['orderId'] ?? '';
+    final status = delivery['status'] ?? '';
+    final deliveryDetails = delivery['deliveryDetails'] as Map<String, dynamic>? ?? {};
+    final driverDetails = delivery['driverDetails'] as Map<String, dynamic>? ?? {};
+    
+    return Container(
+      padding: EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppTheme.primaryOrange.withOpacity(0.05),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppTheme.primaryOrange.withOpacity(0.2)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Order Header
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Order #${orderId.substring(0, 8).toUpperCase()}',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: AppTheme.deepTeal,
+                  ),
+                ),
+              ),
+              _buildStatusChip(status),
+            ],
+          ),
+          
+          SizedBox(height: 8),
+          
+          // Customer & Driver Info
+          if (deliveryDetails['buyerName'] != null)
+            Row(
+              children: [
+                Icon(Icons.person, size: 16, color: Colors.grey[600]),
+                SizedBox(width: 4),
+                Expanded(
+                  child: Text(
+                    'Customer: ${deliveryDetails['buyerName']}',
+                    style: TextStyle(color: Colors.grey[700]),
+                  ),
+                ),
+              ],
+            ),
+          
+          if (driverDetails['name'] != null)
+            Row(
+              children: [
+                Icon(Icons.local_shipping, size: 16, color: AppTheme.primaryOrange),
+                SizedBox(width: 4),
+                Expanded(
+                  child: Text(
+                    'Driver: ${driverDetails['name']}',
+                    style: TextStyle(color: Colors.grey[700], fontWeight: FontWeight.w500),
+                  ),
+                ),
+              ],
+            ),
+          
+          SizedBox(height: 12),
+          
+          // Action Buttons for Active Deliveries
+          Row(
+            children: [
+              if (status == 'confirmed_by_seller')
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: () => _startDelivery(orderId),
+                    icon: Icon(Icons.play_arrow, size: 16),
+                    label: Text('Start Delivery'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppTheme.primaryOrange,
+                      foregroundColor: Colors.white,
+                      padding: EdgeInsets.symmetric(vertical: 8),
+                    ),
+                  ),
+                ),
+              
+              if (status == 'delivery_in_progress') ...[
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () => _showTrackingDialog(orderId),
+                    icon: Icon(Icons.location_pin, size: 16),
+                    label: Text('Track'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppTheme.primaryOrange,
+                      side: BorderSide(color: AppTheme.primaryOrange),
+                    ),
+                  ),
+                ),
+                SizedBox(width: 8),
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: () => _showCompleteDeliveryDialog(delivery),
+                    icon: Icon(Icons.check_circle, size: 16),
+                    label: Text('Complete'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppTheme.success,
+                      foregroundColor: Colors.white,
+                      padding: EdgeInsets.symmetric(vertical: 8),
+                    ),
+                  ),
+                ),
+              ],
+              
+              if (!['confirmed_by_seller', 'delivery_in_progress'].contains(status))
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => _showTaskDetails(delivery),
+                    child: Text('View Details'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppTheme.deepTeal,
+                      side: BorderSide(color: AppTheme.deepTeal),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildRecentDeliveriesSection(List recentDeliveries) {
     return Card(
       elevation: 4,
@@ -833,16 +1035,68 @@ class _SellerDeliveryDashboardState extends State<SellerDeliveryDashboard> {
   }
   
   void _showAddPhoneDialog(Map<String, dynamic> task) {
+    final phoneController = TextEditingController();
+    
     showDialog(
       context: context,
-      builder: (context) => AddPhoneDialog(
-        task: task,
-        onPhoneAdded: () {
-          Navigator.of(context).pop();
-          _loadDashboardData();
-        },
+      builder: (context) => AlertDialog(
+        title: Text('Add Customer Phone'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('Add phone number for this customer:'),
+            SizedBox(height: 16),
+            TextField(
+              controller: phoneController,
+              decoration: InputDecoration(
+                labelText: 'Phone Number',
+                border: OutlineInputBorder(),
+                prefixText: '+27 ',
+              ),
+              keyboardType: TextInputType.phone,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final phone = phoneController.text.trim();
+              if (phone.isNotEmpty) {
+                await _addPhoneToTask(task['orderId'], phone);
+                Navigator.of(context).pop();
+                _loadDashboardData();
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.deepTeal,
+              foregroundColor: Colors.white,
+            ),
+            child: Text('Add Phone'),
+          ),
+        ],
       ),
     );
+  }
+
+  Future<void> _addPhoneToTask(String orderId, String phone) async {
+    try {
+      // Update the seller delivery task with the phone number
+      await FirebaseFirestore.instance
+          .collection('seller_delivery_tasks')
+          .doc(orderId)
+          .update({
+        'deliveryDetails.buyerPhone': phone,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      
+      _showSuccessSnackBar('Phone number added successfully!');
+    } catch (e) {
+      _showErrorSnackBar('Failed to add phone number: $e');
+    }
   }
 
   void _showDeliveryHistory(Map<String, dynamic> delivery) {
@@ -938,19 +1192,28 @@ class _SellerDeliveryDashboardState extends State<SellerDeliveryDashboard> {
 
   Future<void> _addDriver(String name, String phone) async {
     try {
-      await FirebaseFirestore.instance
-          .collection('users')
-          .doc(_sellerId)
-          .collection('drivers')
-          .add({
+      print('🔍 Adding driver - sellerId: $_sellerId, name: $name, phone: $phone');
+      
+      final driverData = {
         'name': name,
         'phone': phone,
         'createdAt': FieldValue.serverTimestamp(),
         'status': 'active',
-      });
+        'isAvailable': true,
+        'isOnline': false,
+      };
       
-      _showSuccessSnackBar('Driver added successfully!');
+      final docRef = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(_sellerId)
+          .collection('drivers')
+          .add(driverData);
+      
+      print('✅ Driver added successfully with ID: ${docRef.id}');
+      _showSuccessSnackBar('Driver "$name" added successfully!');
+      
     } catch (e) {
+      print('❌ Failed to add driver: $e');
       _showErrorSnackBar('Failed to add driver: $e');
     }
   }
@@ -1103,9 +1366,46 @@ class _SellerDeliveryDashboardState extends State<SellerDeliveryDashboard> {
                   }
 
                   if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                    return Text(
-                      'No drivers yet. Use the + button to add your first driver.',
-                      style: TextStyle(color: Colors.grey[600]),
+                    return Container(
+                      padding: EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: AppTheme.primaryOrange.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: AppTheme.primaryOrange.withOpacity(0.3)),
+                      ),
+                      child: Column(
+                        children: [
+                          Icon(Icons.person_add, color: AppTheme.primaryOrange, size: 32),
+                          SizedBox(height: 8),
+                          Text(
+                            'No drivers yet',
+                            style: TextStyle(
+                              color: AppTheme.primaryOrange,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                            ),
+                          ),
+                          SizedBox(height: 4),
+                          Text(
+                            'Add your first driver to start assigning deliveries',
+                            style: TextStyle(color: Colors.grey[600], fontSize: 14),
+                            textAlign: TextAlign.center,
+                          ),
+                          SizedBox(height: 12),
+                          ElevatedButton.icon(
+                            onPressed: _showAddDriverDialog,
+                            icon: Icon(Icons.add, size: 18),
+                            label: Text('Add Driver'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppTheme.primaryOrange,
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     );
                   }
 
@@ -1228,18 +1528,28 @@ class _ConfirmDeliveryDialogState extends State<_ConfirmDeliveryDialog> {
                     .where('status', isEqualTo: 'active')
                     .snapshots(),
                 builder: (context, snapshot) {
+                  // 🚀 ENHANCED: Better debugging and error handling
+                  print('🔍 Driver dropdown StreamBuilder state: ${snapshot.connectionState}');
+                  
                   if (snapshot.connectionState == ConnectionState.waiting) {
-                    return Center(child: CircularProgressIndicator());
+                    return Center(
+                      child: Column(
+                        children: [
+                          CircularProgressIndicator(),
+                          SizedBox(height: 8),
+                          Text('Loading drivers...', style: TextStyle(fontSize: 12)),
+                        ],
+                      ),
+                    );
                   }
 
-                  final drivers = snapshot.data?.docs ?? [];
-                  
-                  if (drivers.isEmpty) {
+                  if (snapshot.hasError) {
+                    print('❌ Driver query error: ${snapshot.error}');
                     return Column(
                       children: [
                         Text(
-                          'No drivers available. Add drivers first.',
-                          style: TextStyle(color: Colors.orange[700]),
+                          'Error loading drivers: ${snapshot.error}',
+                          style: TextStyle(color: Colors.red, fontSize: 12),
                         ),
                         SizedBox(height: 8),
                         TextFormField(
@@ -1250,6 +1560,63 @@ class _ConfirmDeliveryDialogState extends State<_ConfirmDeliveryDialog> {
                         TextFormField(
                           controller: _driverPhoneController,
                           decoration: InputDecoration(labelText: 'Driver Phone'),
+                          keyboardType: TextInputType.phone,
+                        ),
+                      ],
+                    );
+                  }
+
+                  final drivers = snapshot.data?.docs ?? [];
+                  print('🔍 Found ${drivers.length} drivers for seller ${widget.sellerId}');
+                  
+                  if (drivers.isEmpty) {
+                    return Column(
+                      children: [
+                        Container(
+                          padding: EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.orange.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.orange.withOpacity(0.3)),
+                          ),
+                          child: Column(
+                            children: [
+                              Icon(Icons.info_outline, color: Colors.orange[700], size: 20),
+                              SizedBox(height: 4),
+                              Text(
+                                'No drivers found',
+                                style: TextStyle(
+                                  color: Colors.orange[700],
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              SizedBox(height: 4),
+                              Text(
+                                'Add drivers using the + button above, then try again.',
+                                style: TextStyle(color: Colors.orange[600], fontSize: 12),
+                                textAlign: TextAlign.center,
+                              ),
+                            ],
+                          ),
+                        ),
+                        SizedBox(height: 12),
+                        Text('Or enter driver details manually:', 
+                             style: TextStyle(fontWeight: FontWeight.w500)),
+                        SizedBox(height: 8),
+                        TextFormField(
+                          controller: _driverNameController,
+                          decoration: InputDecoration(
+                            labelText: 'Driver Name (Manual Entry)',
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                        SizedBox(height: 16),
+                        TextFormField(
+                          controller: _driverPhoneController,
+                          decoration: InputDecoration(
+                            labelText: 'Driver Phone',
+                            border: OutlineInputBorder(),
+                          ),
                           keyboardType: TextInputType.phone,
                         ),
                       ],

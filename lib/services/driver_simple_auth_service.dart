@@ -39,9 +39,10 @@ class DriverSimpleAuthService {
             
             // Create or sign in to Firebase Auth with driver email
             final driverEmail = _generateDriverEmail(driverName, sellerId);
+            final driverPassword = _generateDriverPassword(driverName, driverPhone);
             final result = await _signInOrCreateDriverAccount(
               email: driverEmail,
-              password: driverPhone,
+              password: driverPassword,
               driverData: driverData,
               sellerId: sellerId,
               driverDocId: driverDoc.id,
@@ -70,8 +71,24 @@ class DriverSimpleAuthService {
   /// Generate consistent email for driver
   static String _generateDriverEmail(String driverName, String sellerId) {
     final cleanName = driverName.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
-    final cleanSellerId = sellerId.substring(0, 8);
-    return '${cleanName}_driver_$cleanSellerId@omniasa.local';
+    final safeName = cleanName.isEmpty ? 'driver' : cleanName;
+    final sellerSanitized = sellerId.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+    final idPart = sellerSanitized.isEmpty
+        ? '000000'
+        : (sellerSanitized.length >= 8 ? sellerSanitized.substring(0, 8) : sellerSanitized.padRight(8, '0'));
+    // Use production domain for driver emails
+    return '$safeName.driver.$idPart@mzansimarketplace.co.za';
+  }
+
+  /// Generate a strong password for driver authentication
+  static String _generateDriverPassword(String driverName, String driverPhone) {
+    // Create a strong password that meets Firebase Auth requirements
+    final cleanName = driverName.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+    final cleanPhone = driverPhone.replaceAll(RegExp(r'[^\d]'), '');
+    final capitalizedName = cleanName.isNotEmpty 
+        ? cleanName[0].toUpperCase() + cleanName.substring(1)
+        : 'Driver';
+    return 'Driver${capitalizedName}${cleanPhone}!';
   }
 
   /// Sign in or create Firebase Auth account for driver
@@ -85,6 +102,9 @@ class DriverSimpleAuthService {
     try {
       UserCredential? userCredential;
       
+      print('🔐 Attempting auth with email: $email');
+      print('🔐 Password length: ${password.length}');
+      
       // Try to sign in first
       try {
         userCredential = await _auth.signInWithEmailAndPassword(
@@ -93,23 +113,51 @@ class DriverSimpleAuthService {
         );
         print('✅ Existing driver account signed in');
       } on FirebaseAuthException catch (e) {
-        if (e.code == 'user-not-found' || e.code == 'wrong-password') {
-          // Create new account
-          userCredential = await _auth.createUserWithEmailAndPassword(
-            email: email,
-            password: password,
-          );
-          print('✅ New driver account created');
-          
-          // Update user profile
-          await userCredential.user!.updateDisplayName(driverData['name']);
+        print('🔍 Auth error: ${e.code} - ${e.message}');
+        
+        if (e.code == 'user-not-found' || e.code == 'wrong-password' || e.code == 'invalid-credential') {
+          // Create new account with provided email
+          try {
+            userCredential = await _auth.createUserWithEmailAndPassword(
+              email: email,
+              password: password,
+            );
+            print('✅ New driver account created');
+            if (userCredential.user != null) {
+              await userCredential.user!.updateDisplayName(driverData['name']);
+            }
+          } on FirebaseAuthException catch (createError) {
+            print('❌ Account creation failed: ${createError.code} - ${createError.message}');
+            
+            if (createError.code == 'invalid-email' || createError.code == 'invalid-credential') {
+              // Use a more robust fallback with proper domain
+              final timestamp = DateTime.now().millisecondsSinceEpoch;
+              final driverName = driverData['name']?.toString() ?? 'driver';
+              final cleanName = driverName.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+              final safeName = cleanName.isEmpty ? 'driver' : cleanName;
+              final fallbackEmail = '$safeName.driver.$timestamp@mzansimarketplace.co.za';
+              final fallbackPassword = 'MzansiDriver${timestamp}!';
+              
+              print('🔄 Trying robust fallback: $fallbackEmail');
+              userCredential = await _auth.createUserWithEmailAndPassword(
+                email: fallbackEmail,
+                password: fallbackPassword,
+              );
+              print('✅ Robust fallback account created');
+              if (userCredential.user != null) {
+                await userCredential.user!.updateDisplayName(driverData['name']);
+              }
+            } else {
+              throw createError;
+            }
+          }
         } else {
           throw e;
         }
       }
 
-      if (userCredential?.user != null) {
-        final user = userCredential!.user!;
+      if (userCredential.user != null) {
+        final user = userCredential.user!;
         
         // Update user document with driver info
         await _firestore.collection('users').doc(user.uid).set({
@@ -124,7 +172,7 @@ class DriverSimpleAuthService {
           'lastLoginAt': FieldValue.serverTimestamp(),
         }, SetOptions(merge: true));
 
-        // Link the driver document to the user
+        // Link the driver document to the user and set as online
         await _firestore
             .collection('users')
             .doc(sellerId)
@@ -134,6 +182,8 @@ class DriverSimpleAuthService {
           'userId': user.uid,
           'linkedAt': FieldValue.serverTimestamp(),
           'lastLoginAt': FieldValue.serverTimestamp(),
+          'isOnline': true, // Set driver as online when they log in
+          'isAvailable': true, // Also set as available
         });
 
         return {

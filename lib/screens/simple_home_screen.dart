@@ -1120,19 +1120,7 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
                 PopupMenuItem(
                   value: 'chat',
                   height: 40,
-                  child: Row(
-                    children: [
-                      Icon(Icons.chat_outlined, size: 16, color: AppTheme.deepTeal),
-                      const SizedBox(width: 10),
-                      Text(
-                        'Chat',
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          fontWeight: FontWeight.w500,
-                          fontSize: 14,
-                        ),
-                      ),
-                    ],
-                  ),
+                  child: const _ChatMenuItem(),
                 ),
                 PopupMenuItem(
                   value: 'notification_settings',
@@ -2007,6 +1995,131 @@ class _AccountUnreadCounterState extends State<_AccountUnreadCounter> {
         ),
         textAlign: TextAlign.center,
       ),
+    );
+  }
+}
+
+class _ChatMenuItem extends StatefulWidget {
+  const _ChatMenuItem();
+
+  @override
+  State<_ChatMenuItem> createState() => _ChatMenuItemState();
+}
+
+class _ChatMenuItemState extends State<_ChatMenuItem> {
+  int _chatUnread = 0;
+  StreamSubscription<QuerySnapshot>? _chatSub;
+
+  @override
+  void initState() {
+    super.initState();
+    _listen();
+  }
+
+  void _listen() {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    final userId = user.uid;
+
+    _chatSub = FirebaseFirestore.instance
+        .collection('chats')
+        .where(Filter.or(
+          Filter('buyerId', isEqualTo: userId),
+          Filter('sellerId', isEqualTo: userId),
+        ))
+        .snapshots(includeMetadataChanges: false)
+        .listen((snapshot) {
+      int unread = 0;
+      for (final chat in snapshot.docs) {
+        final data = chat.data();
+        final chatUnreadCount = data['unreadCount'] as int? ?? 0;
+        final lastMessageBy = data['lastMessageBy'] as String?;
+        final lastMessageTime = data['timestamp'] as Timestamp? ?? data['lastMessageTime'] as Timestamp?;
+        final lastViewedTime = data['lastViewed_$userId'] as Timestamp?;
+        bool countThis = false;
+        if (chatUnreadCount > 0 && lastMessageBy != null && lastMessageBy != userId) {
+          if (lastMessageTime != null) {
+            if (lastViewedTime == null || lastMessageTime.toDate().isAfter(lastViewedTime.toDate())) {
+              countThis = true;
+            }
+          } else {
+            countThis = true;
+          }
+        }
+        if (countThis) unread += chatUnreadCount;
+      }
+      if (mounted) setState(() => _chatUnread = unread);
+    });
+  }
+
+  @override
+  void dispose() {
+    _chatSub?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Icon(Icons.chat_outlined, size: 16, color: AppTheme.deepTeal),
+            if (_chatUnread > 0)
+              Positioned(
+                right: -6,
+                top: -6,
+                child: Container(
+                  padding: const EdgeInsets.all(2),
+                  decoration: BoxDecoration(
+                    color: Colors.red,
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  constraints: const BoxConstraints(
+                    minWidth: 12,
+                    minHeight: 12,
+                  ),
+                  child: Text(
+                    _chatUnread > 99 ? '99+' : _chatUnread.toString(),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 8,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              ),
+          ],
+        ),
+        const SizedBox(width: 10),
+        Text(
+          'Chat',
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+            fontWeight: FontWeight.w500,
+            fontSize: 14,
+          ),
+        ),
+        if (_chatUnread > 0) ...[
+          const Spacer(),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            decoration: BoxDecoration(
+              color: Colors.red,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Text(
+              _chatUnread > 99 ? '99+' : _chatUnread.toString(),
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 10,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
+      ],
     );
   }
 }
