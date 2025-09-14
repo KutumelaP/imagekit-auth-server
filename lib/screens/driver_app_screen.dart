@@ -1057,6 +1057,30 @@ class _DriverAppScreenState extends State<DriverAppScreen> {
                 ),
               ),
             ),
+            const SizedBox(height: 8),
+            // 🧪 TESTING: Reset button for in-progress orders
+            Container(
+              width: double.infinity,
+              height: 36,
+              child: OutlinedButton.icon(
+                onPressed: () => _resetDeliveryForTesting(orderId),
+                icon: Icon(Icons.refresh, size: 16, color: Colors.orange),
+                label: Text(
+                  '🧪 Reset for Testing',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                    color: Colors.orange,
+                  ),
+                ),
+                style: OutlinedButton.styleFrom(
+                  side: BorderSide(color: Colors.orange, width: 1),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+              ),
+            ),
             const SizedBox(height: 12),
             // Secondary action - Call Customer
             Container(
@@ -1086,28 +1110,56 @@ class _DriverAppScreenState extends State<DriverAppScreen> {
 
       case 'delivered':
       case 'completed':
-        // Show completion status
-        return Container(
-          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-          decoration: BoxDecoration(
-            color: AppTheme.success.withOpacity(0.1),
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: AppTheme.success.withOpacity(0.3)),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.check_circle, color: AppTheme.success, size: 20),
-              const SizedBox(width: 8),
-              Text(
-                'Order Completed',
-                style: TextStyle(
-                  color: AppTheme.success,
-                  fontWeight: FontWeight.bold,
+        // Show completion status with reset option for testing
+        return Column(
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+              decoration: BoxDecoration(
+                color: AppTheme.success.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: AppTheme.success.withOpacity(0.3)),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.check_circle, color: AppTheme.success, size: 20),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Order Completed',
+                    style: TextStyle(
+                      color: AppTheme.success,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+            // 🧪 TESTING: Reset button for completed orders
+            Container(
+              width: double.infinity,
+              height: 36,
+              child: OutlinedButton.icon(
+                onPressed: () => _resetDeliveryForTesting(orderId),
+                icon: Icon(Icons.refresh, size: 16, color: Colors.orange),
+                label: Text(
+                  '🧪 Reset for Testing',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                    color: Colors.orange,
+                  ),
+                ),
+                style: OutlinedButton.styleFrom(
+                  side: BorderSide(color: Colors.orange, width: 1),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
         );
 
       default:
