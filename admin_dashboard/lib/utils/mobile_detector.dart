@@ -48,9 +48,9 @@ class MobileDetector {
     final width = size.width;
     final height = size.height;
     
-    // Consider mobile if width is less than 768px or height is less than 600px
-    // This covers most mobile devices and small tablets
-    return width < 768 || height < 600;
+    // Consider mobile if width is less than 600px or height is less than 500px
+    // This covers mobile phones only, not tablets
+    return width < 600 || height < 500;
   }
 
   /// Check if current screen size indicates tablet device
@@ -58,8 +58,8 @@ class MobileDetector {
     final size = MediaQuery.of(context).size;
     final width = size.width;
     
-    // Consider tablet if width is between 768px and 1024px
-    return width >= 768 && width < 1024;
+    // Consider tablet if width is between 600px and 1024px
+    return width >= 600 && width < 1024;
   }
 
   /// Check if current screen size indicates desktop device
@@ -67,8 +67,8 @@ class MobileDetector {
     final size = MediaQuery.of(context).size;
     final width = size.width;
     
-    // Consider desktop if width is 1024px or more
-    return width >= 1024;
+    // Consider desktop if width is 768px or more (lowered from 1024px)
+    return width >= 768;
   }
 
   /// Get device type based on screen size
@@ -84,12 +84,8 @@ class MobileDetector {
 
   /// Check if admin dashboard should be blocked for current device
   static bool shouldBlockAdminDashboard(BuildContext context) {
-    // Allow web access - only block native mobile apps
-    if (kIsWeb) {
-      return false; // Always allow web access
-    }
-    // Block mobile devices and small tablets for native apps only
-    return isMobileScreenSize(context) || isTabletScreenSize(context);
+    // Block only mobile devices, allow tablets and desktop
+    return isMobileScreenSize(context);
   }
 }
 
