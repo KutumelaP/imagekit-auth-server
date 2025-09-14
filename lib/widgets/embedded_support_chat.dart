@@ -125,7 +125,7 @@ class _EmbeddedSupportChatState extends State<EmbeddedSupportChat>
   }
 
   Future<void> _launchEmail() async {
-    const email = 'support@omniasa.com';
+    const email = 'support@omniasa.co.za';
     final uri = Uri(
       scheme: 'mailto',
       path: email,

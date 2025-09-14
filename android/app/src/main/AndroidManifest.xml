@@ -59,14 +59,14 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
 
-            <!-- Android App Links for web deep links: https://marketplace-8d6bd.web.app/store/... -->
+            <!-- Android App Links for web deep links: https://www.omniasa.co.za/store/... -->
             <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data
                     android:scheme="https"
-                    android:host="marketplace-8d6bd.web.app"
+                    android:host="www.omniasa.co.za"
                     android:pathPrefix="/store/" />
             </intent-filter>
         </activity>

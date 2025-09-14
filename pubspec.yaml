@@ -1,5 +1,5 @@
-name: naymarket
-description: "NayMarket - South African Multi-Category Marketplace"
+name: omniasa
+description: "OmniaSA - South African Multi-Category Marketplace"
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev

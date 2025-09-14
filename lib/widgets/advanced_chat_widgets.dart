@@ -185,4 +185,4 @@ class _EnhancedMessageBubbleState extends State<EnhancedMessageBubble> {
       ),
     );
   }
-} 
+}

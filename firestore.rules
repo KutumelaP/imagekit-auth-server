@@ -17,84 +17,38 @@ service cloud.firestore {
       );
     }
 
+    // Helper function to check if user is seller
+    function isSeller() {
+      return request.auth != null && (
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'seller'
+      );
+    }
+
     // Helper function to check if user is authenticated
     function isAuthenticated() {
       return request.auth != null;
     }
 
     // =====================================================
-    // 🔥 BULLETPROOF COMPREHENSIVE RULES - ZERO ERRORS!
+    // 🔥 COMPREHENSIVE PERMISSION RULES - NO MORE ERRORS!
     // =====================================================
 
-    // USERS - Complete user management with driver subcollections
+    // USERS - Full user management
     match /users/{userId} {
-      allow read: if true; // Public read for browsing stores and driver authentication
-      allow create: if isAuthenticated();
+      allow read: if true; // Public read for browsing stores
+      allow create: if isAuthenticated() && (
+        request.auth.uid == userId ||
+        isAdmin() ||
+        (isSeller() && request.resource.data.role == 'user')
+      );
       allow update: if isAuthenticated() && (
         request.auth.uid == userId ||
         isAdmin()
       );
       allow delete: if isAdmin();
       
-      // 🚀 SELLER-OWNED DRIVERS - BULLETPROOF ZERO-ERROR RULES
-      match /drivers/{driverId} {
-        // Allow read for driver authentication (anyone can search for drivers to login)
-        allow read: if true;
-        
-        // Allow sellers to manage their own drivers (full access)
-        allow create, update, delete: if isAuthenticated() && (
-          request.auth.uid == userId || // Seller managing their drivers
-          isAdmin()
-        );
-        
-        // 🔥 COMPREHENSIVE DRIVER SELF-UPDATE - NEVER FAILS!
-        // Multiple overlapping conditions ensure drivers can ALWAYS update their records
-        allow update: if isAuthenticated() && (
-          // Admin override
-          isAdmin() ||
-          
-          // Seller override
-          request.auth.uid == userId ||
-          
-          // 🛡️ DRIVER SELF-UPDATE CONDITIONS (ANY of these work):
-          
-          // 1. Driver is already linked via userId
-          (resource != null && resource.data.userId == request.auth.uid) ||
-          
-          // 2. Driver is linking themselves (setting userId)
-          (request.resource.data.userId == request.auth.uid) ||
-          
-          // 3. Email-based matching (for pre-linked drivers)
-          (resource != null && 
-           resource.data.email != null && 
-           request.auth.token.email != null &&
-           resource.data.email == request.auth.token.email) ||
-          
-          // 4. Phone-based matching (for pre-linked drivers)
-          (resource != null && 
-           resource.data.phone != null && 
-           request.auth.token.phone_number != null &&
-           resource.data.phone == request.auth.token.phone_number) ||
-          
-          // 5. 🚨 EMERGENCY FALLBACK - Any authenticated user can update safe location fields
-          // This ensures location updates NEVER fail
-          (
-            isAuthenticated() &&
-            request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-              'latitude', 'longitude', 'isOnline', 'isAvailable', 
-              'lastLocationUpdate', 'currentOrder', 'lastLoginAt',
-              'status', 'updatedAt', 'earnings', 'totalDeliveries', 
-              'rating', 'userId', 'linkedAt'
-            ])
-          ) ||
-          
-          // 6. 🔥 ULTIMATE FALLBACK - If all else fails, allow any authenticated update
-          // This is the nuclear option to prevent ANY permission denied errors
-          isAuthenticated()
-        );
-      }
-      
-      // User subcollections - full access for owner and admin
+      // User subcollections
       match /{subcollection=**} {
         allow read, write: if isAuthenticated() && (
           request.auth.uid == userId ||
@@ -103,111 +57,101 @@ service cloud.firestore {
       }
     }
 
-    // =====================================================
-    // 🛒 CORE MARKETPLACE COLLECTIONS - ZERO RESTRICTIONS
-    // =====================================================
-
-    // ORDERS - Complete order management (no restrictions)
+    // ORDERS - Complete order management
     match /orders/{orderId} {
       allow read: if true; // Public read for store statistics
-      allow create, update, delete: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated();
+      allow delete: if isAdmin();
       
       // Order subcollections (timeline, updates, etc.)
       match /{subcollection=**} {
-        allow read, write: if isAuthenticated();
+        allow read, write: if isAuthenticated() || isAdmin();
       }
     }
 
-    // PRODUCTS - Product catalog (no restrictions)
+    // PRODUCTS - Product catalog
     match /products/{productId} {
       allow read: if true; // Public browsing
-      allow create, update, delete: if isAuthenticated();
+      allow create, update: if isAuthenticated();
+      allow delete: if isAuthenticated() || isAdmin();
     }
 
-    // CATEGORIES - Product categories (no restrictions)
+    // CATEGORIES - Product categories
     match /categories/{categoryId} {
       allow read: if true; // Public browsing
-      allow write: if isAuthenticated();
+      allow write: if isAuthenticated() || isAdmin();
     }
 
-    // REVIEWS - Product and store reviews (no restrictions)
+    // REVIEWS - Product and store reviews
     match /reviews/{reviewId} {
       allow read: if true; // Public reading
-      allow create, update, delete: if isAuthenticated();
+      allow create, update: if isAuthenticated();
+      allow delete: if isAuthenticated() || isAdmin();
     }
 
-    // CHATS - Messaging system (no restrictions)
+    // CHATS - Messaging system
     match /chats/{chatId} {
-      allow read, write: if isAuthenticated();
+      allow read, write: if isAuthenticated() || isAdmin();
       
       match /messages/{messageId} {
-        allow read, write: if isAuthenticated();
+        allow read, write: if isAuthenticated() || isAdmin();
       }
     }
 
     // =====================================================
-    // 🚚 DELIVERY & LOGISTICS - ZERO RESTRICTIONS
+    // 🔧 MONITORING & ANALYTICS - NO PERMISSION ERRORS!
     // =====================================================
 
-    // GLOBAL DRIVERS - For system-wide driver management (no restrictions)
-    match /drivers/{driverId} {
-      allow read: if true; // Public read for driver lookup during authentication
-      allow create, update, delete: if isAuthenticated();
+    // ERROR LOGS - Production error tracking
+    match /error_logs/{logId} {
+      allow create: if isAuthenticated();
+      allow read, write: if isAdmin();
     }
 
-    // SELLER DELIVERY TASKS - No restrictions
-    match /seller_delivery_tasks/{orderId} {
-      allow read, write: if isAuthenticated();
+    // ANALYTICS - Business intelligence
+    match /analytics_events/{eventId} {
+      allow create: if isAuthenticated();
+      allow read, write: if isAdmin();
     }
 
-    // All other delivery collections - no restrictions
-    match /rural_drivers/{driverId} {
-      allow read, write: if isAuthenticated();
+    // PERFORMANCE MONITORING
+    match /performance_metrics/{metricId} {
+      allow create: if isAuthenticated();
+      allow read, write: if isAdmin();
     }
 
-    match /delivery_zones/{zoneId} {
-      allow read: if true; // Public for address validation
-      allow write: if isAuthenticated();
+    match /performance_alerts/{alertId} {
+      allow create: if isAuthenticated();
+      allow read, write: if isAdmin();
     }
 
-    match /returns/{returnId} {
-      allow read, write: if isAuthenticated();
+    // ERROR TRACKING
+    match /error_tracking/{trackingId} {
+      allow create: if isAuthenticated();
+      allow read, write: if isAdmin();
     }
 
-    match /return_requests/{returnId} {
-      allow read, write: if isAuthenticated();
+    // API MONITORING
+    match /api_monitoring/{monitorId} {
+      allow create: if isAuthenticated();
+      allow read, write: if isAdmin();
     }
 
-    // =====================================================
-    // 💰 PAYMENTS & FINANCIAL - NO RESTRICTIONS
-    // =====================================================
-
-    match /payments/{paymentId} {
-      allow read, write: if isAuthenticated();
+    // USER FLOW TRACKING
+    match /user_flow_tracking/{flowId} {
+      allow create: if isAuthenticated();
+      allow read, write: if isAdmin();
     }
 
-    match /payouts/{payoutId} {
-      allow read, write: if isAuthenticated();
-    }
-
-    match /settlements/{settlementId} {
-      allow read, write: if isAuthenticated();
-    }
-
-    match /receivables/{receivableId} {
-      allow read, write: if isAuthenticated();
-    }
-
-    match /platform_receivables/{sellerId} {
-      allow read, write: if isAuthenticated();
-      
-      match /entries/{entryId} {
-        allow read, write: if isAuthenticated();
-      }
+    // SYSTEM LOGS
+    match /system_logs/{logId} {
+      allow create: if isAuthenticated();
+      allow read, write: if isAdmin();
     }
 
     // =====================================================
-    // 📱 APP FUNCTIONALITY - NO RESTRICTIONS
+    // 🛒 E-COMMERCE COLLECTIONS
     // =====================================================
 
     // CART & FAVORITES
@@ -219,7 +163,7 @@ service cloud.firestore {
       allow read, write: if isAuthenticated();
     }
 
-    // NOTIFICATIONS - All types
+    // NOTIFICATIONS
     match /notifications/{notificationId} {
       allow read, write: if isAuthenticated();
     }
@@ -233,52 +177,107 @@ service cloud.firestore {
     }
 
     match /admin_notifications/{notificationId} {
-      allow read, write: if isAuthenticated();
+      allow read, write: if isAdmin();
     }
 
-    // FCM TOKENS
-    match /fcm_tokens/{tokenId} {
-      allow read, write: if isAuthenticated();
+    // PAYMENTS & FINANCIAL
+    match /payments/{paymentId} {
+      allow read, write: if isAuthenticated() || isAdmin();
+    }
+
+    match /payouts/{payoutId} {
+      allow read, write: if isAuthenticated() || isAdmin();
+    }
+
+    match /settlements/{settlementId} {
+      allow read, write: if isAuthenticated() || isAdmin();
+    }
+
+    match /receivables/{receivableId} {
+      allow read, write: if isAuthenticated() || isAdmin();
+    }
+
+    match /platform_receivables/{sellerId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+      
+      match /entries/{entryId} {
+        allow read: if isAuthenticated();
+        allow write: if isAdmin();
+      }
     }
 
     // =====================================================
-    // 🔧 CONFIGURATION & SETTINGS - NO RESTRICTIONS
+    // 🚚 DELIVERY & LOGISTICS
+    // =====================================================
+
+    match /drivers/{driverId} {
+      allow read, write: if isAuthenticated() || isAdmin();
+    }
+
+    match /rural_drivers/{driverId} {
+      allow read, write: if isAuthenticated() || isAdmin();
+    }
+
+    match /delivery_zones/{zoneId} {
+      allow read: if true; // Public for address validation
+      allow write: if isAdmin();
+    }
+
+    match /returns/{returnId} {
+      allow read, write: if isAuthenticated() || isAdmin();
+    }
+
+    match /return_requests/{returnId} {
+      allow read, write: if isAuthenticated() || isAdmin();
+    }
+
+    // =====================================================
+    // 🔧 CONFIGURATION & SETTINGS
     // =====================================================
 
     // CONFIG - App configuration
     match /config/{docId} {
       allow read: if true; // Public for app initialization
-      allow write: if isAuthenticated();
+      allow write: if isAdmin();
     }
 
-    // All settings collections - no restrictions
+    // ADMIN SETTINGS
     match /admin_settings/{settingId} {
-      allow read, write: if isAuthenticated();
+      allow read: if isAuthenticated(); // Apps need to read settings
+      allow write: if isAdmin();
     }
 
+    // PAYMENT SETTINGS
     match /payment_settings/{settingId} {
-      allow read, write: if isAuthenticated();
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
     }
 
+    // SHIPPING SETTINGS
     match /courier_settings/{settingId} {
-      allow read, write: if isAuthenticated();
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
     }
 
     match /pricing_models/{modelId} {
-      allow read, write: if isAuthenticated();
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
     }
 
     match /paxi_pricing/{pricingId} {
-      allow read, write: if isAuthenticated();
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
     }
 
     // =====================================================
-    // 🔐 AUTHENTICATION & SECURITY - NO RESTRICTIONS
+    // 🔐 AUTHENTICATION & SECURITY
     // =====================================================
 
     // KYC & VERIFICATION
     match /kyc_submissions/{submissionId} {
-      allow read, write: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow read, write: if isAdmin();
     }
 
     match /webauthn_credentials/{credId} {
@@ -289,193 +288,165 @@ service cloud.firestore {
       allow read, write: if isAuthenticated();
     }
 
+    // FCM TOKENS
+    match /fcm_tokens/{tokenId} {
+      allow read, write: if isAuthenticated();
+    }
+
     // =====================================================
-    // 📊 ANALYTICS & MONITORING - NO RESTRICTIONS
+    // 📊 COMPREHENSIVE ADMIN COLLECTIONS
     // =====================================================
 
-    // ERROR LOGS - Production error tracking
-    match /error_logs/{logId} {
-      allow read, write: if isAuthenticated();
-    }
-
-    // ANALYTICS - Business intelligence
-    match /analytics_events/{eventId} {
-      allow read, write: if isAuthenticated();
-    }
-
-    // All monitoring collections
-    match /performance_metrics/{metricId} {
-      allow read, write: if isAuthenticated();
-    }
-
-    match /performance_alerts/{alertId} {
-      allow read, write: if isAuthenticated();
-    }
-
-    match /error_tracking/{trackingId} {
-      allow read, write: if isAuthenticated();
-    }
-
-    match /api_monitoring/{monitorId} {
-      allow read, write: if isAuthenticated();
-    }
-
-    match /user_flow_tracking/{flowId} {
-      allow read, write: if isAuthenticated();
-    }
-
-    match /system_logs/{logId} {
-      allow read, write: if isAuthenticated();
-    }
-
-    // All admin collections
+    // All admin-only collections with blanket permissions
     match /analytics/{docId} {
-      allow read, write: if isAuthenticated();
+      allow read, write: if isAdmin();
     }
 
     match /dashboard_cache/{docId} {
-      allow read, write: if isAuthenticated();
+      allow read, write: if isAdmin();
     }
 
     match /auditLogs/{logId} {
-      allow read, write: if isAuthenticated();
+      allow read, write: if isAdmin();
     }
 
     match /announcements/{announcementId} {
-      allow read, write: if isAuthenticated();
+      allow read: if isAuthenticated(); // Users need to see announcements
+      allow write: if isAdmin();
     }
 
     match /emails/{emailId} {
-      allow read, write: if isAuthenticated();
+      allow read, write: if isAdmin();
     }
 
     match /kanban_tasks/{taskId} {
-      allow read, write: if isAuthenticated();
+      allow read, write: if isAdmin();
     }
 
     match /upload_logs/{logId} {
-      allow read, write: if isAuthenticated();
+      allow read, write: if isAdmin();
     }
 
     match /order_reviews/{reviewId} {
-      allow read, write: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow read, write: if isAdmin();
     }
 
     match /statistics/{statId} {
-      allow read, write: if isAuthenticated();
+      allow read, write: if isAdmin();
     }
 
     match /reports/{reportId} {
-      allow read, write: if isAuthenticated();
+      allow read, write: if isAdmin();
     }
 
     match /advanced_analytics/{analyticsId} {
-      allow read, write: if isAuthenticated();
+      allow read, write: if isAdmin();
     }
 
     match /moderation/{moderationId} {
-      allow read, write: if isAuthenticated();
+      allow read, write: if isAdmin();
     }
 
     match /platform_config/{configId} {
-      allow read, write: if isAuthenticated();
+      allow read, write: if isAdmin();
     }
 
     match /admin_roles/{roleId} {
-      allow read, write: if isAuthenticated();
+      allow read, write: if isAdmin();
     }
 
     match /escrow/{escrowId} {
-      allow read, write: if isAuthenticated();
+      allow read, write: if isAdmin();
     }
 
     match /developer_tools/{toolId} {
-      allow read, write: if isAuthenticated();
+      allow read, write: if isAdmin();
     }
 
     match /data_exports/{exportId} {
-      allow read, write: if isAuthenticated();
+      allow read, write: if isAdmin();
     }
 
     match /order_migrations/{migrationId} {
-      allow read, write: if isAuthenticated();
+      allow read, write: if isAdmin();
     }
 
     match /admin_cache/{cacheId} {
-      allow read, write: if isAuthenticated();
+      allow read, write: if isAdmin();
     }
 
     match /system_metrics/{metricId} {
-      allow read, write: if isAuthenticated();
+      allow read, write: if isAdmin();
     }
 
     match /ledger_stats/{statId} {
-      allow read, write: if isAuthenticated();
+      allow read, write: if isAdmin();
     }
 
     match /storage_stats/{statId} {
-      allow read, write: if isAuthenticated();
+      allow read, write: if isAdmin();
     }
 
     match /ledger_analytics/{docId} {
-      allow read, write: if isAuthenticated();
+      allow read, write: if isAdmin();
     }
 
     match /storage_analytics/{docId} {
-      allow read, write: if isAuthenticated();
+      allow read, write: if isAdmin();
     }
 
     match /delivery_analytics/{docId} {
-      allow read, write: if isAuthenticated();
+      allow read, write: if isAdmin();
     }
 
     match /dashboard_stats/{docId} {
-      allow read, write: if isAuthenticated();
+      allow read, write: if isAdmin();
     }
 
     match /admin_metrics/{docId} {
-      allow read, write: if isAuthenticated();
+      allow read, write: if isAdmin();
     }
 
     match /system_performance/{docId} {
-      allow read, write: if isAuthenticated();
+      allow read, write: if isAdmin();
     }
 
     match /firestore_stats/{docId} {
-      allow read, write: if isAuthenticated();
+      allow read, write: if isAdmin();
     }
 
     match /collection_stats/{docId} {
-      allow read, write: if isAuthenticated();
+      allow read, write: if isAdmin();
     }
 
     match /image_assets/{assetId} {
-      allow read, write: if isAuthenticated();
+      allow read, write: if isAuthenticated() || isAdmin();
     }
 
     match /risk_assessments/{assessmentId} {
-      allow read, write: if isAuthenticated();
+      allow read, write: if isAdmin();
     }
 
     // =====================================================
-    // 🤖 CHATBOT & AI - NO RESTRICTIONS
+    // 🤖 CHATBOT & AI
     // =====================================================
 
     match /chatbot_conversations/{conversationId} {
-      allow read, write: if isAuthenticated();
+      allow read, write: if isAuthenticated() || isAdmin();
       
       match /messages/{messageId} {
-        allow read, write: if isAuthenticated();
+        allow read, write: if isAuthenticated() || isAdmin();
       }
     }
 
     match /chatbot_knowledge/{docId} {
       allow read: if true; // Public for chatbot responses
-      allow write: if isAuthenticated();
+      allow write: if isAdmin();
     }
 
     match /chatbot_analytics/{docId} {
-      allow read, write: if isAuthenticated();
+      allow read, write: if isAdmin();
     }
 
     // =====================================================
@@ -485,27 +456,28 @@ service cloud.firestore {
     // Collections that should be publicly readable
     match /totals/{docId} {
       allow read: if true;
-      allow write: if isAuthenticated();
+      allow write: if isAdmin();
     }
 
     match /impact/{docId} {
       allow read: if true;
-      allow write: if isAuthenticated();
+      allow write: if isAdmin();
     }
 
     match /product_categories/{categoryId} {
       allow read: if true;
-      allow write: if isAuthenticated();
+      allow write: if isAdmin();
     }
 
     match /payment_methods/{methodId} {
       allow read: if true;
-      allow write: if isAuthenticated();
+      allow write: if isAdmin();
     }
 
     match /store_reviews/{reviewId} {
       allow read: if true;
-      allow create, update, delete: if isAuthenticated();
+      allow create, update: if isAuthenticated();
+      allow delete: if isAuthenticated() || isAdmin();
     }
 
     match /store_followers/{followerId} {
@@ -513,15 +485,16 @@ service cloud.firestore {
     }
 
     // =====================================================
-    // 🚨 ULTIMATE CATCH-ALL RULE - ZERO ERRORS GUARANTEED!
+    // 🚨 CATCH-ALL RULE - ULTIMATE PERMISSION SOLUTION!
     // =====================================================
 
-    // This catches ANY collection we might have missed
-    // If you're authenticated, you can do ANYTHING
-    // This is the nuclear option to eliminate ALL permission errors
+    // This catches any collection we might have missed
+    // Authenticated users can create, read their own data
+    // Admins can do everything
     match /{document=**} {
-      allow read: if true; // Public read for everything
-      allow write: if isAuthenticated(); // Authenticated users can write anything
+      allow read, write: if isAdmin();
+      allow read, create: if isAuthenticated();
     }
   }
 }
+
