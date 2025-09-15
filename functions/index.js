@@ -367,6 +367,10 @@ exports.payfastNotify = functions.https.onRequest(async (req, res) => {
       } catch (e) {
         console.warn('notify on paid error', e);
       }
+      
+      // WhatsApp notification will be handled client-side when user views order tracking
+      // (wa.me URLs can only be opened from client-side, not server-side)
+      console.log('[payfastNotify] Order confirmed - WhatsApp notification will be sent when user views order tracking');
     }
     res.status(200).send('ok');
   } catch (e) {

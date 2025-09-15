@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../providers/cart_provider.dart';
 import '../theme/app_theme.dart';
 import '../utils/order_utils.dart';
@@ -344,21 +345,48 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
     if (!isPaid) return;
     final phone = (data['buyerPhone'] as String?)?.trim();
     if (phone == null || phone.isEmpty) return;
-    String e164 = phone.replaceAll(RegExp(r'[^\d+]'), '');
-    if (!e164.startsWith('+')) {
-      if (e164.startsWith('0')) e164 = e164.substring(1);
-      e164 = '+27$e164';
+    
+    // Use FREE wa.me method instead of paid Business API
+    String cleanPhone = phone.replaceAll(RegExp(r'[^\d+]'), '');
+    if (cleanPhone.startsWith('0')) {
+      cleanPhone = '27${cleanPhone.substring(1)}';
+    } else if (!cleanPhone.startsWith('27')) {
+      cleanPhone = '27$cleanPhone';
     }
+    
     final orderNo = (data['orderNumber'] as String?) ?? (data['orderId'] as String?) ?? widget.orderId;
     final formattedOrderNo = OrderUtils.formatOrderNumber(orderNo);
-    final ok = await WhatsAppCloudService.instance.sendTemplate(
-      toE164: e164,
-      templateName: const String.fromEnvironment('WA_TMPL_ORDER_CONFIRMED', defaultValue: 'order_confirmed'),
-      language: 'en',
-      parameters: [formattedOrderNo],
-    );
-    if (ok) {
-      _waNotified = true;
+    
+    // Create order confirmation message
+    final message = '''🎉 *Order Confirmed!*
+
+Hi! Your OmniaSA order is confirmed:
+
+📋 *Order:* #$formattedOrderNo
+🏪 *Store:* OmniaSA Store  
+💰 *Payment:* Received successfully
+
+📱 Track your order: https://www.omniasa.co.za/track/$orderNo
+
+Need help? Reply to this message!
+
+*OmniaSA - Your Local Marketplace* 🇿🇦''';
+
+    // Use FREE wa.me URL
+    final encodedMessage = Uri.encodeComponent(message);
+    final waMeUrl = 'https://wa.me/$cleanPhone?text=$encodedMessage';
+    
+    try {
+      final uri = Uri.parse(waMeUrl);
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+        _waNotified = true;
+        print('✅ WhatsApp notification sent via wa.me');
+      } else {
+        print('❌ Cannot launch WhatsApp URL');
+      }
+    } catch (e) {
+      print('❌ Error launching WhatsApp: $e');
     }
   }
 
