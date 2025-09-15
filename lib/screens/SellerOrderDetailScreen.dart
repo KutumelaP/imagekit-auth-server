@@ -4,6 +4,7 @@ import 'package:cloud_functions/cloud_functions.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
+import 'dart:math' as math;
 import '../theme/app_theme.dart';
 import '../services/firebase_admin_service.dart';
 import '../utils/order_utils.dart';
@@ -1585,9 +1586,10 @@ class _SellerOrderDetailScreenState extends State<SellerOrderDetailScreen>
                 return 0;
               }
               
-              final int current = productData.containsKey('stock')
-                ? resolveStock(productData['stock'])
-                : resolveStock(productData['quantity']);
+              // Use the same logic as UI - take the maximum of both fields
+              final int stockValue = resolveStock(productData['stock'] ?? 0);
+              final int quantityValue = resolveStock(productData['quantity'] ?? 0);
+              final int current = math.max(stockValue, quantityValue);
               
               // Check if we have enough stock
               if (current < qty) {
@@ -1653,17 +1655,19 @@ class _SellerOrderDetailScreenState extends State<SellerOrderDetailScreen>
                 return 0;
               }
               
-              final int current = productData.containsKey('stock')
-                ? resolveStock(productData['stock'])
-                : resolveStock(productData['quantity']);
+              // Use the same logic as UI - take the maximum of both fields
+              final int stockValue = resolveStock(productData['stock'] ?? 0);
+              final int quantityValue = resolveStock(productData['quantity'] ?? 0);
+              final int current = math.max(stockValue, quantityValue);
               
               final int next = (current - qty).clamp(0, 1 << 31);
               
-              // Update the appropriate stock field
+              // Update both stock fields if they exist (keep them synchronized)
               if (productData.containsKey('stock')) {
                 batch.update(productRef, {'stock': next});
                 print('📦 Reducing stock for ${productData['name'] ?? productId}: $current → $next (qty: $qty)');
-              } else if (productData.containsKey('quantity')) {
+              }
+              if (productData.containsKey('quantity')) {
                 batch.update(productRef, {'quantity': next});
                 print('📦 Reducing quantity for ${productData['name'] ?? productId}: $current → $next (qty: $qty)');
               }

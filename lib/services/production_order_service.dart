@@ -505,7 +505,7 @@ class ProductionOrderService {
     // Generate unique EFT reference
     final reference = 'OMN${orderId.substring(3, 8)}';
 
-    // Load bank details from admin settings
+    // Load bank details from platform settings (where EFT details are actually stored)
     Map<String, dynamic> bank = {
       'bank': 'FNB',
       'account': '62841234567',
@@ -515,21 +515,25 @@ class ProductionOrderService {
     };
 
     try {
-      final adminDoc = await _firestore.collection('admin_settings').doc('payment_settings').get();
-      if (adminDoc.exists) {
-        final d = adminDoc.data() ?? {};
-        final adminBank = (d['eftBankDetails'] ?? d['bankDetails'] ?? {}) as Map<String, dynamic>;
+      // Look in the correct location: config/platform (Platform Settings)
+      final platformDoc = await _firestore.collection('config').doc('platform').get();
+      if (platformDoc.exists) {
+        final data = platformDoc.data() ?? {};
+        // Use the EFT fields from Platform Settings
         bank = {
-          'bank': (adminBank['bank'] ?? bank['bank']).toString(),
-          'account': (adminBank['account'] ?? adminBank['accountNumber'] ?? bank['account']).toString(),
-          'branch': (adminBank['branch'] ?? adminBank['branchCode'] ?? bank['branch']).toString(),
-          'accountHolder': (adminBank['accountHolder'] ?? adminBank['accountName'] ?? bank['accountHolder']).toString(),
+          'bank': (data['eftBankName'] ?? bank['bank']).toString(),
+          'account': (data['eftAccountNumber'] ?? bank['account']).toString(),
+          'branch': (data['eftBranchCode'] ?? bank['branch']).toString(),
+          'accountHolder': (data['eftAccountName'] ?? bank['accountHolder']).toString(),
           'reference': reference,
         };
+        print('✅ Loaded EFT bank details from Platform Settings: ${bank['bank']} - ${bank['account']}');
+      } else {
+        print('⚠️ Platform settings document not found, using fallback bank details');
       }
     } catch (e) {
       // Fallback to defaults on error
-      print('⚠️ Could not load admin EFT bank details: $e');
+      print('⚠️ Could not load platform EFT bank details: $e');
     }
 
     return {

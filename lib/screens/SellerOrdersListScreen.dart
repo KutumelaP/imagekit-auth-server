@@ -1661,17 +1661,19 @@ class _SellerOrdersListScreenState extends State<SellerOrdersListScreen>
                               return 0;
                             }
                             
-                            final int current = productData.containsKey('stock')
-                              ? resolveStock(productData['stock'])
-                              : resolveStock(productData['quantity']);
+                            // Use the same logic as UI - take the maximum of both fields
+                            final int stockValue = resolveStock(productData['stock'] ?? 0);
+                            final int quantityValue = resolveStock(productData['quantity'] ?? 0);
+                            final int current = math.max(stockValue, quantityValue);
                             
                             final int next = (current - qty).clamp(0, 1 << 31);
                             
-                            // Update the appropriate stock field
+                            // Update both stock fields if they exist (keep them synchronized)
                             if (productData.containsKey('stock')) {
                               batch.update(productRef, {'stock': next});
                               print('📦 Reducing stock for ${productData['name'] ?? productId}: $current → $next (qty: $qty)');
-                            } else if (productData.containsKey('quantity')) {
+                            }
+                            if (productData.containsKey('quantity')) {
                               batch.update(productRef, {'quantity': next});
                               print('📦 Reducing quantity for ${productData['name'] ?? productId}: $current → $next (qty: $qty)');
                             }

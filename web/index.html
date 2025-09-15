@@ -366,13 +366,27 @@
     function hideOverlay(el){ el.style.display='none'; el.style.visibility='hidden'; el.style.pointerEvents='none'; }
 
     (function(){
+      function isPaymentRoute(){
+        try{
+          var h = location.hash || '';
+          return h.indexOf('/paymentWebview') !== -1;
+        }catch(e){ return false; }
+      }
       function hideOverlays(){
         var gate=document.getElementById('ios-pwa-gate');
-        // Don't hide the banner - let it show by default
+        var banner=document.getElementById('pwa-suggestion-banner');
+        // Always hide on payment route to avoid covering the gateway
+        if(isPaymentRoute()){
+          if(gate) hideOverlay(gate);
+          if(banner) hideOverlay(banner);
+          return;
+        }
+        // Otherwise, keep default: hide gate unless explicitly shown
         if(gate && !window.__forceShowPwaGate) hideOverlay(gate);
       }
       document.addEventListener('DOMContentLoaded', hideOverlays);
       window.addEventListener('load', hideOverlays);
+      window.addEventListener('hashchange', hideOverlays);
     })();
 
     // Show banner after Flutter app loads (after splash screen) - for both iOS and Android
@@ -418,6 +432,7 @@
     }
 
     function showBanner() {
+      if ((location.hash||'').indexOf('/paymentWebview') !== -1) return; // Never show on payment
       let banner = document.getElementById('pwa-suggestion-banner');
       if (banner) {
         updateBannerButton(); // Update button text based on platform
@@ -435,7 +450,7 @@
       const dismissed = sessionStorage.getItem('pwa_reminder_dismissed') === '1';
       const never = localStorage.getItem('pwa_banner_never') === '1';
 
-      if ((isIOS || isAndroid) && !isStandalone && !dismissed && !never) {
+      if ((isIOS || isAndroid) && !isStandalone && !dismissed && !never && (location.hash||'').indexOf('/paymentWebview') === -1) {
         setTimeout(()=>{
           let gate = document.getElementById('ios-pwa-gate');
           if (gate) { 

@@ -1,4 +1,4 @@
-package com.example.food_marketplace_app
+package com.omniasa.marketplace
 
 import io.flutter.embedding.android.FlutterFragmentActivity
 

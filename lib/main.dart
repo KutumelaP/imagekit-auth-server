@@ -30,6 +30,7 @@ import 'screens/login_screen.dart';
 import 'screens/CartScreen.dart';
 // Removed legacy CheckoutScreen import; using CheckoutV2Screen
 import 'screens/OrderHistoryScreen.dart';
+import 'screens/OrderTrackingScreen.dart';
 import 'screens/ProfileEditScreen.dart';
 import 'screens/AdminReviewModerationScreen.dart';
 import 'screens/CacheManagementScreen.dart';
@@ -46,7 +47,6 @@ import 'screens/PaymentSuccessScreen.dart';
 import 'screens/stunning_product_browser.dart';
 import 'screens/store_page.dart';
 import 'screens/web_desktop_block_screen.dart';
-import 'screens/admin_redirect_screen.dart';
 // payment webview route is generated dynamically; screen imported above
 
 import 'dart:async';
@@ -187,7 +187,6 @@ class MyApp extends StatelessWidget {
           '/cart': (context) => const CartScreen(),
           '/order-history': (context) => OrderHistoryScreen(),
           '/profile': (context) => ProfileEditScreen(),
-          '/admin': (context) => const AdminRedirectScreen(),
           '/admin-review-moderation': (context) => AdminReviewModerationScreen(),
           '/cache-management': (context) => CacheManagementScreen(),
           '/my-products': (context) => SellerProductManagement(),
@@ -283,6 +282,23 @@ class MyApp extends StatelessWidget {
                 ),
               ];
             }
+            
+            // NEW: Handle #/track/:orderId on initial load
+            if (hashRoute.startsWith('/track/')) {
+              final orderId = hashRoute.substring('/track/'.length);
+              if (kDebugMode) {
+                print('🔗 INITIAL HASH ROUTE: Handling track route: $hashRoute');
+                print('🔗 INITIAL HASH ROUTE: Order ID: $orderId');
+              }
+              return [
+                MaterialPageRoute(
+                  builder: (_) => OrderTrackingScreen(orderId: orderId),
+                  settings: RouteSettings(name: initialRoute),
+                ),
+              ];
+            }
+            
+            // Existing: hash-based store handling continues below...
             
             // 🚀 NEW: Handle hash-based /stores route
             if (hashRoute.startsWith('/stores')) {
@@ -467,7 +483,40 @@ class MyApp extends StatelessWidget {
                 );
               }
             }
+            
+            // Handle hash-based tracking routes (like #/track/ORDER_ID)
+            if (hashRoute.startsWith('/track/')) {
+              final orderId = hashRoute.substring('/track/'.length);
+              if (kDebugMode) {
+                print('🔗 HASH ROUTE DEBUG: Handling hash track route: $hashRoute');
+                print('🔗 HASH ROUTE DEBUG: Order ID: $orderId');
+              }
+              if (orderId.isNotEmpty) {
+                return MaterialPageRoute(
+                  builder: (_) => OrderTrackingScreen(orderId: orderId),
+                  settings: RouteSettings(name: hashRoute),
+                );
+              }
+            }
           }
+          
+          // 🚀 PWA-FRIENDLY: Handle /track/:orderId routes for order tracking
+          if (settings.name != null && settings.name!.startsWith('/track/')) {
+            final orderId = settings.name!.substring('/track/'.length);
+            
+            if (kDebugMode) {
+              print('🔗 TRACK ROUTE DEBUG: Handling track route: ${settings.name}');
+              print('🔗 TRACK ROUTE DEBUG: Order ID: $orderId');
+            }
+            
+            if (orderId.isNotEmpty) {
+              return MaterialPageRoute(
+                builder: (_) => OrderTrackingScreen(orderId: orderId),
+                settings: RouteSettings(name: settings.name),
+              );
+            }
+          }
+          
           if (settings.name == '/search') {
             return MaterialPageRoute(builder: (_) => const ProductSearchScreen());
           }
@@ -566,24 +615,58 @@ class _SplashWrapperState extends State<SplashWrapper> {
     
     // Check if we're already on a specific route (like /store/123)
     final currentRoute = ModalRoute.of(context)?.settings.name;
-    if (currentRoute != null && currentRoute.startsWith('/store/')) {
-      // We're already on a store route, don't redirect
-      if (kDebugMode) print('🔗 Already on store route: $currentRoute, skipping redirect');
+    if (currentRoute != null && (currentRoute.startsWith('/store/') || currentRoute.startsWith('/track/'))) {
+      if (kDebugMode) print('🔗 Already on deep route: $currentRoute, skipping redirect');
       return;
     }
     
-    // 🚀 NEW: Check URL hash for store routes before redirecting
+    // 🚀 Handle hash routes on first load (works on IIS without rewrites)
     if (kIsWeb) {
       try {
-        // Check if current URL contains a store route
+        final fragment = Uri.base.fragment; // text after '#'
+        if (kDebugMode) print('🔗 HASH FRAGMENT: "$fragment"');
+        
+        // #/track/:orderId
+        if (fragment.startsWith('/track/')) {
+          final orderId = fragment.substring('/track/'.length);
+          if (orderId.isNotEmpty) {
+            if (kDebugMode) print('🚚 Opening OrderTrackingScreen for $orderId via hash');
+            Future.delayed(const Duration(milliseconds: 50), () {
+              if (mounted) {
+                Navigator.of(context).pushReplacement(
+                  MaterialPageRoute(
+                    builder: (_) => OrderTrackingScreen(orderId: orderId),
+                  ),
+                );
+              }
+            });
+            return;
+          }
+        }
+        
+        // NEW: ?track=ORDER_ID fallback (works on any host)
+        final qpOrderId = Uri.base.queryParameters['track'];
+        if (qpOrderId != null && qpOrderId.isNotEmpty) {
+          if (kDebugMode) print('🚚 Opening OrderTrackingScreen for $qpOrderId via query ?track');
+          Future.delayed(const Duration(milliseconds: 50), () {
+            if (mounted) {
+              Navigator.of(context).pushReplacement(
+                MaterialPageRoute(
+                  builder: (_) => OrderTrackingScreen(orderId: qpOrderId),
+                ),
+              );
+            }
+          });
+          return;
+        }
+        
+        // Existing: detect store routes anywhere in the URL
         final url = Uri.base.toString();
         if (url.contains('/store/')) {
           final storeMatch = RegExp(r'/store/([^/#]+)').firstMatch(url);
           if (storeMatch != null) {
             final storeId = storeMatch.group(1);
             if (kDebugMode) print('🔗 URL contains store route: /store/$storeId');
-            
-            // Navigate to store instead of home
             Future.delayed(const Duration(milliseconds: 500), () {
               if (mounted) {
                 Navigator.of(context).pushReplacementNamed('/store/$storeId');
@@ -593,7 +676,7 @@ class _SplashWrapperState extends State<SplashWrapper> {
           }
         }
       } catch (e) {
-        if (kDebugMode) print('❌ Error checking URL for store routes: $e');
+        if (kDebugMode) print('❌ Error checking URL for hash/deep links: $e');
       }
     }
     

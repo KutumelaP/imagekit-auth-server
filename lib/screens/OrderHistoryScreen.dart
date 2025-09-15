@@ -8,6 +8,7 @@ import '../theme/app_theme.dart';
 import '../utils/order_utils.dart';
 import '../widgets/home_navigation_button.dart';
 import 'dart:math' as math;
+import '../widgets/live_delivery_tracking.dart';
 
 // Responsive utilities
 class ResponsiveUtils {
@@ -165,22 +166,32 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen>
 
   Future<void> _loadInitialOrders() async {
     if (_isLoading) return;
-    if (currentUser == null) return;
+    if (currentUser == null) {
+      print('🔍 DEBUG: OrderHistoryScreen - No current user, cannot load orders');
+      return;
+    }
+    print('🔍 DEBUG: OrderHistoryScreen - Loading orders for user: ${currentUser!.uid}');
     setState(() { _isLoading = true; _orders.clear(); _lastDoc = null; _hasMore = true; });
     try {
       Query q = FirebaseFirestore.instance
           .collection('orders')
           .where('buyerId', isEqualTo: currentUser!.uid)
-          .orderBy('timestamp', descending: true)
+          // .orderBy('timestamp', descending: true) // Temporarily removed for testing
           .limit(_pageSize);
+      print('🔍 DEBUG: OrderHistoryScreen - Executing query: collection(orders).where(buyerId == ${currentUser!.uid})');
       final snap = await q.get();
+      print('🔍 DEBUG: OrderHistoryScreen - Query result: ${snap.docs.length} orders found');
       if (snap.docs.isNotEmpty) {
         _orders.addAll(snap.docs);
         _lastDoc = snap.docs.last;
         _hasMore = snap.docs.length >= _pageSize;
+        print('🔍 DEBUG: OrderHistoryScreen - Added ${snap.docs.length} orders to list');
       } else {
         _hasMore = false;
+        print('🔍 DEBUG: OrderHistoryScreen - No orders found for this user');
       }
+    } catch (e) {
+      print('🔍 ERROR: OrderHistoryScreen - Failed to load orders: $e');
     } finally {
       if (mounted) setState(() { _isLoading = false; });
     }
@@ -194,11 +205,11 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen>
       Query q = FirebaseFirestore.instance
           .collection('orders')
           .where('buyerId', isEqualTo: currentUser!.uid)
-          .orderBy('timestamp', descending: true)
+          // .orderBy('timestamp', descending: true) // Temporarily removed for testing
           .limit(_pageSize);
-      if (_lastDoc != null) {
-        q = q.startAfter([_lastDoc!['timestamp']]);
-      }
+      // if (_lastDoc != null) {
+      //   q = q.startAfter([_lastDoc!['timestamp']]);
+      // }
       final snap = await q.get();
       if (snap.docs.isNotEmpty) {
         _orders.addAll(snap.docs);
@@ -218,6 +229,12 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen>
 
   Color _statusColor(String status) {
     return AppTheme.getStatusColor(status);
+  }
+
+  bool _shouldShowTrackingButton(String status) {
+    // Hide tracking for delivered, cancelled, or pending orders
+    final trackableStatuses = ['confirmed', 'preparing', 'ready', 'shipped', 'out_for_delivery', 'delivery_in_progress'];
+    return trackableStatuses.contains(status.toLowerCase());
   }
 
   IconData _statusIcon(String status) {
@@ -535,18 +552,23 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen>
     final displayOrderNumber = MediaQuery.of(context).size.width < 400
         ? OrderUtils.formatVeryShortOrderNumber(rawOrderNumber)
         : OrderUtils.formatShortOrderNumber(rawOrderNumber);
-    final timestamp = orderData['timestamp'] as Timestamp?;
-    final status = orderData['status'] ?? 'pending';
-    final totalPrice = (orderData['totalPrice'] as num?)?.toDouble() ?? 0.0;
+
+    // Resolve timestamp from multiple possible fields
+    final DateTime? resolvedTime = _resolveTimestamp(orderData);
+    final status = (orderData['status'] ?? 'pending').toString();
+
+    // Resolve totals from multiple possible fields
+    final double totalPrice = _resolveTotal(orderData);
+
     final items = orderData['items'] as List<dynamic>? ?? [];
     
     // Format date
-    final formattedDate = timestamp != null 
-        ? DateFormat('MMM dd, yyyy - HH:mm').format(timestamp.toDate())
+    final formattedDate = resolvedTime != null 
+        ? DateFormat('MMM dd, yyyy - HH:mm').format(resolvedTime)
         : 'Date not available';
     
     // Create product summary
-    final productNames = items.map((item) => item['name'] ?? 'Unknown Product').toList();
+    final productNames = items.map((item) => (item as Map<String, dynamic>)['name'] ?? 'Unknown Product').toList();
     final productSummary = productNames.isNotEmpty 
         ? productNames.join(', ')
         : 'No products listed';
@@ -560,23 +582,61 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen>
         horizontal: isSmallScreen ? 4.0 : 8.0,
       ),
       child: isSmallScreen
-          ? _buildVerticalLayout(orderId, displayOrderNumber, productSummary, formattedDate, itemCount, status, totalPrice)
-          : _buildHorizontalLayout(orderId, displayOrderNumber, productSummary, formattedDate, itemCount, status, totalPrice),
+          ? _buildVerticalLayout(orderId, orderData, displayOrderNumber, productSummary, formattedDate, itemCount, status, totalPrice)
+          : _buildHorizontalLayout(orderId, orderData, displayOrderNumber, productSummary, formattedDate, itemCount, status, totalPrice),
     );
   }
 
-  Widget _buildHorizontalLayout(String orderId, String displayOrderNumber, String productSummary, String formattedDate, int itemCount, String status, double totalPrice) {
+  DateTime? _resolveTimestamp(Map<String, dynamic> data) {
+    dynamic ts = data['timestamp'] ?? data['createdAt'] ?? data['paidAt'] ?? data['updatedAt'];
+    if (ts == null) return null;
+    if (ts is Timestamp) return ts.toDate();
+    if (ts is String) {
+      try { return DateTime.tryParse(ts); } catch (_) { return null; }
+    }
+    return null;
+  }
+
+  double _resolveTotal(Map<String, dynamic> data) {
+    final dynamic direct = data['totalPrice'] ?? data['grandTotal'] ?? data['total'];
+    if (direct is num) return direct.toDouble();
+    // nested pricing map
+    final pricing = data['pricing'];
+    if (pricing is Map<String, dynamic>) {
+      final gt = pricing['grandTotal'];
+      if (gt is num) return gt.toDouble();
+    }
+    return 0.0;
+  }
+
+  Widget _buildHorizontalLayout(String orderId, Map<String, dynamic> orderData, String displayOrderNumber, String productSummary, String formattedDate, int itemCount, String status, double totalPrice) {
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Colors.white,
+            Colors.grey.shade50,
+          ],
+        ),
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
+            color: Colors.black.withOpacity(0.08),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+          BoxShadow(
+            color: AppTheme.deepTeal.withOpacity(0.05),
+            blurRadius: 20,
+            offset: const Offset(0, 8),
           ),
         ],
+        border: Border.all(
+          color: AppTheme.deepTeal.withOpacity(0.1),
+          width: 1,
+        ),
       ),
       child: Material(
         color: Colors.transparent,
@@ -694,6 +754,60 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen>
                           color: AppTheme.deepTeal,
                         ),
                       ),
+                      const SizedBox(height: 8),
+                      // Only show tracking button for orders that can be tracked
+                      if (_shouldShowTrackingButton(status))
+                        SizedBox(
+                          height: 36,
+                          child: Container(
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                colors: [AppTheme.deepTeal, AppTheme.deepTeal.withOpacity(0.8)],
+                              ),
+                              borderRadius: BorderRadius.circular(8),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: AppTheme.deepTeal.withOpacity(0.3),
+                                  blurRadius: 4,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ],
+                            ),
+                            child: ElevatedButton.icon(
+                              onPressed: () {
+                                final fulfillment = (orderData['fulfillment'] as Map<String, dynamic>?) ?? {};
+                                final coords = (fulfillment['coordinates'] as Map<String, dynamic>?) ?? {};
+                                final address = (fulfillment['address'] as String?) ?? 'Delivery address';
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => LiveDeliveryTracking(
+                                      orderId: orderId,
+                                      deliveryAddress: address,
+                                      deliveryCoordinates: coords.isNotEmpty ? {
+                                        'lat': coords['lat'],
+                                        'lng': coords['lng'],
+                                        'accuracy': coords['accuracy'],
+                                      } : null,
+                                    ),
+                                  ),
+                                );
+                              },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.transparent,
+                                shadowColor: Colors.transparent,
+                                padding: const EdgeInsets.symmetric(horizontal: 10),
+                                visualDensity: VisualDensity.compact,
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                              ),
+                              icon: const Icon(Icons.local_shipping_outlined, size: 16, color: Colors.white),
+                              label: const Text(
+                                'Track',
+                                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.white),
+                              ),
+                            ),
+                          ),
+                        ),
                     ],
                   ),
                 ),
@@ -705,18 +819,34 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen>
     );
   }
 
-  Widget _buildVerticalLayout(String orderId, String displayOrderNumber, String productSummary, String formattedDate, int itemCount, String status, double totalPrice) {
+  Widget _buildVerticalLayout(String orderId, Map<String, dynamic> orderData, String displayOrderNumber, String productSummary, String formattedDate, int itemCount, String status, double totalPrice) {
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Colors.white,
+            Colors.grey.shade50,
+          ],
+        ),
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 6,
-            offset: const Offset(0, 2),
+            color: Colors.black.withOpacity(0.08),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+          BoxShadow(
+            color: AppTheme.deepTeal.withOpacity(0.05),
+            blurRadius: 16,
+            offset: const Offset(0, 6),
           ),
         ],
+        border: Border.all(
+          color: AppTheme.deepTeal.withOpacity(0.1),
+          width: 1,
+        ),
       ),
       child: Material(
         color: Colors.transparent,
@@ -842,6 +972,63 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen>
                     ),
                   ],
                 ),
+                const SizedBox(height: 8),
+                // Only show tracking button for orders that can be tracked
+                if (_shouldShowTrackingButton(status))
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: SizedBox(
+                      height: 34,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [AppTheme.deepTeal, AppTheme.deepTeal.withOpacity(0.8)],
+                          ),
+                          borderRadius: BorderRadius.circular(8),
+                          boxShadow: [
+                            BoxShadow(
+                              color: AppTheme.deepTeal.withOpacity(0.3),
+                              blurRadius: 4,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: ElevatedButton.icon(
+                          onPressed: () {
+                            final fulfillment = (orderData['fulfillment'] as Map<String, dynamic>?) ?? {};
+                            final coords = (fulfillment['coordinates'] as Map<String, dynamic>?) ?? {};
+                            final address = (fulfillment['address'] as String?) ?? 'Delivery address';
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => LiveDeliveryTracking(
+                                  orderId: orderId,
+                                  deliveryAddress: address,
+                                  deliveryCoordinates: coords.isNotEmpty ? {
+                                    'lat': coords['lat'],
+                                    'lng': coords['lng'],
+                                    'accuracy': coords['accuracy'],
+                                  } : null,
+                                ),
+                              ),
+                            );
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.transparent,
+                            shadowColor: Colors.transparent,
+                            padding: const EdgeInsets.symmetric(horizontal: 10),
+                            visualDensity: VisualDensity.compact,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          ),
+                          icon: const Icon(Icons.local_shipping_outlined, size: 16, color: Colors.white),
+                          label: const Text(
+                            'Track delivery',
+                            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.white),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
               ],
             ),
           ),

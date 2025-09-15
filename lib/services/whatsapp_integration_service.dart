@@ -239,7 +239,10 @@ Need help? Reply to this message!
 📞 *Driver Phone:* $driverPhone
 ⏰ *ETA:* $estimatedArrival
 
-📍 *Track live:* $trackingUrl
+📍 *How to track:*
+1) Open the OmniaSA app
+2) Go to Order History
+3) Tap "Track" on order #$orderId
 
 ${deliveryOTP != null ? '🔐 *Delivery OTP:* $deliveryOTP\n(Share this with the driver during delivery)\n' : '🔐 Have your OTP ready for delivery verification!'}
 

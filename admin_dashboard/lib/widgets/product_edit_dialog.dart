@@ -104,6 +104,7 @@ class _ProductEditDialogState extends State<ProductEditDialog> {
                 'category': _categoryController.text.trim(),
                 'price': double.tryParse(_priceController.text.trim()) ?? 0.0,
                 'stock': int.tryParse(_stockController.text.trim()) ?? 0,
+                'quantity': int.tryParse(_stockController.text.trim()) ?? 0, // Keep both fields synchronized
                 'sellerName': _sellerController.text.trim(),
                 'status': _status,
               });

@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
+import 'dart:math' as math;
 
 /// Service for batching Firestore operations to reduce network calls and improve performance
 class BatchOperationsService {
@@ -182,15 +183,18 @@ class BatchOperationsService {
         
         if (!hasExplicitStock) return; // No stock tracking
         
-        final currentStock = data.containsKey('stock')
-            ? _resolveQuantity(data['stock'])
-            : _resolveQuantity(data['quantity']);
+        // Use the same logic as UI - take the maximum of both fields
+        final int stockValue = _resolveQuantity(data['stock'] ?? 0);
+        final int quantityValue = _resolveQuantity(data['quantity'] ?? 0);
+        final int currentStock = math.max(stockValue, quantityValue);
         
-        final newStock = (currentStock - quantity).clamp(0, double.maxFinite.toInt());
+        final int newStock = (currentStock - quantity).clamp(0, double.maxFinite.toInt());
         
+        // Update both stock fields if they exist (keep them synchronized)
         if (data.containsKey('stock')) {
           transaction.update(productRef, {'stock': newStock});
-        } else {
+        }
+        if (data.containsKey('quantity')) {
           transaction.update(productRef, {'quantity': newStock});
         }
       });

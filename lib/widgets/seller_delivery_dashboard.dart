@@ -1490,7 +1490,7 @@ class _ConfirmDeliveryDialogState extends State<_ConfirmDeliveryDialog> {
                     .collection('users')
                     .doc(widget.sellerId)
                     .collection('drivers')
-                    .where('status', isEqualTo: 'active')
+                    .where('status', whereIn: ['active', 'available'])
                     .snapshots(),
                 builder: (context, snapshot) {
                   // 🚀 ENHANCED: Better debugging and error handling

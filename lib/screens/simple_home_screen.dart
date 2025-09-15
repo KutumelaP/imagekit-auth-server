@@ -1854,15 +1854,14 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
     // Show success message
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: const Row(
-          children: [
+        content: Row(
+          children: const [
             Icon(
               Icons.support_agent,
               color: Colors.white,
               size: 20,
             ),
             SizedBox(width: 8),
-            Text('Support options ready! Choose your preferred method.'),
           ],
         ),
         backgroundColor: AppTheme.deepTeal,

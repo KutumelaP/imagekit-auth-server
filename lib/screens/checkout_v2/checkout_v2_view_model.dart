@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -639,7 +640,7 @@ class CheckoutV2ViewModel extends ChangeNotifier {
             finalUrl = '$paymentUrl?$query';
           }
 
-          // Open WebView to complete payment
+          // Open payment page: on web use same tab (avoid blank WebView), on mobile use in-app WebView
           if (context.mounted) {
             // Debug: log the PayFast URL and expected return/cancel paths
             // Helps verify that we are using Cloud Functions endpoints
@@ -648,6 +649,26 @@ class CheckoutV2ViewModel extends ChangeNotifier {
             // Success/Cancel detection: contains 'payfastReturn' / 'payfastCancel'
             // ignore: avoid_print
             print('🧭 PAYFAST URL → '+finalUrl);
+            if (kIsWeb) {
+              // On web, navigate current window to the PayFast bridge URL
+              // so PayFast renders reliably without iframe/WebView issues.
+              // Also append a hash so our index.html can hide PWA overlays.
+              final payUrl = finalUrl.contains('#/paymentWebview')
+                  ? finalUrl
+                  : (finalUrl + (finalUrl.contains('#') ? '' : '#/paymentWebview'));
+              // ignore: use_build_context_synchronously
+              await Navigator.of(context).pushReplacementNamed('/');
+              // Use web-only navigation via `url_launcher` fallback
+              // but since we are on Flutter web, set window.location directly via `js` interop.
+              // ignore: undefined_prefixed_name
+              // This assignment will be no-op on non-web platforms.
+              // We keep it simple: open in same tab.
+              // dart:html is not available here; rely on `url_launcher` instead.
+              // ignore: deprecated_member_use
+              await launchUrl(Uri.parse(payUrl), mode: LaunchMode.platformDefault);
+              // No navResult on web flow
+              return Map<String, dynamic>.from(result);
+            }
             final navResult = await Navigator.of(context).pushNamed(
               '/paymentWebview',
               arguments: {
