@@ -143,7 +143,75 @@ class CheckoutV2ViewModel extends ChangeNotifier {
   
   void setCustomerPhone(String value) {
     customerPhone = value.trim().isEmpty ? null : value.trim();
+    print('🔍 DEBUG: setCustomerPhone called with: "$value" -> customerPhone: "$customerPhone"');
+    print('🔍 DEBUG: pudoDeliveryPhone current: "$pudoDeliveryPhone"');
+    
+    // Auto-populate PUDO phone if it's empty AND the phone number is complete (10 digits starting with 0)
+    if (customerPhone != null && 
+        customerPhone!.isNotEmpty && 
+        (pudoDeliveryPhone == null || pudoDeliveryPhone!.isEmpty) &&
+        _isCompleteLocalPhoneNumber(customerPhone!)) {
+      // Convert local format (0xx xxx xxxx) to PUDO format (6x xxx xxxx - without +27 prefix)
+      String pudoFormat = _convertToPudoFormat(customerPhone!);
+      print('🔍 DEBUG: Converting customer phone "$customerPhone" to PUDO format: "$pudoFormat"');
+      pudoDeliveryPhone = pudoFormat;
+    }
     notifyListeners();
+  }
+  
+  // Helper method to check if phone number is complete local format
+  bool _isCompleteLocalPhoneNumber(String phone) {
+    // Remove all non-digits
+    String cleaned = phone.replaceAll(RegExp(r'[^\d]'), '');
+    print('🔍 DEBUG: _isCompleteLocalPhoneNumber input: "$phone" -> cleaned: "$cleaned"');
+    
+    // Check if it's a complete local phone number (10 digits starting with 0)
+    bool isComplete = cleaned.startsWith('0') && cleaned.length == 10;
+    print('🔍 DEBUG: _isCompleteLocalPhoneNumber result: $isComplete');
+    return isComplete;
+  }
+  
+  // Helper method to convert international format to local format
+  String _convertToLocalFormat(String internationalPhone) {
+    // Remove all non-digits
+    String cleaned = internationalPhone.replaceAll(RegExp(r'[^\d]'), '');
+    
+    // Convert +27 6x xxx xxxx to 0xx xxx xxxx
+    if (cleaned.startsWith('27') && cleaned.length == 11) {
+      return '0${cleaned.substring(2)}';
+    }
+    
+    return internationalPhone; // Return as-is if no conversion needed
+  }
+  
+  // Helper method to convert local format to PUDO format (without +27 prefix)
+  String _convertToPudoFormat(String localPhone) {
+    // Remove all non-digits
+    String cleaned = localPhone.replaceAll(RegExp(r'[^\d]'), '');
+    print('🔍 DEBUG: _convertToPudoFormat input: "$localPhone" -> cleaned: "$cleaned"');
+    
+    // Convert 0xx xxx xxxx to 6x xxx xxxx (without +27 prefix)
+    if (cleaned.startsWith('0') && cleaned.length == 10) {
+      String result = cleaned.substring(1); // Remove the 0, keep the rest
+      print('🔍 DEBUG: _convertToPudoFormat result: "$result"');
+      return result;
+    }
+    
+    print('🔍 DEBUG: _convertToPudoFormat no conversion needed, returning: "$localPhone"');
+    return localPhone; // Return as-is if no conversion needed
+  }
+  
+  // Helper method to convert local format to international format
+  String _convertToInternationalFormat(String localPhone) {
+    // Remove all non-digits
+    String cleaned = localPhone.replaceAll(RegExp(r'[^\d]'), '');
+    
+    // Convert 0xx xxx xxxx to +27 6x xxx xxxx
+    if (cleaned.startsWith('0') && cleaned.length == 10) {
+      return '+27${cleaned.substring(1)}';
+    }
+    
+    return localPhone; // Return as-is if no conversion needed
   }
 
   Future<void> computeFeesAndEta({required bool isUrbanArea, double? urbanFee}) async {
@@ -439,7 +507,33 @@ class CheckoutV2ViewModel extends ChangeNotifier {
   
   void setPudoDeliveryPhone(String? phone) {
     pudoDeliveryPhone = phone;
+    print('🔍 DEBUG: setPudoDeliveryPhone called with: "$phone" -> pudoDeliveryPhone: "$pudoDeliveryPhone"');
+    print('🔍 DEBUG: customerPhone current: "$customerPhone"');
+    
+    // Auto-populate customer phone if it's empty AND the PUDO phone is complete
+    if (phone != null && 
+        phone.isNotEmpty && 
+        (customerPhone == null || customerPhone!.isEmpty) &&
+        _isCompletePudoPhoneNumber(phone)) {
+      // Convert PUDO phone format (+27 6x xxx xxxx) to local format (0xx xxx xxxx)
+      String localFormat = _convertToLocalFormat(phone);
+      print('🔍 DEBUG: Converting PUDO phone "$phone" to customer format: "$localFormat"');
+      customerPhone = localFormat;
+    }
     notifyListeners();
+  }
+  
+  // Helper method to check if PUDO phone number is complete
+  bool _isCompletePudoPhoneNumber(String phone) {
+    // Remove all non-digits
+    String cleaned = phone.replaceAll(RegExp(r'[^\d]'), '');
+    print('🔍 DEBUG: _isCompletePudoPhoneNumber input: "$phone" -> cleaned: "$cleaned"');
+    
+    // Check if it's a complete PUDO phone number (9 digits starting with 6, 7, or 8)
+    bool isComplete = cleaned.length == 9 && 
+                     (cleaned.startsWith('6') || cleaned.startsWith('7') || cleaned.startsWith('8'));
+    print('🔍 DEBUG: _isCompletePudoPhoneNumber result: $isComplete');
+    return isComplete;
   }
   
   // Customer information setters (removed duplicates)

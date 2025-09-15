@@ -217,7 +217,9 @@ Hi! Your OmniaSA order is confirmed:
 🔐 *Delivery OTP:* $deliveryOTP
 (Share this with the driver during delivery)
 
-📱 Track your order: https://omniasa.co.za/track/$orderId
+📍 *For Store Pickup:* Go to the store with OTP $deliveryOTP / Order #$orderId for collection
+
+📱 Track your order: https://www.omniasa.co.za/track/$orderId
 
 Need help? Reply to this message!
 
@@ -260,6 +262,10 @@ ${deliveryOTP != null ? '🔐 *Delivery OTP:* $deliveryOTP\n(Share this with the
       '• ${item['name']} x${item['quantity']}'
     ).join('\n');
     
+    // Determine if this is store pickup or delivery
+    final isStorePickup = deliveryAddress.toLowerCase().contains('customer address') || 
+                         deliveryAddress.toLowerCase().contains('store pickup');
+    
     return '''🛒 *New Order Received!*
 
 📋 *Order:* #$orderId
@@ -269,9 +275,10 @@ ${deliveryOTP != null ? '🔐 *Delivery OTP:* $deliveryOTP\n(Share this with the
 📦 *Items:*
 $itemsList
 
-📍 *Delivery to:* $deliveryAddress
-
-⚡ Please prepare order for pickup/delivery
+${isStorePickup 
+  ? '📍 *Collection:* Customer will collect from store\n\n⚡ Please prepare order for store pickup'
+  : '📍 *Delivery to:* $deliveryAddress\n\n⚡ Please prepare order for delivery'
+}
 
 *OmniaSA Seller Dashboard* 🏪''';
   }

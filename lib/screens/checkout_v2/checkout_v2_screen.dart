@@ -1272,7 +1272,14 @@ class _PickupPointSelectorState extends State<_PickupPointSelector> {
                     child: InkWell(
                       borderRadius: BorderRadius.circular(20),
                       onTap: () {
-                        setState(() => _selectedType = 'paxi');
+                        setState(() {
+                          _selectedType = 'paxi';
+                          _nearbyPoints = [];
+                          _addressSuggestions = [];
+                          _isLoading = false;
+                        });
+                        // Clear any previously selected pickup point when switching to PAXI
+                        widget.vm.setSelectedPickupPoint(null);
                         _loadNearbyPoints();
                       },
                       child: Padding(
@@ -1502,40 +1509,47 @@ class _PickupPointSelectorState extends State<_PickupPointSelector> {
                         widget.vm.setSelectedPickupPoint(pickupPoint);
                       },
                       child: Padding(
-                        padding: EdgeInsets.all(10),
+                        padding: EdgeInsets.all(8),
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            AnimatedContainer(
-                              duration: Duration(milliseconds: 200),
-                              padding: EdgeInsets.all(6),
-                              decoration: BoxDecoration(
-                                color: _selectedType == 'store'
-                                    ? Colors.white.withOpacity(0.2)
-                                    : Color(0xFF1F4654).withOpacity(0.08),
-                                borderRadius: BorderRadius.circular(15),
-                              ),
-                              child: Icon(
-                                Icons.store,
-                                color: _selectedType == 'store' ? Colors.white : Color(0xFF1F4654),
-                                size: 22,
+                            Flexible(
+                              child: AnimatedContainer(
+                                duration: Duration(milliseconds: 200),
+                                padding: EdgeInsets.all(4),
+                                decoration: BoxDecoration(
+                                  color: _selectedType == 'store'
+                                      ? Colors.white.withOpacity(0.2)
+                                      : Color(0xFF1F4654).withOpacity(0.08),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Icon(
+                                  Icons.store,
+                                  color: _selectedType == 'store' ? Colors.white : Color(0xFF1F4654),
+                                  size: 18,
+                                ),
                               ),
                             ),
-                            SizedBox(height: 4),
-                            Text(
-                              'Store Pickup',
-                              style: TextStyle(
-                                color: _selectedType == 'store' ? Colors.white : Color(0xFF495057),
-                                fontWeight: FontWeight.w800,
-                                fontSize: 14,
-                                letterSpacing: 0.8,
+                            SizedBox(height: 2),
+                            Flexible(
+                              child: Text(
+                                'STORE',
+                                style: TextStyle(
+                                  color: _selectedType == 'store' ? Colors.white : Color(0xFF495057),
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 12,
+                                  letterSpacing: 0.5,
+                                ),
+                                textAlign: TextAlign.center,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
                               ),
                             ),
                             if (_selectedType == 'store')
                               Container(
                                 margin: EdgeInsets.only(top: 1),
-                                width: 20,
+                                width: 16,
                                 height: 2,
                                 decoration: BoxDecoration(
                                   color: Colors.white,
@@ -1657,13 +1671,6 @@ class _PickupPointSelectorState extends State<_PickupPointSelector> {
         
         if (_isLoading)
           const Center(child: CircularProgressIndicator())
-        else if (_nearbyPoints.isEmpty && _selectedType != 'pudo')
-          Center(
-            child: Text(
-              'No ${_selectedType.toUpperCase()} points found nearby',
-              style: TextStyle(color: Colors.grey[600]),
-            ),
-          )
         else if (_selectedType == 'pudo')
           // PUDO explanation instead of location list  
           Container(
@@ -1714,36 +1721,47 @@ class _PickupPointSelectorState extends State<_PickupPointSelector> {
           Container(
             padding: EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: AppTheme.deepTeal.withOpacity(0.08),
+              color: Colors.grey[100],
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: AppTheme.deepTeal.withOpacity(0.25), width: 1),
+              border: Border.all(
+                color: Colors.grey[300]!,
+                width: 1,
+              ),
             ),
-            child: Row(
+            child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(Icons.store, color: AppTheme.deepTeal, size: 20),
-                SizedBox(width: 8),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Store Pickup Selected',
-                        style: TextStyle(
-                          color: AppTheme.deepTeal,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 15,
-                        ),
+                Row(
+                  children: [
+                    Icon(Icons.store, color: Colors.grey[700], size: 20),
+                    SizedBox(width: 8),
+                    Text(
+                      'Store Pickup Selected',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: Colors.grey[800],
+                        fontSize: 16,
                       ),
-                      SizedBox(height: 6),
-                      Text(
-                        'Collect your order directly from the seller. We\'ll send pickup details after order confirmation.',
-                        style: TextStyle(color: AppTheme.deepTeal, fontSize: 13, height: 1.35),
-                      ),
-                    ],
+                    ),
+                  ],
+                ),
+                SizedBox(height: 8),
+                Text(
+                  'Collect your order directly from the seller. We\'ll send pickup details after order confirmation.',
+                  style: TextStyle(
+                    color: Colors.grey[700],
+                    fontSize: 14,
+                    height: 1.4,
                   ),
                 ),
               ],
+            ),
+          )
+        else if (_selectedType == 'paxi' && _nearbyPoints.isEmpty)
+          Center(
+            child: Text(
+              'No PAXI points found nearby',
+              style: TextStyle(color: Colors.grey[600]),
             ),
           )
         else if (_selectedType == 'paxi' && _nearbyPoints.isNotEmpty)
@@ -1971,13 +1989,6 @@ class _PickupPointSelectorState extends State<_PickupPointSelector> {
               ),
             ),
           )
-        else if (_selectedType == 'paxi')
-          Center(
-            child: Text(
-              'No PAXI points found nearby',
-              style: TextStyle(color: Colors.grey[600]),
-            ),
-          ),
       ],
     );
   }
