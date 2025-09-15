@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Download OmniaSA App</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #1F4654 0%, #2D5A6B 100%);
+            margin: 0;
+            padding: 0;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .container {
+            background: white;
+            border-radius: 16px;
+            padding: 40px;
+            max-width: 500px;
+            width: 90%;
+            text-align: center;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+        }
+        
+        .logo {
+            width: 80px;
+            height: 80px;
+            margin: 0 auto 20px;
+            background: #1F4654;
+            border-radius: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 32px;
+            color: white;
+        }
+        
+        h1 {
+            color: #1F4654;
+            margin: 0 0 16px;
+            font-size: 28px;
+            font-weight: 700;
+        }
+        
+        .subtitle {
+            color: #666;
+            margin: 0 0 32px;
+            font-size: 16px;
+            line-height: 1.5;
+        }
+        
+        .download-btn {
+            background: #1F4654;
+            color: white;
+            border: none;
+            padding: 16px 32px;
+            border-radius: 12px;
+            font-size: 18px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin: 0 0 16px;
+            display: block;
+            width: 100%;
+            text-decoration: none;
+        }
+        
+        .download-btn:hover {
+            background: #2D5A6B;
+            transform: translateY(-2px);
+        }
+        
+        .download-btn:active {
+            transform: translateY(0);
+        }
+        
+        .info-box {
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 8px;
+            padding: 16px;
+            margin: 20px 0;
+            font-size: 14px;
+            line-height: 1.5;
+            text-align: left;
+        }
+        
+        .info-box strong {
+            color: #495057;
+        }
+        
+        .back-link {
+            color: #1F4654;
+            text-decoration: none;
+            font-size: 14px;
+            margin-top: 20px;
+            display: inline-block;
+        }
+        
+        .back-link:hover {
+            text-decoration: underline;
+        }
+        
+        .spinner {
+            display: none;
+            width: 20px;
+            height: 20px;
+            border: 2px solid #f3f3f3;
+            border-top: 2px solid #1F4654;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .download-status {
+            display: none;
+            color: #28a745;
+            font-weight: 600;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="logo">📱</div>
+        <h1>Download OmniaSA</h1>
+        <p class="subtitle">Get the full app experience with push notifications, offline access, and native performance.</p>
+        
+        <div class="info-box">
+            <p><strong>⚠️ Browser Warning:</strong> Your browser may warn that the APK file "might be harmful" - this is normal for APK files. Click "Keep" or "Download anyway" to proceed.</p>
+            <p><strong>📱 Installation:</strong> After download, tap the APK file to install. You may need to enable "Install from unknown sources" in your Android settings.</p>
+        </div>
+        
+        <button class="download-btn" onclick="startDownload()">
+            Download Android App
+        </button>
+        
+        <div class="spinner" id="spinner"></div>
+        <div class="download-status" id="downloadStatus"></div>
+        
+        <a href="https://www.omniasa.co.za" class="back-link">← Back to OmniaSA</a>
+    </div>
+
+    <script>
+        function startDownload() {
+            const btn = document.querySelector('.download-btn');
+            const spinner = document.getElementById('spinner');
+            const status = document.getElementById('downloadStatus');
+            
+            // Show loading state
+            btn.style.display = 'none';
+            spinner.style.display = 'block';
+            status.style.display = 'block';
+            status.textContent = 'Preparing download...';
+            
+            // Start download after a brief delay for UX
+            setTimeout(() => {
+                // Redirect to GitHub release for download
+                window.location.href = 'https://github.com/KutumelaP/imagekit-auth-server/releases/download/v1.0.0/app-release.apk';
+                
+                // Show success message
+                setTimeout(() => {
+                    spinner.style.display = 'none';
+                    status.textContent = 'Download started! Check your downloads folder.';
+                    status.style.color = '#28a745';
+                }, 1000);
+            }, 500);
+        }
+        
+        // Auto-detect if user is on mobile and show appropriate message
+        function detectDevice() {
+            const isMobile = /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+            const isAndroid = /Android/i.test(navigator.userAgent);
+            
+            if (isMobile && !isAndroid) {
+                document.querySelector('.subtitle').textContent = 'This app is designed for Android devices. Please visit on an Android device to download.';
+                document.querySelector('.download-btn').textContent = 'Visit on Android Device';
+                document.querySelector('.download-btn').onclick = function() {
+                    alert('Please visit this page on an Android device to download the app.');
+                };
+            }
+        }
+        
+        // Run device detection on page load
+        detectDevice();
+    </script>
+</body>
+</html>

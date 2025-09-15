@@ -81,6 +81,24 @@
       flex-direction: column;
       gap: 12px;
     }
+    
+    .download-instructions {
+      background: #f8f9fa;
+      border: 1px solid #e9ecef;
+      border-radius: 8px;
+      padding: 16px;
+      margin: 16px 0;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+    
+    .download-instructions p {
+      margin: 8px 0;
+    }
+    
+    .download-instructions strong {
+      color: #495057;
+    }
 
     #ios-pwa-gate .btn {
       background: var(--brand-accent);
@@ -330,6 +348,10 @@
         <div id="android-instructions" style="display: none;">
           <h1>Download OmniaSA App</h1>
           <p>Download the full Android app for the best experience with push notifications, offline access, and native performance.</p>
+          <div class="download-instructions">
+            <p><strong>⚠️ Browser Warning:</strong> Your browser may warn that the APK file "might be harmful" - this is normal for APK files. Click "Keep" or "Download anyway" to proceed.</p>
+            <p><strong>📱 Installation:</strong> After download, tap the APK file to install. You may need to enable "Install from unknown sources" in your Android settings.</p>
+          </div>
           <div class="btn-row">
             <button class="btn" id="pwa-download-apk-btn">Download APK</button>
             <button class="link" id="pwa-skip-btn">Continue in browser</button>
@@ -482,7 +504,7 @@
       
       if (isAndroid) {
         // Download APK for Android
-        window.open('https://github.com/KutumelaP/imagekit-auth-server/releases/download/v1.0.0/app-release.apk', '_blank');
+        window.open('https://www.omniasa.co.za/download.html', '_blank');
         let b=document.getElementById('pwa-suggestion-banner'); if(b) hideOverlay(b);
       } else {
         // Show PWA installation for iOS/other
@@ -499,7 +521,7 @@
     
     // APK download button handler
     document.getElementById('pwa-download-apk-btn')?.addEventListener('click', ()=>{
-      window.open('https://github.com/KutumelaP/imagekit-auth-server/releases/download/v1.0.0/app-release.apk', '_blank');
+      window.open('https://www.omniasa.co.za/download.html', '_blank');
       let gate=document.getElementById('ios-pwa-gate'); if(gate) hideOverlay(gate);
     });
     document.getElementById('pwa-dismiss-banner')?.addEventListener('click', ()=>{
