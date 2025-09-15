@@ -482,7 +482,7 @@
       
       if (isAndroid) {
         // Download APK for Android
-        window.open('app-release.apk', '_blank');
+        window.open('https://drive.google.com/uc?export=download&id=1bkIBdO2FiwIdgEI3waCgPeyI5un617dH', '_blank');
         let b=document.getElementById('pwa-suggestion-banner'); if(b) hideOverlay(b);
       } else {
         // Show PWA installation for iOS/other
@@ -499,7 +499,7 @@
     
     // APK download button handler
     document.getElementById('pwa-download-apk-btn')?.addEventListener('click', ()=>{
-      window.open('app-release.apk', '_blank');
+      window.open('https://drive.google.com/uc?export=download&id=1bkIBdO2FiwIdgEI3waCgPeyI5un617dH', '_blank');
       let gate=document.getElementById('ios-pwa-gate'); if(gate) hideOverlay(gate);
     });
     document.getElementById('pwa-dismiss-banner')?.addEventListener('click', ()=>{
