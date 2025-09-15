@@ -37,6 +37,12 @@ class CheckoutV2ViewModel extends ChangeNotifier {
   bool sellerOffersPargo = false;
   bool isLoadingSellerInfo = true;
 
+  // Seller store details for Store Pickup
+  String? sellerStoreName;
+  String? sellerStoreAddress;
+  double? sellerStoreLatitude;
+  double? sellerStoreLongitude;
+
   // Store hours
   bool isStoreOpenFlag = true;
   String? sellerOpenHour;   // e.g., '08:00'
@@ -504,7 +510,7 @@ class CheckoutV2ViewModel extends ChangeNotifier {
               
           print('🔍 DEBUG: Seller document exists: ${sellerDoc.exists}');
           
-          if (sellerDoc.exists) {
+          if (sellerDoc.exists && sellerDoc.data() != null) {
             final sellerData = sellerDoc.data()!;
             
             // Check if seller offers delivery (strict: require seller's flag)
@@ -530,6 +536,14 @@ class CheckoutV2ViewModel extends ChangeNotifier {
             isStoreOpenFlag = sellerData['isStoreOpen'] ?? sellerData['storeOpen'] ?? true;
             sellerOpenHour = (sellerData['storeOpenHour'] ?? '').toString();
             sellerCloseHour = (sellerData['storeCloseHour'] ?? '').toString();
+
+            // Store info
+            sellerStoreName = (sellerData['storeName'] ?? sellerData['name'] ?? sellerData['businessName'])?.toString();
+            sellerStoreAddress = (sellerData['storeAddress'] ?? sellerData['address'] ?? '')?.toString();
+            final lat = sellerData['latitude'] ?? sellerData['storeLatitude'];
+            final lng = sellerData['longitude'] ?? sellerData['storeLongitude'];
+            if (lat is num) sellerStoreLatitude = lat.toDouble();
+            if (lng is num) sellerStoreLongitude = lng.toDouble();
 
             // COD and KYC
             final codDisabled = sellerData['codDisabled'] == true;
@@ -627,18 +641,11 @@ class CheckoutV2ViewModel extends ChangeNotifier {
         if (paymentUrl != null && paymentData != null) {
           // Prefer POST via the Cloud Function bridge; if that's not feasible in-app, build GET fallback
           String finalUrl;
-          if ((method ?? 'POST').toUpperCase() == 'POST') {
-            // Build GET as a fallback for WebView; the CF will also accept GET
-            final query = paymentData.entries
-                .map((e) => '${Uri.encodeQueryComponent(e.key)}=${Uri.encodeQueryComponent(e.value)}')
-                .join('&');
-            finalUrl = '$paymentUrl?$query';
-          } else {
-            final query = paymentData.entries
-                .map((e) => '${Uri.encodeQueryComponent(e.key)}=${Uri.encodeQueryComponent(e.value)}')
-                .join('&');
-            finalUrl = '$paymentUrl?$query';
-          }
+          // Always use GET to the Cloud Function bridge; it will render a POST form to PayFast
+          final query = paymentData.entries
+              .map((e) => '${Uri.encodeQueryComponent(e.key)}=${Uri.encodeQueryComponent(e.value)}')
+              .join('&');
+          finalUrl = '$paymentUrl?$query';
 
           // Open payment page: on web use same tab (avoid blank WebView), on mobile use in-app WebView
           if (context.mounted) {
@@ -656,8 +663,6 @@ class CheckoutV2ViewModel extends ChangeNotifier {
               final payUrl = finalUrl.contains('#/paymentWebview')
                   ? finalUrl
                   : (finalUrl + (finalUrl.contains('#') ? '' : '#/paymentWebview'));
-              // ignore: use_build_context_synchronously
-              await Navigator.of(context).pushReplacementNamed('/');
               // Use web-only navigation via `url_launcher` fallback
               // but since we are on Flutter web, set window.location directly via `js` interop.
               // ignore: undefined_prefixed_name
@@ -665,7 +670,11 @@ class CheckoutV2ViewModel extends ChangeNotifier {
               // We keep it simple: open in same tab.
               // dart:html is not available here; rely on `url_launcher` instead.
               // ignore: deprecated_member_use
-              await launchUrl(Uri.parse(payUrl), mode: LaunchMode.platformDefault);
+              await launchUrl(
+                Uri.parse(payUrl),
+                mode: LaunchMode.platformDefault,
+                webOnlyWindowName: '_self',
+              );
               // No navResult on web flow
               return Map<String, dynamic>.from(result);
             }
@@ -673,9 +682,9 @@ class CheckoutV2ViewModel extends ChangeNotifier {
               '/paymentWebview',
               arguments: {
                 'url': finalUrl,
-                // Afrihost PHP endpoint path detection
-                'successPath': 'payfastReturn.php',
-                'cancelPath': 'payfastCancel.php',
+                // Cloud Function endpoint path detection
+                'successPath': 'payfastReturn',
+                'cancelPath': 'payfastCancel',
               },
             );
             // If payment succeeded via return URL, mark order paid and finalize

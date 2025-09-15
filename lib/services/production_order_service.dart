@@ -334,7 +334,7 @@ class ProductionOrderService {
         'deliveryOTP': deliveryOTP,
         'payment': paymentResult,
         'estimatedDelivery': isDelivery ? _calculateRealisticETA(userLocation) : null,
-        'trackingUrl': 'https://omniasa.co.za/track/$orderId',
+        'trackingUrl': 'https://www.omniasa.co.za/track/$orderId',
         'message': 'Order placed successfully! 🎉',
       };
       
@@ -414,7 +414,7 @@ class ProductionOrderService {
   static Future<Map<String, dynamic>?> _getSellerLocation(String sellerId) async {
     try {
       final sellerDoc = await _firestore.collection('users').doc(sellerId).get();
-      if (sellerDoc.exists) {
+      if (sellerDoc.exists && sellerDoc.data() != null) {
         final data = sellerDoc.data()!;
         // Support multiple possible field names
         final lat = (data['latitude'] ?? data['storeLatitude']) ?? -25.7461;
@@ -552,7 +552,7 @@ class ProductionOrderService {
     try {
       final sellerId = items.isNotEmpty ? (items.first['sellerId']?.toString() ?? '') : '';
       // Customer notification
-      if (user.phoneNumber != null) {
+      if (user.phoneNumber != null && user.phoneNumber!.isNotEmpty) {
         await WhatsAppIntegrationService.sendOrderConfirmation(
           orderId: orderId,
           buyerPhone: user.phoneNumber!,

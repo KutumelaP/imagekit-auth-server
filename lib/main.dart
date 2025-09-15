@@ -140,7 +140,7 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (context) => OptimizedDataProvider()),
       ],
         child: MaterialApp(
-        title: 'Food Marketplace',
+        title: 'OmniaSA',
         debugShowCheckedModeBanner: false,
         theme: AppTheme.lightTheme,
           navigatorKey: NavigationService.navigatorKey,

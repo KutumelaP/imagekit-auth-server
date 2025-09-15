@@ -5241,7 +5241,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         amount: totalAmount.toString(),
         itemName: 'Food Order $createdOrderNumber',
         itemDescription: 'Marketplace order from seller',
-        customerEmail: currentUser!.email ?? 'test@example.com',
+        customerEmail: currentUser!.email ?? 'support@omniasa.co.za',
         customerFirstName: _nameController.text.trim().isNotEmpty 
             ? _nameController.text.trim().split(' ').first
             : 'Customer',

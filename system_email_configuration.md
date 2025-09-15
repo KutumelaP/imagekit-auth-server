@@ -55,3 +55,5 @@ SUPPORT_EMAIL=support@omniasa.co.za
 2. **Configure Firebase environment variables**
 3. **Test email functionality**
 4. **Set up email forwarding** if needed
+
+

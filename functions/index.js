@@ -397,7 +397,8 @@ exports.payfastReturn = functions.https.onRequest(async (req, res) => {
     // Look for order_id first (from our modified return URL), then fallback to other methods
     const orderId = data.order_id || data.custom_str1 || data.m_payment_id;
     const paymentStatus = String(data.payment_status || '').toUpperCase();
-    const base = process.env.PUBLIC_BASE_URL || 'https://www.omniasa.co.za';
+    const cfgBase = (functions.config && functions.config().app && functions.config().app.public_base_url) ? String(functions.config().app.public_base_url) : null;
+    const base = cfgBase || process.env.PUBLIC_BASE_URL || 'https://www.omniasa.co.za';
     
     console.log('[payfastReturn] orderId=', orderId, 'paymentStatus=', paymentStatus, 'method=', req.method);
     
@@ -510,7 +511,8 @@ exports.payfastCancel = functions.https.onRequest(async (req, res) => {
       return;
     }
     
-    const base = process.env.PUBLIC_BASE_URL || 'https://www.omniasa.co.za';
+    const cfgBase2 = (functions.config && functions.config().app && functions.config().app.public_base_url) ? String(functions.config().app.public_base_url) : null;
+    const base = cfgBase2 || process.env.PUBLIC_BASE_URL || 'https://www.omniasa.co.za';
     res.redirect(base);
   } catch (e) {
     res.status(500).send('error');
@@ -691,7 +693,8 @@ exports.storeMeta = functions.https.onRequest(async (req, res) => {
     const name = data.storeName || 'Store';
     const desc = (data.story || '').toString().slice(0, 160);
     const image = data.profileImageUrl || '';
-    const base = process.env.PUBLIC_BASE_URL || 'https://www.omniasa.co.za';
+    const cfgBase3 = (functions.config && functions.config().app && functions.config().app.public_base_url) ? String(functions.config().app.public_base_url) : null;
+    const base = cfgBase3 || process.env.PUBLIC_BASE_URL || 'https://www.omniasa.co.za';
     const url = `${base}/store/${storeId}`;
     res.set('Cache-Control', 'public, max-age=600');
     res.status(200).send(`<!doctype html>
@@ -722,7 +725,8 @@ exports.storeMeta = functions.https.onRequest(async (req, res) => {
 // Basic sitemap.xml (stores only for now)
 exports.sitemap = functions.https.onRequest(async (req, res) => {
   try {
-    const base = process.env.PUBLIC_BASE_URL || 'https://www.omniasa.co.za';
+    const cfgBase4 = (functions.config && functions.config().app && functions.config().app.public_base_url) ? String(functions.config().app.public_base_url) : null;
+    const base = cfgBase4 || process.env.PUBLIC_BASE_URL || 'https://www.omniasa.co.za';
     const sellers = await db.collection('users').where('role', '==', 'seller').get();
     const urls = [
       { loc: `${base}/`, changefreq: 'daily', priority: '0.8' },

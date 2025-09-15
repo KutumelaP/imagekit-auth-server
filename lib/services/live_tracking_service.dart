@@ -210,7 +210,7 @@ class LiveTrackingService {
   
   /// Get tracking URL for sharing
   static String getTrackingUrl(String orderId) {
-    return 'https://omniasa.co.za/track/$orderId';
+    return 'https://www.omniasa.co.za/track/$orderId';
   }
   
   /// Start automatic location updates for driver app

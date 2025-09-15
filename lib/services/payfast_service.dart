@@ -14,21 +14,22 @@ class PayFastService {
   
   static bool _isProduction = true; // production mode as requested
 
-  // Afrihost-hosted PayFast endpoints (PHP) - using apex domain for reliability
-  static const String _afrihostBase = 'https://omniasa.co.za';
+  // Prefer Cloud Functions bridge for PayFast on web/app (avoids host/PHP issues)
+  static const String _cfBase = 'https://us-central1-marketplace-8d6bd.cloudfunctions.net';
   
-  // Callback URLs (append order ID to return URL dynamically as needed)
-  static String get returnUrl => '$_afrihostBase/payfastReturn.php';
-  static String cancelUrl = '$_afrihostBase/payfastCancel.php';
-  static String notifyUrl = '$_afrihostBase/payfastNotify.php';
+  // Callback and bridge endpoints (Cloud Functions)
+  static String get returnUrl => '$_cfBase/payfastReturn';
+  static String cancelUrl = '$_cfBase/payfastCancel';
+  static String notifyUrl = '$_cfBase/payfastNotify';
 
   static void setProductionMode(bool isProduction) {
     _isProduction = isProduction;
   }
 
-  static String get formRedirectUrl => '$_afrihostBase/payfastFormRedirect.php';
-  static String get returnPath => 'payfastReturn.php';
-  static String get cancelPath => 'payfastCancel.php';
+  // Hosted form redirect (Cloud Function renders auto-submit HTML to PayFast)
+  static String get formRedirectUrl => '$_cfBase/payfastFormRedirect';
+  static String get returnPath => 'payfastReturn';
+  static String get cancelPath => 'payfastCancel';
   
   // Public getters for merchant credentials
   static String get merchantId => _isProduction ? _merchantId : '10000100';
@@ -82,7 +83,7 @@ class PayFastService {
         'amount': _formatAmount(amount),
         'item_name': itemName.length > 100 ? itemName.substring(0, 100) : itemName,
         'item_description': itemDescription.isNotEmpty ? itemDescription : itemName,
-        'email_address': customerEmail,
+        'email_address': (customerEmail.isNotEmpty ? customerEmail : 'support@omniasa.co.za'),
         'name_first': customerFirstName.isNotEmpty ? customerFirstName : 'omniaSA',
         'name_last': customerLastName.isNotEmpty ? customerLastName : 'Customer',
         'cell_number': customerPhone.isNotEmpty ? customerPhone : '0606304683',

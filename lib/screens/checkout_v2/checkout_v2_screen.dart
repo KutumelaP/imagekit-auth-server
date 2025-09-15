@@ -996,7 +996,7 @@ class _PickupPointSelector extends StatefulWidget {
 class _PickupPointSelectorState extends State<_PickupPointSelector> {
   List<Map<String, dynamic>> _nearbyPoints = [];
   bool _isLoading = false;
-  String _selectedType = 'paxi'; // 'paxi' or 'pudo'
+  String _selectedType = 'paxi'; // 'paxi' | 'pudo' | 'store'
   
   // Address search for PAXI
   final TextEditingController _addressController = TextEditingController();
@@ -1117,6 +1117,9 @@ class _PickupPointSelectorState extends State<_PickupPointSelector> {
         // PUDO is seller-managed - no location selection needed
         // The seller will handle the locker drop-off through their PUDO account
         points = [];
+      } else if (_selectedType == 'store') {
+        // Store pickup: no external points to load
+        points = [];
       } else {
         // Get real OmniaSA sellers as pickup points (fallback)
         points = await RealPickupService.getNearbyPickupPoints(
@@ -1177,7 +1180,8 @@ class _PickupPointSelectorState extends State<_PickupPointSelector> {
     // Check if seller offers any pickup services
     final bool hasPaxi = widget.vm.sellerOffersPaxi;
     final bool hasPudo = widget.vm.sellerOffersPudo;
-    final bool hasAnyPickup = hasPaxi || hasPudo;
+    final bool hasStore = true; // Always allow store pickup option
+    final bool hasAnyPickup = hasPaxi || hasPudo || hasStore;
     
     print('🔍 DEBUG: Pickup services - PAXI: $hasPaxi, PUDO: $hasPudo, Any: $hasAnyPickup');
     
@@ -1321,7 +1325,7 @@ class _PickupPointSelectorState extends State<_PickupPointSelector> {
               ),
               
               // Spacing only if both services available
-              if (hasPaxi && hasPudo) SizedBox(width: 16),
+              if ((hasPaxi && hasPudo) || (hasPaxi && hasStore) || (hasPudo && hasStore)) SizedBox(width: 16),
               
               // PUDO Card (only if seller offers it)
               if (hasPudo) Expanded(
@@ -1409,6 +1413,126 @@ class _PickupPointSelectorState extends State<_PickupPointSelector> {
                               ),
                             ),
                             if (_selectedType == 'pudo')
+                              Container(
+                                margin: EdgeInsets.only(top: 1),
+                                width: 20,
+                                height: 2,
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(2),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+
+              // Spacing if more than one option visible
+              if ((hasPaxi && hasStore) || (hasPudo && hasStore)) SizedBox(width: 16),
+
+              // STORE PICKUP Card (always available)
+              if (hasStore) Expanded(
+                child: AnimatedContainer(
+                  duration: Duration(milliseconds: 300),
+                  curve: Curves.easeInOut,
+                  height: 90,
+                  decoration: BoxDecoration(
+                    gradient: _selectedType == 'store' 
+                        ? LinearGradient(
+                            colors: [Color(0xFF1F4654), Color(0xFF2A5F6F)],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          )
+                        : LinearGradient(
+                            colors: [Colors.white, Color(0xFFF8F9FA)],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: _selectedType == 'store' ? Color(0xFF1F4654) : Color(0xFFE9ECEF),
+                      width: 2,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: _selectedType == 'store' 
+                            ? Color(0xFF1F4654).withOpacity(0.35)
+                            : Colors.black.withOpacity(0.1),
+                        blurRadius: _selectedType == 'store' ? 20 : 8,
+                        offset: Offset(0, _selectedType == 'store' ? 8 : 4),
+                        spreadRadius: _selectedType == 'store' ? 2 : 0,
+                      ),
+                    ],
+                  ),
+                  child: Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(20),
+                      onTap: () {
+                        setState(() {
+                          _selectedType = 'store';
+                          _nearbyPoints = [];
+                          _addressSuggestions = [];
+                          _isLoading = false;
+                        });
+                        // Build local store pickup point from seller info (fallbacks safe)
+                        final name = widget.vm.sellerStoreName?.isNotEmpty == true
+                            ? widget.vm.sellerStoreName!
+                            : 'Store Pickup';
+                        final address = widget.vm.sellerStoreAddress?.isNotEmpty == true
+                            ? widget.vm.sellerStoreAddress!
+                            : 'Collect at the seller\'s store';
+                        final lat = widget.vm.sellerStoreLatitude;
+                        final lng = widget.vm.sellerStoreLongitude;
+                        final pickupPoint = <String, dynamic>{
+                          'id': 'local_store',
+                          'name': name,
+                          'address': address,
+                          'type': 'store',
+                          'fees': {'collection': 0.0},
+                        };
+                        if (lat != null && lng != null) {
+                          pickupPoint['latitude'] = lat;
+                          pickupPoint['longitude'] = lng;
+                          pickupPoint['distance'] = '0 km';
+                        }
+                        widget.vm.setSelectedPickupPoint(pickupPoint);
+                      },
+                      child: Padding(
+                        padding: EdgeInsets.all(10),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            AnimatedContainer(
+                              duration: Duration(milliseconds: 200),
+                              padding: EdgeInsets.all(6),
+                              decoration: BoxDecoration(
+                                color: _selectedType == 'store'
+                                    ? Colors.white.withOpacity(0.2)
+                                    : Color(0xFF1F4654).withOpacity(0.08),
+                                borderRadius: BorderRadius.circular(15),
+                              ),
+                              child: Icon(
+                                Icons.store,
+                                color: _selectedType == 'store' ? Colors.white : Color(0xFF1F4654),
+                                size: 22,
+                              ),
+                            ),
+                            SizedBox(height: 4),
+                            Text(
+                              'Store Pickup',
+                              style: TextStyle(
+                                color: _selectedType == 'store' ? Colors.white : Color(0xFF495057),
+                                fontWeight: FontWeight.w800,
+                                fontSize: 14,
+                                letterSpacing: 0.8,
+                              ),
+                            ),
+                            if (_selectedType == 'store')
                               Container(
                                 margin: EdgeInsets.only(top: 1),
                                 width: 20,
@@ -1581,6 +1705,42 @@ class _PickupPointSelectorState extends State<_PickupPointSelector> {
                     color: AppTheme.info,
                     fontSize: 14,
                     height: 1.4,
+                  ),
+                ),
+              ],
+            ),
+          )
+        else if (_selectedType == 'store')
+          Container(
+            padding: EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: AppTheme.deepTeal.withOpacity(0.08),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppTheme.deepTeal.withOpacity(0.25), width: 1),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.store, color: AppTheme.deepTeal, size: 20),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Store Pickup Selected',
+                        style: TextStyle(
+                          color: AppTheme.deepTeal,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 15,
+                        ),
+                      ),
+                      SizedBox(height: 6),
+                      Text(
+                        'Collect your order directly from the seller. We\'ll send pickup details after order confirmation.',
+                        style: TextStyle(color: AppTheme.deepTeal, fontSize: 13, height: 1.35),
+                      ),
+                    ],
                   ),
                 ),
               ],

@@ -63,12 +63,12 @@ class PWAUrlHandler {
   static String _getCurrentBaseUrl() {
     if (kIsWeb) {
       try {
-        return js.context.callMethod('eval', ['window.location.origin']) ?? 'https://omniasa.co.za';
+        return js.context.callMethod('eval', ['window.location.origin']) ?? 'https://www.omniasa.co.za';
       } catch (e) {
-        return 'https://omniasa.co.za';
+        return 'https://www.omniasa.co.za';
       }
     }
-    return 'https://omniasa.co.za';
+    return 'https://www.omniasa.co.za';
   }
 
   /// Handle incoming PWA navigation from service worker

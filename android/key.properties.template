@@ -9,3 +9,5 @@ storePassword=YOUR_KEYSTORE_PASSWORD_HERE
 keyPassword=YOUR_KEY_PASSWORD_HERE
 keyAlias=omniasa
 storeFile=../app/omniasa-release-key.keystore
+
+
