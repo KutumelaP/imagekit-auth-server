@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:geolocator/geolocator.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import '../config/here_config.dart';
 
 class HereMapsAddressService {
@@ -229,6 +230,12 @@ class HereMapsAddressService {
   
   /// Get current user location and address
   static Future<Map<String, dynamic>?> getCurrentLocationAddress() async {
+    // For web platform, use browser's geolocation API with Nominatim reverse geocoding
+    if (kIsWeb) {
+      print('🌐 Web platform detected - using browser geolocation with Nominatim');
+      return await _getCurrentLocationWeb();
+    }
+    
     try {
       // Check location permissions
       LocationPermission permission = await Geolocator.checkPermission();
@@ -236,25 +243,149 @@ class HereMapsAddressService {
         permission = await Geolocator.requestPermission();
       }
       
-      if (permission == LocationPermission.deniedForever) {
-        throw Exception('Location permissions permanently denied');
+      if (permission == LocationPermission.deniedForever || permission == LocationPermission.denied) {
+        throw Exception('Location permissions denied');
       }
       
-      // Get current position
-      final position = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
-        timeLimit: Duration(seconds: 10),
-      );
+      // Get current position with proper error handling
+      Position? position;
+      try {
+        position = await Geolocator.getCurrentPosition(
+          desiredAccuracy: LocationAccuracy.high,
+          timeLimit: Duration(seconds: 10),
+        );
+      } catch (e) {
+        print('❌ Failed to get position: $e');
+        throw Exception('Could not get current location: $e');
+      }
       
-      // Get address from coordinates
+      // Ensure position is not null
+      if (position == null) {
+        throw Exception('Position is null');
+      }
+      
+      print('📍 Got position: ${position.latitude}, ${position.longitude}');
+      
+      // Get address from coordinates with null check
       final address = await getAddressFromCoordinates(
         latitude: position.latitude,
         longitude: position.longitude,
       );
       
+      if (address == null) {
+        print('⚠️ Could not get address from coordinates, using fallback');
+        // Create a fallback address with just coordinates
+        return {
+          'title': 'Current Location',
+          'label': 'Current Location (${position.latitude.toStringAsFixed(5)}, ${position.longitude.toStringAsFixed(5)})',
+          'street': '',
+          'city': '',
+          'state': '',
+          'countryName': 'South Africa',
+          'postalCode': '',
+          'latitude': position.latitude,
+          'longitude': position.longitude,
+        };
+      }
+      
       return address;
     } catch (e) {
-      print('Current location error: $e');
+      print('❌ Current location error: $e');
+      throw Exception('Error getting address: $e');
+    }
+  }
+  
+  /// Web-specific location detection using browser geolocation and Nominatim reverse geocoding
+  static Future<Map<String, dynamic>?> _getCurrentLocationWeb() async {
+    try {
+      // Try to get position using Geolocator (works in some web browsers)
+      Position? position;
+      try {
+        position = await Geolocator.getCurrentPosition(
+          desiredAccuracy: LocationAccuracy.high,
+          timeLimit: Duration(seconds: 15), // Longer timeout for web
+        );
+        print('📍 Web geolocation success: ${position.latitude}, ${position.longitude}');
+      } catch (e) {
+        print('❌ Web geolocation failed: $e');
+        throw Exception('Location access denied or unavailable in this browser');
+      }
+      
+      if (position == null) {
+        throw Exception('Could not get position from browser');
+      }
+      
+      // Use Nominatim reverse geocoding for web (free and works with CORS)
+      final address = await _reverseGeocodeWithNominatim(
+        position.latitude, 
+        position.longitude
+      );
+      
+      if (address != null) {
+        return address;
+      } else {
+        // Fallback with just coordinates
+        return {
+          'title': 'Current Location',
+          'label': 'Current Location (${position.latitude.toStringAsFixed(5)}, ${position.longitude.toStringAsFixed(5)})',
+          'street': '',
+          'city': '',
+          'state': '',
+          'countryName': 'South Africa',
+          'postalCode': '',
+          'latitude': position.latitude,
+          'longitude': position.longitude,
+        };
+      }
+    } catch (e) {
+      print('❌ Web location error: $e');
+      throw Exception('Location not available: $e');
+    }
+  }
+  
+  /// Reverse geocode using free Nominatim API (web-compatible)
+  static Future<Map<String, dynamic>?> _reverseGeocodeWithNominatim(
+    double latitude, 
+    double longitude
+  ) async {
+    try {
+      final url = 'https://nominatim.openstreetmap.org/reverse?lat=$latitude&lon=$longitude&format=json&addressdetails=1&countrycodes=za';
+      
+      print('🌐 Nominatim reverse geocoding: $url');
+      
+      final response = await http.get(
+        Uri.parse(url),
+        headers: {
+          'User-Agent': 'OmniaSA/1.0 (https://www.omniasa.co.za)',
+        },
+      );
+      
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final address = data['address'] ?? {};
+        
+        print('🌐 Nominatim reverse response: $address');
+        
+        return {
+          'title': data['display_name'] ?? 'Current Location',
+          'label': data['display_name'] ?? 'Current Location',
+          'street': address['road'] ?? address['house_number'] ?? '',
+          'houseNumber': address['house_number'] ?? '',
+          'district': address['suburb'] ?? address['neighbourhood'] ?? '',
+          'city': address['city'] ?? address['town'] ?? address['village'] ?? '',
+          'county': address['county'] ?? '',
+          'state': address['state'] ?? address['province'] ?? '',
+          'countryName': address['country'] ?? 'South Africa',
+          'postalCode': address['postcode'] ?? '',
+          'latitude': latitude,
+          'longitude': longitude,
+        };
+      } else {
+        print('❌ Nominatim reverse geocoding failed: ${response.statusCode}');
+        return null;
+      }
+    } catch (e) {
+      print('❌ Nominatim reverse geocoding error: $e');
       return null;
     }
   }

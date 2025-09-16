@@ -3,6 +3,8 @@ const admin = require('firebase-admin');
 const crypto = require('crypto');
 const { create } = require('xmlbuilder2');
 const nodemailer = require('nodemailer');
+const path = require('path');
+const fs = require('fs');
 // Helper: PHP-style urlencode (spaces as '+') for PayFast signature
 function pfEncode(value) {
   return encodeURIComponent(String(value))
@@ -368,9 +370,34 @@ exports.payfastNotify = functions.https.onRequest(async (req, res) => {
         console.warn('notify on paid error', e);
       }
       
-      // WhatsApp notification will be handled client-side when user views order tracking
-      // (wa.me URLs can only be opened from client-side, not server-side)
-      console.log('[payfastNotify] Order confirmed - WhatsApp notification will be sent when user views order tracking');
+      // Send WhatsApp notification for PayFast orders (same as COD/EFT)
+      try {
+        const buyer = await db.collection('users').doc(buyerId).get();
+        const buyerData = buyer.exists ? buyer.data() : {};
+        const buyerPhone = buyerData.phoneNumber || buyerData.phone;
+        
+        if (buyerPhone && sellerId) {
+          // Send WhatsApp notification using same method as COD/EFT orders
+          console.log(`[payfastNotify] Sending WhatsApp notification to ${buyerPhone} for order ${orderId}`);
+          
+          // This will be handled by the client-side WhatsApp service when user views order
+          // But we also trigger it via Firestore write to ensure consistency
+          await db.collection('whatsapp_notifications').add({
+            orderId,
+            buyerPhone,
+            sellerId,
+            totalAmount: totalPrice,
+            type: 'order_confirmation',
+            paymentMethod: 'payfast',
+            status: 'pending',
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          });
+        }
+      } catch (e) {
+        console.warn('[payfastNotify] WhatsApp notification error', e);
+      }
+      
+      console.log('[payfastNotify] Order confirmed - WhatsApp notification queued for delivery');
     }
     res.status(200).send('ok');
   } catch (e) {
@@ -2540,6 +2567,76 @@ exports.onNewMessage = functions.runWith({ timeoutSeconds: 60, memory: '256MB' }
 
 // Mark delivered/opened status
 exports.markNotificationDelivered = functions.https.onCall(async (data, context) => {
+  try {
+    const notificationId = data.notificationId;
+    const delivered = Boolean(data.delivered);
+    
+    await admin.firestore().collection('push_status').doc(notificationId).set({
+      delivered,
+      deliveredAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+    
+    return { success: true };
+  } catch (error) {
+    console.error('Error marking notification delivered:', error);
+    throw new functions.https.HttpsError('internal', 'Failed to mark notification delivered');
+  }
+});
+
+// Process WhatsApp notification queue for PayFast orders
+exports.processWhatsAppNotification = functions.firestore
+  .document('whatsapp_notifications/{notificationId}')
+  .onCreate(async (snap, context) => {
+    try {
+      const data = snap.data();
+      const { orderId, buyerPhone, sellerId, totalAmount, type } = data;
+      
+      console.log(`[whatsapp] Processing notification for order ${orderId}`);
+      
+      // Get order details for complete message
+      const orderDoc = await admin.firestore().collection('orders').doc(orderId).get();
+      if (!orderDoc.exists) {
+        console.warn(`[whatsapp] Order ${orderId} not found`);
+        await snap.ref.update({ status: 'failed', error: 'Order not found' });
+        return;
+      }
+      
+      const orderData = orderDoc.data();
+      const sellerName = orderData.sellerName || 'OmniaSA Store';
+      const deliveryOTP = orderData.deliveryOTP || orderData.otp || 'N/A';
+      
+      // For server-side, we can only log the WhatsApp details
+      // The actual wa.me URL opening will happen client-side
+      console.log(`[whatsapp] Order confirmation details:
+        - Order: ${orderId}
+        - Phone: ${buyerPhone}
+        - Store: ${sellerName}
+        - Total: R${Number(totalAmount).toFixed(2)}
+        - OTP: ${deliveryOTP}
+      `);
+      
+      // Update notification status
+      await snap.ref.update({ 
+        status: 'logged',
+        processedAt: admin.firestore.FieldValue.serverTimestamp(),
+        sellerName,
+        deliveryOTP
+      });
+      
+      // The client-side app will pick up this notification and send WhatsApp
+      console.log(`[whatsapp] Notification logged for client-side delivery`);
+      
+    } catch (error) {
+      console.error('[whatsapp] Error processing notification:', error);
+      await snap.ref.update({ 
+        status: 'failed', 
+        error: error.message,
+        failedAt: admin.firestore.FieldValue.serverTimestamp()
+      });
+    }
+  }); 
+
+exports.markNotificationDelivered = functions.https.onCall(async (data, context) => {
   const { notificationId, userId } = data || {};
   if (!notificationId || !userId) return { ok: false };
   await admin.firestore().collection('push_status').doc(notificationId).set({
@@ -2674,7 +2771,7 @@ exports.onSellerApproved = functions.runWith({ timeoutSeconds: 60, memory: '256M
       }
 
       const base = process.env.PUBLIC_BASE_URL || 'https://www.omniasa.co.za';
-      const storeUrl = `${base}/store/${context.params.userId}`;
+      const storeUrl = `${base}/#/stores?storeId=${context.params.userId}`;
       const subject = 'Your store has been approved';
       const html = renderBrandedEmail({
         title: subject,
@@ -2695,13 +2792,32 @@ exports.onSellerApproved = functions.runWith({ timeoutSeconds: 60, memory: '256M
         footer: 'If you have any questions, simply reply to this email and we\'ll help you get set up.'
       });
 
-      const from = process.env.MAIL_FROM || mailUser;
+      // Add PDF attachment
+      const attachments = [];
+      const pdfPath = path.join(__dirname, 'assets', 'OmniaSA_Seller_Onboarding_Guide_Full.pdf');
+      try {
+        if (fs.existsSync(pdfPath)) {
+          attachments.push({
+            filename: 'OmniaSA_Seller_Onboarding_Guide_Full.pdf',
+            path: pdfPath,
+            contentType: 'application/pdf'
+          });
+          console.log('[seller_approved_email] Attached PDF guide.');
+        } else {
+          console.warn('[seller_approved_email] PDF guide not found at:', pdfPath);
+        }
+      } catch (e) {
+        console.error('[seller_approved_email] Error checking/attaching PDF:', e);
+      }
+
+      const from = process.env.MAIL_FROM || 'admin@omniasa.co.za';
       const info = await transporter.sendMail({
         from,
         to: email,
         subject,
         html,
         headers: { 'List-Unsubscribe': `<mailto:${from}>` },
+        attachments: attachments,
       });
       const preview = nodemailer.getTestMessageUrl(info) || null;
       if (preview) console.log('[mail][preview][seller_approved]', preview);

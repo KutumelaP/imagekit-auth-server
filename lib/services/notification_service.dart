@@ -46,6 +46,7 @@ class NotificationService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
   StreamSubscription<QuerySnapshot>? _notifSub;
+  StreamSubscription<QuerySnapshot>? _whatsappSub;
   StreamSubscription<RemoteMessage>? _fcmSub;
   bool _notifListenerInitialized = false;
   final Set<String> _spokenNotificationIds = <String>{};
@@ -57,7 +58,7 @@ class NotificationService {
   String? _ttsLanguage; // e.g., 'en-US'
   String? _ttsVoiceName; // platform voice name
   String? _ttsVoiceLocale; // e.g., 'en-US'
-  double _ttsRate = 0.45;
+  double _ttsRate = 0.7;
   double _ttsPitch = 1.0;
   double _ttsVolume = 1.0;
 
@@ -158,7 +159,7 @@ class NotificationService {
     _ttsLanguage = prefs.getString('tts_language') ?? 'en-ZA';
     _ttsVoiceName = prefs.getString('tts_voice_name');
     _ttsVoiceLocale = prefs.getString('tts_voice_locale');
-    _ttsRate = prefs.getDouble('tts_rate') ?? 0.45;
+    _ttsRate = prefs.getDouble('tts_rate') ?? 0.7;
     _ttsPitch = prefs.getDouble('tts_pitch') ?? 1.0;
     _ttsVolume = prefs.getDouble('tts_volume') ?? 1.0;
     _speakUnreadSummaryOnOpen = prefs.getBool('speak_unread_summary') ?? true;
@@ -1439,6 +1440,19 @@ class NotificationService {
 📋 Instructions: Ship to Pargo pickup point''';
           
           print('🔍 DEBUG: Enhanced Pargo notification created');
+        } else if (deliveryType == 'pudo' && orderData['pudoDeliveryAddress'] != null) {
+          // Enhanced PUDO notification
+          final pudoDetails = orderData['pudoDeliveryAddress'];
+          final deliveryAddress = pudoDetails['address'] ?? 'Address not specified';
+          final city = pudoDetails['city'] ?? '';
+          
+          notificationTitle = '📦 New PUDO Order Received';
+          notificationBody = '''📦 New PUDO Locker-to-Door Order from $buyerName
+💰 Total: R${orderTotal.toStringAsFixed(2)}
+🏠 Final Delivery: $deliveryAddress, $city
+📋 Instructions: Drop at PUDO locker, they'll deliver to door''';
+          
+          print('🔍 DEBUG: Enhanced PUDO notification created');
         } else if (deliveryType == 'pickup') {
           // Store pickup notification
           notificationTitle = '🏪 New Pickup Order Received';
@@ -1484,6 +1498,7 @@ class NotificationService {
           'paxiPickupPoint': orderData?['paxiPickupPoint'],
           'paxiDeliverySpeed': orderData?['paxiDeliverySpeed'],
           'pargoPickupDetails': orderData?['pargoPickupDetails'],
+          'pudoDeliveryAddress': orderData?['pudoDeliveryAddress'],
           'deliveryAddress': orderData?['deliveryAddress'],
         },
       );

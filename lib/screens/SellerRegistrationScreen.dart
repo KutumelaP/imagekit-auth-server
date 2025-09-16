@@ -19,6 +19,7 @@ import '../theme/app_theme.dart';
 import '../providers/user_provider.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import '../services/imagekit_service.dart';
+import '../services/here_maps_address_service.dart';
 // import '../widgets/home_navigation_button.dart';
 // import 'seller_onboarding_screen.dart';
 import 'package:flutter/services.dart';
@@ -115,8 +116,7 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
   // New delivery range variables
   double _deliveryRange = 20.0; // Default 20km range (SA market standard)
   
-  // Hybrid delivery mode variables
-  String _deliveryMode = 'hybrid'; // 'platform', 'seller', 'hybrid', 'pickup'
+  // Delivery settings (without mode selector)
   bool _sellerDeliveryEnabled = false;
   bool _platformDeliveryEnabled = true;
   double _sellerDeliveryBaseFee = 25.0; // SA standard base rate
@@ -878,64 +878,125 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
   }
 
   Future<void> _getCurrentLocation() async {
-    bool serviceEnabled;
-    LocationPermission permission = await Geolocator.checkPermission();
+    // Show loading while resolving location
+    if (mounted) setState(() => _isLoading = true);
 
-    serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    if (!serviceEnabled) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Location services are disabled')),
-      );
-      return;
-    }
+    try {
+      // Web: use Nominatim-based flow via HereMapsAddressService
+      if (kIsWeb) {
+        final addr = await HereMapsAddressService.getCurrentLocationAddress();
+        if (addr != null) {
+          final lat = (addr['latitude'] as num?)?.toDouble();
+          final lng = (addr['longitude'] as num?)?.toDouble();
+          if (lat != null && lng != null) {
+            if (mounted) setState(() { _latitude = lat; _longitude = lng; });
+          }
 
-    permission = await Geolocator.checkPermission();
-    if (permission == LocationPermission.deniedForever) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Location permissions are denied forever')),
-      );
-      return;
-    }
+          String street = (addr['street']?.toString() ?? '').trim();
+          String district = (addr['district']?.toString() ?? '').trim();
+          String city = (addr['city']?.toString() ?? '').trim();
+          String state = (addr['state']?.toString() ?? '').trim();
+          String postal = (addr['postalCode']?.toString() ?? '').trim();
+          String country = (addr['countryName']?.toString() ?? 'South Africa').trim();
 
-    if (permission == LocationPermission.denied) {
-      permission = await Geolocator.requestPermission();
-      if (permission != LocationPermission.whileInUse &&
-          permission != LocationPermission.always) {
+          final line1 = [street, district].where((s) => s.isNotEmpty).join(', ');
+          final line2 = [city, state].where((s) => s.isNotEmpty).join(', ');
+          final formatted = [line1, line2, postal, country]
+              .where((s) => s != null && s.toString().trim().isNotEmpty)
+              .join(', ');
+
+          if (mounted) {
+            setState(() {
+              _addressLine1Controller.text = line1;
+              _addressLine2Controller.text = line2;
+              _cityController.text = city;
+              _postalCodeController.text = postal;
+              _formattedAddress = formatted.isNotEmpty
+                  ? formatted
+                  : 'Current location (${lat?.toStringAsFixed(5)}, ${lng?.toStringAsFixed(5)})';
+              if (_locationController.text.isEmpty && _formattedAddress != null) {
+                _locationController.text = _formattedAddress!;
+              }
+            });
+          }
+        } else {
+          throw Exception('Could not detect web location');
+        }
+        return;
+      }
+
+      // Mobile (Android/iOS): keep Geolocator + placemark flow, null-safe
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Location permission denied')),
+          const SnackBar(content: Text('Location services are disabled')),
         );
         return;
       }
-    }
 
-    try {
-      Position position = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
-      setState(() {
-        _latitude = position.latitude;
-        _longitude = position.longitude;
-      });
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.deniedForever) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Location permissions are denied forever')),
+        );
+        return;
+      }
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission != LocationPermission.whileInUse && permission != LocationPermission.always) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Location permission denied')),
+          );
+          return;
+        }
+      }
 
-      List<Placemark> placemarks = await placemarkFromCoordinates(
-        position.latitude,
-        position.longitude,
-      );
+      final position = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
+      if (mounted) setState(() { _latitude = position.latitude; _longitude = position.longitude; });
 
-      final placemark = placemarks.first;
-      final line1 = [placemark.street, placemark.subLocality].where((e) => e != null && e!.isNotEmpty).join(', ');
-      final line2 = [placemark.locality, placemark.administrativeArea].where((e) => e != null && e!.isNotEmpty).join(', ');
-      final postal = placemark.postalCode ?? '';
-      final country = placemark.country ?? '';
-      final formatted = [line1, line2, postal, country].where((e) => e != null && e!.toString().trim().isNotEmpty).join(', ');
-      setState(() {
-        _addressLine1Controller.text = line1;
-        _addressLine2Controller.text = line2;
-        _cityController.text = placemark.locality ?? '';
-        _postalCodeController.text = postal;
-        _formattedAddress = formatted;
-        _locationController.text = formatted.isNotEmpty ? formatted : (_locationController.text.isNotEmpty ? _locationController.text : '${placemark.locality}, ${placemark.country}');
-      });
+      final placemarks = await placemarkFromCoordinates(position.latitude, position.longitude);
+      if (placemarks.isNotEmpty) {
+        final p = placemarks.first;
+        final street = (p.street ?? '').trim();
+        final sub = (p.subLocality ?? '').trim();
+        final city = (p.locality ?? '').trim();
+        final province = (p.administrativeArea ?? '').trim();
+        final postal = (p.postalCode ?? '').trim();
+        final country = (p.country ?? '').trim();
+
+        final line1 = [street, sub].where((s) => s.isNotEmpty).join(', ');
+        final line2 = [city, province].where((s) => s.isNotEmpty).join(', ');
+        final formatted = [line1, line2, postal, country].where((s) => s.isNotEmpty).join(', ');
+
+        if (mounted) {
+          setState(() {
+            _addressLine1Controller.text = line1;
+            _addressLine2Controller.text = line2;
+            _cityController.text = city;
+            _postalCodeController.text = postal;
+            _formattedAddress = formatted;
+            if (_locationController.text.isEmpty) {
+              _locationController.text = formatted.isNotEmpty ? formatted : [city, country].where((s) => s.isNotEmpty).join(', ');
+            }
+          });
+        }
+      } else {
+        if (mounted) {
+          setState(() {
+            _formattedAddress = 'Current location (${position.latitude.toStringAsFixed(5)}, ${position.longitude.toStringAsFixed(5)})';
+            if (_locationController.text.isEmpty) {
+              _locationController.text = _formattedAddress!;
+            }
+          });
+        }
+      }
     } catch (e) {
       print('Error getting address: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not get current location: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -1100,7 +1161,6 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
         'deliveryFeePerKm': _sellerDeliveryFeePerKm, // Use modern hybrid value for backward compatibility
         'minOrderForDelivery': _minOrderController.text.isNotEmpty ? double.parse(_minOrderController.text) : 0.0,
         // Hybrid delivery settings
-        'deliveryMode': _deliveryMode,
         'sellerDeliveryEnabled': _sellerDeliveryEnabled,
         'platformDeliveryEnabled': _platformDeliveryEnabled,
         'sellerDeliveryBaseFee': _sellerDeliveryBaseFee,
@@ -1125,6 +1185,14 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
         'passion': _passionController.text.trim(),
         'latitude': _latitude,
         'longitude': _longitude,
+        'pudoEnabled': _pudoEnabled,
+        'pudoDefaultSize': _pudoDefaultSize,
+        'pudoDefaultSpeed': _pudoDefaultSpeed,
+        'pudoAccountNumber': _pudoAccountNumberController.text.trim(),
+        'pudoBusinessName': _pudoBusinessNameController.text.trim(),
+        'pudoContactPerson': _pudoContactPersonController.text.trim(),
+        'pudoContactPhone': _pudoContactPhoneController.text.trim(),
+        'selectedPudoLocker': _selectedPudoLocker,
         'paxiEnabled': _paxiEnabled,
         'pargoEnabled': _pargoEnabled,
         'status': 'pending',
@@ -1202,8 +1270,8 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
 
         // Show store link and QR so seller can advertise immediately
         final storeId = user.uid;
-        final base = const String.fromEnvironment('PUBLIC_BASE_URL', defaultValue: 'https://omniasa.co.za');
-        final storeUrl = '$base/store/$storeId';
+        final base = const String.fromEnvironment('PUBLIC_BASE_URL', defaultValue: 'https://www.omniasa.co.za');
+        final storeUrl = '$base/#/stores?storeId=$storeId';
         if (!mounted) return;
         await showDialog(
           context: context,
@@ -2461,441 +2529,307 @@ class _SellerRegistrationScreenState extends State<SellerRegistrationScreen> wit
                           keyboardType: TextInputType.number,
                         ),
                         
-                        // Hybrid Delivery Mode Section
-                        Container(
-                          margin: EdgeInsets.only(bottom: ResponsiveUtils.getVerticalPadding(context)),
-                          padding: EdgeInsets.all(ResponsiveUtils.getHorizontalPadding(context)),
-                          decoration: BoxDecoration(
-                            color: AppTheme.angel,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: AppTheme.breeze.withOpacity(0.3),
-                            ),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  Icon(
-                                    Icons.delivery_dining,
-                                    color: AppTheme.deepTeal,
-                                    size: 20,
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Text(
-                                    'Delivery Mode',
-                                    style: TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w600,
-                                      color: AppTheme.deepTeal,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 12),
-                              Text(
-                                'Choose how you want to handle deliveries. You can use platform drivers, handle delivery yourself, or offer both options.',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: AppTheme.mediumGrey,
-                                ),
-                              ),
-                              const SizedBox(height: 16),
-                              
-                              // Delivery Mode Dropdown
-                              DropdownButtonFormField<String>(
-                                value: _deliveryMode,
-                                decoration: InputDecoration(
-                                  labelText: 'Delivery Mode',
-                                  border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  prefixIcon: Icon(Icons.settings),
-                                  contentPadding: EdgeInsets.symmetric(
-                                    horizontal: ResponsiveUtils.getHorizontalPadding(context) * 0.5,
-                                    vertical: ResponsiveUtils.getVerticalPadding(context) * 0.3,
-                                  ),
-                                ),
-                                items: [
-                                  DropdownMenuItem(
-                                    value: 'platform',
-                                    child: Tooltip(
-                                      message: 'Use platform drivers for deliveries',
-                                      child: Text(
-                                        'Platform Only',
-                                        style: TextStyle(fontSize: ResponsiveUtils.getTitleSize(context) - 4),
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ),
-                                  ),
-                                  DropdownMenuItem(
-                                    value: 'seller',
-                                    child: Tooltip(
-                                      message: 'Handle delivery yourself',
-                                      child: Text(
-                                        'Seller Only',
-                                        style: TextStyle(fontSize: ResponsiveUtils.getTitleSize(context) - 4),
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ),
-                                  ),
-                                  DropdownMenuItem(
-                                    value: 'hybrid',
-                                    child: Tooltip(
-                                      message: 'Offer both platform and seller delivery',
-                                      child: Text(
-                                        'Hybrid',
-                                        style: TextStyle(fontSize: ResponsiveUtils.getTitleSize(context) - 4),
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ),
-                                  ),
-                                  DropdownMenuItem(
-                                    value: 'pickup',
-                                    child: Tooltip(
-                                      message: 'Customers collect from your location',
-                                      child: Text(
-                                        'Pickup Only',
-                                        style: TextStyle(fontSize: ResponsiveUtils.getTitleSize(context) - 4),
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                                isExpanded: true, // Prevent overflow
-                                onChanged: (value) {
-                                  setState(() {
-                                    _deliveryMode = value!;
-                                    // Auto-configure based on mode
-                                    switch (value) {
-                                      case 'platform':
-                                        _sellerDeliveryEnabled = false;
-                                        _platformDeliveryEnabled = true;
-                                        break;
-                                      case 'seller':
-                                        _sellerDeliveryEnabled = true;
-                                        _platformDeliveryEnabled = false;
-                                        break;
-                                      case 'hybrid':
-                                        _sellerDeliveryEnabled = true;
-                                        _platformDeliveryEnabled = true;
-                                        break;
-                                      case 'pickup':
-                                        _sellerDeliveryEnabled = false;
-                                        _platformDeliveryEnabled = false;
-                                        break;
-                                    }
-                                  });
-                                },
-                              ),
-                              
-                              const SizedBox(height: 16),
-                              
-                              // Delivery Options
-                              if (_deliveryMode != 'pickup') ...[
-                                Text(
-                                  'Delivery Options',
-                                  style: TextStyle(
-                                    fontSize: ResponsiveUtils.getTitleSize(context) - 2,
-                                    fontWeight: FontWeight.w600,
-                                    color: AppTheme.deepTeal,
-                                  ),
-                                ),
-                                SizedBox(height: ResponsiveUtils.getVerticalPadding(context) * 0.3),
-                                // Responsive delivery options
-                                LayoutBuilder(
-                                  builder: (context, constraints) {
-                                    if (constraints.maxWidth > 500) {
-                                      // Desktop/Tablet: Side by side
-                                      return Row(
-                                        children: [
-                                          Expanded(
-                                            child: CheckboxListTile(
-                                              title: Text(
-                                                'Enable Seller Delivery',
-                                                style: TextStyle(fontSize: ResponsiveUtils.getTitleSize(context) - 3),
-                                              ),
-                                              subtitle: Text(
-                                                'Handle deliveries yourself',
-                                                style: TextStyle(fontSize: ResponsiveUtils.getTitleSize(context) - 4),
-                                              ),
-                                              value: _sellerDeliveryEnabled,
-                                              onChanged: _deliveryMode == 'platform' ? null : (value) {
-                                                setState(() => _sellerDeliveryEnabled = value!);
-                                              },
-                                            ),
-                                          ),
-                                          Expanded(
-                                            child: CheckboxListTile(
-                                              title: Text(
-                                                'Enable Platform Delivery',
-                                                style: TextStyle(fontSize: ResponsiveUtils.getTitleSize(context) - 3),
-                                              ),
-                                              subtitle: Text(
-                                                'Use platform drivers',
-                                                style: TextStyle(fontSize: ResponsiveUtils.getTitleSize(context) - 4),
-                                              ),
-                                              value: _platformDeliveryEnabled,
-                                              onChanged: _deliveryMode == 'seller' ? null : (value) {
-                                                setState(() => _platformDeliveryEnabled = value!);
-                                              },
-                                            ),
-                                          ),
-                                        ],
-                                      );
-                                    } else {
-                                      // Mobile: Stacked vertically
-                                      return Column(
-                                        children: [
-                                          CheckboxListTile(
-                                            title: Text(
-                                              'Enable Seller Delivery',
-                                              style: TextStyle(fontSize: ResponsiveUtils.getTitleSize(context) - 3),
-                                            ),
-                                            subtitle: Text(
-                                              'Handle deliveries yourself',
-                                              style: TextStyle(fontSize: ResponsiveUtils.getTitleSize(context) - 4),
-                                            ),
-                                            value: _sellerDeliveryEnabled,
-                                            onChanged: _deliveryMode == 'platform' ? null : (value) {
-                                              setState(() => _sellerDeliveryEnabled = value!);
-                                            },
-                                          ),
-                                          CheckboxListTile(
-                                            title: Text(
-                                              'Enable Platform Delivery',
-                                              style: TextStyle(fontSize: ResponsiveUtils.getTitleSize(context) - 3),
-                                            ),
-                                            subtitle: Text(
-                                              'Use platform drivers',
-                                              style: TextStyle(fontSize: ResponsiveUtils.getTitleSize(context) - 4),
-                                            ),
-                                            value: _platformDeliveryEnabled,
-                                            onChanged: _deliveryMode == 'seller' ? null : (value) {
-                                              setState(() => _platformDeliveryEnabled = value!);
-                                            },
-                                          ),
-                                        ],
-                                      );
-                                    }
-                                  },
-                                ),
-                              ],
-                              
-                              // Seller Delivery Settings
-                              if (_sellerDeliveryEnabled) ...[
-                                const SizedBox(height: 16),
-                                // Seller Delivery Settings Note
-                                Container(
-                                  margin: const EdgeInsets.only(bottom: 12),
-                                  padding: const EdgeInsets.all(12),
-                                  decoration: BoxDecoration(
-                                    color: AppTheme.deepTeal.withOpacity(0.1),
-                                    borderRadius: BorderRadius.circular(8),
-                                    border: Border.all(
-                                      color: AppTheme.deepTeal.withOpacity(0.3),
-                                    ),
-                                  ),
-                                  child: Row(
-                                    children: [
-                                      Icon(
-                                        Icons.settings,
-                                        color: AppTheme.deepTeal,
-                                        size: 16,
-                                      ),
-                                      const SizedBox(width: 8),
-                                      Expanded(
-                                        child: Text(
-                                          'Configure your own delivery rates. These will override the default rates.',
-                                          style: TextStyle(
-                                            fontSize: 12,
-                                            color: AppTheme.deepTeal,
-                                            fontStyle: FontStyle.italic,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                Text(
-                                  'Delivery Pricing Configuration',
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.bold,
-                                    color: AppTheme.deepTeal,
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                Container(
-                                  padding: EdgeInsets.all(12),
-                                  decoration: BoxDecoration(
-                                    color: AppTheme.breeze.withOpacity(0.1),
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: Text(
-                                    'Formula: Base Fee + (Distance × Fee per km) = Total\nExample: R25 + (5km × R6.50) = R57.50 (capped at Max Fee)',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: AppTheme.deepTeal,
-                                      fontFamily: 'monospace',
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(height: 12),
-                                // Responsive layout for delivery settings
-                                LayoutBuilder(
-                                  builder: (context, constraints) {
-                                    if (constraints.maxWidth > 600) {
-                                      // Desktop/Tablet: Side by side
-                                      return Column(
-                                        children: [
-                                          Row(
-                                            children: [
-                                              Expanded(
-                                                child: _buildEnhancedTextField(
-                                                  controller: TextEditingController(
-                                                    text: _sellerDeliveryBaseFee.toString(),
-                                                  ),
-                                                  label: 'Base Fee (R)',
-                                                  hint: '25.0',
-                                                  prefixIcon: Icons.attach_money,
-                                                  keyboardType: TextInputType.number,
-                                                  helperText: 'Fixed fee for every delivery',
-                                                  onChanged: (value) {
-                                                    if (value.isNotEmpty) {
-                                                      _sellerDeliveryBaseFee = double.tryParse(value) ?? 25.0;
-                                                    }
-                                                  },
-                                                ),
-                                              ),
-                                              SizedBox(width: ResponsiveUtils.getHorizontalPadding(context) * 0.5),
-                                              Expanded(
-                                                child: _buildEnhancedTextField(
-                                                  controller: TextEditingController(
-                                                    text: _sellerDeliveryFeePerKm.toString(),
-                                                  ),
-                                                  label: 'Fee per km (R)',
-                                                  hint: '6.5',
-                                                  prefixIcon: Icons.trending_up,
-                                                  keyboardType: TextInputType.number,
-                                                  helperText: 'Charged per kilometer traveled',
-                                                  onChanged: (value) {
-                                                    if (value.isNotEmpty) {
-                                                      _sellerDeliveryFeePerKm = double.tryParse(value) ?? 6.5;
-                                                    }
-                                                  },
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                          SizedBox(height: ResponsiveUtils.getVerticalPadding(context) * 0.5),
-                                          Row(
-                                            children: [
-                                              Expanded(
-                                                child: _buildEnhancedTextField(
-                                                  controller: TextEditingController(
-                                                    text: _sellerDeliveryMaxFee.toString(),
-                                                  ),
-                                                  label: 'Max Fee (R)',
-                                                  hint: '50.0',
-                                                  prefixIcon: Icons.attach_money,
-                                                  keyboardType: TextInputType.number,
-                                                  helperText: 'Maximum delivery fee cap',
-                                                  onChanged: (value) {
-                                                    if (value.isNotEmpty) {
-                                                      _sellerDeliveryMaxFee = double.tryParse(value) ?? 50.0;
-                                                    }
-                                                  },
-                                                ),
-                                              ),
-                                              SizedBox(width: ResponsiveUtils.getHorizontalPadding(context) * 0.5),
-                                              Expanded(
-                                                child: _buildEnhancedTextField(
-                                                  controller: TextEditingController(
-                                                    text: _sellerDeliveryTime,
-                                                  ),
-                                                  label: 'Delivery Time',
-                                                  hint: '30-45 minutes',
-                                                  prefixIcon: Icons.access_time,
-                                                  onChanged: (value) {
-                                                    _sellerDeliveryTime = value;
-                                                  },
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ],
-                                      );
-                                    } else {
-                                      // Mobile: Stacked vertically
-                                      return Column(
-                                        children: [
-                                          _buildEnhancedTextField(
-                                            controller: TextEditingController(
-                                              text: _sellerDeliveryBaseFee.toString(),
-                                            ),
-                                            label: 'Base Fee (R)',
-                                            hint: '25.0',
-                                            prefixIcon: Icons.attach_money,
-                                            keyboardType: TextInputType.number,
-                                            onChanged: (value) {
-                                              if (value.isNotEmpty) {
-                                                _sellerDeliveryBaseFee = double.tryParse(value) ?? 25.0;
-                                              }
-                                            },
-                                          ),
-                                          SizedBox(height: ResponsiveUtils.getVerticalPadding(context) * 0.5),
-                                          _buildEnhancedTextField(
-                                            controller: TextEditingController(
-                                              text: _sellerDeliveryFeePerKm.toString(),
-                                            ),
-                                            label: 'Fee per km (R)',
-                                            hint: '6.5',
-                                            prefixIcon: Icons.trending_up,
-                                            keyboardType: TextInputType.number,
-                                            onChanged: (value) {
-                                              if (value.isNotEmpty) {
-                                                _sellerDeliveryFeePerKm = double.tryParse(value) ?? 6.5;
-                                              }
-                                            },
-                                          ),
-                                          SizedBox(height: ResponsiveUtils.getVerticalPadding(context) * 0.5),
-                                          _buildEnhancedTextField(
-                                            controller: TextEditingController(
-                                              text: _sellerDeliveryMaxFee.toString(),
-                                            ),
-                                            label: 'Max Fee (R)',
-                                            hint: '50.0',
-                                            prefixIcon: Icons.attach_money,
-                                            keyboardType: TextInputType.number,
-                                            onChanged: (value) {
-                                              if (value.isNotEmpty) {
-                                                _sellerDeliveryMaxFee = double.tryParse(value) ?? 50.0;
-                                              }
-                                            },
-                                          ),
-                                          SizedBox(height: ResponsiveUtils.getVerticalPadding(context) * 0.5),
-                                          _buildEnhancedTextField(
-                                            controller: TextEditingController(
-                                              text: _sellerDeliveryTime,
-                                            ),
-                                            label: 'Delivery Time',
-                                            hint: '30-45 minutes',
-                                            prefixIcon: Icons.access_time,
-                                            onChanged: (value) {
-                                              _sellerDeliveryTime = value;
-                                            },
-                                          ),
-                                        ],
-                                      );
-                                    }
-                                  },
-                                ),
-                              ],
-                            ],
-                          ),
-                        ),
+                        // Hybrid Delivery Mode Section (hidden)
+                        if (false) Container(
+                           margin: EdgeInsets.only(bottom: ResponsiveUtils.getVerticalPadding(context)),
+                           padding: EdgeInsets.all(ResponsiveUtils.getHorizontalPadding(context)),
+                           decoration: BoxDecoration(
+                             color: AppTheme.angel,
+                             borderRadius: BorderRadius.circular(12),
+                             border: Border.all(
+                               color: AppTheme.breeze.withOpacity(0.3),
+                             ),
+                           ),
+                           child: Column(
+                             crossAxisAlignment: CrossAxisAlignment.start,
+                             children: [
+                               Row(
+                                 children: [
+                                   Icon(
+                                     Icons.delivery_dining,
+                                     color: AppTheme.deepTeal,
+                                     size: 20,
+                                   ),
+                                   const SizedBox(width: 8),
+                                   Text(
+                                     'Delivery Options',
+                                     style: TextStyle(
+                                       fontSize: 16,
+                                       fontWeight: FontWeight.w600,
+                                       color: AppTheme.deepTeal,
+                                     ),
+                                   ),
+                                 ],
+                               ),
+                               const SizedBox(height: 12),
+                               Text(
+                                 'Choose how you want to handle deliveries. You can use platform drivers, handle delivery yourself, or offer both options.',
+                                 style: TextStyle(
+                                   fontSize: 12,
+                                   color: AppTheme.mediumGrey,
+                                 ),
+                               ),
+                               const SizedBox(height: 16),
+                               
+                               // Removed delivery mode dropdown; keep simple toggles
+                               // Delivery Options (always shown)
+                               Text(
+                                 'Delivery Options',
+                                 style: TextStyle(
+                                   fontWeight: FontWeight.w600,
+                                   fontSize: ResponsiveUtils.getTitleSize(context),
+                                 ),
+                               ),
+                               const SizedBox(height: 8),
+                               Row(
+                                 children: [
+                                   Expanded(
+                                     child: CheckboxListTile(
+                                       title: const Text('I deliver myself'),
+                                       controlAffinity: ListTileControlAffinity.leading,
+                                       contentPadding: EdgeInsets.zero,
+                                       visualDensity: VisualDensity.compact,
+                                       checkColor: Colors.white,
+                                       activeColor: AppTheme.deepTeal,
+                                       value: _sellerDeliveryEnabled,
+                                       onChanged: (value) {
+                                         setState(() => _sellerDeliveryEnabled = value!);
+                                       },
+                                     ),
+                                   ),
+                                   const SizedBox(width: 12),
+                                   Expanded(
+                                     child: CheckboxListTile(
+                                       title: const Text('Use platform delivery'),
+                                       controlAffinity: ListTileControlAffinity.leading,
+                                       contentPadding: EdgeInsets.zero,
+                                       visualDensity: VisualDensity.compact,
+                                       checkColor: Colors.white,
+                                       activeColor: AppTheme.deepTeal,
+                                       value: _platformDeliveryEnabled,
+                                       onChanged: (value) {
+                                         setState(() => _platformDeliveryEnabled = value!);
+                                       },
+                                     ),
+                                   ),
+                                 ],
+                               ),
+                               const SizedBox(height: 8),
+                               // end delivery options
+                               
+                               // Seller Delivery Settings
+                               if (_sellerDeliveryEnabled) ...[
+                                 const SizedBox(height: 16),
+                                 // Seller Delivery Settings Note
+                                 Container(
+                                   margin: const EdgeInsets.only(bottom: 12),
+                                   padding: const EdgeInsets.all(12),
+                                   decoration: BoxDecoration(
+                                     color: AppTheme.deepTeal.withOpacity(0.1),
+                                     borderRadius: BorderRadius.circular(8),
+                                     border: Border.all(
+                                       color: AppTheme.deepTeal.withOpacity(0.3),
+                                     ),
+                                   ),
+                                   child: Row(
+                                     children: [
+                                       Icon(
+                                         Icons.settings,
+                                         color: AppTheme.deepTeal,
+                                         size: 16,
+                                       ),
+                                       const SizedBox(width: 8),
+                                       Expanded(
+                                         child: Text(
+                                           'Configure your own delivery rates. These will override the default rates.',
+                                           style: TextStyle(
+                                             fontSize: 12,
+                                             color: AppTheme.deepTeal,
+                                             fontStyle: FontStyle.italic,
+                                           ),
+                                         ),
+                                       ),
+                                     ],
+                                   ),
+                                 ),
+                                 Text(
+                                   'Delivery Pricing Configuration',
+                                   style: TextStyle(
+                                     fontSize: 16,
+                                     fontWeight: FontWeight.bold,
+                                     color: AppTheme.deepTeal,
+                                   ),
+                                 ),
+                                 const SizedBox(height: 4),
+                                 Container(
+                                   padding: EdgeInsets.all(12),
+                                   decoration: BoxDecoration(
+                                     color: AppTheme.breeze.withOpacity(0.1),
+                                     borderRadius: BorderRadius.circular(8),
+                                   ),
+                                   child: Text(
+                                     'Formula: Base Fee + (Distance × Fee per km) = Total\nExample: R25 + (5km × R6.50) = R57.50 (capped at Max Fee)',
+                                     style: TextStyle(
+                                       fontSize: 12,
+                                       color: AppTheme.deepTeal,
+                                       fontFamily: 'monospace',
+                                     ),
+                                   ),
+                                 ),
+                                 const SizedBox(height: 12),
+                                 // Responsive layout for delivery settings
+                                 LayoutBuilder(
+                                   builder: (context, constraints) {
+                                     if (constraints.maxWidth > 600) {
+                                       // Desktop/Tablet: Side by side
+                                       return Column(
+                                         children: [
+                                           Row(
+                                             children: [
+                                               Expanded(
+                                                 child: _buildEnhancedTextField(
+                                                   controller: TextEditingController(
+                                                     text: _sellerDeliveryBaseFee.toString(),
+                                                   ),
+                                                   label: 'Base Fee (R)',
+                                                   hint: '25.0',
+                                                   prefixIcon: Icons.attach_money,
+                                                   keyboardType: TextInputType.number,
+                                                   helperText: 'Fixed fee for every delivery',
+                                                   onChanged: (value) {
+                                                     if (value.isNotEmpty) {
+                                                       _sellerDeliveryBaseFee = double.tryParse(value) ?? 25.0;
+                                                     }
+                                                   },
+                                                 ),
+                                               ),
+                                               SizedBox(width: ResponsiveUtils.getHorizontalPadding(context) * 0.5),
+                                               Expanded(
+                                                 child: _buildEnhancedTextField(
+                                                   controller: TextEditingController(
+                                                     text: _sellerDeliveryFeePerKm.toString(),
+                                                   ),
+                                                   label: 'Fee per km (R)',
+                                                   hint: '6.5',
+                                                   prefixIcon: Icons.trending_up,
+                                                   keyboardType: TextInputType.number,
+                                                   helperText: 'Charged per kilometer traveled',
+                                                   onChanged: (value) {
+                                                     if (value.isNotEmpty) {
+                                                       _sellerDeliveryFeePerKm = double.tryParse(value) ?? 6.5;
+                                                     }
+                                                   },
+                                                 ),
+                                               ),
+                                             ],
+                                           ),
+                                           SizedBox(height: ResponsiveUtils.getVerticalPadding(context) * 0.5),
+                                           Row(
+                                             children: [
+                                               Expanded(
+                                                 child: _buildEnhancedTextField(
+                                                   controller: TextEditingController(
+                                                     text: _sellerDeliveryMaxFee.toString(),
+                                                   ),
+                                                   label: 'Max Fee (R)',
+                                                   hint: '50.0',
+                                                   prefixIcon: Icons.attach_money,
+                                                   keyboardType: TextInputType.number,
+                                                   helperText: 'Maximum delivery fee cap',
+                                                   onChanged: (value) {
+                                                     if (value.isNotEmpty) {
+                                                       _sellerDeliveryMaxFee = double.tryParse(value) ?? 50.0;
+                                                     }
+                                                   },
+                                                 ),
+                                               ),
+                                               SizedBox(width: ResponsiveUtils.getHorizontalPadding(context) * 0.5),
+                                               Expanded(
+                                                 child: _buildEnhancedTextField(
+                                                   controller: TextEditingController(
+                                                     text: _sellerDeliveryTime,
+                                                   ),
+                                                   label: 'Delivery Time',
+                                                   hint: '30-45 minutes',
+                                                   prefixIcon: Icons.access_time,
+                                                   onChanged: (value) {
+                                                     _sellerDeliveryTime = value;
+                                                   },
+                                                 ),
+                                               ),
+                                             ],
+                                           ),
+                                         ],
+                                       );
+                                     } else {
+                                       // Mobile: Stacked vertically
+                                       return Column(
+                                         children: [
+                                           _buildEnhancedTextField(
+                                             controller: TextEditingController(
+                                               text: _sellerDeliveryBaseFee.toString(),
+                                             ),
+                                             label: 'Base Fee (R)',
+                                             hint: '25.0',
+                                             prefixIcon: Icons.attach_money,
+                                             keyboardType: TextInputType.number,
+                                             onChanged: (value) {
+                                               if (value.isNotEmpty) {
+                                                 _sellerDeliveryBaseFee = double.tryParse(value) ?? 25.0;
+                                               }
+                                             },
+                                           ),
+                                           SizedBox(height: ResponsiveUtils.getVerticalPadding(context) * 0.5),
+                                           _buildEnhancedTextField(
+                                             controller: TextEditingController(
+                                               text: _sellerDeliveryFeePerKm.toString(),
+                                             ),
+                                             label: 'Fee per km (R)',
+                                             hint: '6.5',
+                                             prefixIcon: Icons.trending_up,
+                                             keyboardType: TextInputType.number,
+                                             onChanged: (value) {
+                                               if (value.isNotEmpty) {
+                                                 _sellerDeliveryFeePerKm = double.tryParse(value) ?? 6.5;
+                                               }
+                                             },
+                                           ),
+                                           SizedBox(height: ResponsiveUtils.getVerticalPadding(context) * 0.5),
+                                           _buildEnhancedTextField(
+                                             controller: TextEditingController(
+                                               text: _sellerDeliveryMaxFee.toString(),
+                                             ),
+                                             label: 'Max Fee (R)',
+                                             hint: '50.0',
+                                             prefixIcon: Icons.attach_money,
+                                             keyboardType: TextInputType.number,
+                                             onChanged: (value) {
+                                               if (value.isNotEmpty) {
+                                                 _sellerDeliveryMaxFee = double.tryParse(value) ?? 50.0;
+                                               }
+                                             },
+                                           ),
+                                           SizedBox(height: ResponsiveUtils.getVerticalPadding(context) * 0.5),
+                                           _buildEnhancedTextField(
+                                             controller: TextEditingController(
+                                               text: _sellerDeliveryTime,
+                                             ),
+                                             label: 'Delivery Time',
+                                             hint: '30-45 minutes',
+                                             prefixIcon: Icons.access_time,
+                                             onChanged: (value) {
+                                               _sellerDeliveryTime = value;
+                                             },
+                                           ),
+                                         ],
+                                       );
+                                     }
+                                   },
+                                 ),
+                               ],
+                             ],
+                           ),
+                         ),
                         
                         // Delivery Range Section
                         Container(

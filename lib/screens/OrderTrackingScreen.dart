@@ -10,6 +10,7 @@ import '../utils/order_utils.dart';
 import '../services/whatsapp_cloud_service.dart';
 import '../models/order_status.dart';
 import '../services/pargo_tracking_service.dart';
+import '../services/paxi_pudo_service.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:flutter/services.dart';
 
@@ -27,9 +28,10 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
   late Animation<double> _fadeAnimation;
   bool _cartClearedOnPayment = false;
 
-  // Add new fields for Pargo tracking
+  // Add new fields for Pargo and PUDO tracking
   Map<String, dynamic>? _orderData;
   PargoPickupDetails? _pargoPickupDetails;
+  Map<String, dynamic>? _pudoDeliveryDetails;
   List<TrackingEvent> _trackingTimeline = [];
   bool _isLoadingTimeline = false;
 
@@ -60,6 +62,11 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
         // Load Pargo pickup details if available
         if (data['pargoPickupDetails'] != null) {
           _pargoPickupDetails = PargoPickupDetails.fromMap(data['pargoPickupDetails']);
+        }
+        
+        // Load PUDO delivery details if available
+        if (data['pudoDeliveryAddress'] != null) {
+          _pudoDeliveryDetails = data['pudoDeliveryAddress'];
         }
       });
     }
@@ -289,6 +296,11 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
                 // Add Pargo pickup section
                 SliverToBoxAdapter(
                   child: _buildPargoPickupSection(),
+                ),
+                
+                // Add PUDO delivery section
+                SliverToBoxAdapter(
+                  child: _buildPudoDeliverySection(),
                 ),
                 
                 // Add tracking timeline
@@ -1171,7 +1183,7 @@ Need help? Reply to this message!
                 Icon(Icons.store, color: Colors.green[600]),
                 const SizedBox(width: 8),
                 Text(
-                  'Pickup Point Details',
+                  'Pargo Pickup Point Details',
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.bold,
                   ),
@@ -1201,6 +1213,47 @@ Need help? Reply to this message!
             // Collection QR code
             if (_orderData?['status'] == OrderStatus.readyForCollection.name)
               _buildCollectionQRCode(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Build PUDO delivery details section
+  Widget _buildPudoDeliverySection() {
+    if (_pudoDeliveryDetails == null) return const SizedBox.shrink();
+
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.lock, color: Colors.blue[600]),
+                const SizedBox(width: 8),
+                Text(
+                  'PUDO Locker-to-Door Details',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            
+            // PUDO delivery info
+            _buildPickupInfoRow('🏠 Final Address', _pudoDeliveryDetails!['address'] ?? 'Not specified'),
+            _buildPickupInfoRow('🏙️ City', _pudoDeliveryDetails!['city'] ?? 'Not specified'),
+            _buildPickupInfoRow('📱 Contact', _pudoDeliveryDetails!['phone'] ?? 'Not specified'),
+            _buildPickupInfoRow('💰 Service Fee', 'R35.00'),
+            
+            const SizedBox(height: 16),
+            
+            // PUDO process info
+            _buildPudoProcessInfo(),
           ],
         ),
       ),
@@ -1322,6 +1375,46 @@ Need help? Reply to this message!
               color: Colors.grey[600],
             ),
             textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Build PUDO process information
+  Widget _buildPudoProcessInfo() {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.blue[50],
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.blue[200]!),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.info_outline, color: Colors.blue[600], size: 20),
+              const SizedBox(width: 8),
+              Text(
+                'PUDO Process',
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: Colors.blue[700],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '1. Seller drops your package at their chosen PUDO locker\n'
+            '2. PUDO collects from the locker\n'
+            '3. PUDO delivers to your final address above\n'
+            '4. You will receive delivery notifications',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: Colors.blue[700],
+            ),
           ),
         ],
       ),

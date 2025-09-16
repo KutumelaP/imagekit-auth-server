@@ -68,8 +68,10 @@ class _SellerOnboardingScreenState extends State<SellerOnboardingScreen> with Ti
       icon: Icons.receipt_long,
       color: AppTheme.primaryGreen,
       content: [
-        'Commission varies by order type',
-        'Buyer pays a small service fee',
+        'Commission varies by delivery type:',
+        '• Pickup: 6% (min R5, cap R30)',
+        '• You deliver: 9% (cap R40)',
+        'Buyer pays service fee (1% + R3)',
         'Weekly payouts (minimum R100)',
         'COD commission settled via payout/top-up',
       ],
@@ -111,7 +113,7 @@ class _SellerOnboardingScreenState extends State<SellerOnboardingScreen> with Ti
         'Seller delivery (your own delivery)',
         'Hybrid delivery (both options)',
         'Pickup only (customers collect)',
-        'Nationwide pickup (Pargo/PAXI services)',
+        'Nationwide pickup (PUDO/PAXI services)',
         'Set your own delivery fees and ranges',
         'Category-aware delivery caps (food: 20km, others: 50km)'
       ],
@@ -305,35 +307,6 @@ class _SellerOnboardingScreenState extends State<SellerOnboardingScreen> with Ti
             ),
           )).toList(),
 
-          if (step.title == 'How Payments Work') ...[
-            SizedBox(height: ResponsiveUtils.getVerticalPadding(context)),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: AppTheme.primaryGreen.withOpacity(0.08),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: AppTheme.primaryGreen.withOpacity(0.2)),
-              ),
-              child: Row(
-                children: [
-                  Icon(Icons.percent, color: AppTheme.primaryGreen, size: 18),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      _platformFeePct != null
-                          ? 'Current platform commission: ${_platformFeePct!.toStringAsFixed(1)}% (may change)'
-                          : 'Platform commission: set by platform (may change)',
-                      style: TextStyle(
-                        color: AppTheme.deepTeal,
-                        fontSize: ResponsiveUtils.getTitleSize(context) - 6,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
 
           if (step.title == 'Fees & Payouts') ...[
             SizedBox(height: ResponsiveUtils.getVerticalPadding(context)),
@@ -351,7 +324,6 @@ class _SellerOnboardingScreenState extends State<SellerOnboardingScreen> with Ti
                   const SizedBox(height: 8),
                   _buildBullet('Pickup: ${_pickupPct?.toStringAsFixed(1) ?? (_platformFeePct?.toStringAsFixed(1) ?? '—')}% (min R${(_commissionMin ?? 0).toStringAsFixed(2)}, cap R${(_capPickup ?? 0).toStringAsFixed(2)})'),
                   _buildBullet('You deliver: ${_merchantDeliveryPct?.toStringAsFixed(1) ?? (_platformFeePct?.toStringAsFixed(1) ?? '—')}% (cap R${(_capMerchant ?? 0).toStringAsFixed(2)})'),
-                  _buildBullet('We arrange courier: ${_platformDeliveryPct?.toStringAsFixed(1) ?? (_platformFeePct?.toStringAsFixed(1) ?? '—')}% (cap R${(_capPlatform ?? 0).toStringAsFixed(2)})'),
                   const SizedBox(height: 12),
                   SafeUI.safeText('Buyer fees', style: TextStyle(fontWeight: FontWeight.w700, color: AppTheme.deepTeal)),
                   const SizedBox(height: 8),
@@ -367,8 +339,8 @@ class _SellerOnboardingScreenState extends State<SellerOnboardingScreen> with Ti
                   const SizedBox(height: 12),
                   SafeUI.safeText('Example (R200, you deliver)', style: TextStyle(fontWeight: FontWeight.w700, color: AppTheme.deepTeal)),
                   const SizedBox(height: 8),
-                  _buildBullet('Commission ${_merchantDeliveryPct?.toStringAsFixed(1) ?? '—'}% ≈ R18; Buyer service fee ≈ R5'),
-                  _buildBullet('You receive ≈ R182'),
+                  _buildBullet('Commission ${_merchantDeliveryPct?.toStringAsFixed(1) ?? '—'}% = R18; Buyer service fee = R5'),
+                  _buildBullet('You receive = R182'),
                   const SizedBox(height: 12),
                   Row(
                     children: [

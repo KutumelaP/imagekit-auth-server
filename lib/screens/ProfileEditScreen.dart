@@ -1045,11 +1045,13 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
     bool isRequired = false,
     int maxLines = 1,
     Widget? suffixIcon,
+    String? hintText,
   }) {
     return TextFormField(
       controller: controller,
       decoration: InputDecoration(
         labelText: labelText,
+        hintText: hintText,
         border: const OutlineInputBorder(),
         labelStyle: TextStyle(color: AppTheme.cloud),
         floatingLabelStyle: TextStyle(color: AppTheme.deepTeal),
@@ -1067,7 +1069,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
         ),
         suffixIcon: suffixIcon,
       ),
-      validator: (v) => v == null || v.isEmpty ? 'Required' : null,
+      validator: isRequired ? (v) => v == null || v.isEmpty ? 'Required' : null : null,
       maxLines: maxLines,
     );
   }
@@ -2296,6 +2298,42 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                         ],
                       ),
                     ),
+                    const SizedBox(height: 16),
+                    _buildSectionHeader('Behind the Brand'),
+                    const SizedBox(height: 8),
+                    _buildThemedTextField(
+                      controller: _storyController,
+                      labelText: 'Tell your story (optional)',
+                      maxLines: 4,
+                      hintText: 'Share what makes your brand special, your journey, or what customers can expect...',
+                      suffixIcon: IconButton(
+                        icon: const Icon(Icons.clear),
+                        onPressed: _clearStoryText,
+                        tooltip: 'Clear story',
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Story Photos',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: AppTheme.deepTeal,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    _buildStoryPhotosSection(),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Story Video',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: AppTheme.deepTeal,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    _buildStoryVideoSection(),
                     const SizedBox(height: 16),
                     _buildSectionHeader('Shortcuts'),
                     const SizedBox(height: 8),

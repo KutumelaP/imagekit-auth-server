@@ -376,7 +376,8 @@ class _StoreSelectionScreenState extends State<StoreSelectionScreen> {
       const double noDeliveryNoPickupDefaultKm = 5.0;
       // Compute service radius
       double serviceRadiusKm;
-      final bool hasPickup = pargoEnabled || paxiEnabled;
+      final bool pudoEnabled = userData['pudoEnabled'] == true;
+      final bool hasPickup = pudoEnabled || pargoEnabled || paxiEnabled;
       final bool isFood = _isFoodCategory(category);
       if (deliveryAvailable && deliveryRangeRaw > 0) {
         serviceRadiusKm = isFood
@@ -490,6 +491,7 @@ class _StoreSelectionScreenState extends State<StoreSelectionScreen> {
           'isVerified': userData['isVerified'] ?? false, // Add isVerified field
           'storeOpenHour': userData['storeOpenHour'] as String?,
           'storeCloseHour': userData['storeCloseHour'] as String?,
+          'pudoEnabled': pudoEnabled,
           'pargoEnabled': pargoEnabled,
           'paxiEnabled': paxiEnabled,
         });
@@ -986,22 +988,20 @@ void _navigateToStoreProfile(Map<String, dynamic> store) {
   final storeId = store['storeId'] as String?;
   if (storeId != null && storeId.isNotEmpty) {
     print('🔗 PWA Navigation: Using named route /store/$storeId');
+    print('🔗 NAVIGATION DEBUG: Store ID length: ${storeId.length}');
+    print('🔗 NAVIGATION DEBUG: Store ID characters: ${storeId.runes.toList()}');
+    print('🔗 NAVIGATION DEBUG: Store ID encoded: ${Uri.encodeComponent(storeId)}');
     print('🔗 NAVIGATION DEBUG: About to call Navigator.pushNamed');
     
-    try {
-      Navigator.pushNamed(context, '/store/$storeId');
-      print('🔗 NAVIGATION DEBUG: Navigator.pushNamed completed successfully');
-    } catch (e) {
-      print('❌ NAVIGATION ERROR: Navigator.pushNamed failed: $e');
-      // Fallback to direct navigation
-      print('🔄 NAVIGATION FALLBACK: Using direct navigation');
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => SimpleStoreProfileScreen(store: store),
-        ),
-      );
-    }
+    // Use fallback navigation directly to avoid 404 issues
+    print('🔄 NAVIGATION: Using direct navigation to avoid routing issues');
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => SimpleStoreProfileScreen(store: store),
+        settings: RouteSettings(name: '/store/$storeId'),
+      ),
+    );
   } else {
     print('⚠️ Fallback: Using direct navigation (no storeId)');
     Navigator.push(
@@ -2107,10 +2107,10 @@ void _navigateToStoreProfile(Map<String, dynamic> store) {
         filtered = filtered.where((store) => store['deliveryAvailable'] == true).toList();
         break;
       case 'nationwide':
-        // Show non-food stores that support pickup (Pargo/PAXI), distance ignored
+        // Show non-food stores that support pickup (PUDO/Pargo/PAXI), distance ignored
         filtered = filtered.where((store) {
           final category = (store['category'] ?? '').toString();
-          final hasPickup = (store['pargoEnabled'] == true) || (store['paxiEnabled'] == true);
+          final hasPickup = (store['pudoEnabled'] == true) || (store['pargoEnabled'] == true) || (store['paxiEnabled'] == true);
           return hasPickup && !_isFoodCategory(category);
         }).toList();
         break;

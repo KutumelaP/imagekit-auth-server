@@ -399,8 +399,8 @@ class PayFastService {
           ? settingsDoc.data() as Map<String, dynamic>
           : {};
       
-      // Default to 5% if not set, otherwise use configured value
-      double platformFeePercentage = (settings['platformFeePercentage'] ?? 5.0).toDouble();
+      // Default to tiered commission if not set, use legacy 5% as fallback
+      double platformFeePercentage = (settings['platformFeePercentage'] ?? 9.0).toDouble();
       double platformFee = orderTotal * (platformFeePercentage / 100);
       
       // PayFast transaction fee from settings

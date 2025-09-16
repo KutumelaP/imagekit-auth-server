@@ -53,7 +53,7 @@ Created a comprehensive **6-step onboarding process** that sellers **must comple
 - Seller delivery (your own delivery)
 - Hybrid delivery (both options)
 - Pickup only (customers collect)
-- Nationwide pickup (Pargo/PAXI services)
+- Nationwide pickup (PUDO/Pargo/PAXI services)
 - Set your own delivery fees and ranges
 - Category-aware delivery caps (food: 20km, others: 50km)
 

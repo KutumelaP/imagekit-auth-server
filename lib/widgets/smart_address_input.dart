@@ -196,10 +196,24 @@ class _SmartAddressInputState extends State<SmartAddressInput> {
         throw Exception('Could not detect location');
       }
     } catch (e) {
+      print('❌ Location error in smart_address_input: $e');
+      String errorMessage = 'Could not get current location';
+      
+      // Provide more specific error messages
+      final errorStr = e.toString().toLowerCase();
+      if (errorStr.contains('permission')) {
+        errorMessage = 'Location permission required. Please enable location access.';
+      } else if (errorStr.contains('timeout') || errorStr.contains('time')) {
+        errorMessage = 'Location request timed out. Please try again.';
+      } else if (errorStr.contains('network') || errorStr.contains('internet')) {
+        errorMessage = 'Network error. Please check your internet connection.';
+      }
+      
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('❌ Location error: $e'),
+          content: Text('❌ $errorMessage'),
           backgroundColor: Colors.red,
+          duration: Duration(seconds: 4),
         ),
       );
     } finally {
@@ -248,11 +262,11 @@ class _SmartAddressInputState extends State<SmartAddressInput> {
                     Padding(
                       padding: EdgeInsets.only(right: 8),
                       child: SizedBox(
-                        width: 16,
-                        height: 16,
+                        width: 20,
+                        height: 20,
                         child: CircularProgressIndicator(
-                          strokeWidth: 2.5,
-                          valueColor: AlwaysStoppedAnimation(AppTheme.deepTeal),
+                          strokeWidth: 3.0,
+                          valueColor: AlwaysStoppedAnimation(AppTheme.primaryGreen),
                         ),
                       ),
                     ),
@@ -269,9 +283,12 @@ class _SmartAddressInputState extends State<SmartAddressInput> {
                     tooltip: 'Search addresses',
                   ),
                   IconButton(
-                    icon: Icon(Icons.my_location, color: AppTheme.deepTeal),
-                    onPressed: _useCurrentLocation,
-                    tooltip: 'Use current location',
+                    icon: Icon(
+                      Icons.my_location, 
+                      color: _isLoading ? AppTheme.mediumGrey : AppTheme.deepTeal,
+                    ),
+                    onPressed: _isLoading ? null : _useCurrentLocation,
+                    tooltip: _isLoading ? 'Getting location...' : 'Use current location',
                   ),
                 ],
               ),
