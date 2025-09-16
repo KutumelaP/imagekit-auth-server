@@ -150,12 +150,12 @@ class _PaymentSettingsManagementState extends State<PaymentSettingsManagement> {
         _smallOrderThresholdController.text = (_paymentSettings['smallOrderThreshold'] ?? 0.0).toString();
         
         // Tiered pricing fields
-        _tier1MaxController.text = (_paymentSettings['tier1Max'] ?? 25.0).toString();
-        _tier1CommissionController.text = (_paymentSettings['tier1Commission'] ?? 4.0).toString();
-        _tier1SmallOrderFeeController.text = (_paymentSettings['tier1SmallOrderFee'] ?? 3.0).toString();
-        _tier2MaxController.text = (_paymentSettings['tier2Max'] ?? 100.0).toString();
-        _tier2CommissionController.text = (_paymentSettings['tier2Commission'] ?? 6.0).toString();
-        _tier2SmallOrderFeeController.text = (_paymentSettings['tier2SmallOrderFee'] ?? 5.0).toString();
+        _tier1MaxController.text = (_paymentSettings['tier1Max'] ?? 15.0).toString();
+        _tier1CommissionController.text = (_paymentSettings['tier1Commission'] ?? 15.0).toString();
+        _tier1SmallOrderFeeController.text = (_paymentSettings['tier1SmallOrderFee'] ?? 0.0).toString();
+        _tier2MaxController.text = (_paymentSettings['tier2Max'] ?? 50.0).toString();
+        _tier2CommissionController.text = (_paymentSettings['tier2Commission'] ?? 10.0).toString();
+        _tier2SmallOrderFeeController.text = (_paymentSettings['tier2SmallOrderFee'] ?? 2.0).toString();
         _tier3CommissionController.text = (_paymentSettings['tier3Commission'] ?? 6.0).toString();
       } else {
         // Set default values
@@ -180,12 +180,12 @@ class _PaymentSettingsManagementState extends State<PaymentSettingsManagement> {
         _smallOrderThresholdController.text = '100.0';
         
         // Tiered pricing defaults
-        _tier1MaxController.text = '25.0';
-        _tier1CommissionController.text = '4.0';
-        _tier1SmallOrderFeeController.text = '3.0';
-        _tier2MaxController.text = '100.0';
-        _tier2CommissionController.text = '6.0';
-        _tier2SmallOrderFeeController.text = '5.0';
+        _tier1MaxController.text = '15.0';
+        _tier1CommissionController.text = '15.0';
+        _tier1SmallOrderFeeController.text = '0.0';
+        _tier2MaxController.text = '50.0';
+        _tier2CommissionController.text = '10.0';
+        _tier2SmallOrderFeeController.text = '2.0';
         _tier3CommissionController.text = '6.0';
       }
     } catch (e) {

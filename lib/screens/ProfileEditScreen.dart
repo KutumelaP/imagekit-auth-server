@@ -40,6 +40,8 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
   List<String> _storyPhotoUrls = [];
   File? _storyVideo;
   String? _storyVideoUrl;
+  bool _isUploadingStoryPhoto = false;
+  bool _isUploadingStoryVideo = false;
   // Compliance & payments
   String _kycStatus = 'none';
   bool _pargoEnabled = false;
@@ -160,14 +162,17 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
       _cityTextController.text = data['city'] ?? '';
       _postalCodeTextController.text = (data['postalCode'] ?? '').toString();
       _formattedAddress = data['formattedAddress'];
-      _storyController.text = data['story'] ?? '';
-      _specialtiesController.text = (data['specialties'] is List)
-        ? (data['specialties'] as List).join(', ')
-        : (data['specialties'] ?? '');
-      _passionController.text = data['passion'] ?? '';
+      // Behind the Brand fields - only load for sellers
+      if (_isSeller) {
+        _storyController.text = data['story'] ?? '';
+        _specialtiesController.text = (data['specialties'] is List)
+          ? (data['specialties'] as List).join(', ')
+          : (data['specialties'] ?? '');
+        _passionController.text = data['passion'] ?? '';
+        _storyPhotoUrls = (data['storyPhotoUrls'] as List?)?.cast<String>() ?? [];
+        _storyVideoUrl = data['storyVideoUrl'];
+      }
       _profileImageUrl = data['profileImageUrl'];
-      _storyPhotoUrls = (data['storyPhotoUrls'] as List?)?.cast<String>() ?? [];
-      _storyVideoUrl = data['storyVideoUrl'];
       _kycStatus = (data['kycStatus'] as String?) ?? 'none';
       _pargoEnabled = data['pargoEnabled'] == true;
       _paxiEnabled = data['paxiEnabled'] == true;
@@ -560,9 +565,9 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
   }
 
   Future<void> _pickStoryPhoto() async {
-    if (_storyPhotos.length >= 5) {
+    if (_storyPhotoUrls.length >= 2) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Maximum 5 story photos allowed')),
+        const SnackBar(content: Text('Maximum 2 story photos allowed')),
       );
       return;
     }
@@ -571,15 +576,10 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
     final pickedFile = await picker.pickImage(source: ImageSource.gallery);
     if (pickedFile == null) return;
     
+    // Set loading state
     if (mounted) {
       setState(() {
-        if (kIsWeb) {
-          // For web, we'll handle XFile differently - don't add to _storyPhotos for web
-          // _storyPhotos is for File objects only
-        } else {
-          // For mobile, convert to File
-          _storyPhotos.add(File(pickedFile.path));
-        }
+        _isUploadingStoryPhoto = true;
       });
     }
     
@@ -596,35 +596,57 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
       
       if (url != null && mounted) {
         setState(() {
-          _storyPhotoUrls.add(url!); // Use non-null assertion since we already checked
-          if (!kIsWeb) {
-            _storyPhotos.removeLast(); // Remove the local file after successful upload (mobile only)
-          }
+          _storyPhotoUrls.add(url!);
+          _isUploadingStoryPhoto = false;
         });
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Story photo uploaded successfully!')),
+            SnackBar(
+              content: Row(
+                children: [
+                  Icon(Icons.check_circle, color: Colors.white, size: 20),
+                  const SizedBox(width: 8),
+                  Text('Story photo uploaded successfully!'),
+                ],
+              ),
+              backgroundColor: AppTheme.primaryGreen,
+              duration: Duration(seconds: 2),
+            ),
           );
         }
       } else if (mounted) {
         setState(() {
-          if (!kIsWeb) {
-            _storyPhotos.removeLast(); // Remove the local file if upload failed (mobile only)
-          }
+          _isUploadingStoryPhoto = false;
         });
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Failed to upload story photo')),
+          SnackBar(
+            content: Row(
+              children: [
+                Icon(Icons.error, color: Colors.white, size: 20),
+                const SizedBox(width: 8),
+                Text('Failed to upload story photo'),
+              ],
+            ),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     } catch (e) {
       if (mounted) {
         setState(() {
-          if (!kIsWeb) {
-            _storyPhotos.removeLast(); // Remove the local file if upload failed (mobile only)
-          }
+          _isUploadingStoryPhoto = false;
         });
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error uploading story photo: $e')),
+          SnackBar(
+            content: Row(
+              children: [
+                Icon(Icons.error, color: Colors.white, size: 20),
+                const SizedBox(width: 8),
+                Text('Error uploading photo: ${e.toString().split(':').last.trim()}'),
+              ],
+            ),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     }
@@ -642,9 +664,10 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
     final pickedFile = await picker.pickVideo(source: ImageSource.gallery, maxDuration: const Duration(seconds: 60));
     if (pickedFile == null) return;
     
+    // Set loading state
     if (mounted) {
       setState(() {
-        _storyVideo = File(pickedFile.path);
+        _isUploadingStoryVideo = true;
       });
     }
     
@@ -653,29 +676,57 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
       final url = await _uploadVideoToImageKit(File(pickedFile.path));
       if (url != null && mounted) {
         setState(() {
-          _storyVideoUrl = url;
-          _storyVideo = null; // Remove the local file after successful upload
+          _storyVideoUrl = url!;
+          _isUploadingStoryVideo = false;
         });
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Story video uploaded successfully!')),
+            SnackBar(
+              content: Row(
+                children: [
+                  Icon(Icons.check_circle, color: Colors.white, size: 20),
+                  const SizedBox(width: 8),
+                  Text('Story video uploaded successfully!'),
+                ],
+              ),
+              backgroundColor: AppTheme.deepTeal,
+              duration: Duration(seconds: 2),
+            ),
           );
         }
       } else if (mounted) {
         setState(() {
-          _storyVideo = null; // Remove the local file if upload failed
+          _isUploadingStoryVideo = false;
         });
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Failed to upload story video')),
+          SnackBar(
+            content: Row(
+              children: [
+                Icon(Icons.error, color: Colors.white, size: 20),
+                const SizedBox(width: 8),
+                Text('Failed to upload story video'),
+              ],
+            ),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     } catch (e) {
       if (mounted) {
         setState(() {
-          _storyVideo = null; // Remove the local file if upload failed
+          _isUploadingStoryVideo = false;
         });
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error uploading story video: $e')),
+          SnackBar(
+            content: Row(
+              children: [
+                Icon(Icons.error, color: Colors.white, size: 20),
+                const SizedBox(width: 8),
+                Text('Error uploading video: ${e.toString().split(':').last.trim()}'),
+              ],
+            ),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     }
@@ -915,12 +966,13 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
       'addressLine2': _addressLine2Controller.text.trim(),
       'city': _cityTextController.text.trim(),
       'postalCode': _postalCodeTextController.text.trim(),
-      'story': _storyController.text.trim(),
-      'specialties': _specialtiesController.text.trim().split(',').map((s) => s.trim()).where((s) => s.isNotEmpty).toList(),
-      'passion': _passionController.text.trim(),
+      // Behind the Brand fields - only for sellers
+      if (_isSeller) 'story': _storyController.text.trim(),
+      if (_isSeller) 'specialties': _specialtiesController.text.trim().split(',').map((s) => s.trim()).where((s) => s.isNotEmpty).toList(),
+      if (_isSeller) 'passion': _passionController.text.trim(),
       if (_profileImageUrl != null) 'profileImageUrl': _profileImageUrl,
-      'storyPhotoUrls': _storyPhotoUrls,
-      'storyVideoUrl': _storyVideoUrl,
+      if (_isSeller) 'storyPhotoUrls': _storyPhotoUrls,
+      if (_isSeller) 'storyVideoUrl': _storyVideoUrl,
       'storeCategory': _selectedStoreCategory, // Save store category
       
       // Store settings for sellers
@@ -1103,6 +1155,610 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
         fontSize: 18,
         fontWeight: FontWeight.bold,
         color: AppTheme.deepTeal,
+      ),
+    );
+  }
+
+  Widget _buildBehindTheBrandSection() {
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            AppTheme.primaryGreen.withOpacity(0.05),
+            AppTheme.deepTeal.withOpacity(0.05),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: AppTheme.primaryGreen.withOpacity(0.2),
+          width: 1,
+        ),
+      ),
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Section Header with Icon
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [AppTheme.primaryGreen, AppTheme.deepTeal],
+                  ),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(
+                  Icons.auto_stories,
+                  color: Colors.white,
+                  size: 24,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Behind the Brand',
+                      style: TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                        color: AppTheme.deepTeal,
+                      ),
+                    ),
+                    Text(
+                      'Tell customers your story and showcase what makes your business special',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: AppTheme.mediumGrey,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 24),
+          
+          // Specialty Field (NEW)
+          _buildStyledTextField(
+            controller: _specialtiesController,
+            labelText: 'Your Specialties',
+            hintText: 'e.g., Organic produce, Handmade crafts, Local delicacies...',
+            icon: Icons.star_outline,
+            maxLines: 2,
+          ),
+          const SizedBox(height: 16),
+          
+          // Story/Description Field  
+          _buildStyledTextField(
+            controller: _storyController,
+            labelText: 'Tell Your Story',
+            hintText: 'Share what makes your brand special, your journey, or what customers can expect...',
+            icon: Icons.history_edu,
+            maxLines: 4,
+            isRequired: false,
+          ),
+          const SizedBox(height: 24),
+          
+          // Story Photos Section
+          _buildMediaSection(
+            title: 'Story Photos',
+            subtitle: 'Add up to 2 photos to showcase your products or workspace',
+            icon: Icons.photo_library,
+            child: _buildEnhancedStoryPhotosSection(),
+          ),
+          const SizedBox(height: 20),
+          
+          // Story Video Section
+          _buildMediaSection(
+            title: 'Story Video',
+            subtitle: 'Add a short video to bring your story to life (max 1 minute)',
+            icon: Icons.videocam,
+            child: _buildEnhancedStoryVideoSection(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStyledTextField({
+    required TextEditingController controller,
+    required String labelText,
+    required String hintText,
+    required IconData icon,
+    int maxLines = 1,
+    bool isRequired = true,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: AppTheme.cloud.withOpacity(0.5),
+          width: 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: TextFormField(
+        controller: controller,
+        maxLines: maxLines,
+        decoration: InputDecoration(
+          labelText: labelText,
+          hintText: hintText,
+          hintStyle: TextStyle(
+            color: AppTheme.mediumGrey.withOpacity(0.7),
+            fontSize: 14,
+          ),
+          prefixIcon: Container(
+            margin: const EdgeInsets.all(8),
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [AppTheme.primaryGreen.withOpacity(0.1), AppTheme.deepTeal.withOpacity(0.1)],
+              ),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(
+              icon,
+              color: AppTheme.primaryGreen,
+              size: 20,
+            ),
+          ),
+          border: InputBorder.none,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+          labelStyle: TextStyle(
+            color: AppTheme.deepTeal,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        validator: isRequired ? (value) {
+          if (value == null || value.trim().isEmpty) {
+            return 'This field is required';
+          }
+          return null;
+        } : null,
+      ),
+    );
+  }
+
+  Widget _buildMediaSection({
+    required String title,
+    required String subtitle,
+    required IconData icon,
+    required Widget child,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: AppTheme.cloud.withOpacity(0.3),
+          width: 1,
+        ),
+      ),
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: AppTheme.primaryGreen.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(
+                  icon,
+                  color: AppTheme.primaryGreen,
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: AppTheme.deepTeal,
+                      ),
+                    ),
+                    Text(
+                      subtitle,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: AppTheme.mediumGrey,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          child,
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEnhancedStoryPhotosSection() {
+    return Column(
+      children: [
+        if (_storyPhotoUrls.isEmpty && !_isUploadingStoryPhoto)
+          _buildEmptyPhotoState()
+        else
+          Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            children: [
+              // Existing Photos
+              for (int i = 0; i < _storyPhotoUrls.length; i++)
+                _buildPhotoItem(_storyPhotoUrls[i], i),
+              
+              // Upload Progress Indicator
+              if (_isUploadingStoryPhoto)
+                _buildPhotoUploadProgress(),
+                
+              // Add Photo Button (if not at limit and not uploading)
+              if (_storyPhotoUrls.length < 2 && !_isUploadingStoryPhoto)
+                _buildAddPhotoButton(),
+            ],
+          ),
+      ],
+    );
+  }
+
+  Widget _buildEmptyPhotoState() {
+    return Container(
+      height: 120,
+      decoration: BoxDecoration(
+        color: AppTheme.cloud.withOpacity(0.3),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: AppTheme.primaryGreen.withOpacity(0.3),
+          width: 2,
+          style: BorderStyle.solid,
+        ),
+      ),
+      child: InkWell(
+        onTap: _pickStoryPhoto,
+        borderRadius: BorderRadius.circular(12),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.add_photo_alternate,
+              size: 40,
+              color: AppTheme.primaryGreen,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Add Story Photos',
+              style: TextStyle(
+                fontWeight: FontWeight.w600,
+                color: AppTheme.deepTeal,
+              ),
+            ),
+            Text(
+              'Tap to upload your first photo',
+              style: TextStyle(
+                fontSize: 12,
+                color: AppTheme.mediumGrey,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPhotoItem(String imageUrl, int index) {
+    return Container(
+      width: 100,
+      height: 100,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Stack(
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: SafeNetworkImage(
+              imageUrl: imageUrl,
+              width: 100,
+              height: 100,
+              fit: BoxFit.cover,
+              errorBuilder: (context, error, stackTrace) {
+                return Container(
+                  width: 100,
+                  height: 100,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(Icons.broken_image, color: Colors.grey),
+                );
+              },
+            ),
+          ),
+          Positioned(
+            top: 4,
+            right: 4,
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.red,
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: IconButton(
+                icon: Icon(Icons.close, color: Colors.white, size: 16),
+                onPressed: () => _deleteStoryPhoto(index),
+                padding: EdgeInsets.all(4),
+                constraints: BoxConstraints(minWidth: 24, minHeight: 24),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPhotoUploadProgress() {
+    return Container(
+      width: 100,
+      height: 100,
+      decoration: BoxDecoration(
+        color: AppTheme.cloud.withOpacity(0.5),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: AppTheme.primaryGreen.withOpacity(0.3),
+          width: 2,
+        ),
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          SizedBox(
+            width: 24,
+            height: 24,
+            child: CircularProgressIndicator(
+              strokeWidth: 3,
+              valueColor: AlwaysStoppedAnimation<Color>(AppTheme.primaryGreen),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Uploading...',
+            style: TextStyle(
+              fontSize: 10,
+              color: AppTheme.deepTeal,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAddPhotoButton() {
+    return Container(
+      width: 100,
+      height: 100,
+      decoration: BoxDecoration(
+        color: AppTheme.primaryGreen.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: AppTheme.primaryGreen.withOpacity(0.3),
+          width: 2,
+          style: BorderStyle.solid,
+        ),
+      ),
+      child: InkWell(
+        onTap: _pickStoryPhoto,
+        borderRadius: BorderRadius.circular(12),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.add_circle_outline,
+              size: 32,
+              color: AppTheme.primaryGreen,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Add Photo',
+              style: TextStyle(
+                fontSize: 10,
+                color: AppTheme.deepTeal,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEnhancedStoryVideoSection() {
+    if (_storyVideoUrl == null && !_isUploadingStoryVideo) {
+      return _buildEmptyVideoState();
+    }
+    
+    return Row(
+      children: [
+        if (_storyVideoUrl != null)
+          _buildVideoItem(),
+        if (_isUploadingStoryVideo)
+          _buildVideoUploadProgress(),
+      ],
+    );
+  }
+
+  Widget _buildEmptyVideoState() {
+    return Container(
+      height: 120,
+      decoration: BoxDecoration(
+        color: AppTheme.cloud.withOpacity(0.3),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: AppTheme.deepTeal.withOpacity(0.3),
+          width: 2,
+          style: BorderStyle.solid,
+        ),
+      ),
+      child: InkWell(
+        onTap: _pickStoryVideo,
+        borderRadius: BorderRadius.circular(12),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.video_call,
+              size: 40,
+              color: AppTheme.deepTeal,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Add Story Video',
+              style: TextStyle(
+                fontWeight: FontWeight.w600,
+                color: AppTheme.deepTeal,
+              ),
+            ),
+            Text(
+              'Tap to upload a short video (max 1 min)',
+              style: TextStyle(
+                fontSize: 12,
+                color: AppTheme.mediumGrey,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildVideoItem() {
+    return Container(
+      width: 120,
+      height: 100,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Stack(
+        children: [
+          Container(
+            width: 120,
+            height: 100,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [AppTheme.deepTeal.withOpacity(0.8), AppTheme.primaryGreen.withOpacity(0.8)],
+              ),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  Icons.play_circle_filled,
+                  size: 40,
+                  color: Colors.white,
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Story Video',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Positioned(
+            top: 4,
+            right: 4,
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.red,
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: IconButton(
+                icon: Icon(Icons.close, color: Colors.white, size: 16),
+                onPressed: _deleteStoryVideo,
+                padding: EdgeInsets.all(4),
+                constraints: BoxConstraints(minWidth: 24, minHeight: 24),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildVideoUploadProgress() {
+    return Container(
+      width: 120,
+      height: 100,
+      decoration: BoxDecoration(
+        color: AppTheme.cloud.withOpacity(0.5),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: AppTheme.deepTeal.withOpacity(0.3),
+          width: 2,
+        ),
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          SizedBox(
+            width: 28,
+            height: 28,
+            child: CircularProgressIndicator(
+              strokeWidth: 3,
+              valueColor: AlwaysStoppedAnimation<Color>(AppTheme.deepTeal),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Uploading Video...',
+            style: TextStyle(
+              fontSize: 10,
+              color: AppTheme.deepTeal,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -2299,42 +2955,11 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                       ),
                     ),
                     const SizedBox(height: 16),
-                    _buildSectionHeader('Behind the Brand'),
-                    const SizedBox(height: 8),
-                    _buildThemedTextField(
-                      controller: _storyController,
-                      labelText: 'Tell your story (optional)',
-                      maxLines: 4,
-                      hintText: 'Share what makes your brand special, your journey, or what customers can expect...',
-                      suffixIcon: IconButton(
-                        icon: const Icon(Icons.clear),
-                        onPressed: _clearStoryText,
-                        tooltip: 'Clear story',
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      'Story Photos',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        color: AppTheme.deepTeal,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    _buildStoryPhotosSection(),
-                    const SizedBox(height: 16),
-                    Text(
-                      'Story Video',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        color: AppTheme.deepTeal,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    _buildStoryVideoSection(),
-                    const SizedBox(height: 16),
+                    // Behind the Brand section - only for sellers
+                    if (_isSeller) ...[
+                      _buildBehindTheBrandSection(),
+                      const SizedBox(height: 16),
+                    ],
                     _buildSectionHeader('Shortcuts'),
                     const SizedBox(height: 8),
                     Row(

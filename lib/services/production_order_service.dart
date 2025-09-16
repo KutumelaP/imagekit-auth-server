@@ -176,6 +176,12 @@ class ProductionOrderService {
           'grandTotal': grandTotal,
         },
         
+        // Root-level totals for compatibility with various screens
+        'totalPrice': grandTotal,
+        'totalAmount': grandTotal,
+        'subtotal': subtotal,
+        'deliveryFee': deliveryFee,
+        
         // Delivery/pickup details
         'fulfillment': {
           'type': isDelivery ? 'delivery' : 'pickup',

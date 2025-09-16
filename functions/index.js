@@ -372,26 +372,47 @@ exports.payfastNotify = functions.https.onRequest(async (req, res) => {
       
       // Send WhatsApp notification for PayFast orders (same as COD/EFT)
       try {
+        // Get order data for WhatsApp notification
+        const order = orderDoc.data() || {};
+        const buyerId = order.buyerId;
+        const sellerId = order.sellerId;
+        const totalPrice = Number((order.pricing && order.pricing.grandTotal) || order.totalPrice || order.total || 0);
+        
         const buyer = await db.collection('users').doc(buyerId).get();
         const buyerData = buyer.exists ? buyer.data() : {};
         const buyerPhone = buyerData.phoneNumber || buyerData.phone;
         
         if (buyerPhone && sellerId) {
-          // Send WhatsApp notification using same method as COD/EFT orders
+          // Get seller data for WhatsApp notification
+          const seller = await db.collection('users').doc(sellerId).get();
+          const sellerData = seller.exists ? seller.data() : {};
+          const storeName = sellerData.storeName || 'OmniaSA Store';
+          
           console.log(`[payfastNotify] Sending WhatsApp notification to ${buyerPhone} for order ${orderId}`);
           
-          // This will be handled by the client-side WhatsApp service when user views order
-          // But we also trigger it via Firestore write to ensure consistency
+          // Create immediate WhatsApp notification link
+          const message = `✅ *Order Confirmed!*\n\nYour order *${orderId}* from *${storeName}* has been confirmed!\n\n💰 Total: R${totalPrice.toFixed(2)}\n📦 Payment: PayFast (Completed)\n\n🔗 Track your order: https://www.omniasa.co.za/#/order/${orderId}\n\nThank you for shopping with OmniaSA! 🛒`;
+          const encodedMessage = encodeURIComponent(message);
+          const whatsappUrl = `https://wa.me/${buyerPhone.replace(/[^\d]/g, '')}?text=${encodedMessage}`;
+          
+          console.log(`[payfastNotify] WhatsApp URL generated: ${whatsappUrl.substring(0, 100)}...`);
+          
+          // Queue notification for client-side delivery AND log for immediate access
           await db.collection('whatsapp_notifications').add({
             orderId,
             buyerPhone,
             sellerId,
             totalAmount: totalPrice,
+            storeName,
+            whatsappUrl,
+            message,
             type: 'order_confirmation',
             paymentMethod: 'payfast',
-            status: 'pending',
+            status: 'ready_to_send',
             createdAt: admin.firestore.FieldValue.serverTimestamp(),
           });
+          
+          console.log(`[payfastNotify] WhatsApp notification queued and ready for immediate delivery`);
         }
       } catch (e) {
         console.warn('[payfastNotify] WhatsApp notification error', e);
@@ -500,28 +521,26 @@ exports.payfastReturn = functions.https.onRequest(async (req, res) => {
         const foundOrderId = orderSnap.id;
         const finalPaymentStatus = orderData.paymentStatus || 'awaiting_payment';
         
-        if (finalPaymentStatus === 'paid') {
-          // Redirect to a dedicated success page for paid orders
-          res.redirect(`${base}/payment-success?order_id=${foundOrderId}&status=paid`);
-        } else if (paymentStatus === 'COMPLETE') {
-          // PayFast indicates success but order not yet updated, redirect to success anyway
-          res.redirect(`${base}/payment-success?order_id=${foundOrderId}&status=paid`);
+        if (finalPaymentStatus === 'paid' || paymentStatus === 'COMPLETE') {
+          // Redirect to SPA hash route to work on hosts without rewrites
+          res.redirect(`${base}/#/payment-success?order_id=${foundOrderId}&status=paid`);
         } else {
-          // For pending/failed payments, redirect to order page
-          const statusParam = paymentStatus ? paymentStatus.toLowerCase() : 'pending';
-          res.redirect(`${base}/order/${foundOrderId}?payment=${statusParam}`);
+          // Pending/failed: still send user to app with order reference
+          const statusParam = paymentStatus ? String(paymentStatus).toLowerCase() : 'pending';
+          // Use hash route with query param so the app can route reliably
+          res.redirect(`${base}/#/payment-success?order_id=${foundOrderId}&status=${statusParam}`);
         }
       } else {
         console.warn('[payfastReturn] Order not found. Tried orderId:', orderId, 'and PayFast payment ID:', payfastPaymentId);
-        res.redirect(`${base}?error=order_not_found`);
+        res.redirect(`${base}/#/?error=order_not_found`);
       }
     } catch (dbError) {
       console.error('[payfastReturn] Database error:', dbError);
-      // Still redirect to order page even if DB update fails
+      // Still redirect to app even if DB update fails
       if (orderRef) {
-        res.redirect(`${base}/order/${orderRef.id}?error=db_update_failed`);
+        res.redirect(`${base}/#/payment-success?order_id=${orderRef.id}&status=error`);
       } else {
-        res.redirect(`${base}?error=db_update_failed`);
+        res.redirect(`${base}/#/?error=db_update_failed`);
       }
     }
   } catch (e) {

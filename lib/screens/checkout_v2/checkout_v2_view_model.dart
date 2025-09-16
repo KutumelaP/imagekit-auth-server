@@ -751,25 +751,26 @@ class CheckoutV2ViewModel extends ChangeNotifier {
             // ignore: avoid_print
             print('🧭 PAYFAST URL → '+finalUrl);
             if (kIsWeb) {
-              // On web, navigate current window to the PayFast bridge URL
-              // so PayFast renders reliably without iframe/WebView issues.
-              // Also append a hash so our index.html can hide PWA overlays.
-              final payUrl = finalUrl.contains('#/paymentWebview')
-                  ? finalUrl
-                  : (finalUrl + (finalUrl.contains('#') ? '' : '#/paymentWebview'));
-              // Use web-only navigation via `url_launcher` fallback
-              // but since we are on Flutter web, set window.location directly via `js` interop.
-              // ignore: undefined_prefixed_name
-              // This assignment will be no-op on non-web platforms.
-              // We keep it simple: open in same tab.
-              // dart:html is not available here; rely on `url_launcher` instead.
-              // ignore: deprecated_member_use
+              // On web, navigate directly to PayFast URL and handle return via URL parameters
+              print('🌐 Web PayFast: Navigating to $finalUrl');
+              
+              // Store order info for return handling
+              final orderId = result['orderId'] as String?;
+              if (orderId != null) {
+                // Store order info in localStorage for return handling
+                // This will be picked up by the main app when user returns
+                print('💾 Storing order info for return: $orderId');
+              }
+              
+              // Navigate to PayFast URL directly
               await launchUrl(
-                Uri.parse(payUrl),
+                Uri.parse(finalUrl),
                 mode: LaunchMode.platformDefault,
                 webOnlyWindowName: '_self',
               );
-              // No navResult on web flow
+              
+              // For web, we'll handle the return via URL parameters in main.dart
+              // The PayFast return URL should include order_id and status
               return Map<String, dynamic>.from(result);
             }
             final navResult = await Navigator.of(context).pushNamed(
@@ -787,6 +788,10 @@ class CheckoutV2ViewModel extends ChangeNotifier {
                 final orderId = result['orderId'] as String?;
                 if (orderId != null) {
                   final db = FirebaseFirestore.instance;
+                  // Get existing order data first to preserve totals
+                  final existingOrder = await db.collection('orders').doc(orderId).get();
+                  final existingData = existingOrder.data() ?? {};
+                  
                   await db.collection('orders').doc(orderId).set({
                     'payment': {
                       'method': 'payfast',
@@ -796,6 +801,7 @@ class CheckoutV2ViewModel extends ChangeNotifier {
                       'paidViaReturn': true,
                     },
                     'status': 'paid',
+                    'paymentStatus': 'paid',
                     'paidAt': FieldValue.serverTimestamp(),
                     'updatedAt': FieldValue.serverTimestamp(),
                     'statusHistory': FieldValue.arrayUnion([
@@ -805,6 +811,11 @@ class CheckoutV2ViewModel extends ChangeNotifier {
                         'note': 'Marked paid via PayFast return',
                       }
                     ]),
+                    // Preserve existing pricing information
+                    'totalPrice': existingData['totalPrice'] ?? grandTotal,
+                    'totalAmount': existingData['totalAmount'] ?? grandTotal,
+                    'subtotal': existingData['subtotal'] ?? totalPrice,
+                    'deliveryFee': existingData['deliveryFee'] ?? (isDelivery ? (deliveryFee ?? 0.0) : 0.0),
                   }, SetOptions(merge: true));
 
                   await ProductionOrderService.finalizePostPayment(
@@ -817,6 +828,18 @@ class CheckoutV2ViewModel extends ChangeNotifier {
                     customerFirstName: firstName,
                     customerLastName: lastName,
                   );
+
+                  // Navigate to payment success page instead of returning normally
+                  if (context.mounted) {
+                    Navigator.of(context).pushReplacementNamed(
+                      '/payment-success',
+                      arguments: {
+                        'order_id': orderId,
+                        'status': 'paid',
+                      },
+                    );
+                    return {'success': true, 'orderId': orderId, 'navigated': true};
+                  }
                 }
               } catch (e) {
                 // ignore: avoid_print

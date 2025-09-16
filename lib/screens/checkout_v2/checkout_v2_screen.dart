@@ -996,7 +996,7 @@ class _PickupPointSelector extends StatefulWidget {
 class _PickupPointSelectorState extends State<_PickupPointSelector> {
   List<Map<String, dynamic>> _nearbyPoints = [];
   bool _isLoading = false;
-  String _selectedType = 'paxi'; // 'paxi' | 'pudo' | 'store'
+  String _selectedType = 'store'; // Default to store pickup
   
   // Address search for PAXI
   final TextEditingController _addressController = TextEditingController();
@@ -1012,14 +1012,19 @@ class _PickupPointSelectorState extends State<_PickupPointSelector> {
       final bool hasPaxi = widget.vm.sellerOffersPaxi;
       final bool hasPudo = widget.vm.sellerOffersPudo;
       
-      // Auto-select the only available service
+      // Auto-select based on available services
       if (hasPaxi && !hasPudo) {
+        // Only PAXI available
         setState(() => _selectedType = 'paxi');
       } else if (hasPudo && !hasPaxi) {
+        // Only PUDO available
         setState(() => _selectedType = 'pudo');
-      } else if (hasPaxi) {
-        // Default to PAXI if both available
+      } else if (hasPaxi && hasPudo) {
+        // Both available - default to PAXI
         setState(() => _selectedType = 'paxi');
+      } else {
+        // Neither available - default to store pickup
+        setState(() => _selectedType = 'store');
       }
       
       _loadNearbyPoints();
@@ -1118,8 +1123,35 @@ class _PickupPointSelectorState extends State<_PickupPointSelector> {
         // The seller will handle the locker drop-off through their PUDO account
         points = [];
       } else if (_selectedType == 'store') {
-        // Store pickup: no external points to load
+        // Store pickup: create store pickup point
         points = [];
+        
+        // Set up store pickup point (same logic as the store button onTap)
+        final name = widget.vm.sellerStoreName?.isNotEmpty == true
+            ? widget.vm.sellerStoreName!
+            : 'Store Pickup';
+        final address = widget.vm.sellerStoreAddress?.isNotEmpty == true
+            ? widget.vm.sellerStoreAddress!
+            : 'Collect at the seller\'s store';
+        final lat = widget.vm.sellerStoreLatitude;
+        final lng = widget.vm.sellerStoreLongitude;
+        final pickupPoint = <String, dynamic>{
+          'id': 'local_store',
+          'name': name,
+          'address': address,
+          'type': 'store',
+          'fees': {'collection': 0.0},
+        };
+        if (lat != null && lng != null) {
+          pickupPoint['latitude'] = lat;
+          pickupPoint['longitude'] = lng;
+          pickupPoint['distance'] = '0 km';
+        }
+        
+        // Set the store pickup point without waiting for UI interaction
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          widget.vm.setSelectedPickupPoint(pickupPoint);
+        });
       } else {
         // Get real OmniaSA sellers as pickup points (fallback)
         points = await RealPickupService.getNearbyPickupPoints(
@@ -1185,45 +1217,7 @@ class _PickupPointSelectorState extends State<_PickupPointSelector> {
     
     print('🔍 DEBUG: Pickup services - PAXI: $hasPaxi, PUDO: $hasPudo, Any: $hasAnyPickup');
     
-    // If no pickup services available, show message
-    if (!hasAnyPickup) {
-      return Container(
-        padding: EdgeInsets.all(20),
-        margin: EdgeInsets.symmetric(vertical: 8),
-        decoration: BoxDecoration(
-          color: Color(0xFFF8F9FA),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: Color(0xFFE9ECEF)),
-        ),
-        child: Column(
-          children: [
-            Icon(
-              Icons.info_outline,
-              color: Color(0xFF6C757D),
-              size: 24,
-            ),
-            SizedBox(height: 8),
-            Text(
-              'Pickup services not available',
-              style: TextStyle(
-                color: Color(0xFF495057),
-                fontWeight: FontWeight.w600,
-                fontSize: 16,
-              ),
-            ),
-            SizedBox(height: 4),
-            Text(
-              'This seller doesn\'t offer PAXI or PUDO pickup services.',
-              style: TextStyle(
-                color: Color(0xFF6C757D),
-                fontSize: 14,
-              ),
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
-      );
-    }
+    // Store pickup is always available, so hasAnyPickup is always true
     
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,

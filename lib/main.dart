@@ -376,16 +376,15 @@ class MyApp extends StatelessWidget {
             final url = args?['url'] as String?;
             final successPath = args?['successPath'] as String?;
             final cancelPath = args?['cancelPath'] as String?;
-            if (url != null) {
-              return MaterialPageRoute(
-                builder: (_) => PaymentWebViewScreen(
-                  url: url,
-                  successPath: successPath,
-                  cancelPath: cancelPath,
-                ),
-                settings: settings,
-              );
-            }
+            
+            return MaterialPageRoute(
+              builder: (_) => PaymentWebViewScreen(
+                url: url,
+                successPath: successPath,
+                cancelPath: cancelPath,
+              ),
+              settings: settings,
+            );
           }
           
           // 🚀 NEW: Handle /stores route for store browsing
@@ -654,6 +653,25 @@ class _SplashWrapperState extends State<SplashWrapper> {
                 MaterialPageRoute(
                   builder: (_) => OrderTrackingScreen(orderId: qpOrderId),
                 ),
+              );
+            }
+          });
+          return;
+        }
+        
+        // NEW: PayFast return detection
+        final payfastOrderId = Uri.base.queryParameters['order_id'];
+        final payfastStatus = Uri.base.queryParameters['status'];
+        if (payfastOrderId != null && payfastStatus != null) {
+          if (kDebugMode) print('💳 PayFast return detected: orderId=$payfastOrderId, status=$payfastStatus');
+          Future.delayed(const Duration(milliseconds: 50), () {
+            if (mounted) {
+              Navigator.of(context).pushReplacementNamed(
+                '/payment-success',
+                arguments: {
+                  'order_id': payfastOrderId,
+                  'status': payfastStatus,
+                },
               );
             }
           });

@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
 import '../providers/cart_provider.dart';
 import '../widgets/loading_widget.dart';
+import '../services/whatsapp_integration_service.dart';
 
 class PaymentSuccessScreen extends StatefulWidget {
   final String? orderId;
@@ -23,6 +24,7 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen> {
   bool _isLoading = true;
   Map<String, dynamic>? _orderData;
   String? _error;
+  bool _whatsappSent = false;
 
   @override
   void initState() {
@@ -46,10 +48,14 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen> {
           .get();
 
       if (orderDoc.exists) {
+        final orderData = orderDoc.data()!;
         setState(() {
-          _orderData = orderDoc.data();
+          _orderData = orderData;
           _isLoading = false;
         });
+        
+        // Check if this is a PayFast order and send WhatsApp notification
+        _checkAndSendWhatsAppNotification(orderData);
       } else {
         setState(() {
           _error = 'Order not found';
@@ -61,6 +67,56 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen> {
         _error = 'Error loading order: $e';
         _isLoading = false;
       });
+    }
+  }
+
+  Future<void> _checkAndSendWhatsAppNotification(Map<String, dynamic> orderData) async {
+    if (_whatsappSent) return; // Already sent
+    
+    try {
+      // Check if this is a PayFast payment
+      final payment = orderData['payment'] as Map<String, dynamic>?;
+      final paymentMethod = payment?['method'] ?? payment?['gateway'];
+      
+      if (paymentMethod == 'payfast' && orderData['paymentStatus'] == 'paid') {
+        final user = FirebaseAuth.instance.currentUser;
+        if (user == null) return;
+        
+        // Get user phone number
+        final userDoc = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(user.uid)
+            .get();
+        
+        if (!userDoc.exists) return;
+        
+        final userData = userDoc.data()!;
+        final phoneNumber = userData['phoneNumber'] ?? userData['phone'];
+        
+        if (phoneNumber != null && phoneNumber.isNotEmpty) {
+          final orderId = widget.orderId ?? 'Unknown';
+          final totalPrice = (orderData['totalPrice'] ?? 0.0) as double;
+          final sellerName = orderData['sellerStoreName'] ?? 'OmniaSA Store';
+          
+          // Send WhatsApp notification using the service
+          final success = await WhatsAppIntegrationService.sendOrderConfirmation(
+            orderId: orderId,
+            buyerPhone: phoneNumber,
+            sellerName: sellerName,
+            totalAmount: totalPrice,
+            deliveryOTP: orderData['deliveryOTP'] ?? 'N/A',
+          );
+          
+          if (success) {
+            setState(() {
+              _whatsappSent = true;
+            });
+            print('✅ WhatsApp confirmation sent for PayFast order: $orderId');
+          }
+        }
+      }
+    } catch (e) {
+      print('❌ Error sending WhatsApp notification: $e');
     }
   }
 
@@ -279,6 +335,28 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen> {
                   label: const Text('Track My Order'),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.blue,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              // WhatsApp Notification Button
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: _whatsappSent ? null : () async {
+                    if (_orderData != null) {
+                      await _checkAndSendWhatsAppNotification(_orderData!);
+                    }
+                  },
+                  icon: Icon(_whatsappSent ? Icons.check : Icons.message),
+                  label: Text(_whatsappSent ? 'WhatsApp Sent ✓' : 'Send WhatsApp Notification'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _whatsappSent ? Colors.green : Colors.green.shade600,
                     foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 16),
                     shape: RoundedRectangleBorder(
