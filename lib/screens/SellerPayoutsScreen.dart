@@ -223,6 +223,7 @@ class _SellerPayoutsScreenState extends State<SellerPayoutsScreen> {
           .collection('payouts')
           .where('sellerId', isEqualTo: user.uid)
           .orderBy('createdAt', descending: true)
+          .orderBy('__name__', descending: true)
           .limit(_historyPageSize);
       if (_lastMainPayoutDoc != null) {
         mainQuery = mainQuery.startAfterDocument(_lastMainPayoutDoc!);
@@ -356,6 +357,8 @@ class _SellerPayoutsScreenState extends State<SellerPayoutsScreen> {
           .where('sellerId', isEqualTo: user.uid)
           .where('createdAt', isGreaterThanOrEqualTo: from)
           .where('createdAt', isLessThanOrEqualTo: to)
+          .orderBy('createdAt', descending: false)
+          .orderBy('__name__', descending: false)
           .get();
       final moneyIn = entriesSnap.docs.map((d) => { ...d.data(), 'id': d.id }).toList();
       final moneyOut = payoutsSnap.docs.map((d) => { ...d.data(), 'id': d.id }).toList();
@@ -482,7 +485,8 @@ class _SellerPayoutsScreenState extends State<SellerPayoutsScreen> {
           .where('sellerId', isEqualTo: user.uid)
           .where('createdAt', isGreaterThanOrEqualTo: from)
           .where('createdAt', isLessThanOrEqualTo: to)
-          .orderBy('createdAt', descending: true)
+          .orderBy('createdAt', descending: false)
+          .orderBy('__name__', descending: false)
             .get();
 
       final moneyOut = payoutsSnap.docs.map((d) => {
