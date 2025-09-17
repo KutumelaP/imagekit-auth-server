@@ -199,8 +199,57 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen> {
           }
         }
         
-        // Get delivery OTP from correct location
-        final deliveryOTP = fulfillment?['deliveryOTP'] ?? orderData['deliveryOTP'] ?? 'N/A';
+        // Resolve collection/verification code depending on fulfillment type
+        String resolvedCode = 'N/A';
+        try {
+          final fulfillmentType = (fulfillment?['type'] ?? '').toString().toLowerCase();
+          // Prefer explicit fields if already present
+          String? pickupCode = fulfillment?['pickupCode'] ?? orderData['pickupCode'];
+          String? deliveryOTP = fulfillment?['deliveryOTP'] ?? orderData['deliveryOTP'];
+
+          if (fulfillmentType == 'pickup') {
+            // If pickup: try pickupCode first, then look up store_pickups and pickup_bookings
+            if (pickupCode == null || pickupCode.toString().isEmpty) {
+              try {
+                final spDoc = await FirebaseFirestore.instance
+                    .collection('store_pickups')
+                    .doc(orderId)
+                    .get();
+                if (spDoc.exists) {
+                  pickupCode = spDoc.data()?['pickupCode']?.toString();
+                }
+              } catch (_) {}
+
+              if (pickupCode == null || pickupCode.toString().isEmpty) {
+                try {
+                  final bookings = await FirebaseFirestore.instance
+                      .collection('pickup_bookings')
+                      .where('orderId', isEqualTo: orderId)
+                      .limit(1)
+                      .get();
+                  if (bookings.docs.isNotEmpty) {
+                    pickupCode = bookings.docs.first.data()['pickupCode']?.toString();
+                  }
+                } catch (_) {}
+              }
+            }
+            resolvedCode = (pickupCode != null && pickupCode.isNotEmpty) ? pickupCode : 'Pending';
+          } else {
+            // If delivery: try deliveryOTP field first, then look up delivery_otps/{orderId}
+            if (deliveryOTP == null || deliveryOTP.toString().isEmpty) {
+              try {
+                final otpDoc = await FirebaseFirestore.instance
+                    .collection('delivery_otps')
+                    .doc(orderId)
+                    .get();
+                if (otpDoc.exists) {
+                  deliveryOTP = otpDoc.data()?['otp']?.toString();
+                }
+              } catch (_) {}
+            }
+            resolvedCode = (deliveryOTP != null && deliveryOTP.isNotEmpty) ? deliveryOTP : 'Pending';
+          }
+        } catch (_) {}
         
         print('📱 Sending WhatsApp for order: $orderId, store: $sellerName, total: R${totalPrice.toStringAsFixed(2)}');
         
@@ -210,7 +259,7 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen> {
           buyerPhone: phoneNumber,
           sellerName: sellerName,
           totalAmount: totalPrice,
-          deliveryOTP: deliveryOTP.toString(),
+          deliveryOTP: resolvedCode,
         );
         
         if (success) {

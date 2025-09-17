@@ -327,7 +327,39 @@ class ProductionOrderService {
       
       // Send comprehensive notifications unless deferring for PayFast redirect
       if (!shouldDeferExternal) {
-        await _sendOrderNotifications(orderId, user, cartItems, deliveryOTP, grandTotal, customerFirstName, customerLastName);
+        // If pickup, attempt to resolve pickup code for message; otherwise use deliveryOTP
+        String? pickupCode;
+        try {
+          final fType = ((selectedPickupPoint != null) ? 'pickup' : (isDelivery ? 'delivery' : 'pickup'));
+          if (fType == 'pickup') {
+            // Try store_pickups first
+            try {
+              final spDoc = await FirebaseFirestore.instance
+                  .collection('store_pickups')
+                  .doc(orderId)
+                  .get();
+              if (spDoc.exists) {
+                pickupCode = spDoc.data()?['pickupCode']?.toString();
+              }
+            } catch (_) {}
+            // Fallback to pickup_bookings
+            if (pickupCode == null || pickupCode.isEmpty) {
+              try {
+                final bookings = await FirebaseFirestore.instance
+                    .collection('pickup_bookings')
+                    .where('orderId', isEqualTo: orderId)
+                    .limit(1)
+                    .get();
+                if (bookings.docs.isNotEmpty) {
+                  pickupCode = bookings.docs.first.data()['pickupCode']?.toString();
+                }
+              } catch (_) {}
+            }
+          }
+        } catch (_) {}
+
+        final codeForMessage = (pickupCode != null && pickupCode.isNotEmpty) ? pickupCode : (deliveryOTP ?? 'N/A');
+        await _sendOrderNotifications(orderId, user, cartItems, codeForMessage, grandTotal, customerFirstName, customerLastName);
       }
       
       // Analytics tracking (safe to run anytime)
