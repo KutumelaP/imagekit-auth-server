@@ -39,7 +39,7 @@ class _StunningProductBrowserState extends State<StunningProductBrowser>
   
   // State Variables
   String searchQuery = '';
-  String selectedCategory = 'All';
+  String selectedCategory = ''; // Will be set to first available category
   String? selectedSubcategory;
   String sortBy = 'name';
   bool isAscending = true;
@@ -108,31 +108,22 @@ class _StunningProductBrowserState extends State<StunningProductBrowser>
     setState(() => isLoading = true);
     
     try {
-      Query query = FirebaseFirestore.instance
+      // First, load ALL products to get all available categories
+      Query allProductsQuery = FirebaseFirestore.instance
           .collection(AppConstants.productsCollection);
 
       // Add store filter if not browsing all stores
       if (widget.storeId != 'all') {
-        query = query.where('ownerId', isEqualTo: widget.storeId);
+        allProductsQuery = allProductsQuery.where('ownerId', isEqualTo: widget.storeId);
       }
 
-      // Add category filter at database level
-      if (selectedCategory != 'All' && selectedCategory.isNotEmpty) {
-        query = query.where('category', isEqualTo: selectedCategory);
-      }
-
-      // Add subcategory filter at database level
-      if (selectedSubcategory != null && selectedSubcategory!.isNotEmpty) {
-        query = query.where('subcategory', isEqualTo: selectedSubcategory);
-      }
-
-      final snapshot = await query.get();
+      final allProductsSnapshot = await allProductsQuery.get();
       
-      // Process products and extract canonical categories/subcategories
+      // Process ALL products to extract canonical categories/subcategories
       final Set<String> categorySet = <String>{};
       final Map<String, Set<String>> subcategorySet = <String, Set<String>>{};
       
-      for (final doc in snapshot.docs) {
+      for (final doc in allProductsSnapshot.docs) {
         final data = doc.data() as Map<String, dynamic>;
         final category = data['category']?.toString();
         final subcategory = data['subcategory']?.toString();
@@ -146,12 +137,38 @@ class _StunningProductBrowserState extends State<StunningProductBrowser>
         }
       }
 
+      // Now filter products based on selected category
+      List<QueryDocumentSnapshot> filteredProducts = allProductsSnapshot.docs;
+      
+      if (selectedCategory.isNotEmpty) {
+        filteredProducts = allProductsSnapshot.docs.where((doc) {
+          final data = doc.data() as Map<String, dynamic>;
+          final productCategory = (data['category'] as String?) ?? '';
+          return productCategory.toLowerCase() == selectedCategory.toLowerCase();
+        }).toList();
+      }
+
+      // Filter by subcategory if selected
+      if (selectedSubcategory != null && selectedSubcategory!.isNotEmpty) {
+        filteredProducts = filteredProducts.where((doc) {
+          final data = doc.data() as Map<String, dynamic>;
+          final productSubcategory = (data['subcategory'] as String?) ?? '';
+          return productSubcategory.toLowerCase() == selectedSubcategory!.toLowerCase();
+        }).toList();
+      }
+
       setState(() {
-        products = snapshot.docs;
+        products = filteredProducts;
         categories = categorySet.toList()..sort((a,b)=>a.toLowerCase().compareTo(b.toLowerCase()));
         subcategoriesMap = subcategorySet.map(
           (key, value) => MapEntry(key, value.toList()..sort((a,b)=>a.toLowerCase().compareTo(b.toLowerCase()))),
         );
+        
+        // Set first category as default if none selected
+        if (selectedCategory.isEmpty && categories.isNotEmpty) {
+          selectedCategory = categories.first;
+        }
+        
         isLoading = false;
       });
     } catch (e) {
@@ -170,22 +187,6 @@ class _StunningProductBrowserState extends State<StunningProductBrowser>
         final description = data['description']?.toString().toLowerCase() ?? '';
         if (!name.contains(searchQuery.toLowerCase()) && 
             !description.contains(searchQuery.toLowerCase())) {
-          return false;
-        }
-      }
-      
-      // Category filter (canonical)
-      if (selectedCategory != 'All' && selectedCategory.isNotEmpty) {
-        final productCategory = (data['category'] as String?) ?? '';
-        if (productCategory.toLowerCase() != selectedCategory.toLowerCase()) {
-          return false;
-        }
-      }
-      
-      // Subcategory filter (canonical)
-      if (selectedSubcategory != null && selectedSubcategory!.isNotEmpty) {
-        final productSubcategory = (data['subcategory'] as String?) ?? '';
-        if (productSubcategory.toLowerCase() != selectedSubcategory!.toLowerCase()) {
           return false;
         }
       }
@@ -413,10 +414,10 @@ class _StunningProductBrowserState extends State<StunningProductBrowser>
             
             const SizedBox(height: 16),
             
-            // Category Chips
+            // Category Chips (without "All" option)
             if (categories.isNotEmpty) _buildCategoryChips(),
             // Subcategory Chips (only when a category is selected)
-            if (selectedCategory != 'All' && (subcategoriesMap[selectedCategory]?.isNotEmpty == true))
+            if (selectedCategory.isNotEmpty && (subcategoriesMap[selectedCategory]?.isNotEmpty == true))
               _buildSubcategoryChips(),
             
             // Sort and Filter Row
@@ -440,7 +441,7 @@ class _StunningProductBrowserState extends State<StunningProductBrowser>
       child: ListView(
         scrollDirection: Axis.horizontal,
         children: [
-          _buildCategoryChip('All', selectedCategory == 'All'),
+          // Remove "All" option - only show specific categories
           ...categories.map((category) => _buildCategoryChip(
             category, 
             selectedCategory == category,
@@ -459,7 +460,7 @@ class _StunningProductBrowserState extends State<StunningProductBrowser>
       child: ListView(
         scrollDirection: Axis.horizontal,
         children: [
-          _buildSubcategoryChip('All', selectedSubcategory == null || selectedSubcategory!.isEmpty),
+          // Remove "All" option - only show specific subcategories
           ...subs.map((sub) => _buildSubcategoryChip(sub, selectedSubcategory == sub)),
         ],
       ),
@@ -474,7 +475,7 @@ class _StunningProductBrowserState extends State<StunningProductBrowser>
         selected: isSelected,
         onSelected: (selected) {
           setState(() {
-            selectedSubcategory = (label == 'All') ? null : label;
+            selectedSubcategory = selected ? label : null;
           });
           _loadProducts();
         },

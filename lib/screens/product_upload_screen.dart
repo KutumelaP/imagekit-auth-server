@@ -116,27 +116,6 @@ class _ProductUploadScreenState extends State<ProductUploadScreen> {
     }
   }
 
-  // Check if a category is allowed for this store
-  bool _isCategoryAllowed(String category) {
-    if (storeCategory == null) return true; // Allow all if store category not set
-    
-    final storeCat = storeCategory!.toLowerCase();
-    final selectedCat = category.toLowerCase();
-    
-    // Allow exact matches
-    if (storeCat == selectedCat) return true;
-    
-    // Allow related categories
-    if (storeCat.contains('food') && selectedCat.contains('food')) return true;
-    if (storeCat.contains('electronics') && selectedCat.contains('electronics')) return true;
-    if (storeCat.contains('clothing') && (selectedCat.contains('clothing') || selectedCat.contains('clothes'))) return true;
-    if (storeCat.contains('clothes') && (selectedCat.contains('clothing') || selectedCat.contains('clothes'))) return true;
-    
-    // Allow "Other" category for all stores
-    if (selectedCat == 'other') return true;
-    
-    return false;
-  }
 
 
   @override
@@ -432,6 +411,11 @@ class _ProductUploadScreenState extends State<ProductUploadScreen> {
               // Category Section
               _buildCategorySection(),
 
+              const SizedBox(height: 24),
+
+              // Customization Section
+              _buildCustomizationSection(),
+
               const SizedBox(height: 32),
 
               // Upload Button
@@ -702,11 +686,6 @@ class _ProductUploadScreenState extends State<ProductUploadScreen> {
             });
           },
         ),
-        
-        const SizedBox(height: 24),
-        
-        // Customization Section
-        _buildCustomizationSection(),
       ],
     );
   }

@@ -59,7 +59,7 @@ class CartProvider extends ChangeNotifier {
   bool get isAuthenticated => FirebaseAuth.instance.currentUser != null;
 
   // Cart operations
-  Future<bool> addItem(String productId, String productName, double price, String imageUrl, String sellerId, String sellerName, String storeCategory, {int? quantity, int? availableStock}) async {
+  Future<bool> addItem(String productId, String productName, double price, String imageUrl, String sellerId, String sellerName, String storeCategory, {int? quantity, int? availableStock, List<Map<String, dynamic>>? customizations, double? customPrice}) async {
     // Use provided quantity or default to 1
     int quantityToAdd = quantity ?? 1;
     // Reset last add info
@@ -120,13 +120,15 @@ class CartProvider extends ChangeNotifier {
       storeItems.add(CartItem(
         id: productId,
         name: productName,
-        price: price,
+        price: customPrice ?? price,
         quantity: quantityToAdd,
         imageUrl: imageUrl,
         sellerId: sellerId,
         sellerName: sellerName,
         storeCategory: storeCategory,
         availableStock: availableStock,
+        customizations: customizations,
+        customPrice: customPrice,
       ));
     }
     

@@ -44,6 +44,11 @@ class _StunningProductDetailState extends State<StunningProductDetail>
   String selectedImageUrl = '';
   bool showFullDescription = false;
   
+  // Customization state
+  List<Map<String, dynamic>> selectedAddOns = [];
+  List<Map<String, dynamic>> selectedSubtractions = [];
+  double customPrice = 0.0;
+  
   // Controllers
   final ScrollController _scrollController = ScrollController();
   final PageController _imagePageController = PageController();
@@ -186,6 +191,38 @@ class _StunningProductDetailState extends State<StunningProductDetail>
     
     // Take the maximum of both fields to handle inconsistencies
     return math.max(quantityNum, stockNum);
+  }
+
+  bool get _isCustomizable {
+    return widget.product['customizable'] == true;
+  }
+
+  Map<String, dynamic>? get _customizations {
+    return widget.product['customizations'];
+  }
+
+  void _calculateCustomPrice() {
+    double basePrice = (widget.product['price'] ?? 0.0).toDouble();
+    double addOnPrice = 0.0;
+    double subtractionPrice = 0.0;
+    
+    // Calculate add-ons price
+    for (var addOn in selectedAddOns) {
+      addOnPrice += (addOn['price'] ?? 0.0).toDouble();
+    }
+    
+    // Calculate subtractions price (usually negative)
+    for (var subtraction in selectedSubtractions) {
+      subtractionPrice += (subtraction['price'] ?? 0.0).toDouble();
+    }
+    
+    customPrice = basePrice + addOnPrice + subtractionPrice;
+    
+    // Ensure minimum price (at least 10% of base price or R5, whichever is higher)
+    final minimumPrice = math.max<double>(basePrice * 0.1, 5.0);
+    if (customPrice < minimumPrice) {
+      customPrice = minimumPrice;
+    }
   }
 
   @override
@@ -365,6 +402,11 @@ class _StunningProductDetailState extends State<StunningProductDetail>
             
             const SizedBox(height: 24),
             
+            // Customization Section
+            _buildCustomizationSection(isMobile),
+            
+            const SizedBox(height: 24),
+            
             // Product Details
             _buildProductDetails(isMobile),
             
@@ -528,7 +570,9 @@ class _StunningProductDetailState extends State<StunningProductDetail>
                 ),
               ),
               Text(
-                'R${(widget.product['price'] ?? 0.0).toStringAsFixed(2)}',
+                'R${_isCustomizable && (selectedAddOns.isNotEmpty || selectedSubtractions.isNotEmpty) 
+                    ? customPrice.toStringAsFixed(2)
+                    : (widget.product['price'] ?? 0.0).toStringAsFixed(2)}',
                 style: AppTheme.displaySmall.copyWith(
                   fontSize: isMobile ? 24 : 28,
                   color: AppTheme.deepTeal,
@@ -667,6 +711,194 @@ class _StunningProductDetailState extends State<StunningProductDetail>
     );
   }
 
+  Widget _buildCustomizationSection(bool isMobile) {
+    if (!_isCustomizable || _customizations == null) {
+      return const SizedBox.shrink();
+    }
+
+    final addOns = _customizations!['addOns'] as List<dynamic>? ?? [];
+    final subtractions = _customizations!['subtractions'] as List<dynamic>? ?? [];
+
+    return Container(
+      padding: EdgeInsets.all(isMobile ? 16 : 20),
+      decoration: BoxDecoration(
+        color: AppTheme.whisper.withOpacity(0.5),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                Icons.tune_outlined,
+                color: AppTheme.deepTeal,
+                size: 20,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'Customize Your Order',
+                style: AppTheme.titleMedium.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+          
+          const SizedBox(height: 16),
+          
+          // Add-ons Section
+          if (addOns.isNotEmpty) ...[
+            Text(
+              'Add-ons (Extra items)',
+              style: AppTheme.bodyMedium.copyWith(
+                fontWeight: FontWeight.w600,
+                color: AppTheme.deepTeal,
+              ),
+            ),
+            const SizedBox(height: 8),
+            ...addOns.map((addOn) => _buildCustomizationItem(
+              addOn['name'] ?? '',
+              addOn['price'] ?? 0.0,
+              true, // isAddOn
+            )),
+            const SizedBox(height: 16),
+          ],
+          
+          // Subtractions Section
+          if (subtractions.isNotEmpty) ...[
+            Text(
+              'Subtractions (Remove items)',
+              style: AppTheme.bodyMedium.copyWith(
+                fontWeight: FontWeight.w600,
+                color: AppTheme.deepTeal,
+              ),
+            ),
+            const SizedBox(height: 8),
+            ...subtractions.map((subtraction) => _buildCustomizationItem(
+              subtraction['name'] ?? '',
+              subtraction['price'] ?? 0.0,
+              false, // isAddOn
+            )),
+            const SizedBox(height: 12),
+            _buildPriceLimitInfo(),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCustomizationItem(String name, double price, bool isAddOn) {
+    final isSelected = isAddOn 
+        ? selectedAddOns.any((item) => item['name'] == name)
+        : selectedSubtractions.any((item) => item['name'] == name);
+    
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: CheckboxListTile(
+        title: Text(name),
+        subtitle: Text(
+          '${price >= 0 ? '+' : '-'}R${price.abs().toStringAsFixed(2)}',
+          style: TextStyle(
+            color: price >= 0 ? AppTheme.success : AppTheme.error,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        value: isSelected,
+        onChanged: (value) {
+          setState(() {
+            if (isAddOn) {
+              if (value == true) {
+                selectedAddOns.add({'name': name, 'price': price});
+              } else {
+                selectedAddOns.removeWhere((item) => item['name'] == name);
+              }
+            } else {
+              if (value == true) {
+                // Check if adding this subtraction would make the price too low
+                final basePrice = (widget.product['price'] ?? 0.0).toDouble();
+                final currentAddOnPrice = selectedAddOns.fold(0.0, (sum, addOn) => sum + (addOn['price'] ?? 0.0));
+                final currentSubtractionPrice = selectedSubtractions.fold(0.0, (sum, sub) => sum + (sub['price'] ?? 0.0));
+                final newTotal = basePrice + currentAddOnPrice + currentSubtractionPrice + price;
+                final minimumPrice = math.max<double>(basePrice * 0.1, 5.0);
+                
+                if (newTotal < minimumPrice) {
+                  _showSnackBar(
+                    'Cannot add this subtraction. Total would be too low (minimum: R${minimumPrice.toStringAsFixed(2)})',
+                    AppTheme.warning
+                  );
+                  return;
+                }
+                
+                selectedSubtractions.add({'name': name, 'price': price});
+              } else {
+                selectedSubtractions.removeWhere((item) => item['name'] == name);
+              }
+            }
+            _calculateCustomPrice();
+          });
+        },
+        activeColor: AppTheme.deepTeal,
+        contentPadding: EdgeInsets.zero,
+      ),
+    );
+  }
+
+  Widget _buildPriceLimitInfo() {
+    final basePrice = (widget.product['price'] ?? 0.0).toDouble();
+    final minimumPrice = math.max<double>(basePrice * 0.1, 5.0);
+    final currentSavings = basePrice - customPrice;
+    final maxSavings = basePrice - minimumPrice;
+    
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppTheme.whisper,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppTheme.cloud),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                Icons.info_outline,
+                size: 16,
+                color: AppTheme.deepTeal,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'Price Protection',
+                style: AppTheme.bodySmall.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: AppTheme.deepTeal,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Minimum price: R${minimumPrice.toStringAsFixed(2)}',
+            style: AppTheme.bodySmall.copyWith(
+              color: AppTheme.cloud,
+            ),
+          ),
+          if (currentSavings > 0) ...[
+            const SizedBox(height: 4),
+            Text(
+              'Current savings: R${currentSavings.toStringAsFixed(2)} of R${maxSavings.toStringAsFixed(2)} max',
+              style: AppTheme.bodySmall.copyWith(
+                color: AppTheme.success,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   Widget _buildQuantitySelector(bool isMobile) {
     return Container(
       padding: EdgeInsets.all(isMobile ? 16 : 20),
@@ -743,7 +975,9 @@ class _StunningProductDetailState extends State<StunningProductDetail>
               const Spacer(),
               
               Text(
-                'Total: R${((widget.product['price'] ?? 0.0) * quantity).toStringAsFixed(2)}',
+                'Total: R${((_isCustomizable && (selectedAddOns.isNotEmpty || selectedSubtractions.isNotEmpty) 
+                    ? customPrice 
+                    : (widget.product['price'] ?? 0.0)) * quantity).toStringAsFixed(2)}',
                 style: AppTheme.titleMedium.copyWith(
                   fontWeight: FontWeight.bold,
                   color: AppTheme.deepTeal,
@@ -789,7 +1023,16 @@ class _StunningProductDetailState extends State<StunningProductDetail>
       return;
     }
     
-    // Add to cart with selected quantity
+    // Prepare customizations for cart
+    List<Map<String, dynamic>>? cartCustomizations;
+    double? cartCustomPrice;
+    
+    if (_isCustomizable && (selectedAddOns.isNotEmpty || selectedSubtractions.isNotEmpty)) {
+      cartCustomizations = [...selectedAddOns, ...selectedSubtractions];
+      cartCustomPrice = customPrice;
+    }
+    
+    // Add to cart with selected quantity and customizations
     final success = await cartProvider.addItem(
       widget.product['id'],
       widget.product['name'] ?? 'Unknown Product',
@@ -800,6 +1043,8 @@ class _StunningProductDetailState extends State<StunningProductDetail>
       widget.product['storeCategory'] ?? 'Other',
       quantity: quantity, // Include the selected quantity
       availableStock: stock,
+      customizations: cartCustomizations,
+      customPrice: cartCustomPrice,
     );
     
     if (!success) {
@@ -1100,17 +1345,4 @@ class _StunningProductDetailState extends State<StunningProductDetail>
     );
   }
 
-  String _formatTimestamp(dynamic timestamp) {
-    if (timestamp == null) return 'Unknown';
-    
-    try {
-      if (timestamp is Timestamp) {
-        final date = timestamp.toDate();
-        return '${date.day}/${date.month}/${date.year}';
-      }
-      return timestamp.toString();
-    } catch (e) {
-      return 'Unknown';
-    }
-  }
 } 

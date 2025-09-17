@@ -10,9 +10,7 @@ import 'package:http/http.dart' as http;
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:path/path.dart' as path;
 import '../theme/app_theme.dart';
-import '../services/category_normalizer.dart';
 import '../constants/app_constants.dart';
-import '../services/subcategory_suggestions_service.dart';
 import '../services/subcategory_suggestions_service.dart';
 
 class StunningProductUpload extends StatefulWidget {
@@ -114,6 +112,11 @@ class _StunningProductUploadState extends State<StunningProductUpload>
   String uploadStatus = '';
   int currentStep = 0;
   
+  // Customization fields
+  bool isCustomizable = false;
+  List<Map<String, dynamic>> addOns = [];
+  List<Map<String, dynamic>> subtractions = [];
+  
   // Product condition options
   final List<String> _conditionOptions = [
     'New',
@@ -172,7 +175,7 @@ class _StunningProductUploadState extends State<StunningProductUpload>
       
       if (storeDoc.exists) {
         final storeData = storeDoc.data() as Map<String, dynamic>;
-        final storeCategory = storeData['storeCategory'] as String?;
+        final storeCategory = storeData['storeCategory'];
         
         print('🔍 DEBUG: Raw storeCategory from database: "$storeCategory"');
         print('🔍 DEBUG: storeCategory is null: ${storeCategory == null}');
@@ -536,7 +539,7 @@ class _StunningProductUploadState extends State<StunningProductUpload>
         throw Exception('Invalid quantity. Please enter a valid number.');
       }
 
-      final productData = {
+      final Map<String, dynamic> productData = {
         'name': _nameController.text.trim(),
         'description': _descriptionController.text.trim(),
         'price': price,
@@ -549,7 +552,16 @@ class _StunningProductUploadState extends State<StunningProductUpload>
         'ownerId': user.uid,
         'status': 'active',
         'timestamp': FieldValue.serverTimestamp(),
+        'customizable': isCustomizable,
       };
+      
+      // Add customizations if enabled
+      if (isCustomizable) {
+        productData['customizations'] = {
+          'addOns': addOns.where((addon) => addon['name'].toString().isNotEmpty).toList(),
+          'subtractions': subtractions.where((subtract) => subtract['name'].toString().isNotEmpty).toList(),
+        };
+      }
 
       // Save to Firestore
       setState(() => uploadStatus = 'Saving to database...');
@@ -635,7 +647,7 @@ class _StunningProductUploadState extends State<StunningProductUpload>
       return;
     }
     
-    if (currentStep < 3) {
+    if (currentStep < 4) {
       setState(() {
         currentStep++;
       });
@@ -675,6 +687,9 @@ class _StunningProductUploadState extends State<StunningProductUpload>
         if (!_validateCategoryStep()) {
           return false;
         }
+        break;
+      case 3: // Customization step
+        // No validation needed - customization is optional
         break;
     }
     return true;
@@ -801,6 +816,7 @@ class _StunningProductUploadState extends State<StunningProductUpload>
                   _buildImageStep(isMobile),
                   _buildDetailsStep(isMobile),
                   _buildCategoryStep(isMobile),
+                  _buildCustomizationStep(isMobile),
                   _buildReviewStep(isMobile),
                 ],
               ),
@@ -817,7 +833,7 @@ class _StunningProductUploadState extends State<StunningProductUpload>
   }
 
   Widget _buildProgressIndicator(bool isMobile) {
-    final steps = ['Image', 'Details', 'Category', 'Review'];
+    final steps = ['Image', 'Details', 'Category', 'Customize', 'Review'];
     
     return Container(
       padding: EdgeInsets.all(isMobile ? 12 : 16),
@@ -1356,6 +1372,272 @@ class _StunningProductUploadState extends State<StunningProductUpload>
     );
   }
 
+  Widget _buildCustomizationStep(bool isMobile) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: AppTheme.deepTeal.withOpacity(0.1),
+            blurRadius: 20,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Customization Options',
+              style: AppTheme.headlineMedium.copyWith(
+                color: AppTheme.deepTeal,
+              ),
+            ),
+            
+            const SizedBox(height: 20),
+            
+            // Enable Customization Toggle
+            CheckboxListTile(
+              title: const Text(
+                'Allow customers to customize this product',
+                style: TextStyle(fontWeight: FontWeight.w500),
+              ),
+              subtitle: const Text('Add-ons and subtractions (e.g., extra chicken, no onions)'),
+              value: isCustomizable,
+              onChanged: (value) {
+                setState(() {
+                  isCustomizable = value ?? false;
+                  if (!isCustomizable) {
+                    addOns.clear();
+                    subtractions.clear();
+                  }
+                });
+              },
+              activeColor: AppTheme.deepTeal,
+              contentPadding: EdgeInsets.zero,
+            ),
+            
+            if (isCustomizable) ...[
+              const SizedBox(height: 24),
+              
+              // Add-ons Section
+              _buildAddOnsSection(),
+              
+              const SizedBox(height: 24),
+              
+              // Subtractions Section
+              _buildSubtractionsSection(),
+            ],
+            
+            const SizedBox(height: 24),
+            
+            // Price Breakdown Section (always visible)
+            _buildPriceBreakdownSection(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAddOnsSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text(
+              'Add-ons (Extra items)',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: AppTheme.deepTeal,
+              ),
+            ),
+            TextButton.icon(
+              onPressed: () {
+                setState(() {
+                  addOns.add({
+                    'id': 'addon_${DateTime.now().millisecondsSinceEpoch}',
+                    'name': '',
+                    'price': 0.0,
+                  });
+                });
+              },
+              icon: const Icon(Icons.add, size: 16),
+              label: const Text('Add'),
+            ),
+          ],
+        ),
+        
+        ...addOns.asMap().entries.map((entry) {
+          int index = entry.key;
+          Map<String, dynamic> addOn = entry.value;
+          
+          return Container(
+            margin: const EdgeInsets.only(bottom: 12),
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: AppTheme.whisper,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppTheme.cloud),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextFormField(
+                    initialValue: addOn['name'],
+                    decoration: const InputDecoration(
+                      labelText: 'Add-on name',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                    onChanged: (value) {
+                      addOns[index]['name'] = value;
+                    },
+                  ),
+                ),
+                const SizedBox(width: 12),
+                SizedBox(
+                  width: 100,
+                  child: TextFormField(
+                    initialValue: addOn['price'].toString(),
+                    decoration: const InputDecoration(
+                      labelText: 'Price',
+                      border: OutlineInputBorder(),
+                      prefixText: 'R',
+                      isDense: true,
+                    ),
+                    keyboardType: TextInputType.number,
+                    onChanged: (value) {
+                      addOns[index]['price'] = double.tryParse(value) ?? 0.0;
+                    },
+                  ),
+                ),
+                const SizedBox(width: 12),
+                IconButton(
+                  onPressed: () {
+                    setState(() {
+                      addOns.removeAt(index);
+                    });
+                  },
+                  icon: const Icon(Icons.delete, color: Colors.red),
+                ),
+              ],
+            ),
+          );
+        }).toList(),
+      ],
+    );
+  }
+
+  Widget _buildSubtractionsSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text(
+              'Subtractions (Remove items)',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: AppTheme.deepTeal,
+              ),
+            ),
+            TextButton.icon(
+              onPressed: () {
+                setState(() {
+                  subtractions.add({
+                    'id': 'subtract_${DateTime.now().millisecondsSinceEpoch}',
+                    'name': '',
+                    'price': 0.0,
+                  });
+                });
+              },
+              icon: const Icon(Icons.add, size: 16),
+              label: const Text('Add'),
+            ),
+          ],
+        ),
+        
+        ...subtractions.asMap().entries.map((entry) {
+          int index = entry.key;
+          Map<String, dynamic> subtraction = entry.value;
+          
+          return Container(
+            margin: const EdgeInsets.only(bottom: 12),
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: AppTheme.whisper,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppTheme.cloud),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextFormField(
+                    initialValue: subtraction['name'],
+                    decoration: const InputDecoration(
+                      labelText: 'Subtraction name',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                    onChanged: (value) {
+                      subtractions[index]['name'] = value;
+                    },
+                  ),
+                ),
+                const SizedBox(width: 12),
+                SizedBox(
+                  width: 100,
+                  child: TextFormField(
+                    initialValue: subtraction['price'].toString(),
+                    decoration: const InputDecoration(
+                      labelText: 'Price',
+                      border: OutlineInputBorder(),
+                      prefixText: 'R',
+                      isDense: true,
+                    ),
+                    keyboardType: TextInputType.number,
+                    onChanged: (value) {
+                      final newPrice = double.tryParse(value) ?? 0.0;
+                      final basePrice = double.tryParse(_priceController.text.replaceAll(RegExp(r'[R,\s]'), '')) ?? 0.0;
+                      final maxSubtraction = basePrice * 0.9; // Max 90% reduction
+                      
+                      // Convert to negative for subtractions (if positive entered)
+                      final subtractionPrice = newPrice > 0 ? -newPrice : newPrice;
+
+                      if (subtractionPrice.abs() > maxSubtraction) {
+                        _showErrorSnackBar('Subtraction price too high. Max reduction: R${maxSubtraction.toStringAsFixed(2)}');
+                        return;
+                      }
+
+                      subtractions[index]['price'] = subtractionPrice;
+                    },
+                  ),
+                ),
+                const SizedBox(width: 12),
+                IconButton(
+                  onPressed: () {
+                    setState(() {
+                      subtractions.removeAt(index);
+                    });
+                  },
+                  icon: const Icon(Icons.delete, color: Colors.red),
+                ),
+              ],
+            ),
+          );
+        }).toList(),
+      ],
+    );
+  }
+
   Widget _buildReviewStep(bool isMobile) {
     return Container(
       padding: const EdgeInsets.all(20),
@@ -1559,7 +1841,7 @@ class _StunningProductUploadState extends State<StunningProductUpload>
             child: ElevatedButton(
               onPressed: isUploading 
                   ? null 
-                  : currentStep < 3 
+                  : currentStep < 4 
                       ? _nextStep 
                       : _uploadProduct,
               style: ElevatedButton.styleFrom(
@@ -1571,13 +1853,252 @@ class _StunningProductUploadState extends State<StunningProductUpload>
                 ),
               ),
               child: Text(
-                currentStep < 3 ? 'Next' : 'Upload Product',
+                currentStep < 4 ? 'Next' : 'Upload Product',
                 style: const TextStyle(fontWeight: FontWeight.bold),
               ),
             ),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildPriceBreakdownSection() {
+    final basePrice = double.tryParse(_priceController.text.replaceAll(RegExp(r'[R,\s]'), '')) ?? 0.0;
+    final addOnTotal = addOns.fold(0.0, (sum, addon) => sum + (addon['price'] ?? 0.0));
+    final subtractionTotal = subtractions.fold(0.0, (sum, subtract) => sum + (subtract['price'] ?? 0.0));
+    final maxPrice = basePrice + addOnTotal;
+    final minPrice = basePrice + subtractionTotal;
+    
+    // Calculate tiered commission fees (based on actual system)
+    // Tier 1: R0-R25 → 4% + R3.00
+    // Tier 2: R25-R100 → 6% + R2.00  
+    // Tier 3: R100+ → 8% + R0.00
+    const serviceFeeRate = 0.035; // 3.5% service fee
+    const payfastFeeRate = 0.029; // 2.9% PayFast fee (no fixed fee)
+    
+    // Calculate tiered commission for max price
+    double maxCommission = 0.0;
+    double maxSmallOrderFee = 0.0;
+    if (maxPrice <= 25.0) {
+      // Tier 1: Small Orders (R0-R25)
+      maxCommission = maxPrice * 0.04; // 4%
+      maxSmallOrderFee = 3.0; // R3.00
+    } else if (maxPrice <= 100.0) {
+      // Tier 2: Medium Orders (R25-R100)
+      maxCommission = maxPrice * 0.06; // 6%
+      maxSmallOrderFee = 2.0; // R2.00
+    } else {
+      // Tier 3: Large Orders (R100+)
+      maxCommission = maxPrice * 0.08; // 8%
+      maxSmallOrderFee = 0.0; // No small order fee
+    }
+    
+    // Calculate tiered commission for min price
+    double minCommission = 0.0;
+    double minSmallOrderFee = 0.0;
+    if (minPrice <= 25.0) {
+      // Tier 1: Small Orders (R0-R25)
+      minCommission = minPrice * 0.04; // 4%
+      minSmallOrderFee = 3.0; // R3.00
+    } else if (minPrice <= 100.0) {
+      // Tier 2: Medium Orders (R25-R100)
+      minCommission = minPrice * 0.06; // 6%
+      minSmallOrderFee = 2.0; // R2.00
+    } else {
+      // Tier 3: Large Orders (R100+)
+      minCommission = minPrice * 0.08; // 8%
+      minSmallOrderFee = 0.0; // No small order fee
+    }
+    
+    // Calculate other fees
+    final maxServiceFee = maxPrice * serviceFeeRate;
+    final maxPayfastFee = maxPrice * payfastFeeRate;
+    final maxTotalFees = maxCommission + maxSmallOrderFee + maxServiceFee + maxPayfastFee;
+    final maxEarnings = maxPrice - maxTotalFees;
+    
+    final minServiceFee = minPrice * serviceFeeRate;
+    final minPayfastFee = minPrice * payfastFeeRate;
+    final minTotalFees = minCommission + minSmallOrderFee + minServiceFee + minPayfastFee;
+    final minEarnings = minPrice - minTotalFees;
+    
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppTheme.whisper,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppTheme.cloud),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.calculate, color: AppTheme.deepTeal, size: 20),
+              const SizedBox(width: 8),
+              const Text(
+                'Price Breakdown & Earnings',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: AppTheme.deepTeal,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          
+          // Base Price
+          _buildBreakdownRow('Base Product Price', basePrice, isBase: true),
+          
+          // Add-ons
+          if (addOns.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            _buildBreakdownRow('Add-ons Total', addOnTotal, isAddOn: true),
+            for (var addon in addOns.where((a) => a['name'].toString().isNotEmpty))
+              Padding(
+                padding: const EdgeInsets.only(left: 16, top: 4),
+                child: _buildBreakdownRow(
+                  '• ${addon['name']}', 
+                  addon['price'] ?? 0.0, 
+                  isSubItem: true
+                ),
+              ),
+          ],
+          
+          // Subtractions
+          if (subtractions.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            _buildBreakdownRow('Subtractions Total', subtractionTotal, isSubtraction: true),
+            for (var subtract in subtractions.where((s) => s['name'].toString().isNotEmpty))
+              Padding(
+                padding: const EdgeInsets.only(left: 16, top: 4),
+                child: _buildBreakdownRow(
+                  '• ${subtract['name']}', 
+                  subtract['price'] ?? 0.0, 
+                  isSubItem: true
+                ),
+              ),
+          ],
+          
+          const Divider(height: 24),
+          
+          // Price Range
+          _buildBreakdownRow('Customer Price Range', null, isHeader: true),
+          const SizedBox(height: 8),
+          _buildBreakdownRow('  Minimum Price', minPrice, isSubItem: true),
+          _buildBreakdownRow('  Maximum Price', maxPrice, isSubItem: true),
+          
+          const Divider(height: 24),
+          
+          // Fee Breakdown
+          _buildBreakdownRow('Fee Breakdown', null, isHeader: true),
+          const SizedBox(height: 8),
+          _buildBreakdownRow('  Platform Commission', maxCommission, isSubItem: true),
+          _buildBreakdownRow('  Small Order Fee', maxSmallOrderFee, isSubItem: true),
+          _buildBreakdownRow('  Service Fee (3.5%)', maxServiceFee, isSubItem: true),
+          _buildBreakdownRow('  PayFast Fee (2.9%)', maxPayfastFee, isSubItem: true),
+          _buildBreakdownRow('  Total Fees', maxTotalFees, isSubtraction: true),
+          
+          const Divider(height: 24),
+          
+          // Your Earnings (after all fees)
+          _buildBreakdownRow('Your Earnings Range', null, isHeader: true),
+          const SizedBox(height: 8),
+          _buildBreakdownRow('  Minimum Earnings', minEarnings, isEarnings: true),
+          _buildBreakdownRow('  Maximum Earnings', maxEarnings, isEarnings: true),
+          
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: AppTheme.success.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: AppTheme.success.withOpacity(0.3)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.info_outline, color: AppTheme.success, size: 16),
+                    const SizedBox(width: 8),
+                    const Text(
+                      'Tiered Commission System:',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: AppTheme.success,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '• R0-R25: 4% + R3.00\n• R25-R100: 6% + R2.00\n• R100+: 8% + R0.00',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: AppTheme.success,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBreakdownRow(String label, double? value, {
+    bool isBase = false,
+    bool isAddOn = false,
+    bool isSubtraction = false,
+    bool isEarnings = false,
+    bool isHeader = false,
+    bool isSubItem = false,
+  }) {
+    Color? textColor;
+    FontWeight? fontWeight;
+    
+    if (isHeader) {
+      textColor = AppTheme.deepTeal;
+      fontWeight = FontWeight.w600;
+    } else if (isEarnings) {
+      textColor = AppTheme.success;
+      fontWeight = FontWeight.w600;
+    } else if (isBase) {
+      textColor = AppTheme.deepTeal;
+      fontWeight = FontWeight.w500;
+    } else if (isAddOn) {
+      textColor = AppTheme.success;
+    } else if (isSubtraction) {
+      textColor = AppTheme.error;
+    } else if (isSubItem) {
+      textColor = AppTheme.cloud;
+    }
+    
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: isSubItem ? 12 : 14,
+            color: textColor,
+            fontWeight: fontWeight,
+          ),
+        ),
+        if (value != null)
+          Text(
+            'R${value.toStringAsFixed(2)}',
+            style: TextStyle(
+              fontSize: isSubItem ? 12 : 14,
+              color: textColor,
+              fontWeight: fontWeight,
+            ),
+          ),
+      ],
     );
   }
 } 

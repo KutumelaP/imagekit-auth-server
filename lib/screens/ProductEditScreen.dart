@@ -71,6 +71,11 @@ class _ProductEditScreenState extends State<ProductEditScreen> {
   String _status = 'active';
   File? _pickedImage;
   final ImagePicker _picker = ImagePicker();
+  
+  // Customization fields
+  bool isCustomizable = false;
+  List<Map<String, dynamic>> addOns = [];
+  List<Map<String, dynamic>> subtractions = [];
 
   static const Map<String, List<String>> _categoryMap = {
     'Food': ['Baked Goods','Fresh Produce','Dairy & Eggs','Meat & Poultry','Pantry Items','Snacks','Beverages','Frozen Foods','Organic Foods','Candy & Sweets','Condiments'],
@@ -104,6 +109,14 @@ class _ProductEditScreenState extends State<ProductEditScreen> {
     _stockController = TextEditingController(text: (widget.initialData['quantity'] ?? widget.initialData['stock'] ?? '').toString());
     _descriptionController = TextEditingController(text: widget.initialData['description'] ?? '');
     _status = (widget.initialData['status'] as String?)?.toLowerCase() == 'draft' ? 'draft' : 'active';
+    
+    // Initialize customization fields
+    isCustomizable = widget.initialData['customizable'] == true;
+    if (isCustomizable && widget.initialData['customizations'] != null) {
+      final customizations = widget.initialData['customizations'] as Map<String, dynamic>;
+      addOns = List<Map<String, dynamic>>.from(customizations['addOns'] ?? []);
+      subtractions = List<Map<String, dynamic>>.from(customizations['subtractions'] ?? []);
+    }
 
     // Rebuild on changes to show floating save bar
     for (final c in [
@@ -152,7 +165,7 @@ class _ProductEditScreenState extends State<ProductEditScreen> {
         return;
       }
 
-      await FirebaseFirestore.instance.collection('products').doc(widget.productId).update({
+      final Map<String, dynamic> updateData = {
         'name': _nameController.text.trim(),
         'price': price,
         'category': _categoryController.text.trim(),
@@ -163,7 +176,18 @@ class _ProductEditScreenState extends State<ProductEditScreen> {
         'description': _descriptionController.text.trim(),
         'status': _status,
         'timestamp': FieldValue.serverTimestamp(),
-      });
+        'customizable': isCustomizable,
+      };
+      
+      // Add customizations if enabled
+      if (isCustomizable) {
+        updateData['customizations'] = {
+          'addOns': addOns.where((addon) => addon['name'].toString().isNotEmpty).toList(),
+          'subtractions': subtractions.where((subtract) => subtract['name'].toString().isNotEmpty).toList(),
+        };
+      }
+      
+      await FirebaseFirestore.instance.collection('products').doc(widget.productId).update(updateData);
 
       // Notify admin for moderation
       await NotificationService.createNotification(
@@ -497,6 +521,9 @@ class _ProductEditScreenState extends State<ProductEditScreen> {
                     ),
                   ),
                   const SizedBox(height: 16),
+                  // Customization Section
+                  _buildCustomizationSection(),
+                  const SizedBox(height: 16),
                   // Live Preview Card
                   Container(
                     padding: const EdgeInsets.all(16),
@@ -647,5 +674,506 @@ class _ProductEditScreenState extends State<ProductEditScreen> {
       ),
     );
     return result ?? false;
+  }
+
+  Widget _buildCustomizationSection() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: AppTheme.complementaryElevation,
+        border: Border.all(color: AppTheme.breeze.withOpacity(0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Customization Options',
+            style: TextStyle(
+              fontWeight: FontWeight.w600,
+              color: AppTheme.deepTeal,
+              fontSize: 16,
+            ),
+          ),
+          const SizedBox(height: 12),
+          
+          // Enable Customization Toggle
+          CheckboxListTile(
+            title: const Text('Allow customers to customize this product'),
+            subtitle: const Text('Add-ons and subtractions (e.g., extra chicken, no onions)'),
+            value: isCustomizable,
+            onChanged: (value) {
+              setState(() {
+                isCustomizable = value ?? false;
+                if (!isCustomizable) {
+                  addOns.clear();
+                  subtractions.clear();
+                }
+              });
+            },
+            activeColor: AppTheme.deepTeal,
+            contentPadding: EdgeInsets.zero,
+          ),
+          
+            if (isCustomizable) ...[
+              const SizedBox(height: 16),
+              
+              // Add-ons Section
+              _buildAddOnsSection(),
+              
+              const SizedBox(height: 16),
+              
+              // Subtractions Section
+              _buildSubtractionsSection(),
+            ],
+            
+            const SizedBox(height: 16),
+            
+            // Price Breakdown Section (always visible)
+            _buildPriceBreakdownSection(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAddOnsSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text(
+              'Add-ons (Extra items)',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: AppTheme.deepTeal,
+              ),
+            ),
+            TextButton.icon(
+              onPressed: () {
+                setState(() {
+                  addOns.add({
+                    'id': 'addon_${DateTime.now().millisecondsSinceEpoch}',
+                    'name': '',
+                    'price': 0.0,
+                  });
+                });
+              },
+              icon: const Icon(Icons.add, size: 16),
+              label: const Text('Add'),
+            ),
+          ],
+        ),
+        
+        ...addOns.asMap().entries.map((entry) {
+          int index = entry.key;
+          Map<String, dynamic> addOn = entry.value;
+          
+          return Container(
+            margin: const EdgeInsets.only(bottom: 8),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: AppTheme.whisper,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: AppTheme.cloud),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextFormField(
+                    initialValue: addOn['name'],
+                    decoration: const InputDecoration(
+                      labelText: 'Add-on name',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                    onChanged: (value) {
+                      addOns[index]['name'] = value;
+                    },
+                  ),
+                ),
+                const SizedBox(width: 8),
+                SizedBox(
+                  width: 80,
+                  child: TextFormField(
+                    initialValue: addOn['price'].toString(),
+                    decoration: const InputDecoration(
+                      labelText: 'Price',
+                      border: OutlineInputBorder(),
+                      prefixText: 'R',
+                      isDense: true,
+                    ),
+                    keyboardType: TextInputType.number,
+                    onChanged: (value) {
+                      addOns[index]['price'] = double.tryParse(value) ?? 0.0;
+                    },
+                  ),
+                ),
+                const SizedBox(width: 8),
+                IconButton(
+                  onPressed: () {
+                    setState(() {
+                      addOns.removeAt(index);
+                    });
+                  },
+                  icon: const Icon(Icons.delete, color: Colors.red),
+                ),
+              ],
+            ),
+          );
+        }).toList(),
+      ],
+    );
+  }
+
+  Widget _buildSubtractionsSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text(
+              'Subtractions (Remove items)',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: AppTheme.deepTeal,
+              ),
+            ),
+            TextButton.icon(
+              onPressed: () {
+                setState(() {
+                  subtractions.add({
+                    'id': 'subtract_${DateTime.now().millisecondsSinceEpoch}',
+                    'name': '',
+                    'price': 0.0,
+                  });
+                });
+              },
+              icon: const Icon(Icons.add, size: 16),
+              label: const Text('Add'),
+            ),
+          ],
+        ),
+        
+        ...subtractions.asMap().entries.map((entry) {
+          int index = entry.key;
+          Map<String, dynamic> subtraction = entry.value;
+          
+          return Container(
+            margin: const EdgeInsets.only(bottom: 8),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: AppTheme.whisper,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: AppTheme.cloud),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextFormField(
+                    initialValue: subtraction['name'],
+                    decoration: const InputDecoration(
+                      labelText: 'Subtraction name',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                    onChanged: (value) {
+                      subtractions[index]['name'] = value;
+                    },
+                  ),
+                ),
+                const SizedBox(width: 8),
+                SizedBox(
+                  width: 80,
+                  child: TextFormField(
+                    initialValue: subtraction['price'].toString(),
+                    decoration: const InputDecoration(
+                      labelText: 'Price',
+                      border: OutlineInputBorder(),
+                      prefixText: 'R',
+                      isDense: true,
+                    ),
+                    keyboardType: TextInputType.number,
+                    onChanged: (value) {
+                      final newPrice = double.tryParse(value) ?? 0.0;
+                      final basePrice = double.tryParse(_priceController.text) ?? 0.0;
+                      final maxSubtraction = basePrice * 0.9; // Max 90% reduction
+                      
+                      // Convert to negative for subtractions (if positive entered)
+                      final subtractionPrice = newPrice > 0 ? -newPrice : newPrice;
+                      
+                      if (subtractionPrice.abs() > maxSubtraction) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Subtraction price too high. Max reduction: R${maxSubtraction.toStringAsFixed(2)}'),
+                            backgroundColor: AppTheme.warning,
+                          ),
+                        );
+                        return;
+                      }
+                      
+                      subtractions[index]['price'] = subtractionPrice;
+                    },
+                  ),
+                ),
+                const SizedBox(width: 8),
+                IconButton(
+                  onPressed: () {
+                    setState(() {
+                      subtractions.removeAt(index);
+                    });
+                  },
+                  icon: const Icon(Icons.delete, color: Colors.red),
+                ),
+              ],
+            ),
+          );
+        }).toList(),
+      ],
+    );
+  }
+
+  Widget _buildPriceBreakdownSection() {
+    final basePrice = double.tryParse(_priceController.text) ?? 0.0;
+    final addOnTotal = addOns.fold(0.0, (sum, addon) => sum + (addon['price'] ?? 0.0));
+    final subtractionTotal = subtractions.fold(0.0, (sum, subtract) => sum + (subtract['price'] ?? 0.0));
+    final maxPrice = basePrice + addOnTotal;
+    final minPrice = basePrice + subtractionTotal;
+    
+    // Calculate tiered commission fees (based on actual system)
+    // Tier 1: R0-R25 → 4% + R3.00
+    // Tier 2: R25-R100 → 6% + R2.00  
+    // Tier 3: R100+ → 8% + R0.00
+    const serviceFeeRate = 0.035; // 3.5% service fee
+    const payfastFeeRate = 0.029; // 2.9% PayFast fee (no fixed fee)
+    
+    // Calculate tiered commission for max price
+    double maxCommission = 0.0;
+    double maxSmallOrderFee = 0.0;
+    if (maxPrice <= 25.0) {
+      // Tier 1: Small Orders (R0-R25)
+      maxCommission = maxPrice * 0.04; // 4%
+      maxSmallOrderFee = 3.0; // R3.00
+    } else if (maxPrice <= 100.0) {
+      // Tier 2: Medium Orders (R25-R100)
+      maxCommission = maxPrice * 0.06; // 6%
+      maxSmallOrderFee = 2.0; // R2.00
+    } else {
+      // Tier 3: Large Orders (R100+)
+      maxCommission = maxPrice * 0.08; // 8%
+      maxSmallOrderFee = 0.0; // No small order fee
+    }
+    
+    // Calculate tiered commission for min price
+    double minCommission = 0.0;
+    double minSmallOrderFee = 0.0;
+    if (minPrice <= 25.0) {
+      // Tier 1: Small Orders (R0-R25)
+      minCommission = minPrice * 0.04; // 4%
+      minSmallOrderFee = 3.0; // R3.00
+    } else if (minPrice <= 100.0) {
+      // Tier 2: Medium Orders (R25-R100)
+      minCommission = minPrice * 0.06; // 6%
+      minSmallOrderFee = 2.0; // R2.00
+    } else {
+      // Tier 3: Large Orders (R100+)
+      minCommission = minPrice * 0.08; // 8%
+      minSmallOrderFee = 0.0; // No small order fee
+    }
+    
+    // Calculate other fees
+    final maxServiceFee = maxPrice * serviceFeeRate;
+    final maxPayfastFee = maxPrice * payfastFeeRate;
+    final maxTotalFees = maxCommission + maxSmallOrderFee + maxServiceFee + maxPayfastFee;
+    final maxEarnings = maxPrice - maxTotalFees;
+    
+    final minServiceFee = minPrice * serviceFeeRate;
+    final minPayfastFee = minPrice * payfastFeeRate;
+    final minTotalFees = minCommission + minSmallOrderFee + minServiceFee + minPayfastFee;
+    final minEarnings = minPrice - minTotalFees;
+    
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppTheme.whisper,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppTheme.cloud),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.calculate, color: AppTheme.deepTeal, size: 20),
+              const SizedBox(width: 8),
+              const Text(
+                'Price Breakdown & Earnings',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: AppTheme.deepTeal,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          
+          // Base Price
+          _buildBreakdownRow('Base Product Price', basePrice, isBase: true),
+          
+          // Add-ons
+          if (addOns.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            _buildBreakdownRow('Add-ons Total', addOnTotal, isAddOn: true),
+            for (var addon in addOns.where((a) => a['name'].toString().isNotEmpty))
+              Padding(
+                padding: const EdgeInsets.only(left: 16, top: 4),
+                child: _buildBreakdownRow(
+                  '• ${addon['name']}', 
+                  addon['price'] ?? 0.0, 
+                  isSubItem: true
+                ),
+              ),
+          ],
+          
+          // Subtractions
+          if (subtractions.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            _buildBreakdownRow('Subtractions Total', subtractionTotal, isSubtraction: true),
+            for (var subtract in subtractions.where((s) => s['name'].toString().isNotEmpty))
+              Padding(
+                padding: const EdgeInsets.only(left: 16, top: 4),
+                child: _buildBreakdownRow(
+                  '• ${subtract['name']}', 
+                  subtract['price'] ?? 0.0, 
+                  isSubItem: true
+                ),
+              ),
+          ],
+          
+          const Divider(height: 24),
+          
+          // Price Range
+          _buildBreakdownRow('Customer Price Range', null, isHeader: true),
+          const SizedBox(height: 8),
+          _buildBreakdownRow('  Minimum Price', minPrice, isSubItem: true),
+          _buildBreakdownRow('  Maximum Price', maxPrice, isSubItem: true),
+          
+          const Divider(height: 24),
+          
+          // Fee Breakdown
+          _buildBreakdownRow('Fee Breakdown', null, isHeader: true),
+          const SizedBox(height: 8),
+          _buildBreakdownRow('  Platform Commission', maxCommission, isSubItem: true),
+          _buildBreakdownRow('  Small Order Fee', maxSmallOrderFee, isSubItem: true),
+          _buildBreakdownRow('  Service Fee (3.5%)', maxServiceFee, isSubItem: true),
+          _buildBreakdownRow('  PayFast Fee (2.9%)', maxPayfastFee, isSubItem: true),
+          _buildBreakdownRow('  Total Fees', maxTotalFees, isSubtraction: true),
+          
+          const Divider(height: 24),
+          
+          // Your Earnings (after all fees)
+          _buildBreakdownRow('Your Earnings Range', null, isHeader: true),
+          const SizedBox(height: 8),
+          _buildBreakdownRow('  Minimum Earnings', minEarnings, isEarnings: true),
+          _buildBreakdownRow('  Maximum Earnings', maxEarnings, isEarnings: true),
+          
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: AppTheme.success.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: AppTheme.success.withOpacity(0.3)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.info_outline, color: AppTheme.success, size: 16),
+                    const SizedBox(width: 8),
+                    const Text(
+                      'Tiered Commission System:',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: AppTheme.success,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '• R0-R25: 4% + R3.00\n• R25-R100: 6% + R2.00\n• R100+: 8% + R0.00',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: AppTheme.success,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBreakdownRow(String label, double? value, {
+    bool isBase = false,
+    bool isAddOn = false,
+    bool isSubtraction = false,
+    bool isEarnings = false,
+    bool isHeader = false,
+    bool isSubItem = false,
+  }) {
+    Color? textColor;
+    FontWeight? fontWeight;
+    
+    if (isHeader) {
+      textColor = AppTheme.deepTeal;
+      fontWeight = FontWeight.w600;
+    } else if (isEarnings) {
+      textColor = AppTheme.success;
+      fontWeight = FontWeight.w600;
+    } else if (isBase) {
+      textColor = AppTheme.deepTeal;
+      fontWeight = FontWeight.w500;
+    } else if (isAddOn) {
+      textColor = AppTheme.success;
+    } else if (isSubtraction) {
+      textColor = AppTheme.error;
+    } else if (isSubItem) {
+      textColor = AppTheme.cloud;
+    }
+    
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: isSubItem ? 12 : 14,
+            color: textColor,
+            fontWeight: fontWeight,
+          ),
+        ),
+        if (value != null)
+          Text(
+            'R${value.toStringAsFixed(2)}',
+            style: TextStyle(
+              fontSize: isSubItem ? 12 : 14,
+              color: textColor,
+              fontWeight: fontWeight,
+            ),
+          ),
+      ],
+    );
   }
 }
