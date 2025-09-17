@@ -1692,11 +1692,36 @@ Thank you for shopping with OmniaSA! 🛒''';
 
   Future<void> _contactSupport() async {
     try {
-      // WhatsApp support number - configurable from admin dashboard
-      const String supportNumber = '27693617576'; // 069 361 7576
-      final String message = 'Hi! I need help with my order. Order ID: ${widget.orderId}';
+      // Get seller's contact number from order data
+      String? sellerContact;
+      String? sellerName;
       
-      final Uri whatsappUrl = Uri.parse('https://wa.me/$supportNumber?text=${Uri.encodeComponent(message)}');
+      if (orderData != null) {
+        sellerContact = orderData!['sellerContact']?.toString();
+        sellerName = orderData!['sellerName']?.toString();
+      }
+      
+      // Fallback to general support if no seller contact
+      if (sellerContact == null || sellerContact.isEmpty) {
+        sellerContact = '27693617576'; // 069 361 7576 - general support
+        sellerName = 'Support';
+      }
+      
+      // Format phone number for WhatsApp
+      String phoneNumber = sellerContact;
+      // Remove all non-digit characters
+      String cleaned = phoneNumber.replaceAll(RegExp(r'[^\d]'), '');
+      // If it starts with 0, replace with 27 (South Africa country code)
+      if (cleaned.startsWith('0')) {
+        cleaned = '27${cleaned.substring(1)}';
+      }
+      // If it doesn't start with 27, add it
+      if (!cleaned.startsWith('27')) {
+        cleaned = '27$cleaned';
+      }
+      
+      final String message = 'Hi! I need help with my order. Order ID: ${widget.orderId}';
+      final Uri whatsappUrl = Uri.parse('https://wa.me/$cleaned?text=${Uri.encodeComponent(message)}');
       
       if (await canLaunchUrl(whatsappUrl)) {
         await launchUrl(whatsappUrl, mode: LaunchMode.externalApplication);
@@ -1705,7 +1730,7 @@ Thank you for shopping with OmniaSA! 🛒''';
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Unable to open WhatsApp. Please contact support manually.'),
+              content: Text('Unable to open WhatsApp. Please contact ${sellerName ?? 'support'} manually.'),
               backgroundColor: Colors.red,
             ),
           );

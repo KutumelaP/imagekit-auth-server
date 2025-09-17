@@ -427,7 +427,7 @@ class _CustomerSupportSectionState extends State<CustomerSupportSection> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text(
-                  'Support Configuration',
+                  'Seller Contact Configuration',
                   style: TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.bold,
@@ -436,7 +436,7 @@ class _CustomerSupportSectionState extends State<CustomerSupportSection> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Configure WhatsApp support number and message template',
+                  'Configure fallback support number when seller contact is unavailable',
                   style: TextStyle(
                     fontSize: 14,
                     color: Colors.white.withOpacity(0.9),
@@ -460,7 +460,7 @@ class _CustomerSupportSectionState extends State<CustomerSupportSection> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'WhatsApp Support Settings',
+              'Seller Contact Fallback Settings',
               style: AdminTheme.headlineMedium.copyWith(
                 color: AdminTheme.primaryColor,
                 fontWeight: FontWeight.bold,
@@ -472,13 +472,13 @@ class _CustomerSupportSectionState extends State<CustomerSupportSection> {
             TextFormField(
               controller: _supportNumberController,
               decoration: InputDecoration(
-                labelText: 'Support WhatsApp Number',
+                labelText: 'Fallback Support WhatsApp Number',
                 hintText: '069 361 7576',
                 prefixIcon: const Icon(Icons.phone),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(8),
                 ),
-                helperText: 'Enter the WhatsApp number for customer support',
+                helperText: 'Used when seller contact number is not available',
               ),
             ),
             const SizedBox(height: 20),
@@ -525,7 +525,12 @@ class _CustomerSupportSectionState extends State<CustomerSupportSection> {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    '• Phone numbers are automatically formatted for WhatsApp (wa.me)',
+                    '• Customers will contact the seller directly via WhatsApp',
+                    style: TextStyle(fontSize: 14, color: Colors.blue[700]),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '• Fallback number used only when seller contact is unavailable',
                     style: TextStyle(fontSize: 14, color: Colors.blue[700]),
                   ),
                   const SizedBox(height: 4),
@@ -535,7 +540,7 @@ class _CustomerSupportSectionState extends State<CustomerSupportSection> {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    '• Changes take effect immediately for new support requests',
+                    '• Phone numbers are automatically formatted for WhatsApp (wa.me)',
                     style: TextStyle(fontSize: 14, color: Colors.blue[700]),
                   ),
                 ],
