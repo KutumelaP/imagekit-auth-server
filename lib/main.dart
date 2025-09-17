@@ -159,8 +159,8 @@ class MyApp extends StatelessWidget {
               return const WebDesktopBlockScreen();
             }
           }
-          // Enable chatbot on home screen only
-          final showBot = true;
+          // Disable floating chatbot - using embedded support chat instead
+          final showBot = false;
 
           final layered = ChatbotWrapper(
             child: child!,
