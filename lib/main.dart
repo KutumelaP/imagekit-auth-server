@@ -221,6 +221,38 @@ class MyApp extends StatelessWidget {
             ];
           }
           
+          // Handle /payment-success route for PayFast returns
+          if (initialRoute.startsWith('/payment-success') || initialRoute.contains('payment-success')) {
+            if (kDebugMode) {
+              print('🔗 INITIAL ROUTE: Handling payment-success route: $initialRoute');
+            }
+            
+            String? orderId;
+            String? status;
+            
+            // Parse query parameters from the route
+            if (initialRoute.contains('?')) {
+              try {
+                final uri = Uri.parse(initialRoute);
+                orderId = uri.queryParameters['order_id'];
+                status = uri.queryParameters['status'];
+                if (kDebugMode) print('🔗 PaymentSuccess initial route parsed: orderId=$orderId, status=$status');
+              } catch (e) {
+                if (kDebugMode) print('❌ Error parsing payment-success initial route: $e');
+              }
+            }
+            
+            return [
+              MaterialPageRoute(
+                builder: (_) => PaymentSuccessScreen(
+                  orderId: orderId,
+                  status: status,
+                ),
+                settings: RouteSettings(name: initialRoute),
+              ),
+            ];
+          }
+          
           if (initialRoute.startsWith('/store/')) {
             final storePath = initialRoute.substring('/store/'.length);
             
@@ -659,10 +691,26 @@ class _SplashWrapperState extends State<SplashWrapper> {
           return;
         }
         
-        // NEW: PayFast return detection
-        final payfastOrderId = Uri.base.queryParameters['order_id'];
-        final payfastStatus = Uri.base.queryParameters['status'];
-        if (payfastOrderId != null && payfastStatus != null) {
+        // NEW: PayFast return detection (check both query params and hash fragment)
+        String? payfastOrderId = Uri.base.queryParameters['order_id'];
+        String? payfastStatus = Uri.base.queryParameters['status'];
+        
+        // Also check hash fragment for payment-success routes
+        final paymentFragment = Uri.base.fragment; // text after '#'
+        if (kDebugMode) print('🔍 Checking hash fragment: "$paymentFragment"');
+        if (paymentFragment.contains('/payment-success') && paymentFragment.contains('order_id=')) {
+          try {
+            final fragmentUri = Uri.parse('http://dummy.com/$paymentFragment');
+            payfastOrderId = fragmentUri.queryParameters['order_id'];
+            payfastStatus = fragmentUri.queryParameters['status'];
+            if (kDebugMode) print('💳 PayFast return detected in hash fragment: orderId=$payfastOrderId, status=$payfastStatus');
+          } catch (e) {
+            if (kDebugMode) print('❌ Error parsing hash fragment: $e');
+          }
+        }
+        
+        // Only redirect to payment success if we have valid order ID and status
+        if (payfastOrderId != null && payfastStatus != null && payfastOrderId.isNotEmpty && payfastStatus.isNotEmpty) {
           if (kDebugMode) print('💳 PayFast return detected: orderId=$payfastOrderId, status=$payfastStatus');
           Future.delayed(const Duration(milliseconds: 50), () {
             if (mounted) {
@@ -676,6 +724,8 @@ class _SplashWrapperState extends State<SplashWrapper> {
             }
           });
           return;
+        } else if (kDebugMode) {
+          print('🔍 No valid PayFast return detected - showing normal home page');
         }
         
         // Existing: detect store routes anywhere in the URL

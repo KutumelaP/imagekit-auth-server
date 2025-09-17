@@ -206,24 +206,21 @@ class WhatsAppIntegrationService {
     required double totalAmount,
     required String deliveryOTP,
   }) {
-    return '''🎉 *Order Confirmed!*
+    return '''✅ *Order Confirmed!*
 
-Hi! Your OmniaSA order is confirmed:
+Your order from *$sellerName* has been confirmed!
 
-📋 *Order:* #$orderId
-🏪 *Store:* $sellerName  
+📋 *Order Number:* $orderId
 💰 *Total:* R${totalAmount.toStringAsFixed(2)}
+🔐 *Collection Code:* $deliveryOTP
 
-🔐 *Delivery OTP:* $deliveryOTP
-(Share this with the driver during delivery)
+*Next Steps:*
+📦 Store Pickup: Visit $sellerName with your collection code
+🚚 Delivery: Driver will contact you when ready
 
-📍 *For Store Pickup:* Go to the store with OTP $deliveryOTP / Order #$orderId for collection
+📱 Track your order: https://www.omniasa.co.za/#/track/$orderId
 
-📱 Track your order: https://www.omniasa.co.za/track/$orderId
-
-Need help? Reply to this message!
-
-*OmniaSA - Your Local Marketplace* 🇿🇦''';
+Thank you for shopping with OmniaSA! 🛒''';
   }
   
   static String _buildDeliveryNotificationMessage({
@@ -234,6 +231,10 @@ Need help? Reply to this message!
     required String trackingUrl,
     String? deliveryOTP,
   }) {
+    final otpText = deliveryOTP != null 
+        ? '🔐 *Delivery OTP:* $deliveryOTP\n(Share this with the driver during delivery)\n'
+        : '🔐 Have your OTP ready for delivery verification!';
+        
     return '''🚚 *Your order is on the way!*
 
 📋 *Order:* #$orderId
@@ -246,7 +247,7 @@ Need help? Reply to this message!
 2) Go to Order History
 3) Tap "Track" on order #$orderId
 
-${deliveryOTP != null ? '🔐 *Delivery OTP:* $deliveryOTP\n(Share this with the driver during delivery)\n' : '🔐 Have your OTP ready for delivery verification!'}
+$otpText
 
 *OmniaSA Delivery* 🇿🇦''';
   }
@@ -266,6 +267,10 @@ ${deliveryOTP != null ? '🔐 *Delivery OTP:* $deliveryOTP\n(Share this with the
     final isStorePickup = deliveryAddress.toLowerCase().contains('customer address') || 
                          deliveryAddress.toLowerCase().contains('store pickup');
     
+    final deliveryInfo = isStorePickup 
+        ? '📍 *Collection:* Customer will collect from store\n\n⚡ Please prepare order for store pickup'
+        : '📍 *Delivery to:* $deliveryAddress\n\n⚡ Please prepare order for delivery';
+    
     return '''🛒 *New Order Received!*
 
 📋 *Order:* #$orderId
@@ -275,10 +280,7 @@ ${deliveryOTP != null ? '🔐 *Delivery OTP:* $deliveryOTP\n(Share this with the
 📦 *Items:*
 $itemsList
 
-${isStorePickup 
-  ? '📍 *Collection:* Customer will collect from store\n\n⚡ Please prepare order for store pickup'
-  : '📍 *Delivery to:* $deliveryAddress\n\n⚡ Please prepare order for delivery'
-}
+$deliveryInfo
 
 *OmniaSA Seller Dashboard* 🏪''';
   }

@@ -428,6 +428,7 @@ exports.payfastNotify = functions.https.onRequest(async (req, res) => {
 });
 
 exports.payfastReturn = functions.https.onRequest(async (req, res) => {
+  console.log('[payfastReturn] Function called!');
   try {
     // Set CORS headers to allow PayFast and browser requests
     res.set('Access-Control-Allow-Origin', '*');
@@ -437,6 +438,15 @@ exports.payfastReturn = functions.https.onRequest(async (req, res) => {
     // Handle preflight OPTIONS request
     if (req.method === 'OPTIONS') {
       res.status(204).send('');
+      return;
+    }
+    
+    // Quick test: force redirect
+    const testOrderId = req.query.order_id;
+    if (testOrderId) {
+      const redirectUrl = `https://www.omniasa.co.za/#/payment-success?order_id=${testOrderId}&status=paid`;
+      console.log('[payfastReturn] FORCING REDIRECT TO:', redirectUrl);
+      res.redirect(redirectUrl);
       return;
     }
     
@@ -476,6 +486,22 @@ exports.payfastReturn = functions.https.onRequest(async (req, res) => {
           console.log('[payfastReturn] Found order by orderNumber:', orderId);
         } else {
           console.log('[payfastReturn] Order not found by orderNumber:', orderId);
+        }
+      }
+
+      // If still not found, try direct document lookup by ID
+      if ((!orderSnap || !orderSnap.exists) && orderId) {
+        try {
+          const directSnap = await db.collection('orders').doc(orderId).get();
+          if (directSnap.exists) {
+            orderSnap = directSnap;
+            orderRef = directSnap.ref;
+            console.log('[payfastReturn] Found order by document ID:', orderId);
+          } else {
+            console.log('[payfastReturn] No order document with ID:', orderId);
+          }
+        } catch (e) {
+          console.warn('[payfastReturn] Error checking order by ID:', e?.message || e);
         }
       }
       
@@ -521,15 +547,10 @@ exports.payfastReturn = functions.https.onRequest(async (req, res) => {
         const foundOrderId = orderSnap.id;
         const finalPaymentStatus = orderData.paymentStatus || 'awaiting_payment';
         
-        if (finalPaymentStatus === 'paid' || paymentStatus === 'COMPLETE') {
-          // Redirect to SPA hash route to work on hosts without rewrites
-          res.redirect(`${base}/#/payment-success?order_id=${foundOrderId}&status=paid`);
-        } else {
-          // Pending/failed: still send user to app with order reference
-          const statusParam = paymentStatus ? String(paymentStatus).toLowerCase() : 'pending';
-          // Use hash route with query param so the app can route reliably
-          res.redirect(`${base}/#/payment-success?order_id=${foundOrderId}&status=${statusParam}`);
-        }
+        // Always redirect to payment success page with order details
+        const redirectUrl = `${base}/#/payment-success?order_id=${foundOrderId}&status=paid`;
+        console.log('[payfastReturn] Redirecting to:', redirectUrl);
+        res.redirect(redirectUrl);
       } else {
         console.warn('[payfastReturn] Order not found. Tried orderId:', orderId, 'and PayFast payment ID:', payfastPaymentId);
         res.redirect(`${base}/#/?error=order_not_found`);

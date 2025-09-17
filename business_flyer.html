@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OmniaSA Business Flyer</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Arial', sans-serif;
+            background: white;
+            color: #333;
+        }
+
+        .flyer {
+            width: 210mm;
+            height: 297mm;
+            margin: 0 auto;
+            background: white;
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #1F4654 0%, #2E7D32 100%);
+            color: white;
+            padding: 40px 30px;
+            text-align: center;
+            position: relative;
+        }
+
+        .header::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><path d="M0,50 Q25,25 50,50 T100,50 V100 H0 Z" fill="rgba(255,255,255,0.1)"/></svg>') no-repeat bottom center;
+            background-size: cover;
+        }
+
+        .logo {
+            font-size: 48px;
+            font-weight: bold;
+            letter-spacing: 3px;
+            margin-bottom: 15px;
+            color: #7FB2BF;
+            z-index: 2;
+            position: relative;
+        }
+
+        .tagline {
+            font-size: 24px;
+            font-weight: 300;
+            margin-bottom: 20px;
+            z-index: 2;
+            position: relative;
+        }
+
+        .subtitle {
+            font-size: 18px;
+            opacity: 0.9;
+            z-index: 2;
+            position: relative;
+        }
+
+        .content {
+            flex: 1;
+            padding: 40px 30px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .main-message {
+            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+            padding: 30px;
+            border-radius: 20px;
+            border-left: 8px solid #2E7D32;
+            margin-bottom: 30px;
+            text-align: center;
+        }
+
+        .main-message h1 {
+            color: #1F4654;
+            font-size: 36px;
+            margin-bottom: 20px;
+            line-height: 1.2;
+        }
+
+        .main-message p {
+            font-size: 18px;
+            color: #666;
+            line-height: 1.6;
+        }
+
+        .benefits {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .benefit {
+            background: white;
+            padding: 25px;
+            border-radius: 15px;
+            border: 2px solid #e9ecef;
+            transition: transform 0.3s ease;
+        }
+
+        .benefit:hover {
+            transform: translateY(-5px);
+            border-color: #2E7D32;
+        }
+
+        .benefit-icon {
+            font-size: 36px;
+            margin-bottom: 15px;
+            display: block;
+        }
+
+        .benefit h3 {
+            color: #1F4654;
+            font-size: 20px;
+            margin-bottom: 10px;
+        }
+
+        .benefit p {
+            color: #666;
+            font-size: 14px;
+            line-height: 1.5;
+        }
+
+        .stats-section {
+            background: linear-gradient(135deg, #1F4654 0%, #2E7D32 100%);
+            color: white;
+            padding: 30px;
+            border-radius: 20px;
+            margin-bottom: 30px;
+        }
+
+        .stats-title {
+            text-align: center;
+            font-size: 24px;
+            margin-bottom: 25px;
+            color: #7FB2BF;
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 20px;
+            text-align: center;
+        }
+
+        .stat {
+            padding: 15px;
+        }
+
+        .stat-number {
+            font-size: 32px;
+            font-weight: bold;
+            color: #7FB2BF;
+            display: block;
+            margin-bottom: 5px;
+        }
+
+        .stat-label {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+
+        .cta-section {
+            background: linear-gradient(45deg, #4CAF50, #66BB6A);
+            color: white;
+            padding: 30px;
+            border-radius: 20px;
+            text-align: center;
+            margin-top: auto;
+        }
+
+        .cta-title {
+            font-size: 28px;
+            font-weight: bold;
+            margin-bottom: 15px;
+        }
+
+        .cta-subtitle {
+            font-size: 16px;
+            margin-bottom: 25px;
+            opacity: 0.9;
+        }
+
+        .contact-info {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .contact-item {
+            background: rgba(255,255,255,0.2);
+            padding: 15px;
+            border-radius: 10px;
+            text-align: center;
+        }
+
+        .contact-item h4 {
+            font-size: 14px;
+            margin-bottom: 8px;
+            opacity: 0.8;
+        }
+
+        .contact-item p {
+            font-size: 16px;
+            font-weight: bold;
+        }
+
+        .qr-code {
+            width: 120px;
+            height: 120px;
+            background: white;
+            border-radius: 15px;
+            margin: 20px auto;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #1F4654;
+            font-weight: bold;
+            font-size: 14px;
+            text-align: center;
+        }
+
+        .footer-text {
+            font-size: 12px;
+            opacity: 0.8;
+            text-align: center;
+            margin-top: 15px;
+        }
+
+        @media print {
+            .flyer {
+                width: 100%;
+                height: 100vh;
+            }
+            
+            body {
+                margin: 0;
+                padding: 0;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="flyer">
+        <div class="header">
+            <div class="logo">OMNIASA</div>
+            <div class="tagline">Your Local Marketplace Platform</div>
+            <div class="subtitle">Connecting Local Businesses with Their Communities</div>
+        </div>
+
+        <div class="content">
+            <div class="main-message">
+                <h1>Grow Your Business Online</h1>
+                <p>Join thousands of local businesses already reaching more customers through OmniaSA. Our platform makes it easy to sell online while supporting your local community.</p>
+            </div>
+
+            <div class="benefits">
+                <div class="benefit">
+                    <span class="benefit-icon">📈</span>
+                    <h3>Increase Sales</h3>
+                    <p>Reach new customers beyond your physical location. Online presence opens doors to 24/7 sales opportunities.</p>
+                </div>
+
+                <div class="benefit">
+                    <span class="benefit-icon">🎯</span>
+                    <h3>Easy Setup</h3>
+                    <p>Get your store online in minutes. Simple registration process with step-by-step guidance.</p>
+                </div>
+
+                <div class="benefit">
+                    <span class="benefit-icon">🚚</span>
+                    <h3>Flexible Delivery</h3>
+                    <p>Offer pickup, local delivery, or nationwide shipping. We handle the logistics, you focus on your business.</p>
+                </div>
+
+                <div class="benefit">
+                    <span class="benefit-icon">💳</span>
+                    <h3>Secure Payments</h3>
+                    <p>PayFast integration ensures secure transactions. Get paid quickly and safely with transparent fees.</p>
+                </div>
+
+                <div class="benefit">
+                    <span class="benefit-icon">📱</span>
+                    <h3>Mobile Ready</h3>
+                    <p>Manage your store from anywhere with our mobile app. Update inventory, process orders on the go.</p>
+                </div>
+
+                <div class="benefit">
+                    <span class="benefit-icon">🤝</span>
+                    <h3>Community Support</h3>
+                    <p>Be part of a network promoting local businesses. Customers actively seeking to support local entrepreneurs.</p>
+                </div>
+            </div>
+
+            <div class="stats-section">
+                <div class="stats-title">Join Our Growing Community</div>
+                <div class="stats">
+                    <div class="stat">
+                        <span class="stat-number">1000+</span>
+                        <span class="stat-label">Active Stores</span>
+                    </div>
+                    <div class="stat">
+                        <span class="stat-number">50k+</span>
+                        <span class="stat-label">Customers</span>
+                    </div>
+                    <div class="stat">
+                        <span class="stat-number">9</span>
+                        <span class="stat-label">Provinces</span>
+                    </div>
+                    <div class="stat">
+                        <span class="stat-number">24/7</span>
+                        <span class="stat-label">Support</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="cta-section">
+                <div class="cta-title">Ready to Get Started?</div>
+                <div class="cta-subtitle">Download the app and start selling today!</div>
+                
+                <div class="contact-info">
+                    <div class="contact-item">
+                        <h4>📧 Email</h4>
+                        <p>business@omniasa.co.za</p>
+                    </div>
+                    <div class="contact-item">
+                        <h4>🌐 Website</h4>
+                        <p>www.omniasa.co.za</p>
+                    </div>
+                    <div class="contact-item">
+                        <h4>📱 Download</h4>
+                        <p>Google Play Store</p>
+                    </div>
+                </div>
+
+                <div class="qr-code">
+                    QR CODE<br>
+                    (Scan to Download)
+                </div>
+
+                <div class="footer-text">
+                    Perfect for: Grocery Stores • Artisan Shops • Retail • Services • Food & Beverage
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Print functionality
+        function printFlyer() {
+            window.print();
+        }
+        
+        // Add print button for web view
+        if (!window.matchMedia('print').matches) {
+            const printBtn = document.createElement('button');
+            printBtn.innerHTML = '🖨️ Print Flyer';
+            printBtn.style.cssText = `
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                background: #2E7D32;
+                color: white;
+                border: none;
+                padding: 10px 20px;
+                border-radius: 25px;
+                cursor: pointer;
+                font-weight: bold;
+                z-index: 1000;
+                box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+            `;
+            printBtn.onclick = printFlyer;
+            document.body.appendChild(printBtn);
+        }
+    </script>
+</body>
+</html>

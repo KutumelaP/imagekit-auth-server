@@ -370,19 +370,17 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
     final formattedOrderNo = OrderUtils.formatOrderNumber(orderNo);
     
     // Create order confirmation message
-    final message = '''🎉 *Order Confirmed!*
+    final message = '''✅ *Order Confirmed!*
 
-Hi! Your OmniaSA order is confirmed:
+Your order has been confirmed and is being processed!
 
-📋 *Order:* #$formattedOrderNo
-🏪 *Store:* OmniaSA Store  
+📋 *Order Number:* $formattedOrderNo
+🏪 *Store:* OmniaSA Store
 💰 *Payment:* Received successfully
 
-📱 Track your order: https://www.omniasa.co.za/track/$orderNo
+📱 Track your order: https://www.omniasa.co.za/#/track/$orderNo
 
-Need help? Reply to this message!
-
-*OmniaSA - Your Local Marketplace* 🇿🇦''';
+Thank you for shopping with OmniaSA! 🛒''';
 
     // Use FREE wa.me URL
     final encodedMessage = Uri.encodeComponent(message);
