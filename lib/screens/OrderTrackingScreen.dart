@@ -1692,13 +1692,25 @@ Thank you for shopping with OmniaSA! 🛒''';
 
   Future<void> _contactSupport() async {
     try {
-      // Get seller's contact number from order data
       String? sellerContact;
       String? sellerName;
       
-      if (_orderData != null) {
-        sellerContact = _orderData!['sellerContact']?.toString();
-        sellerName = _orderData!['sellerName']?.toString();
+      // Get seller's contact info from users collection
+      if (_orderData != null && _orderData!['sellerId'] != null) {
+        try {
+          final sellerDoc = await FirebaseFirestore.instance
+              .collection('users')
+              .doc(_orderData!['sellerId'])
+              .get();
+          
+          if (sellerDoc.exists) {
+            final sellerData = sellerDoc.data() as Map<String, dynamic>;
+            sellerContact = sellerData['contact']?.toString();
+            sellerName = sellerData['storeName']?.toString() ?? sellerData['username']?.toString();
+          }
+        } catch (e) {
+          print('Error fetching seller data: $e');
+        }
       }
       
       // Fallback to general support if no seller contact
