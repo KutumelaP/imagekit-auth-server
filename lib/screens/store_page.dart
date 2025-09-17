@@ -449,6 +449,13 @@ class _StoreSelectionScreenState extends State<StoreSelectionScreen> {
         print('🔍 DEBUG: Store ${userData['storeName']} - Could not calculate distance, ' + (inRange ? 'showing due to nationwide pickup' : 'hiding store (no user/store coords)'));
       }
       
+      // Admin override: show all stores regardless of distance or location availability
+      if (_isAdmin) {
+        inRange = true;
+        // Optional debug log for transparency during testing
+        print('🔐 ADMIN OVERRIDE: Showing store ${userData['storeName']} regardless of range');
+      }
+      
       // Fetch favoriteCount for this store
       int favoriteCount = userData['favoriteCount'] ?? 0;
       _favoriteStoreCounts[storeId] = favoriteCount;
