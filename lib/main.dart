@@ -188,6 +188,7 @@ class MyApp extends StatelessWidget {
           '/order-history': (context) => OrderHistoryScreen(),
           '/profile': (context) => ProfileEditScreen(),
           '/admin-review-moderation': (context) => AdminReviewModerationScreen(),
+          '/admin-config': (context) => const AdminConfigScreen(),
           '/cache-management': (context) => CacheManagementScreen(),
           '/my-products': (context) => SellerProductManagement(),
           '/notification-settings': (context) => const NotificationSettingsScreen(),

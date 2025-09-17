@@ -1198,15 +1198,7 @@ Thank you for shopping with OmniaSA! 🛒''';
           SizedBox(
             width: double.infinity,
             child: ElevatedButton.icon(
-              onPressed: () {
-                // TODO: Implement contact support
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('Contact support feature coming soon!'),
-                    backgroundColor: Colors.blue,
-                  ),
-                );
-              },
+              onPressed: () => _contactSupport(),
               icon: Icon(Icons.chat),
               label: Text('Contact Support'),
               style: ElevatedButton.styleFrom(
@@ -1696,5 +1688,39 @@ Thank you for shopping with OmniaSA! 🛒''';
         ),
       ),
     );
+  }
+
+  Future<void> _contactSupport() async {
+    try {
+      // WhatsApp support number - configurable from admin dashboard
+      const String supportNumber = '27693617576'; // 069 361 7576
+      final String message = 'Hi! I need help with my order. Order ID: ${widget.orderId}';
+      
+      final Uri whatsappUrl = Uri.parse('https://wa.me/$supportNumber?text=${Uri.encodeComponent(message)}');
+      
+      if (await canLaunchUrl(whatsappUrl)) {
+        await launchUrl(whatsappUrl, mode: LaunchMode.externalApplication);
+      } else {
+        // Fallback: show error message
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Unable to open WhatsApp. Please contact support manually.'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      // Error handling
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error opening WhatsApp: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 }

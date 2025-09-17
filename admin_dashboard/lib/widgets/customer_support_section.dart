@@ -20,10 +20,109 @@ class _CustomerSupportSectionState extends State<CustomerSupportSection> {
   bool _isLoading = true;
   String _filter = 'all'; // all, active, unresolved
   
+  // Support settings
+  int _selectedTab = 0; // 0 = Conversations, 1 = Settings
+  final TextEditingController _supportNumberController = TextEditingController();
+  final TextEditingController _supportMessageController = TextEditingController();
+  bool _isSavingSettings = false;
+  
   @override
   void initState() {
     super.initState();
     _loadConversations();
+    _loadSupportSettings();
+  }
+
+  @override
+  void dispose() {
+    _supportNumberController.dispose();
+    _supportMessageController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadSupportSettings() async {
+    try {
+      final doc = await _firestore
+          .collection('app_config')
+          .doc('general_settings')
+          .get();
+
+      if (doc.exists) {
+        final data = doc.data() as Map<String, dynamic>;
+        setState(() {
+          _supportNumberController.text = data['supportNumber'] ?? '069 361 7576';
+          _supportMessageController.text = data['supportMessage'] ?? 'Hi! I need help with my order. Order ID: {ORDER_ID}';
+        });
+      } else {
+        // Set defaults
+        setState(() {
+          _supportNumberController.text = '069 361 7576';
+          _supportMessageController.text = 'Hi! I need help with my order. Order ID: {ORDER_ID}';
+        });
+      }
+    } catch (e) {
+      print('Error loading support settings: $e');
+      // Set defaults on error
+      setState(() {
+        _supportNumberController.text = '069 361 7576';
+        _supportMessageController.text = 'Hi! I need help with my order. Order ID: {ORDER_ID}';
+      });
+    }
+  }
+
+  Future<void> _saveSupportSettings() async {
+    if (_supportNumberController.text.trim().isEmpty || 
+        _supportMessageController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please fill in all fields'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    setState(() => _isSavingSettings = true);
+
+    try {
+      // Format phone number for WhatsApp
+      String phoneNumber = _supportNumberController.text.trim();
+      // Remove all non-digit characters
+      String cleaned = phoneNumber.replaceAll(RegExp(r'[^\d]'), '');
+      // If it starts with 0, replace with 27 (South Africa country code)
+      if (cleaned.startsWith('0')) {
+        cleaned = '27${cleaned.substring(1)}';
+      }
+      // If it doesn't start with 27, add it
+      if (!cleaned.startsWith('27')) {
+        cleaned = '27$cleaned';
+      }
+
+      await _firestore
+          .collection('app_config')
+          .doc('general_settings')
+          .set({
+        'supportNumber': cleaned,
+        'supportMessage': _supportMessageController.text.trim(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Support settings saved successfully!'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error saving settings: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      setState(() => _isSavingSettings = false);
+    }
   }
 
   Future<void> _loadConversations() async {
@@ -196,27 +295,282 @@ class _CustomerSupportSectionState extends State<CustomerSupportSection> {
         children: [
           _buildHeader(),
           const SizedBox(height: 24),
-          _buildSummaryCards(),
+          _buildTabBar(),
           const SizedBox(height: 24),
           Expanded(
-            child: Row(
+            child: _selectedTab == 0 ? _buildConversationsTab() : _buildSettingsTab(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTabBar() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.grey[100],
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: _buildTabButton('Conversations', 0, Icons.chat),
+          ),
+          Expanded(
+            child: _buildTabButton('Settings', 1, Icons.settings),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTabButton(String title, int index, IconData icon) {
+    final isSelected = _selectedTab == index;
+    return GestureDetector(
+      onTap: () => setState(() => _selectedTab = index),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+        decoration: BoxDecoration(
+          color: isSelected ? AdminTheme.primaryColor : Colors.transparent,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              icon,
+              color: isSelected ? Colors.white : Colors.grey[600],
+              size: 20,
+            ),
+            const SizedBox(width: 8),
+            Text(
+              title,
+              style: TextStyle(
+                color: isSelected ? Colors.white : Colors.grey[600],
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildConversationsTab() {
+    return Column(
+      children: [
+        _buildSummaryCards(),
+        const SizedBox(height: 24),
+        Expanded(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Conversations list
+              Expanded(
+                flex: 1,
+                child: _buildConversationsList(),
+              ),
+              const SizedBox(width: 16),
+              // Selected conversation details
+              Expanded(
+                flex: 2,
+                child: _buildConversationDetails(),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSettingsTab() {
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildSettingsHeader(),
+          const SizedBox(height: 24),
+          _buildSupportSettingsForm(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSettingsHeader() {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [AdminTheme.primaryColor, AdminTheme.primaryColor.withOpacity(0.8)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.2),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Icon(
+              Icons.support_agent,
+              color: Colors.white,
+              size: 24,
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Conversations list
-                Expanded(
-                  flex: 1,
-                  child: _buildConversationsList(),
+                const Text(
+                  'Support Configuration',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
                 ),
-                const SizedBox(width: 16),
-                // Selected conversation details
-                Expanded(
-                  flex: 2,
-                  child: _buildConversationDetails(),
+                const SizedBox(height: 4),
+                Text(
+                  'Configure WhatsApp support number and message template',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.white.withOpacity(0.9),
+                  ),
                 ),
               ],
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildSupportSettingsForm() {
+    return Card(
+      elevation: 4,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'WhatsApp Support Settings',
+              style: AdminTheme.headlineMedium.copyWith(
+                color: AdminTheme.primaryColor,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 20),
+            
+            // Support Number
+            TextFormField(
+              controller: _supportNumberController,
+              decoration: InputDecoration(
+                labelText: 'Support WhatsApp Number',
+                hintText: '069 361 7576',
+                prefixIcon: const Icon(Icons.phone),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                helperText: 'Enter the WhatsApp number for customer support',
+              ),
+            ),
+            const SizedBox(height: 20),
+            
+            // Support Message Template
+            TextFormField(
+              controller: _supportMessageController,
+              decoration: InputDecoration(
+                labelText: 'Support Message Template',
+                hintText: 'Hi! I need help with my order. Order ID: {ORDER_ID}',
+                prefixIcon: const Icon(Icons.message),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                helperText: 'Use {ORDER_ID} as placeholder for the order ID',
+              ),
+              maxLines: 3,
+            ),
+            const SizedBox(height: 20),
+            
+            // Info Card
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.blue[50],
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.blue[200]!),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.info_outline, color: Colors.blue[600], size: 20),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Configuration Info',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: Colors.blue[600],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '• Phone numbers are automatically formatted for WhatsApp (wa.me)',
+                    style: TextStyle(fontSize: 14, color: Colors.blue[700]),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '• The {ORDER_ID} placeholder will be replaced with the actual order ID',
+                    style: TextStyle(fontSize: 14, color: Colors.blue[700]),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '• Changes take effect immediately for new support requests',
+                    style: TextStyle(fontSize: 14, color: Colors.blue[700]),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 24),
+            
+            // Save Button
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: _isSavingSettings ? null : _saveSupportSettings,
+                icon: _isSavingSettings
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Icon(Icons.save),
+                label: Text(_isSavingSettings ? 'Saving...' : 'Save Settings'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AdminTheme.primaryColor,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -240,7 +594,7 @@ class _CustomerSupportSectionState extends State<CustomerSupportSection> {
               ),
               Text(
                 'Manage chatbot conversations and customer inquiries',
-                style: AdminTheme.bodyMedium?.copyWith(
+                style: AdminTheme.bodyMedium.copyWith(
                   color: Colors.grey[600],
                 ),
               ),
