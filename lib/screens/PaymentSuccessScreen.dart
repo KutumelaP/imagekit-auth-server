@@ -1017,7 +1017,7 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen> {
                     ),
                   ),
                   label: Text(
-                    _whatsappSent ? '✅ WhatsApp Update Sent!' : '🚀 Send WhatsApp Update',
+                    _whatsappSent ? '✅ WhatsApp Update Sent!' : ' Send WhatsApp Update',
                     style: const TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w700,
