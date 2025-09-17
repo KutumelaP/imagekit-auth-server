@@ -422,7 +422,30 @@ Thank you for shopping with OmniaSA! 🛒''';
         ),
         child: IconButton(
           icon: Icon(Icons.arrow_back_ios, color: Colors.white, size: 20),
-          onPressed: () => Navigator.pop(context),
+          onPressed: () {
+            print('🔙 Back button pressed');
+            try {
+              // Check if we can pop
+              if (Navigator.canPop(context)) {
+                Navigator.pop(context);
+                print('✅ Popped back successfully');
+              } else {
+                // If can't pop, navigate to home
+                print('⚠️ Cannot pop, navigating to home');
+                Navigator.of(context).pushNamedAndRemoveUntil(
+                  '/',
+                  (route) => false,
+                );
+              }
+            } catch (e) {
+              print('❌ Back navigation error: $e');
+              // Fallback to home
+              Navigator.of(context).pushNamedAndRemoveUntil(
+                '/',
+                (route) => false,
+              );
+            }
+          },
         ),
       ),
       actions: [
