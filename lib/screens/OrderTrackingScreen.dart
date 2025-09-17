@@ -425,6 +425,40 @@ Thank you for shopping with OmniaSA! 🛒''';
           onPressed: () => Navigator.pop(context),
         ),
       ),
+      actions: [
+        Container(
+          margin: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.2),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: IconButton(
+            icon: Icon(Icons.home, color: Colors.white, size: 20),
+            onPressed: () {
+              // Clear cart and navigate to home
+              try {
+                final cartProvider = Provider.of<CartProvider>(context, listen: false);
+                cartProvider.clearCart();
+                print('🧺 Cart cleared');
+                
+                // Navigate to home screen
+                Navigator.of(context).pushNamedAndRemoveUntil(
+                  '/',
+                  (route) => false,
+                );
+                print('🏠 Navigated to home');
+              } catch (e) {
+                print('❌ Home navigation error: $e');
+                // Fallback navigation
+                Navigator.of(context).pushNamedAndRemoveUntil(
+                  '/',
+                  (route) => false,
+                );
+              }
+            },
+          ),
+        ),
+      ],
       flexibleSpace: FlexibleSpaceBar(
         background: Container(
           decoration: BoxDecoration(
