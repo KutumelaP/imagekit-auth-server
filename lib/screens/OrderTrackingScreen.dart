@@ -1696,9 +1696,9 @@ Thank you for shopping with OmniaSA! 🛒''';
       String? sellerContact;
       String? sellerName;
       
-      if (orderData != null) {
-        sellerContact = orderData!['sellerContact']?.toString();
-        sellerName = orderData!['sellerName']?.toString();
+      if (_orderData != null) {
+        sellerContact = _orderData!['sellerContact']?.toString();
+        sellerName = _orderData!['sellerName']?.toString();
       }
       
       // Fallback to general support if no seller contact
