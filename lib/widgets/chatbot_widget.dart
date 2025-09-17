@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../services/chatbot_service.dart';
 
 /// Floating chatbot widget for customer support
@@ -548,6 +549,13 @@ class _ChatbotWidgetState extends State<ChatbotWidget> with TickerProviderStateM
                       height: 1.4,
                     ),
                   ),
+                  
+                  // Add WhatsApp consultant button for escalation messages
+                  if (message.type == 'consultant_escalation' && message.metadata != null) ...[
+                    const SizedBox(height: 12),
+                    _buildConsultantButton(message.metadata!),
+                  ],
+                  
                   const SizedBox(height: 4),
                   Text(
                     _formatTime(message.timestamp),
@@ -766,6 +774,59 @@ class _ChatbotWidgetState extends State<ChatbotWidget> with TickerProviderStateM
     // Clean up focus listener
     _inputFocusNode.removeListener(_onInputFocusChange);
     super.dispose();
+  }
+
+  Widget _buildConsultantButton(Map<String, dynamic> metadata) {
+    final whatsappNumber = metadata['whatsappNumber'] as String? ?? '27693617576';
+    final whatsappMessage = metadata['whatsappMessage'] as String? ?? 'Hi! I need help. Can you assist me?';
+    
+    return Container(
+      width: double.infinity,
+      child: ElevatedButton.icon(
+        onPressed: () => _openWhatsAppConsultant(whatsappNumber, whatsappMessage),
+        icon: const Icon(Icons.chat, size: 18),
+        label: const Text('Speak to Consultant'),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: const Color(0xFF25D366), // WhatsApp green
+          foregroundColor: Colors.white,
+          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          elevation: 2,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openWhatsAppConsultant(String phoneNumber, String message) async {
+    try {
+      final Uri whatsappUrl = Uri.parse('https://wa.me/$phoneNumber?text=${Uri.encodeComponent(message)}');
+      
+      if (await canLaunchUrl(whatsappUrl)) {
+        await launchUrl(whatsappUrl, mode: LaunchMode.externalApplication);
+      } else {
+        // Fallback: show error message
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Unable to open WhatsApp. Please contact support manually.'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      // Error handling
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error opening WhatsApp: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 }
 

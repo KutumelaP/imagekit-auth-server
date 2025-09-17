@@ -159,8 +159,8 @@ class MyApp extends StatelessWidget {
               return const WebDesktopBlockScreen();
             }
           }
-          // Disable chatbot globally for now - will be re-enabled only on home screen
-          final showBot = false;
+          // Enable chatbot on home screen only
+          final showBot = true;
 
           final layered = ChatbotWrapper(
             child: child!,

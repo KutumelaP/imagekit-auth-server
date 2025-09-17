@@ -860,7 +860,25 @@ What aspect of the marketplace can I help you with today?''',
       });
 
       final ticketIdShort = ref.id.substring(0, 6).toUpperCase();
-      return 'I have escalated this to a human agent. Your ticket ID is ${ticketIdShort}. You will be contacted shortly.';
+      
+      // Create a special message with consultant option
+      final consultantMessage = ChatMessage(
+        id: 'consultant_${DateTime.now().millisecondsSinceEpoch}',
+        text: '''I have escalated this to a human agent. Your ticket ID is ${ticketIdShort}.
+
+You can also speak directly to a consultant via WhatsApp for immediate assistance:''',
+        isUser: false,
+        timestamp: DateTime.now(),
+        type: 'consultant_escalation',
+        metadata: {
+          'ticketId': ticketIdShort,
+          'whatsappNumber': '27693617576',
+          'whatsappMessage': 'Hi! I need help with my support ticket ${ticketIdShort}. Can you assist me?',
+        },
+      );
+      
+      await _addMessage(consultantMessage);
+      return ''; // Return empty since we're adding a special message
     } catch (e) {
       return 'I tried to escalate this but ran into a problem. Please use the Help & Support option in the menu.';
     }
