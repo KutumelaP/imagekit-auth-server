@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../providers/cart_provider.dart';
 import '../widgets/loading_widget.dart';
 import '../services/whatsapp_integration_service.dart';
+import '../services/otp_verification_service.dart';
 import '../theme/app_theme.dart';
 import 'simple_home_screen.dart';
 
@@ -233,6 +234,36 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen> {
                 } catch (_) {}
               }
             }
+            
+            // If still no pickup code found, generate one now as fallback
+            if (pickupCode == null || pickupCode.toString().isEmpty) {
+              try {
+                print('🔄 No pickup code found, generating one now for order: $orderId');
+                // Generate a simple pickup code
+                final timestamp = DateTime.now().millisecondsSinceEpoch;
+                pickupCode = (1000 + (timestamp % 9000)).toString();
+                
+                // Save it to store_pickups for future reference
+                try {
+                  await FirebaseFirestore.instance
+                      .collection('store_pickups')
+                      .doc(orderId)
+                      .set({
+                    'orderId': orderId,
+                    'pickupCode': pickupCode,
+                    'status': 'ready_for_pickup',
+                    'createdAt': FieldValue.serverTimestamp(),
+                    'generatedBy': 'whatsapp_fallback',
+                  }, SetOptions(merge: true));
+                  print('✅ Generated and saved fallback pickup code: $pickupCode');
+                } catch (e) {
+                  print('⚠️ Generated pickup code but failed to save: $e');
+                }
+              } catch (e) {
+                print('❌ Failed to generate fallback pickup code: $e');
+              }
+            }
+            
             resolvedCode = (pickupCode != null && pickupCode.isNotEmpty) ? pickupCode : 'Pending';
           } else {
             // If delivery: try deliveryOTP field first, then look up delivery_otps/{orderId}
@@ -247,6 +278,27 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen> {
                 }
               } catch (_) {}
             }
+            
+            // If still no OTP found, try to generate one now as fallback
+            if (deliveryOTP == null || deliveryOTP.toString().isEmpty) {
+              try {
+                print('🔄 No OTP found, attempting to generate one now for order: $orderId');
+                final buyerId = orderData['buyerId']?.toString();
+                final sellerId = orderData['sellerId']?.toString();
+                if (buyerId != null && sellerId != null) {
+                  // Generate OTP using the service
+                  deliveryOTP = await OTPVerificationService.generateDeliveryOTP(
+                    orderId: orderId,
+                    buyerId: buyerId,
+                    sellerId: sellerId,
+                  );
+                  print('✅ Generated fallback OTP: $deliveryOTP');
+                }
+              } catch (e) {
+                print('❌ Failed to generate fallback OTP: $e');
+              }
+            }
+            
             resolvedCode = (deliveryOTP != null && deliveryOTP.isNotEmpty) ? deliveryOTP : 'Pending';
           }
         } catch (_) {}
