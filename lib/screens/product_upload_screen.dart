@@ -56,6 +56,11 @@ class _ProductUploadScreenState extends State<ProductUploadScreen> {
   File? selectedImage;
   bool isUploading = false;
   String uploadStatus = '';
+  
+  // Customization fields
+  bool isCustomizable = false;
+  List<Map<String, dynamic>> addOns = [];
+  List<Map<String, dynamic>> subtractions = [];
 
   final List<String> categories = [
     'Food',
@@ -133,10 +138,6 @@ class _ProductUploadScreenState extends State<ProductUploadScreen> {
     return false;
   }
 
-  // Get available categories for this store
-  List<String> get _availableCategories {
-    return categories.where((category) => _isCategoryAllowed(category)).toList();
-  }
 
   @override
   void dispose() {
@@ -212,7 +213,7 @@ class _ProductUploadScreenState extends State<ProductUploadScreen> {
 
       // Create product data
       uploadStatus = 'Creating product...';
-      final productData = {
+      final Map<String, dynamic> productData = {
         'name': _nameController.text.trim(),
         'description': _descriptionController.text.trim(),
         'price': price,
@@ -224,7 +225,16 @@ class _ProductUploadScreenState extends State<ProductUploadScreen> {
         'ownerId': user.uid,
         'status': 'active',
         'timestamp': FieldValue.serverTimestamp(),
+        'customizable': isCustomizable,
       };
+      
+      // Add customizations if enabled
+      if (isCustomizable) {
+        productData['customizations'] = {
+          'addOns': addOns.where((addon) => addon['name'].toString().isNotEmpty).toList(),
+          'subtractions': subtractions.where((subtract) => subtract['name'].toString().isNotEmpty).toList(),
+        };
+      }
 
       // Save to Firestore
       await FirebaseFirestore.instance
@@ -268,6 +278,9 @@ class _ProductUploadScreenState extends State<ProductUploadScreen> {
       selectedImage = null;
       selectedCategory = 'Food';
       selectedSubcategory = 'Baked Goods';
+      isCustomizable = false;
+      addOns.clear();
+      subtractions.clear();
     });
   }
 
@@ -689,6 +702,241 @@ class _ProductUploadScreenState extends State<ProductUploadScreen> {
             });
           },
         ),
+        
+        const SizedBox(height: 24),
+        
+        // Customization Section
+        _buildCustomizationSection(),
+      ],
+    );
+  }
+
+  Widget _buildCustomizationSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Customization Options',
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+            color: AppTheme.deepTeal,
+          ),
+        ),
+        const SizedBox(height: 12),
+        
+        // Enable Customization Toggle
+        CheckboxListTile(
+          title: const Text('Allow customers to customize this product'),
+          subtitle: const Text('Add-ons and subtractions (e.g., extra chicken, no onions)'),
+          value: isCustomizable,
+          onChanged: (value) {
+            setState(() {
+              isCustomizable = value ?? false;
+              if (!isCustomizable) {
+                addOns.clear();
+                subtractions.clear();
+              }
+            });
+          },
+          activeColor: AppTheme.deepTeal,
+        ),
+        
+        if (isCustomizable) ...[
+          const SizedBox(height: 16),
+          
+          // Add-ons Section
+          _buildAddOnsSection(),
+          
+          const SizedBox(height: 16),
+          
+          // Subtractions Section
+          _buildSubtractionsSection(),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildAddOnsSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text(
+              'Add-ons (Extra items)',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: AppTheme.deepTeal,
+              ),
+            ),
+            TextButton.icon(
+              onPressed: () {
+                setState(() {
+                  addOns.add({
+                    'id': 'addon_${DateTime.now().millisecondsSinceEpoch}',
+                    'name': '',
+                    'price': 0.0,
+                  });
+                });
+              },
+              icon: const Icon(Icons.add, size: 16),
+              label: const Text('Add'),
+            ),
+          ],
+        ),
+        
+        ...addOns.asMap().entries.map((entry) {
+          int index = entry.key;
+          Map<String, dynamic> addOn = entry.value;
+          
+          return Container(
+            margin: const EdgeInsets.only(bottom: 8),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: AppTheme.whisper,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: AppTheme.cloud),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextFormField(
+                    initialValue: addOn['name'],
+                    decoration: const InputDecoration(
+                      labelText: 'Add-on name',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                    onChanged: (value) {
+                      addOns[index]['name'] = value;
+                    },
+                  ),
+                ),
+                const SizedBox(width: 8),
+                SizedBox(
+                  width: 80,
+                  child: TextFormField(
+                    initialValue: addOn['price'].toString(),
+                    decoration: const InputDecoration(
+                      labelText: 'Price',
+                      border: OutlineInputBorder(),
+                      prefixText: 'R',
+                      isDense: true,
+                    ),
+                    keyboardType: TextInputType.number,
+                    onChanged: (value) {
+                      addOns[index]['price'] = double.tryParse(value) ?? 0.0;
+                    },
+                  ),
+                ),
+                const SizedBox(width: 8),
+                IconButton(
+                  onPressed: () {
+                    setState(() {
+                      addOns.removeAt(index);
+                    });
+                  },
+                  icon: const Icon(Icons.delete, color: Colors.red),
+                ),
+              ],
+            ),
+          );
+        }).toList(),
+      ],
+    );
+  }
+
+  Widget _buildSubtractionsSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text(
+              'Subtractions (Remove items)',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: AppTheme.deepTeal,
+              ),
+            ),
+            TextButton.icon(
+              onPressed: () {
+                setState(() {
+                  subtractions.add({
+                    'id': 'subtract_${DateTime.now().millisecondsSinceEpoch}',
+                    'name': '',
+                    'price': 0.0,
+                  });
+                });
+              },
+              icon: const Icon(Icons.add, size: 16),
+              label: const Text('Add'),
+            ),
+          ],
+        ),
+        
+        ...subtractions.asMap().entries.map((entry) {
+          int index = entry.key;
+          Map<String, dynamic> subtraction = entry.value;
+          
+          return Container(
+            margin: const EdgeInsets.only(bottom: 8),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: AppTheme.whisper,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: AppTheme.cloud),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextFormField(
+                    initialValue: subtraction['name'],
+                    decoration: const InputDecoration(
+                      labelText: 'Subtraction name',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                    onChanged: (value) {
+                      subtractions[index]['name'] = value;
+                    },
+                  ),
+                ),
+                const SizedBox(width: 8),
+                SizedBox(
+                  width: 80,
+                  child: TextFormField(
+                    initialValue: subtraction['price'].toString(),
+                    decoration: const InputDecoration(
+                      labelText: 'Price',
+                      border: OutlineInputBorder(),
+                      prefixText: 'R',
+                      isDense: true,
+                    ),
+                    keyboardType: TextInputType.number,
+                    onChanged: (value) {
+                      subtractions[index]['price'] = double.tryParse(value) ?? 0.0;
+                    },
+                  ),
+                ),
+                const SizedBox(width: 8),
+                IconButton(
+                  onPressed: () {
+                    setState(() {
+                      subtractions.removeAt(index);
+                    });
+                  },
+                  icon: const Icon(Icons.delete, color: Colors.red),
+                ),
+              ],
+            ),
+          );
+        }).toList(),
       ],
     );
   }

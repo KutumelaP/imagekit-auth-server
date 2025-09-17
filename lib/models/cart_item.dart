@@ -9,6 +9,10 @@ class CartItem {
   final String storeCategory; // Store category (Food, Clothing, etc.)
   final DateTime addedAt;
   final int? availableStock; // Available stock for this product (null = unlimited)
+  
+  // Customization fields
+  final List<Map<String, dynamic>>? customizations;
+  final double? customPrice; // Calculated price with customizations
 
   CartItem({
     required this.id,
@@ -21,7 +25,12 @@ class CartItem {
     required this.storeCategory,
     DateTime? addedAt,
     this.availableStock,
+    this.customizations,
+    this.customPrice,
   }) : addedAt = addedAt ?? DateTime.now();
+
+  // Get final price (custom price if available, otherwise base price)
+  double get finalPrice => customPrice ?? price;
 
   CartItem copyWith({
     String? id,
@@ -34,6 +43,8 @@ class CartItem {
     String? storeCategory,
     DateTime? addedAt,
     int? availableStock,
+    List<Map<String, dynamic>>? customizations,
+    double? customPrice,
   }) {
     return CartItem(
       id: id ?? this.id,
@@ -46,6 +57,8 @@ class CartItem {
       storeCategory: storeCategory ?? this.storeCategory,
       addedAt: addedAt ?? this.addedAt,
       availableStock: availableStock ?? this.availableStock,
+      customizations: customizations ?? this.customizations,
+      customPrice: customPrice ?? this.customPrice,
     );
   }
 
@@ -61,6 +74,8 @@ class CartItem {
       'storeCategory': storeCategory,
       'addedAt': addedAt.millisecondsSinceEpoch,
       'availableStock': availableStock,
+      'customizations': customizations,
+      'customPrice': customPrice,
     };
   }
 
@@ -76,6 +91,10 @@ class CartItem {
       storeCategory: map['storeCategory'] ?? '',
       addedAt: DateTime.fromMillisecondsSinceEpoch(map['addedAt'] ?? 0),
       availableStock: map['availableStock'],
+      customizations: map['customizations'] != null 
+          ? List<Map<String, dynamic>>.from(map['customizations'])
+          : null,
+      customPrice: map['customPrice']?.toDouble(),
     );
   }
 
