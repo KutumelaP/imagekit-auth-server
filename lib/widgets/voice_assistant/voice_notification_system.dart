@@ -14,25 +14,20 @@ class VoiceNotificationSystem {
   final VoiceLanguageManager _languageManager = VoiceLanguageManager();
   
   Timer? _proactiveTimer;
-  bool _isEnabled = true;
+  bool _isEnabled = false; // Proactive voice prompts disabled by default
   DateTime? _lastInteraction;
   
   /// Enable/disable voice notifications
   void setEnabled(bool enabled) {
-    _isEnabled = enabled;
-    if (enabled) {
-      _startProactiveMonitoring();
-    } else {
-      _stopProactiveMonitoring();
-    }
+    // Hard-disable proactive prompts
+    _isEnabled = false;
+    _stopProactiveMonitoring();
   }
 
   /// Start proactive monitoring
   void _startProactiveMonitoring() {
-    _proactiveTimer?.cancel();
-    _proactiveTimer = Timer.periodic(const Duration(minutes: 5), (timer) {
-      _checkProactiveOpportunities();
-    });
+    // No-op: proactive prompts are disabled
+    _stopProactiveMonitoring();
   }
 
   /// Stop proactive monitoring
@@ -43,23 +38,16 @@ class VoiceNotificationSystem {
 
   /// Check for proactive help opportunities
   Future<void> _checkProactiveOpportunities() async {
-    if (!_isEnabled) return;
-    
-    // Check if user has been inactive for a while
-    if (_lastInteraction != null) {
-      final timeSinceLastInteraction = DateTime.now().difference(_lastInteraction!);
-      if (timeSinceLastInteraction.inMinutes > 10) {
-        await _sendProactiveHelp();
-      }
-    }
+    // No-op: proactive prompts are disabled
+    return;
   }
 
   /// Send proactive help message
   Future<void> _sendProactiveHelp() async {
     final messages = [
-      "Hi there! I noticed you've been browsing for a while. Need help finding something specific?",
       "Hello! I'm here if you need assistance with anything. Just ask me!",
       "Hi! I can help you search for products, navigate the app, or answer any questions you have.",
+      "Need a hand? I can help you find stores, deals, or track orders.",
     ];
     
     final randomMessage = messages[DateTime.now().millisecond % messages.length];

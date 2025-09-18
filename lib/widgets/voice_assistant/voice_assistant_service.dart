@@ -6,9 +6,12 @@ import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:permission_handler/permission_handler.dart';
 import 'package:vibration/vibration.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../services/voice_service.dart';
+import '../../services/llm_service.dart';
 import 'onboarding_voice_guide.dart';
 import 'nathan_conversation_manager.dart';
+import 'human_responder.dart';
 
 /// AI Speech Assistant Service for onboarding and user guidance
 class VoiceAssistantService {
@@ -17,8 +20,10 @@ class VoiceAssistantService {
   VoiceAssistantService._internal();
 
   final VoiceService _voiceService = VoiceService();
+  final LlmService _llmService = LlmService();
   final NathanConversationManager _conversationManager = NathanConversationManager();
   final stt.SpeechToText _speechToText = stt.SpeechToText();
+  final HumanResponder _humanResponder = HumanResponder();
   
   // Assistant state
   bool _isActive = false;
@@ -51,6 +56,16 @@ class VoiceAssistantService {
   /// Initialize the voice assistant
   Future<void> initialize({String? userName, bool isNewUser = false}) async {
     try {
+      // Respect assistant_enabled preference
+      final prefs = await SharedPreferences.getInstance();
+      final enabled = prefs.getBool('assistant_enabled') ?? true;
+      if (!enabled) {
+        if (kDebugMode) {
+          print('🚫 Assistant disabled by user preference. Skipping initialization.');
+        }
+        _isActive = false;
+        return;
+      }
       if (kDebugMode) {
         print('🎤 Starting VoiceAssistantService initialization for $userName (New user: $isNewUser)');
       }
@@ -61,6 +76,7 @@ class VoiceAssistantService {
       _isProcessing = false;
       
       await _voiceService.initialize();
+      await _llmService.initialize();
       _userName = userName;
       _isNewUser = isNewUser;
       
@@ -135,7 +151,15 @@ class VoiceAssistantService {
               print('🎤 No match detected, staying quiet to avoid interrupting user');
             }
           } else if (errorMsg.contains('timeout') || errorMsg.contains('speech_timeout')) {
-            _voiceService.speak("I'm listening! Please speak a bit louder or closer to your device.");
+            // Auto-retry listening quietly after a short delay
+            if (kDebugMode) {
+              print('🎤 Timeout detected. Auto-restarting listening...');
+            }
+            Future.delayed(const Duration(milliseconds: 600), () async {
+              if (_isActive && !_isListening && !_isProcessing) {
+                await startListening();
+              }
+            });
           } else {
             _voiceService.speak("Sorry, there was an issue with voice recognition. Please try again.");
           }
@@ -223,6 +247,14 @@ class VoiceAssistantService {
 
   /// Start listening for user input
   Future<void> startListening() async {
+    // Respect assistant_enabled preference
+    final prefs = await SharedPreferences.getInstance();
+    if (!(prefs.getBool('assistant_enabled') ?? true)) {
+      if (kDebugMode) {
+        print('🚫 Assistant disabled. Ignoring startListening().');
+      }
+      return;
+    }
     if (kDebugMode) {
       print('🎤 startListening called - Active: $_isActive, Listening: $_isListening, Processing: $_isProcessing');
     }
@@ -310,8 +342,8 @@ class VoiceAssistantService {
             });
           }
         },
-        listenFor: const Duration(seconds: 15), // Give more time for complete sentences
-        pauseFor: const Duration(seconds: 1),   // Very short pause - keep listening
+        listenFor: const Duration(seconds: 25), // Longer window to reduce timeouts
+        pauseFor: const Duration(seconds: 3),   // Allow a bit more pause before timeout
         partialResults: true, // Enable partial results for better detection
         localeId: 'en_US',
         cancelOnError: false, // Don't cancel on errors, keep trying
@@ -442,7 +474,7 @@ class VoiceAssistantService {
         if (kDebugMode) {
           print('🧠 Nathan response: $smartResponse');
         }
-        await _speakResponse(smartResponse);
+        await _speakResponse(smartResponse, question: recognizedText);
         
         if (kDebugMode) {
           print('🧠 Nathan answered intelligently: ${recognizedText.substring(0, min(recognizedText.length, 30))}...');
@@ -453,13 +485,31 @@ class VoiceAssistantService {
       if (kDebugMode) {
         print('🎯 Using fallback response system for: $recognizedText');
       }
-      
-      // Fallback to basic response system
-      final response = _getQuestionResponse(recognizedText);
-      if (kDebugMode) {
-        print('🎯 Fallback response: $response');
+      // Try playful quick reply first, then structured helpful answer (no API)
+      String? humanAnswer = _humanResponder.generatePlayfulReply(
+        recognizedText,
+      );
+      if (humanAnswer == null) {
+        humanAnswer = await _humanResponder.generateHelpfulAnswerAsync(
+          recognizedText,
+          context: _currentContext,
+        );
       }
-      await _speakResponse(response);
+      // Try LLM direct answer if available and needed
+      String? llmAnswer;
+      if (humanAnswer == null && _llmService.isAvailable) {
+        try {
+          llmAnswer = await _llmService.generateAnswer(
+            userQuestion: recognizedText,
+            contextHint: _currentContext,
+          );
+        } catch (_) {}
+      }
+      final response = humanAnswer ?? llmAnswer ?? _getQuestionResponse(recognizedText);
+      if (kDebugMode) {
+        print('🎯 Fallback/LLM response: $response');
+      }
+      await _speakResponse(response, question: recognizedText);
       
       if (kDebugMode) {
         print('🎤 Nathan responded: ${response.substring(0, min(response.length, 50))}...');
@@ -612,11 +662,21 @@ class VoiceAssistantService {
     }
   }
 
-  /// Speak the response
-  Future<void> _speakResponse(String response) async {
+  /// Speak the response, refining via LLM when available
+  Future<void> _speakResponse(String response, {String? question}) async {
     try {
-      await _voiceService.speak(response);
-      _responseController.add(response);
+      String finalText = response;
+      finalText = _humanResponder.humanize(finalText, context: _currentContext);
+      if (_llmService.isAvailable) {
+        finalText = await _llmService.refineAnswer(
+          userQuestion: (question != null && question.trim().isNotEmpty) ? question : _lastWords,
+          baseAnswer: response,
+          contextHint: _currentContext,
+        );
+        finalText = _humanResponder.humanize(finalText, context: _currentContext);
+      }
+      await _voiceService.speak(finalText);
+      _responseController.add(finalText);
     } catch (e) {
       if (kDebugMode) {
         print('❌ Error speaking response: $e');
@@ -627,6 +687,8 @@ class VoiceAssistantService {
   /// Provide proactive guidance based on user actions
   Future<void> provideProactiveGuidance(String action) async {
     if (!_isActive) return;
+    final prefs = await SharedPreferences.getInstance();
+    if (!(prefs.getBool('assistant_enabled') ?? true)) return;
     
     String guidance;
     switch (action.toLowerCase()) {
@@ -652,6 +714,8 @@ class VoiceAssistantService {
   /// Handle specific user questions with intelligent conversation
   Future<void> handleUserQuestion(String question) async {
     if (!_isActive) return;
+    final prefs = await SharedPreferences.getInstance();
+    if (!(prefs.getBool('assistant_enabled') ?? true)) return;
     
     // Check if it's a common onboarding question first
     if (_isOnboardingQuestion(question)) {
@@ -662,7 +726,7 @@ class VoiceAssistantService {
     // Use Nathan's intelligent conversation manager for smart responses
     if (_conversationManager.canHandleQuestion(question)) {
       final smartResponse = _conversationManager.processUserInput(question);
-      await _speakResponse(smartResponse);
+      await _speakResponse(smartResponse, question: question);
       
       if (kDebugMode) {
         print('🧠 Nathan answered intelligently: ${question.substring(0, min(question.length, 30))}...');
@@ -672,7 +736,7 @@ class VoiceAssistantService {
     
     // Fallback to basic response system
     final response = _getQuestionResponse(question);
-    await _speakResponse(response);
+    await _speakResponse(response, question: question);
   }
   
   /// Check if question is related to onboarding
@@ -750,7 +814,7 @@ class VoiceAssistantService {
       return "I'm here to help! You can ask me about shopping, orders, delivery, payments, or how to use any feature. What would you like to know?";
     }
     
-    return "I understand you're asking about $question. Let me help you with that. Could you be more specific about what you'd like to know?";
+    return "Got you — want me to search for it or show stores? Say a keyword like 'cake' to start.";
   }
 
   /// Toggle assistant on/off

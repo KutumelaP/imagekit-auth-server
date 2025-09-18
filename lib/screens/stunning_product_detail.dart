@@ -208,7 +208,9 @@ class _StunningProductDetailState extends State<StunningProductDetail>
     
     // Calculate add-ons price
     for (var addOn in selectedAddOns) {
-      addOnPrice += (addOn['price'] ?? 0.0).toDouble();
+      final double unitPrice = (addOn['price'] ?? 0.0).toDouble();
+      final int qty = (addOn['quantity'] is num) ? (addOn['quantity'] as num).toInt() : 1;
+      addOnPrice += unitPrice * qty;
     }
     
     // Calculate subtractions price (usually negative)
@@ -569,15 +571,31 @@ class _StunningProductDetailState extends State<StunningProductDetail>
                   color: AppTheme.cloud,
                 ),
               ),
-              Text(
-                'R${_isCustomizable && (selectedAddOns.isNotEmpty || selectedSubtractions.isNotEmpty) 
-                    ? customPrice.toStringAsFixed(2)
-                    : (widget.product['price'] ?? 0.0).toStringAsFixed(2)}',
-                style: AppTheme.displaySmall.copyWith(
-                  fontSize: isMobile ? 24 : 28,
-                  color: AppTheme.deepTeal,
-                  fontWeight: FontWeight.bold,
-                ),
+              Builder(
+                builder: (_) {
+                  final double unitPrice = _isCustomizable && (selectedAddOns.isNotEmpty || selectedSubtractions.isNotEmpty)
+                      ? customPrice
+                      : (widget.product['price'] ?? 0.0).toDouble();
+                  final double total = unitPrice * quantity;
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'R${total.toStringAsFixed(2)}',
+                        style: AppTheme.displaySmall.copyWith(
+                          fontSize: isMobile ? 24 : 28,
+                          color: AppTheme.deepTeal,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      if (quantity > 1)
+                        Text(
+                          'R${unitPrice.toStringAsFixed(2)} each × $quantity',
+                          style: AppTheme.bodySmall.copyWith(color: AppTheme.cloud),
+                        ),
+                    ],
+                  );
+                },
               ),
             ],
           ),
@@ -757,10 +775,9 @@ class _StunningProductDetailState extends State<StunningProductDetail>
               ),
             ),
             const SizedBox(height: 8),
-            ...addOns.map((addOn) => _buildCustomizationItem(
+            ...addOns.map((addOn) => _buildAddOnItem(
               addOn['name'] ?? '',
-              addOn['price'] ?? 0.0,
-              true, // isAddOn
+              (addOn['price'] ?? 0.0).toDouble(),
             )),
             const SizedBox(height: 16),
           ],
@@ -809,7 +826,11 @@ class _StunningProductDetailState extends State<StunningProductDetail>
           setState(() {
             if (isAddOn) {
               if (value == true) {
-                selectedAddOns.add({'name': name, 'price': price});
+                // Deprecated for add-ons; selection now handled via quantity stepper
+                final existingIndex = selectedAddOns.indexWhere((item) => item['name'] == name);
+                if (existingIndex < 0) {
+                  selectedAddOns.add({'name': name, 'price': price, 'quantity': 1});
+                }
               } else {
                 selectedAddOns.removeWhere((item) => item['name'] == name);
               }
@@ -817,7 +838,11 @@ class _StunningProductDetailState extends State<StunningProductDetail>
               if (value == true) {
                 // Check if adding this subtraction would make the price too low
                 final basePrice = (widget.product['price'] ?? 0.0).toDouble();
-                final currentAddOnPrice = selectedAddOns.fold(0.0, (sum, addOn) => sum + (addOn['price'] ?? 0.0));
+                final currentAddOnPrice = selectedAddOns.fold(0.0, (sum, addOn) {
+                  final double unit = (addOn['price'] ?? 0.0).toDouble();
+                  final int qty = (addOn['quantity'] is num) ? (addOn['quantity'] as num).toInt() : 1;
+                  return sum + (unit * qty);
+                });
                 final currentSubtractionPrice = selectedSubtractions.fold(0.0, (sum, sub) => sum + (sub['price'] ?? 0.0));
                 final newTotal = basePrice + currentAddOnPrice + currentSubtractionPrice + price;
                 final minimumPrice = math.max<double>(basePrice * 0.1, 5.0);
@@ -840,6 +865,108 @@ class _StunningProductDetailState extends State<StunningProductDetail>
         },
         activeColor: AppTheme.deepTeal,
         contentPadding: EdgeInsets.zero,
+      ),
+    );
+  }
+
+  Widget _buildAddOnItem(String name, double unitPrice) {
+    final int existingIndex = selectedAddOns.indexWhere((item) => item['name'] == name);
+    final int quantityForThis = existingIndex >= 0
+        ? ((selectedAddOns[existingIndex]['quantity'] is num)
+            ? (selectedAddOns[existingIndex]['quantity'] as num).toInt()
+            : 1)
+        : 0;
+    
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: ListTile(
+        contentPadding: EdgeInsets.zero,
+        title: Text(name),
+        subtitle: Text(
+          '+R${unitPrice.toStringAsFixed(2)} each',
+          style: TextStyle(
+            color: AppTheme.success,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              width: 32,
+              height: 32,
+              child: Material(
+                color: AppTheme.deepTeal,
+                shape: const CircleBorder(),
+                child: InkWell(
+                  customBorder: const CircleBorder(),
+                  onTap: quantityForThis > 0
+                      ? () {
+                        setState(() {
+                          if (existingIndex >= 0) {
+                            final int newQty = quantityForThis - 1;
+                            if (newQty <= 0) {
+                              selectedAddOns.removeAt(existingIndex);
+                            } else {
+                              selectedAddOns[existingIndex] = {
+                                'name': name,
+                                'price': unitPrice,
+                                'quantity': newQty,
+                              };
+                            }
+                            _calculateCustomPrice();
+                          }
+                        });
+                      }
+                      : null,
+                  child: const Icon(Icons.remove, color: Colors.white, size: 18),
+                ),
+              ),
+            ),
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppTheme.cloud),
+              ),
+              child: Text(
+                quantityForThis.toString(),
+                style: AppTheme.titleMedium.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+            SizedBox(
+              width: 32,
+              height: 32,
+              child: Material(
+                color: AppTheme.deepTeal,
+                shape: const CircleBorder(),
+                child: InkWell(
+                  customBorder: const CircleBorder(),
+                  onTap: () {
+                    setState(() {
+                      if (existingIndex >= 0) {
+                        final int newQty = quantityForThis + 1;
+                        selectedAddOns[existingIndex] = {
+                          'name': name,
+                          'price': unitPrice,
+                          'quantity': newQty,
+                        };
+                      } else {
+                        selectedAddOns.add({'name': name, 'price': unitPrice, 'quantity': 1});
+                      }
+                      _calculateCustomPrice();
+                    });
+                  },
+                  child: const Icon(Icons.add, color: Colors.white, size: 18),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -930,17 +1057,19 @@ class _StunningProductDetailState extends State<StunningProductDetail>
           
           Row(
             children: [
-              Container(
-                decoration: BoxDecoration(
-                  color: AppTheme.deepTeal,
-                  shape: BoxShape.circle,
-                ),
-                child: IconButton(
-                  onPressed: quantity > 1 ? () => setState(() => quantity--) : null,
-                  icon: const Icon(Icons.remove, color: Colors.white),
-                  iconSize: 20,
+            SizedBox(
+              width: 36,
+              height: 36,
+              child: Material(
+                color: AppTheme.deepTeal,
+                shape: const CircleBorder(),
+                child: InkWell(
+                  customBorder: const CircleBorder(),
+                  onTap: quantity > 1 ? () => setState(() => quantity--) : null,
+                  child: const Icon(Icons.remove, color: Colors.white, size: 18),
                 ),
               ),
+            ),
               
               Container(
                 margin: const EdgeInsets.symmetric(horizontal: 20),
@@ -958,19 +1087,21 @@ class _StunningProductDetailState extends State<StunningProductDetail>
                 ),
               ),
               
-              Container(
-                decoration: BoxDecoration(
-                  color: AppTheme.deepTeal,
-                  shape: BoxShape.circle,
-                ),
-                child: IconButton(
-                  onPressed: quantity < _getProductStock() 
+            SizedBox(
+              width: 36,
+              height: 36,
+              child: Material(
+                color: AppTheme.deepTeal,
+                shape: const CircleBorder(),
+                child: InkWell(
+                  customBorder: const CircleBorder(),
+                  onTap: quantity < _getProductStock() 
                       ? () => setState(() => quantity++) 
                       : null,
-                  icon: const Icon(Icons.add, color: Colors.white),
-                  iconSize: 20,
+                  child: const Icon(Icons.add, color: Colors.white, size: 18),
                 ),
               ),
+            ),
               
               const Spacer(),
               

@@ -1,4 +1,7 @@
 import 'dart:async';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'package:omniasa/config/api_keys.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -50,11 +53,15 @@ class EnhancedVoiceNotificationService {
   double _voiceRate = 0.8;
   double _voicePitch = 1.0;
   bool _preferGoogleTts = true;
+  String _voiceName = 'en-US-Wavenet-C';
+  List<Map<String, String>> _availableGoogleVoices = const [];
 
   String? get voiceLanguage => _voiceLanguage;
   double get voiceRate => _voiceRate;
   double get voicePitch => _voicePitch;
   bool get preferGoogleTts => _preferGoogleTts;
+  String get voiceName => _voiceName;
+  List<Map<String, String>> get availableGoogleVoices => _availableGoogleVoices;
 
   // Initialize the enhanced notification service
   Future<void> initialize() async {
@@ -126,10 +133,11 @@ class EnhancedVoiceNotificationService {
     _inAppNotificationsEnabled = prefs.getBool('inapp_notifications') ?? false;
     _voiceAnnouncementsEnabled = prefs.getBool('voice_announcements') ?? true;
     _autoClearBadgeOnNotificationsOpen = prefs.getBool('auto_clear_badge_notifications') ?? false;
-    _voiceLanguage = prefs.getString('voice_language') ?? 'en-ZA';
+    _voiceLanguage = prefs.getString('voice_language') ?? 'en-US';
     _voiceRate = prefs.getDouble('voice_rate') ?? 0.8;
     _voicePitch = prefs.getDouble('voice_pitch') ?? 1.0;
     _preferGoogleTts = prefs.getBool('prefer_google_tts') ?? true;
+    _voiceName = prefs.getString('voice_name') ?? 'en-US-Wavenet-C';
     _speakUnreadSummaryOnOpen = prefs.getBool('speak_unread_summary') ?? true;
     
     debugPrint('🔔 Enhanced notification preferences loaded');
@@ -137,11 +145,14 @@ class EnhancedVoiceNotificationService {
 
   /// Configure voice settings
   Future<void> _configureVoiceSettings() async {
+    final String languageToUse = _preferGoogleTts ? 'en-US' : (_voiceLanguage ?? 'en-ZA');
     await _voiceService.updateConfig(
       VoiceConfig(
-        language: _voiceLanguage ?? 'en-ZA',
+        language: languageToUse,
         speechRate: _voiceRate,
         pitch: _voicePitch,
+        voiceName: _voiceName,
+        audioEncoding: 'MP3',
       ),
     );
   }
@@ -191,6 +202,7 @@ class EnhancedVoiceNotificationService {
     double? rate,
     double? pitch,
     bool? preferGoogleTts,
+    String? voiceName,
   }) async {
     final prefs = await SharedPreferences.getInstance();
     
@@ -209,6 +221,10 @@ class EnhancedVoiceNotificationService {
     if (preferGoogleTts != null) {
       _preferGoogleTts = preferGoogleTts;
       await prefs.setBool('prefer_google_tts', preferGoogleTts);
+    }
+    if (voiceName != null && voiceName.isNotEmpty) {
+      _voiceName = voiceName;
+      await prefs.setString('voice_name', voiceName);
     }
     
     // Update VoiceService configuration
@@ -485,6 +501,17 @@ class EnhancedVoiceNotificationService {
     }
   }
 
+  /// Preview Google WaveNet voice regardless of voiceAnnouncements setting
+  Future<void> previewGoogleTts(String text) async {
+    try {
+      await _initializeVoiceServiceWithRetry();
+      final processed = _processTextForSpeech(text);
+      await _voiceService.speak(processed, preferGoogle: true);
+    } catch (e) {
+      debugPrint('❌ Google TTS preview failed: $e');
+    }
+  }
+
   /// Reinitialize voice service if needed
   Future<void> reinitializeVoiceService() async {
     try {
@@ -494,6 +521,33 @@ class EnhancedVoiceNotificationService {
       debugPrint('✅ Voice service reinitialized successfully');
     } catch (e) {
       debugPrint('❌ Failed to reinitialize voice service: $e');
+    }
+  }
+
+  /// Fetch Google Cloud TTS voices (cached in memory)
+  Future<void> fetchGoogleVoices() async {
+    try {
+      if (!preferGoogleTts || !_voiceService.isGoogleTtsAvailable) return;
+      final uri = Uri.parse('https://texttospeech.googleapis.com/v1/voices?key=${ApiKeys.googleTtsKey}');
+      final resp = await http.get(uri).timeout(const Duration(seconds: 8));
+      if (resp.statusCode == 200) {
+        final data = jsonDecode(resp.body) as Map<String, dynamic>;
+        final voices = (data['voices'] as List<dynamic>? ?? [])
+            .whereType<Map<String, dynamic>>()
+            .map((v) => {
+                  'name': (v['name']?.toString() ?? '').trim(),
+                  'languageCodes': ((v['languageCodes'] as List?)?.map((e) => e.toString()).join(',') ?? '').trim(),
+                  'ssmlGender': (v['ssmlGender']?.toString() ?? '').trim(),
+                })
+            .where((m) => m['name']!.isNotEmpty)
+            .toList();
+        _availableGoogleVoices = voices;
+        debugPrint('✅ Loaded ${voices.length} Google TTS voices');
+      } else {
+        debugPrint('❌ Failed to fetch voices: ${resp.statusCode} ${resp.body}');
+      }
+    } catch (e) {
+      debugPrint('❌ Error fetching Google voices: $e');
     }
   }
 

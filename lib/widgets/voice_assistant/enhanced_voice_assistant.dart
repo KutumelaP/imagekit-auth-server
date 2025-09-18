@@ -230,50 +230,6 @@ class EnhancedVoiceAssistant {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // Analytics indicator
-              if (kDebugMode)
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withOpacity(0.7),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: StreamBuilder<VoiceUsageStats>(
-                    stream: _analyticsTracker.statsStream,
-                    builder: (context, snapshot) {
-                      final stats = snapshot.data;
-                      return Text(
-                        'Commands: ${stats?.totalCommands ?? 0}\n'
-                        'Success: ${stats?.successRate.toStringAsFixed(1) ?? '0'}%',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 10,
-                        ),
-                        textAlign: TextAlign.center,
-                      );
-                    },
-                  ),
-                ),
-              
-              const SizedBox(height: 8),
-              
-              // Language indicator
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: Colors.blue.withOpacity(0.8),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Text(
-                  _languageManager.currentLanguage.code.toUpperCase(),
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 10,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-              
               const SizedBox(height: 8),
               
               // Enhanced voice mic button - Baby Nathan's mic with animations
@@ -298,13 +254,9 @@ class EnhancedVoiceAssistant {
                               : Colors.orange.shade300, // Baby Nathan's default color
                           child: AnimatedSwitcher(
                             duration: const Duration(milliseconds: 200),
-                            child: Icon(
-                              isListening 
-                                ? (kIsWeb ? Icons.keyboard : Icons.mic)
-                                : isProcessing 
-                                  ? Icons.psychology // Thinking icon
-                                  : (kIsWeb ? Icons.chat : Icons.mic_none),
-                              key: ValueKey(isListening ? 'listening' : isProcessing ? 'processing' : 'idle'),
+                            child: const Icon(
+                              Icons.mic,
+                              key: ValueKey('mic'),
                               color: Colors.white,
                               size: 28,
                             ),
@@ -330,22 +282,7 @@ class EnhancedVoiceAssistant {
           ),
         ),
         
-        // Settings button (if enabled)
-        if (showSettings)
-          Positioned(
-            top: 50,
-            right: 16,
-            child: FloatingActionButton.small(
-              heroTag: "voice_settings",
-              backgroundColor: Colors.grey,
-              child: const Icon(Icons.settings, size: 20),
-              onPressed: () {
-                if (kDebugMode) {
-                  print('⚙️ Settings tapped');
-                }
-              },
-            ),
-          ),
+        // Settings button removed per request
         
       ],
     );

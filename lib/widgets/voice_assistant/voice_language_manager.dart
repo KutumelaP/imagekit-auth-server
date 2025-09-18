@@ -43,7 +43,7 @@ class VoiceLanguageManager {
       code: 'en',
       name: 'English',
       nativeName: 'English',
-      voiceName: 'en-US-Wavenet-B', // Male voice for Nathan
+      voiceName: 'en-US-Wavenet-C', // Child-like voice for Nathan
       speechRate: 0.6, // Slower for baby speech
       pitch: 1.8, // Very high pitch for baby voice
       greeting: "Hello! I'm Nathan, your little shopping buddy! How can I help you today?",

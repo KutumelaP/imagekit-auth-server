@@ -312,15 +312,6 @@ class VoiceAnalyticsTracker {
                 children: [
                   Expanded(
                     child: _buildStatCard(
-                      'Total Commands',
-                      stats.totalCommands.toString(),
-                      Icons.mic,
-                      Colors.blue,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: _buildStatCard(
                       'Success Rate',
                       '${stats.successRate.toStringAsFixed(1)}%',
                       Icons.check_circle,

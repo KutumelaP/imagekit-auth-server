@@ -8,11 +8,11 @@ import 'package:omniasa/utils/web_js_stub.dart'
     if (dart.library.html) 'package:omniasa/utils/web_js_real.dart' as js;
 import 'sound_service.dart';
 import 'package:flutter_tts/flutter_tts.dart';
+import 'package:omniasa/services/voice_service.dart';
 import 'package:omniasa/utils/web_env.dart';
 import 'package:flutter_app_badger/flutter_app_badger.dart'
   if (dart.library.html) 'package:omniasa/utils/badger_stub.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
-import 'dart:async';
 
 
 
@@ -32,6 +32,7 @@ class NotificationService {
   bool _audioNotificationsEnabled = true;
   bool _inAppNotificationsEnabled = false;
   bool _voiceAnnouncementsEnabled = true;
+  bool _assistantEnabled = true;
   bool _speakUnreadSummaryOnOpen = true;
   bool _autoClearBadgeOnNotificationsOpen = false;
 
@@ -39,6 +40,7 @@ class NotificationService {
   bool get audioNotificationsEnabled => _audioNotificationsEnabled;
   bool get inAppNotificationsEnabled => _inAppNotificationsEnabled;
   bool get voiceAnnouncementsEnabled => _voiceAnnouncementsEnabled;
+  bool get assistantEnabled => _assistantEnabled;
   bool get speakUnreadSummaryOnOpen => _speakUnreadSummaryOnOpen;
   bool get autoClearBadgeOnNotificationsOpen => _autoClearBadgeOnNotificationsOpen;
 
@@ -46,7 +48,7 @@ class NotificationService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
   StreamSubscription<QuerySnapshot>? _notifSub;
-  StreamSubscription<QuerySnapshot>? _whatsappSub;
+  // Removed unused _whatsappSub to clean lints
   StreamSubscription<RemoteMessage>? _fcmSub;
   bool _notifListenerInitialized = false;
   final Set<String> _spokenNotificationIds = <String>{};
@@ -54,6 +56,12 @@ class NotificationService {
   // Sound service for audio notifications
   final SoundService _soundService = SoundService();
   final FlutterTts _tts = FlutterTts();
+  // Unified voice service (uses Google WaveNet on all platforms when available)
+  final VoiceService _voiceService = VoiceService();
+  bool _voiceInitialized = false;
+  bool _preferGoogleTtsForNotifications = true;
+  String _googleVoiceName = 'en-US-Wavenet-C';
+  String _googleLanguage = 'en-US';
   // TTS preferences
   String? _ttsLanguage; // e.g., 'en-US'
   String? _ttsVoiceName; // platform voice name
@@ -89,6 +97,7 @@ class NotificationService {
       // Load notification preferences
       await _loadNotificationPreferences();
       await _applyTtsSettings();
+      await _initUnifiedVoice();
       await refreshTtsOptions();
       await _ensureZAdefaults();
       // Initialize badge count from unread
@@ -105,6 +114,32 @@ class NotificationService {
       _attachFcmOnMessageSpeak();
     } catch (e) {
       print('❌ Error initializing notification service: $e');
+    }
+  }
+
+  Future<void> _initUnifiedVoice() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      _preferGoogleTtsForNotifications = prefs.getBool('prefer_google_tts') ?? true;
+      _googleVoiceName = prefs.getString('voice_name') ?? 'en-US-Wavenet-C';
+      _googleLanguage = prefs.getString('voice_language') ?? 'en-US';
+      final rate = prefs.getDouble('voice_rate') ?? _ttsRate;
+      final pitch = prefs.getDouble('voice_pitch') ?? _ttsPitch;
+
+      if (!_voiceInitialized) {
+        await _voiceService.initialize();
+        _voiceInitialized = true;
+      }
+
+      await _voiceService.updateConfig(VoiceConfig(
+        language: _googleLanguage,
+        speechRate: rate,
+        pitch: pitch,
+        voiceName: _googleVoiceName,
+        audioEncoding: 'MP3',
+      ));
+    } catch (e) {
+      print('❌ Unified voice init failed: $e');
     }
   }
 
@@ -155,8 +190,9 @@ class NotificationService {
     _audioNotificationsEnabled = prefs.getBool('audio_notifications') ?? true;
     _inAppNotificationsEnabled = prefs.getBool('inapp_notifications') ?? false;
     _voiceAnnouncementsEnabled = prefs.getBool('voice_announcements') ?? true;
+    _assistantEnabled = prefs.getBool('assistant_enabled') ?? true;
     _autoClearBadgeOnNotificationsOpen = prefs.getBool('auto_clear_badge_notifications') ?? false;
-    _ttsLanguage = prefs.getString('tts_language') ?? 'en-ZA';
+    _ttsLanguage = prefs.getString('tts_language') ?? 'en-US';
     _ttsVoiceName = prefs.getString('tts_voice_name');
     _ttsVoiceLocale = prefs.getString('tts_voice_locale');
     _ttsRate = prefs.getDouble('tts_rate') ?? 0.7;
@@ -173,6 +209,7 @@ class NotificationService {
     bool? audioNotifications,
     bool? inAppNotifications,
     bool? voiceAnnouncements,
+    bool? assistantEnabled,
     bool? autoClearBadgeOnNotificationsOpen,
     bool? speakUnreadSummaryOnOpen,
   }) async {
@@ -195,6 +232,10 @@ class NotificationService {
     if (voiceAnnouncements != null) {
       _voiceAnnouncementsEnabled = voiceAnnouncements;
       await prefs.setBool('voice_announcements', voiceAnnouncements);
+    }
+    if (assistantEnabled != null) {
+      _assistantEnabled = assistantEnabled;
+      await prefs.setBool('assistant_enabled', assistantEnabled);
     }
     if (autoClearBadgeOnNotificationsOpen != null) {
       _autoClearBadgeOnNotificationsOpen = autoClearBadgeOnNotificationsOpen;
@@ -261,7 +302,7 @@ class NotificationService {
   Future<void> _ensureZAdefaults() async {
     try {
       if (_ttsLanguage == null || _ttsLanguage!.isEmpty) {
-        await updateTtsPreferences(language: 'en-ZA');
+        await updateTtsPreferences(language: 'en-US');
       }
       
       // Set human-like default TTS settings for better naturalness
@@ -632,8 +673,9 @@ class NotificationService {
           .doc(senderId)
           .get();
       
-      final senderName = senderDoc.data()?['displayName'] ?? 
-                        senderDoc.data()?['email']?.split('@')[0] ?? 
+      final senderData = senderDoc.data();
+      final String senderName = senderData?['displayName'] ?? 
+                        senderData?['email']?.toString().split('@')[0] ?? 
                         'Someone';
 
       // Show system notification if enabled
@@ -777,15 +819,7 @@ class NotificationService {
         return;
       }
 
-      // Create notification options
-      final options = js.JsObject.jsify({
-        'body': body,
-        'icon': icon ?? '/icons/Icon-192.png',
-        'tag': tag ?? 'marketplace_notification',
-        'data': payload ?? {},
-        'requireInteraction': false,
-        'silent': false,
-      });
+      // Create notification using constructor directly (don't store unused options var)
 
       // Create notification via constructor: new Notification(title, options)
       final dynamic notification = js.context.callMethod('eval', [
@@ -823,26 +857,10 @@ class NotificationService {
   Future<void> _speakSafe(String text) async {
     try {
       if (!_voiceAnnouncementsEnabled) return;
-      if (kIsWeb) {
-        // Web: use SpeechSynthesis via JS
-        try {
-          // Process text to sound more natural
-          final naturalText = _makeTextMoreNatural(text);
-          final jsText = naturalText.replaceAll("'", " ");
-          
-          js.context.callMethod('eval', [
-            "(function(){try{window.speechSynthesis.cancel();var u=new SpeechSynthesisUtterance('" + jsText + "');" +
-            "u.rate=" + _ttsRate.toString() + ";u.pitch=" + _ttsPitch.toString() + ";u.volume=" + _ttsVolume.toString() + ";" +
-            ( _ttsLanguage != null ? "u.lang='" + (_ttsLanguage ?? '') + "';" : "" ) +
-            "window.speechSynthesis.speak(u);}catch(e){}})();"
-          ]);
-        } catch (_) {}
-        return;
-      }
-      await _tts.stop();
-      // Process text to sound more natural
+      // Use unified VoiceService on all platforms for consistency
       final naturalText = _makeTextMoreNatural(text);
-      await _tts.speak(naturalText);
+      await _initUnifiedVoice();
+      await _voiceService.speak(naturalText, preferGoogle: _preferGoogleTtsForNotifications);
     } catch (e) {
       print('❌ TTS speak failed: $e');
     }
@@ -1053,7 +1071,7 @@ class NotificationService {
             final id = change.doc.id;
             if (_spokenNotificationIds.contains(id)) continue;
             _spokenNotificationIds.add(id);
-            final data = change.doc.data() as Map<String, dynamic>?;
+            final data = change.doc.data();
             if (data == null) continue;
             await _speakForNotificationData(data);
           }

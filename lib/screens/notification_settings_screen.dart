@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/notification_service.dart';
+import '../services/enhanced_voice_notification_service.dart';
 import '../theme/app_theme.dart';
 
 class NotificationSettingsScreen extends StatefulWidget {
@@ -11,15 +12,19 @@ class NotificationSettingsScreen extends StatefulWidget {
 
 class _NotificationSettingsScreenState extends State<NotificationSettingsScreen> {
   final NotificationService _notificationService = NotificationService();
+  final EnhancedVoiceNotificationService _enhanced = EnhancedVoiceNotificationService();
   
   bool _systemNotificationsEnabled = true;
   bool _audioNotificationsEnabled = true;
   bool _inAppNotificationsEnabled = true;
   bool _voiceAnnouncementsEnabled = false;
+  bool _assistantEnabled = true;
   bool _autoClearBadgeEnabled = false;
+  bool _preferGoogleTts = true;
   String? _selectedLanguage;
   String? _selectedVoiceName;
-  String? _selectedVoiceLocale;
+  String _googleLanguage = 'en-US';
+  String _googleVoiceName = 'en-US-Wavenet-C';
   double _rate = 0.45;
   double _pitch = 1.0;
   double _volume = 1.0;
@@ -27,6 +32,14 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
   @override
   void initState() {
     super.initState();
+    _initSettings();
+  }
+
+  Future<void> _initSettings() async {
+    try {
+      await _enhanced.initialize();
+      await _enhanced.fetchGoogleVoices();
+    } catch (_) {}
     _loadCurrentSettings();
   }
 
@@ -36,13 +49,16 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
       _audioNotificationsEnabled = _notificationService.audioNotificationsEnabled;
       _inAppNotificationsEnabled = _notificationService.inAppNotificationsEnabled;
       _voiceAnnouncementsEnabled = _notificationService.voiceAnnouncementsEnabled;
+      _assistantEnabled = _notificationService.assistantEnabled;
       _autoClearBadgeEnabled = _notificationService.autoClearBadgeOnNotificationsOpen;
       _selectedLanguage = _notificationService.ttsLanguage;
       _selectedVoiceName = _notificationService.ttsVoiceName;
-      _selectedVoiceLocale = _notificationService.ttsVoiceLocale;
       _rate = _notificationService.ttsRate;
       _pitch = _notificationService.ttsPitch;
       _volume = _notificationService.ttsVolume;
+      _preferGoogleTts = _enhanced.preferGoogleTts;
+      _googleLanguage = _enhanced.voiceLanguage ?? 'en-US';
+      _googleVoiceName = _enhanced.voiceName;
     });
   }
 
@@ -78,6 +94,20 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
         );
         setState(() {
           _voiceAnnouncementsEnabled = value;
+        });
+        break;
+      case 'preferGoogle':
+        await _enhanced.updateVoicePreferences(preferGoogleTts: value);
+        setState(() {
+          _preferGoogleTts = value;
+        });
+        break;
+      case 'assistant':
+        await _notificationService.updateNotificationPreferences(
+          assistantEnabled: value,
+        );
+        setState(() {
+          _assistantEnabled = value;
         });
         break;
       case 'autoClearBadge':
@@ -283,6 +313,32 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
               ),
             ),
 
+            const SizedBox(height: 8),
+
+            // Assistant
+            Card(
+              child: SwitchListTile(
+                title: const Text('Assistant'),
+                subtitle: const Text('Enable Nathan voice assistant'),
+                value: _assistantEnabled,
+                onChanged: (value) => _updateSetting('assistant', value),
+                activeColor: AppTheme.deepTeal,
+                secondary: Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: LinearGradient(
+                      colors: _assistantEnabled
+                          ? AppTheme.buttonGradient
+                          : [AppTheme.veryLightGrey, AppTheme.veryLightGrey],
+                    ),
+                  ),
+                  child: const Icon(Icons.mic_none, color: Colors.white, size: 20),
+                ),
+              ),
+            ),
+
             if (_voiceAnnouncementsEnabled) ...[
               const SizedBox(height: 8),
               Card(
@@ -291,8 +347,113 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Voice & Language', style: AppTheme.headlineSmall.copyWith(color: AppTheme.deepTeal)),
+                      Text('Voice & Language (Google first, local fallback)', style: AppTheme.headlineSmall.copyWith(color: AppTheme.deepTeal)),
                       const SizedBox(height: 12),
+                      // Prefer Google TTS
+                      SwitchListTile(
+                        title: const Text('Use Google TTS (WaveNet)'),
+                        subtitle: const Text('Higher quality voice; falls back to device TTS'),
+                        value: _preferGoogleTts,
+                        onChanged: (value) => _updateSetting('preferGoogle', value),
+                        activeColor: AppTheme.deepTeal,
+                      ),
+                      const SizedBox(height: 8),
+                      // Google language & voice
+                      if (_preferGoogleTts) ...[
+                        LayoutBuilder(
+                          builder: (context, constraints) {
+                            final bool narrow = constraints.maxWidth < 360;
+
+                            final Widget langDd = DropdownButtonFormField<String>(
+                              value: _googleLanguage,
+                              isDense: true,
+                              isExpanded: true,
+                              decoration: const InputDecoration(labelText: 'Google Language', border: OutlineInputBorder()),
+                              items: const [
+                                'en-US', 'en-GB', 'en-AU'
+                              ].map((lang) => DropdownMenuItem(value: lang, child: Text(lang, overflow: TextOverflow.ellipsis))).toList(),
+                              onChanged: (v) async {
+                                if (v == null) return;
+                                // Update language and reset voice to first valid option
+                                final allVoices = _enhanced.availableGoogleVoices;
+                                final fallbackPresets = const [
+                                  {'name': 'en-US-Wavenet-C', 'languageCodes': 'en-US', 'ssmlGender': 'MALE'},
+                                  {'name': 'en-US-Wavenet-D', 'languageCodes': 'en-US', 'ssmlGender': 'MALE'},
+                                  {'name': 'en-US-Wavenet-B', 'languageCodes': 'en-US', 'ssmlGender': 'MALE'},
+                                  {'name': 'en-GB-Wavenet-A', 'languageCodes': 'en-GB', 'ssmlGender': 'FEMALE'},
+                                  {'name': 'en-AU-Wavenet-B', 'languageCodes': 'en-AU', 'ssmlGender': 'MALE'},
+                                ];
+                                final filtered = allVoices.isEmpty
+                                    ? fallbackPresets.where((m) => m['languageCodes'] == v).toList()
+                                    : allVoices.where((m) => (m['languageCodes'] ?? '').contains(v)).toList();
+                                setState(() {
+                                  _googleLanguage = v;
+                                  if (filtered.isNotEmpty) {
+                                    _googleVoiceName = filtered.first['name'] ?? _googleVoiceName;
+                                  }
+                                });
+                                await _enhanced.updateVoicePreferences(language: v);
+                              },
+                            );
+
+                            final allVoices = _enhanced.availableGoogleVoices;
+                            final fallbackPresets = const [
+                              {'name': 'en-US-Wavenet-C', 'languageCodes': 'en-US', 'ssmlGender': 'MALE'},
+                              {'name': 'en-US-Wavenet-D', 'languageCodes': 'en-US', 'ssmlGender': 'MALE'},
+                              {'name': 'en-US-Wavenet-B', 'languageCodes': 'en-US', 'ssmlGender': 'MALE'},
+                              {'name': 'en-GB-Wavenet-A', 'languageCodes': 'en-GB', 'ssmlGender': 'FEMALE'},
+                              {'name': 'en-AU-Wavenet-B', 'languageCodes': 'en-AU', 'ssmlGender': 'MALE'},
+                            ];
+                            final filteredVoices = allVoices.isEmpty
+                                ? fallbackPresets.where((m) => m['languageCodes'] == _googleLanguage).toList()
+                                : allVoices.where((m) => (m['languageCodes'] ?? '').contains(_googleLanguage)).toList();
+                            final names = filteredVoices.map((m) => (m['name'] ?? '').trim()).where((n) => n.isNotEmpty).toList();
+                            final String? voiceValue = names.contains(_googleVoiceName)
+                                ? _googleVoiceName
+                                : (names.isNotEmpty ? names.first : null);
+
+                            final Widget voiceDd = DropdownButtonFormField<String>(
+                              value: voiceValue,
+                              isDense: true,
+                              isExpanded: true,
+                              decoration: const InputDecoration(labelText: 'Google Voice', border: OutlineInputBorder()),
+                              items: filteredVoices
+                                  .map((m) => DropdownMenuItem(
+                                        value: m['name'],
+                                        child: Text(
+                                          m['name'] ?? '',
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ))
+                                  .toList(),
+                              onChanged: (v) async {
+                                if (v == null) return;
+                                setState(() => _googleVoiceName = v);
+                                await _enhanced.updateVoicePreferences(voiceName: v);
+                              },
+                            );
+
+                            if (narrow) {
+                              return Column(
+                                children: [
+                                  langDd,
+                                  const SizedBox(height: 12),
+                                  voiceDd,
+                                ],
+                              );
+                            }
+
+                            return Row(
+                              children: [
+                                Expanded(child: langDd),
+                                const SizedBox(width: 12),
+                                Expanded(child: voiceDd),
+                              ],
+                            );
+                          },
+                        ),
+                        const SizedBox(height: 12),
+                      ],
                       LayoutBuilder(
                         builder: (context, constraints) {
                           final bool stack = constraints.maxWidth < 360;
@@ -309,6 +470,7 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
                               return DropdownButtonFormField<String>(
                                 value: langValue,
                                 isDense: true,
+                                isExpanded: true,
                                 decoration: const InputDecoration(labelText: 'Language', border: OutlineInputBorder()),
                                 items: langs
                                     .map((lang) => DropdownMenuItem<String>(
@@ -352,6 +514,7 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
                               return DropdownButtonFormField<String>(
                                 value: voiceValue,
                                 isDense: true,
+                                isExpanded: true,
                                 decoration: const InputDecoration(labelText: 'Voice', border: OutlineInputBorder()),
                                 items: voices
                                     .map((m) {
@@ -372,7 +535,6 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
                                       break;
                                     }
                                   }
-                                  _selectedVoiceLocale = locale;
                                   await _notificationService.updateTtsPreferences(voiceName: v, voiceLocale: locale);
                                 },
                               );
@@ -520,16 +682,31 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
                       ),
                       
                       const SizedBox(height: 12),
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: ElevatedButton.icon(
-                          onPressed: () async {
-                            await _notificationService.speakPreview('Great news! Your order for R150 has been confirmed and will be delivered to Sandton in approximately 30 minutes.');
-                          },
-                          icon: const Icon(Icons.play_arrow),
-                          label: const Text('Preview'),
-                          style: ElevatedButton.styleFrom(backgroundColor: AppTheme.deepTeal, foregroundColor: Colors.white),
-                        ),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: () async {
+                                await _notificationService.speakPreview('Great news! Your order for R150 has been confirmed and will be delivered to Sandton in approximately 30 minutes.');
+                              },
+                              icon: const Icon(Icons.play_arrow),
+                              label: const Text('Preview local TTS'),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: ElevatedButton.icon(
+                              onPressed: _preferGoogleTts
+                                  ? () async {
+                                      await _enhanced.previewGoogleTts('Great news! Your order for R150 has been confirmed and will be delivered to Sandton in approximately 30 minutes.');
+                                    }
+                                  : null,
+                              icon: const Icon(Icons.cloud),
+                              label: const Text('Preview Google TTS'),
+                              style: ElevatedButton.styleFrom(backgroundColor: AppTheme.deepTeal, foregroundColor: Colors.white),
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
@@ -555,6 +732,7 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
                     _buildSettingRow('Audio Notifications', _audioNotificationsEnabled),
                     _buildSettingRow('In-App Notifications', _inAppNotificationsEnabled),
                     _buildSettingRow('Voice Announcements', _voiceAnnouncementsEnabled),
+                    _buildSettingRow('Assistant', _assistantEnabled),
                   ],
                 ),
               ),

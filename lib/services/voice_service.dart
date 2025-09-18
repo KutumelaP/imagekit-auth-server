@@ -18,7 +18,7 @@ class VoiceConfig {
     this.language = "en-US",
     this.speechRate = 0.6, // Slower for baby speech
     this.pitch = 1.8, // Very high pitch for baby voice
-    this.voiceName = "en-US-Wavenet-B", // Male voice for Nathan
+    this.voiceName = "en-US-Wavenet-C", // Child-like voice for Nathan
     this.audioEncoding = "MP3",
   });
 
@@ -80,6 +80,7 @@ class VoiceService {
       await _flutterTts.setLanguage(_config.language);
       await _flutterTts.setSpeechRate(_config.speechRate);
       await _flutterTts.setPitch(_config.pitch);
+      await _flutterTts.awaitSpeakCompletion(true);
       
       // Set Nathan's adorable baby voice
       await _setBabyNathanVoice();
@@ -101,6 +102,11 @@ class VoiceService {
         _currentText = null;
         if (kDebugMode) {
           print('❌ TTS Error: $msg');
+        }
+      });
+      _flutterTts.setStartHandler(() {
+        if (kDebugMode) {
+          print('▶️ Local TTS started');
         }
       });
 
@@ -206,6 +212,7 @@ class VoiceService {
         await _speakGoogleWaveNet(text);
       } else {
         // Fallback to local TTS with Nathan's baby voice
+        await _flutterTts.stop();
         await _flutterTts.speak(text);
       }
       
@@ -258,6 +265,7 @@ class VoiceService {
       await _flutterTts.setLanguage(_config.language);
       await _flutterTts.setSpeechRate(_config.speechRate);
       await _flutterTts.setPitch(_config.pitch);
+      await _flutterTts.awaitSpeakCompletion(true);
       
       // Set up handlers again
       _flutterTts.setCompletionHandler(() {
@@ -299,7 +307,7 @@ class VoiceService {
           "input": {"text": text},
           "voice": {
             "languageCode": _config.language,
-            "name": "en-US-Wavenet-C" // 👶 Child-like voice (C or D for younger voices)
+            "name": _config.voiceName // 👶 Voice selection from config
           },
           "audioConfig": {
             "audioEncoding": _config.audioEncoding,
@@ -325,6 +333,7 @@ class VoiceService {
           print("❌ Google TTS failed: ${response.body}");
         }
         // Fallback to local TTS
+        await _flutterTts.stop();
         await _flutterTts.speak(text);
       }
     } catch (e) {
@@ -332,6 +341,7 @@ class VoiceService {
         print("❌ Google TTS error: $e");
       }
       // Fallback to local TTS
+      await _flutterTts.stop();
       await _flutterTts.speak(text);
     }
   }
