@@ -171,6 +171,7 @@
       box-sizing: border-box;
     }
   </style>
+  <meta name="app-version" content="1.0.0+3" />
 </head>
   <body>
     <!-- Full viewport background to eliminate white space -->
@@ -197,7 +198,7 @@
   </div>
 
   <!-- Flutter App -->
-  <script src="main.dart.js"></script>
+  <script src="main.dart.js?v=1.0.0+3"></script>
 
   <script>
     function showOverlay(el){ el.style.display='block'; el.style.visibility='visible'; el.style.pointerEvents='auto'; }
@@ -235,7 +236,7 @@
           setTimeout(() => showBanner(), 12000);
         });
       } else {
-        // Fallback: show after Flutter main.dart.js loads
+        // Fallback: show after Flutter main.dart.js?v=1.0.0+3 loads
         setTimeout(() => showBanner(), 10000); // Show after 10 seconds
       }
     });

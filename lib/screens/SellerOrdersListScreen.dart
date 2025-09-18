@@ -457,6 +457,33 @@ class _SellerOrdersListScreenState extends State<SellerOrdersListScreen>
           'deliveryAddress': data['address'] ?? data['deliveryAddress'] ?? '',
           'paymentMethod': data['paymentMethod'] ?? 'Not specified',
           'paymentStatus': data['paymentStatus'] ?? 'pending',
+          // Fulfillment enrichment for clear UI (pickup vs delivery)
+          'fulfillmentType': (() {
+            try {
+              if (data['fulfillment'] is Map && (data['fulfillment']['type'] is String)) {
+                return (data['fulfillment']['type'] as String).toLowerCase();
+              }
+              if (data['fulfillmentType'] is String) {
+                return (data['fulfillmentType'] as String).toLowerCase();
+              }
+              // Infer: if pickupPoint present → pickup; else if delivery address present → delivery
+              if (data['pickupPoint'] != null) return 'pickup';
+              final addr = data['address'] ?? data['deliveryAddress'];
+              if (addr != null && addr.toString().trim().isNotEmpty) return 'delivery';
+            } catch (_) {}
+            return 'pickup';
+          })(),
+          'pickupPointName': (() {
+            try {
+              if (data['fulfillment'] is Map && data['fulfillment']['pickupPoint'] is Map) {
+                return (data['fulfillment']['pickupPoint']['name'] ?? '').toString();
+              }
+              if (data['pickupPoint'] is Map) {
+                return (data['pickupPoint']['name'] ?? '').toString();
+              }
+            } catch (_) {}
+            return '';
+          })(),
         };
         
         processedOrders.add(processedOrder);
@@ -1249,7 +1276,11 @@ class _SellerOrdersListScreenState extends State<SellerOrdersListScreen>
                     ),
                   ),
                 ),
-                _buildStatusBadge(status),
+                Row(children: [
+                  _buildStatusBadge(status),
+                  const SizedBox(width: 6),
+                  _buildFulfillmentBadge(order['fulfillmentType']?.toString() ?? 'pickup', order['pickupPointName']?.toString() ?? ''),
+                ]),
               ],
             ),
             SizedBox(height: 12),
@@ -1475,6 +1506,42 @@ class _SellerOrdersListScreenState extends State<SellerOrdersListScreen>
           color: badgeColor,
           fontSize: 10,
           fontWeight: FontWeight.bold,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFulfillmentBadge(String type, String pickupName) {
+    final isDelivery = type.toLowerCase() == 'delivery';
+    final Color badgeColor = isDelivery ? AppTheme.info : AppTheme.primaryPurple;
+    final String label = isDelivery ? 'DELIVERY' : 'PICKUP';
+    final String sub = (!isDelivery && pickupName.isNotEmpty) ? ' • $pickupName' : '';
+    return Flexible(
+      child: Container(
+        padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: badgeColor.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: badgeColor.withOpacity(0.3)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(isDelivery ? Icons.local_shipping : Icons.store, size: 12, color: badgeColor),
+            SizedBox(width: 4),
+            Flexible(
+              child: Text(
+                '$label$sub',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: badgeColor,
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );

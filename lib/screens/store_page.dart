@@ -169,6 +169,59 @@ class _StoreSelectionScreenState extends State<StoreSelectionScreen> {
 
   // int _fetchStoreFavoriteCount is unused, remove heavy calls for now
 
+  // Helper method to enrich store data with product images and reviews
+  Future<Map<String, dynamic>> _enrichStoreData(String storeId, Map<String, dynamic> userData) async {
+    final data = Map<String, dynamic>.from(userData);
+    
+    // Get products for this store
+    final allProductsQuery = await FirebaseFirestore.instance
+        .collection('products')
+        .where('ownerId', isEqualTo: storeId)
+        .limit(5)
+        .get();
+
+    // Get product images from ALL categories - limit to 3 (same logic as main loop)
+    final productImages = allProductsQuery.docs
+        .map((doc) {
+          // Try multiple possible image field names
+          final imageUrl = doc['imageUrl'] ?? doc['image'] ?? doc['photoUrl'] ?? doc['photo'] ?? doc['images']?[0];
+          
+          // Additional validation for image URL
+          if (imageUrl != null && imageUrl is String && imageUrl.isNotEmpty) {
+            // Check if URL is valid
+            try {
+              final uri = Uri.parse(imageUrl);
+              if (uri.hasScheme && (uri.scheme == 'http' || uri.scheme == 'https')) {
+                return imageUrl;
+              }
+            } catch (e) {
+              // Invalid image URL, skip it
+            }
+          }
+          return null;
+        })
+        .where((url) => url != null && url.isNotEmpty)
+        .cast<String>()
+        .take(3) // Limit to 3 images to reduce load
+        .toList();
+
+    // Remove profile image from product images to avoid duplication
+    final cleanProductImages = productImages.where((url) => 
+      url != data['profileImageUrl']
+    ).toList();
+
+    // Add product image fields
+    data['productImages'] = cleanProductImages;
+    data['productSnippetImages'] = cleanProductImages.length > 3 ? cleanProductImages.sublist(0, 3) : cleanProductImages;
+
+    // Get reviews for this store
+    final review = await _getStoreReviewSummary(storeId);
+    data['avgRating'] = review['avgRating'];
+    data['reviewCount'] = review['reviewCount'];
+
+    return data;
+  }
+
   Future<List<Map<String, dynamic>>> _getApprovedStores() async {
     try {
       // 🚀 NEW: If specific store ID is provided, filter to that store only
@@ -184,7 +237,10 @@ class _StoreSelectionScreenState extends State<StoreSelectionScreen> {
           final data = specificStoreQuery.data()!;
           if (data['role'] == 'seller' && data['status'] == 'approved') {
             data.putIfAbsent('storeId', () => widget.specificStoreId);
-            return [data];
+            
+            // Process this specific store through the same enrichment logic as the main loop
+            final enrichedStore = await _enrichStoreData(widget.specificStoreId!, data);
+            return [enrichedStore];
           }
         }
         return []; // Store not found or not approved
@@ -795,6 +851,7 @@ Future<Map<String, dynamic>> _getStoreReviewSummary(String storeId) async {
       .map((d) => (d.data()['rating'] ?? 0).toDouble())
       .toList();
   final avg = ratings.reduce((a, b) => a + b) / ratings.length;
+  
   return {'avgRating': avg, 'reviewCount': ratings.length};
 }
 
@@ -2250,51 +2307,57 @@ void _navigateToStoreProfile(Map<String, dynamic> store) {
   }
 
   Widget _buildStoresList() {
-    return FutureBuilder<List<Map<String, dynamic>>>(
-              future: _getApprovedStores(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        if (!snapshot.hasData || snapshot.data!.isEmpty) {
-          return const Center(
-            child: Text(
-              'No stores found in this category.',
-              style: TextStyle(fontSize: 16),
-            ),
-          );
-        }
-        final stores = snapshot.data!;
-        
-        // Apply search and filter
-        final filteredStores = _filterStores(stores);
-        
-        if (filteredStores.isEmpty) {
-          return const Center(
-            child: Text(
-              'No stores match your search criteria.',
-              style: TextStyle(fontSize: 16),
-            ),
-          );
-        }
-        
-        return ListView.builder(
-          itemCount: filteredStores.length,
-          addAutomaticKeepAlives: false,
-          addRepaintBoundaries: true,
-          addSemanticIndexes: false,
-          cacheExtent: 800,
-          itemBuilder: (context, index) {
-            final store = filteredStores[index];
-            return StunningStoreCard(
-              store: store,
-              category: widget.category,
+    return RefreshIndicator(
+      onRefresh: () async {
+        // Force refresh by rebuilding the FutureBuilder
+        setState(() {});
+      },
+      child: FutureBuilder<List<Map<String, dynamic>>>(
+                future: _getApprovedStores(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (!snapshot.hasData || snapshot.data!.isEmpty) {
+            return const Center(
+              child: Text(
+                'No stores found in this category.',
+                style: TextStyle(fontSize: 16),
+              ),
             );
-          },
-        );
+          }
+          final stores = snapshot.data!;
+          
+          // Apply search and filter
+          final filteredStores = _filterStores(stores);
+          
+          if (filteredStores.isEmpty) {
+            return const Center(
+              child: Text(
+                'No stores match your search criteria.',
+                style: TextStyle(fontSize: 16),
+              ),
+            );
+          }
+        
+          return ListView.builder(
+            itemCount: filteredStores.length,
+            addAutomaticKeepAlives: false,
+            addRepaintBoundaries: true,
+            addSemanticIndexes: false,
+            cacheExtent: 800,
+            itemBuilder: (context, index) {
+              final store = filteredStores[index];
+              return StunningStoreCard(
+                store: store,
+                category: widget.category,
+              );
             },
-  );
-}
+          );
+        },
+      ),
+    );
+  }
 }
 
 class StoreReviewsScreen extends StatelessWidget {

@@ -26,6 +26,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:flutter/services.dart'; // Added import for SystemUiOverlayStyle
 import '../widgets/embedded_support_chat.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import '../services/app_update_service.dart';
 
 class SimpleHomeScreen extends StatefulWidget {
   const SimpleHomeScreen({super.key});
@@ -71,11 +72,23 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
       
       // Request location permission after UI is ready
       _requestLocationPermission();
+      
+      // Check for app updates
+      _checkForAppUpdates();
     });
   }
 
 
   
+  /// Check for app updates
+  Future<void> _checkForAppUpdates() async {
+    try {
+      await AppUpdateService().checkAndShowUpdate(context);
+    } catch (e) {
+      print('❌ Error checking for app updates: $e');
+    }
+  }
+
   Future<void> _requestLocationPermission() async {
     try {
       bool serviceEnabled = await Geolocator.isLocationServiceEnabled();

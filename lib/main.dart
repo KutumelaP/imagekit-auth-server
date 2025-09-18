@@ -11,9 +11,11 @@ import 'providers/optimized_provider.dart';
 import 'services/notification_service.dart';
 import 'services/error_tracking_service.dart';
 import 'services/fcm_config_service.dart';
+import 'services/app_update_service.dart';
 // import 'services/awesome_notification_service.dart';
 import 'services/navigation_service.dart';
 import 'services/route_persistence_observer.dart';
+import 'services/cache_management_service.dart';
 import 'screens/notification_settings_screen.dart';
 import 'screens/security_settings_screen.dart';
 import 'screens/KycUploadScreen.dart';
@@ -53,6 +55,7 @@ import 'dart:async';
 import 'utils/safari_optimizer.dart';
 import 'utils/web_memory_guard.dart';
 import 'utils/performance_config.dart';
+import 'utils/advanced_memory_optimizer.dart';
 // import 'services/optimized_location_service.dart';
 // import 'services/pwa_optimization_service.dart';
 import 'services/pwa_url_handler.dart';
@@ -90,6 +93,12 @@ void main() async {
   PerformanceConfig.initialize();
   SafariOptimizer.initialize();
   
+  // Initialize advanced memory optimization for low-end devices
+  AdvancedMemoryOptimizer.initialize();
+  
+  // Start emergency memory monitoring for low-end devices
+  _startLowEndDeviceMonitoring();
+  
   // Web-specific optimizations in background
   if (kIsWeb) {
     PerformanceConfig.optimizeForWeb();
@@ -102,6 +111,31 @@ void main() async {
 }
 
 // Initialize services in background to avoid blocking UI
+/// Emergency monitoring for low-end devices
+void _startLowEndDeviceMonitoring() {
+  Timer.periodic(const Duration(minutes: 2), (timer) {
+    try {
+      final stats = AdvancedMemoryOptimizer.getComprehensiveStats();
+      final imageUsage = stats['imageCache']['usagePercent'] as int;
+      
+      // Trigger emergency cleanup if memory usage is too high
+      if (imageUsage > 85) {
+        print('🚨 LOW-END DEVICE: Emergency cleanup triggered (${imageUsage}% memory usage)');
+        AdvancedMemoryOptimizer.emergencyCleanup();
+      } else if (imageUsage > 70) {
+        print('⚠️ LOW-END DEVICE: High memory usage detected (${imageUsage}%), clearing caches');
+        PerformanceConfig.clearCaches();
+        SmartCache.clear();
+      }
+    } catch (e) {
+      // Silently handle errors to avoid affecting app performance
+      if (kDebugMode) {
+        print('Error in low-end device monitoring: $e');
+      }
+    }
+  });
+}
+
 void _initializeServicesInBackground() async {
   try {
     // Register background message handler
@@ -110,6 +144,8 @@ void _initializeServicesInBackground() async {
     // Initialize essential services only
     await NotificationService().initialize();
     await FCMConfigService().initialize();
+    await AppUpdateService().initialize();
+    await CacheManagementService().initialize();
     
     // Skip non-essential services for faster loading
     // await AwesomeNotificationService().initialize();
@@ -389,6 +425,22 @@ class MyApp extends StatelessWidget {
                 ];
               }
             }
+            
+            // Handle short store codes like /stc, /abc, etc. (treat as direct store IDs)
+            if (hashRoute.startsWith('/') && hashRoute.length > 1 && !hashRoute.contains('/', 1)) {
+              final storeId = hashRoute.substring(1); // Remove leading slash
+              if (kDebugMode) {
+                print('🔗 HASH ROUTE: Handling short store code: $hashRoute');
+                print('🔗 HASH ROUTE: Store ID: $storeId');
+              }
+              
+              return [
+                MaterialPageRoute(
+                  builder: (_) => StoreProfileRouteLoader(storeId: storeId),
+                  settings: RouteSettings(name: hashRoute),
+                ),
+              ];
+            }
           }
           
           // Default to splash wrapper for other routes
@@ -444,7 +496,9 @@ class MyApp extends StatelessWidget {
           
           // 🚀 PWA-FRIENDLY: Shareable web URL: /store/:storeId
           if (settings.name != null && settings.name!.startsWith('/store/')) {
-            final storePath = settings.name!.substring('/store/'.length);
+            // Robust parse including query params and trailing slashes
+            final uri = Uri.parse(settings.name!);
+            final storePath = uri.path.substring('/store/'.length);
             
             // 🔍 DEBUG: Log route handling
             if (kDebugMode) {
@@ -453,8 +507,11 @@ class MyApp extends StatelessWidget {
               print('🔗 ROUTE DEBUG: Full settings: $settings');
             }
             
-            // Handle /store/:storeId/products route
-            if (storePath.contains('/products')) {
+            // Handle /store/:storeId/products route (also allow ?view=products or ?tab=products)
+            final bool isProductsRoute = storePath.contains('/products') ||
+                uri.queryParameters['view'] == 'products' ||
+                uri.queryParameters['tab'] == 'products';
+            if (isProductsRoute) {
               final storeId = storePath.split('/')[0];
               if (kDebugMode) print('🏪 PWA Route: Opening product browser for store $storeId');
               return MaterialPageRoute(
@@ -485,15 +542,20 @@ class MyApp extends StatelessWidget {
           if (settings.name != null && settings.name!.contains('#')) {
             final hashRoute = settings.name!.split('#')[1];
             if (hashRoute.startsWith('/store/')) {
-              final storePath = hashRoute.substring('/store/'.length);
+              // Robust parse for hash route (supports ?view=products)
+              final hashUri = Uri.parse(hashRoute);
+              final storePath = hashUri.path.substring('/store/'.length);
               
               if (kDebugMode) {
                 print('🔗 HASH ROUTE DEBUG: Handling hash store route: $hashRoute');
                 print('🔗 HASH ROUTE DEBUG: Store path: $storePath');
               }
               
-              // Handle /store/:storeId/products route
-              if (storePath.contains('/products')) {
+              // Handle /store/:storeId/products route (also allow ?view=products or ?tab=products)
+              final bool hashProducts = storePath.contains('/products') ||
+                  hashUri.queryParameters['view'] == 'products' ||
+                  hashUri.queryParameters['tab'] == 'products';
+              if (hashProducts) {
                 final storeId = storePath.split('/')[0];
                 if (kDebugMode) print('🏪 Hash Route: Opening product browser for store $storeId');
                 return MaterialPageRoute(
@@ -528,6 +590,20 @@ class MyApp extends StatelessWidget {
                   settings: RouteSettings(name: hashRoute),
                 );
               }
+            }
+            
+            // Handle short store codes like #/stc, #/abc, etc. in hash routes
+            if (hashRoute.startsWith('/') && hashRoute.length > 1 && !hashRoute.contains('/', 1)) {
+              final storeId = hashRoute.substring(1); // Remove leading slash
+              if (kDebugMode) {
+                print('🔗 HASH ROUTE DEBUG: Handling short store code: $hashRoute');
+                print('🔗 HASH ROUTE DEBUG: Store ID: $storeId');
+              }
+              
+              return MaterialPageRoute(
+                builder: (_) => StoreProfileRouteLoader(storeId: storeId),
+                settings: RouteSettings(name: hashRoute),
+              );
             }
           }
           

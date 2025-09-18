@@ -1,8 +1,13 @@
 // Production-ready offline shell for marketplace
-const STATIC_CACHE = 'mzansi-static-v6-prod';
-const RUNTIME_PAGES = 'mzansi-pages-v6-prod';
-const RUNTIME_ASSETS = 'mzansi-assets-v6-prod';
-const RUNTIME_API = 'mzansi-api-v6-prod';
+// Version based on app version and timestamp for automatic cache busting
+const APP_VERSION = '1.0.0+3'; // Should match pubspec.yaml
+const BUILD_TIMESTAMP = Date.now(); // Unique per build
+const CACHE_VERSION = `${APP_VERSION}-${BUILD_TIMESTAMP}`;
+
+const STATIC_CACHE = `mzansi-static-${CACHE_VERSION}`;
+const RUNTIME_PAGES = `mzansi-pages-${CACHE_VERSION}`;
+const RUNTIME_ASSETS = `mzansi-assets-${CACHE_VERSION}`;
+const RUNTIME_API = `mzansi-api-${CACHE_VERSION}`;
 const CORE = [
   '/',
   '/index.html',
@@ -45,17 +50,50 @@ self.addEventListener('install', (event) => {
 
 self.addEventListener('activate', (event) => {
   event.waitUntil((async () => {
+    // Clean up old caches - more aggressive cleanup
     const keys = await caches.keys();
+    const validCaches = [STATIC_CACHE, RUNTIME_PAGES, RUNTIME_ASSETS, RUNTIME_API];
+    
+    // Delete all caches that don't match current version
     await Promise.all(
-      keys.filter((k) => ![STATIC_CACHE, RUNTIME_PAGES, RUNTIME_ASSETS, RUNTIME_API].includes(k))
-          .map((k) => caches.delete(k))
+      keys.filter((k) => !validCaches.includes(k))
+          .map((k) => {
+            console.log('🗑️ Deleting old cache:', k);
+            return caches.delete(k);
+          })
     );
+    
+    // Clear browser storage on version change
+    try {
+      const currentCacheKey = `app_cache_version_${CACHE_VERSION}`;
+      const lastVersion = await getStoredVersion();
+      
+      if (lastVersion && lastVersion !== CACHE_VERSION) {
+        console.log('🔄 Version change detected, clearing browser storage');
+        await clearBrowserStorage();
+      }
+      
+      await setStoredVersion(CACHE_VERSION);
+    } catch (e) {
+      console.warn('⚠️ Error managing version storage:', e);
+    }
+    
     await self.clients.claim();
     
     // Enable navigation preload for faster page loads
     if (self.registration.navigationPreload) {
       await self.registration.navigationPreload.enable();
     }
+    
+    // Notify clients of update
+    self.clients.matchAll().then(clients => {
+      clients.forEach(client => {
+        client.postMessage({
+          type: 'CACHE_UPDATED',
+          version: CACHE_VERSION
+        });
+      });
+    });
   })());
 });
 
@@ -151,6 +189,77 @@ self.addEventListener('message', (event) => {
   if (event.data === 'SKIP_WAITING' || (event.data && event.data.type === 'SKIP_WAITING')) {
     self.skipWaiting();
   }
+  
+  if (event.data && event.data.type === 'CLEAR_CACHE') {
+    // Force clear all caches
+    caches.keys().then(keys => {
+      return Promise.all(keys.map(key => caches.delete(key)));
+    }).then(() => {
+      self.clients.matchAll().then(clients => {
+        clients.forEach(client => {
+          client.postMessage({ type: 'CACHE_CLEARED' });
+        });
+      });
+    });
+  }
 });
+
+// Helper functions for version storage management
+async function getStoredVersion() {
+  try {
+    const db = await openDB();
+    const tx = db.transaction(['versions'], 'readonly');
+    const store = tx.objectStore('versions');
+    const result = await store.get('current_version');
+    return result?.version;
+  } catch (e) {
+    return null;
+  }
+}
+
+async function setStoredVersion(version) {
+  try {
+    const db = await openDB();
+    const tx = db.transaction(['versions'], 'readwrite');
+    const store = tx.objectStore('versions');
+    await store.put({ id: 'current_version', version: version, timestamp: Date.now() });
+  } catch (e) {
+    console.warn('Failed to store version:', e);
+  }
+}
+
+async function openDB() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open('mzansi_cache_db', 1);
+    
+    request.onerror = () => reject(request.error);
+    request.onsuccess = () => resolve(request.result);
+    
+    request.onupgradeneeded = (event) => {
+      const db = event.target.result;
+      if (!db.objectStoreNames.contains('versions')) {
+        db.createObjectStore('versions', { keyPath: 'id' });
+      }
+    };
+  });
+}
+
+async function clearBrowserStorage() {
+  try {
+    // Clear localStorage
+    if (typeof localStorage !== 'undefined') {
+      localStorage.clear();
+    }
+    
+    // Clear sessionStorage  
+    if (typeof sessionStorage !== 'undefined') {
+      sessionStorage.clear();
+    }
+    
+    console.log('✅ Browser storage cleared');
+  } catch (e) {
+    console.warn('⚠️ Error clearing browser storage:', e);
+  }
+}
 
 

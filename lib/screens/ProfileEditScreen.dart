@@ -11,6 +11,7 @@ import 'package:path/path.dart' as path;
 import '../theme/app_theme.dart';
 import '../widgets/safe_network_image.dart';
 import '../widgets/home_navigation_button.dart';
+import '../services/app_update_service.dart';
 
 class ProfileEditScreen extends StatefulWidget {
   const ProfileEditScreen({super.key});

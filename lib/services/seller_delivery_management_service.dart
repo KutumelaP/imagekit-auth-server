@@ -360,6 +360,67 @@ class SellerDeliveryManagementService {
           .orderBy('createdAt', descending: true)
           .get();
 
+      // 🚑 Auto-backfill: If no tasks exist, create tasks for eligible orders so dashboard shows items
+      if (allTasks.docs.isEmpty) {
+        try {
+          int created = 0;
+          final ordersSnap = await _firestore
+              .collection('orders')
+              .where('sellerId', isEqualTo: sellerId)
+              .where('status', whereIn: ['confirmed', 'ready', 'preparing', 'delivery_confirmed'])
+              .orderBy(FieldPath.documentId, descending: true)
+              .limit(25)
+              .get();
+
+          for (final doc in ordersSnap.docs) {
+            final data = doc.data() as Map<String, dynamic>;
+            final orderId = doc.id;
+            final paymentStatus1 = (data['payment']?['status'] ?? '').toString().toLowerCase();
+            final paymentStatus2 = (data['paymentStatus'] ?? '').toString().toLowerCase();
+            final fulfillmentType1 = (data['fulfillmentType'] ?? '').toString().toLowerCase();
+            final fulfillmentType2 = (data['fulfillment']?['type'] ?? '').toString().toLowerCase();
+
+            final isPaid = ['paid', 'completed', 'success', 'paid_success'].contains(paymentStatus1) ||
+                ['paid', 'completed', 'success', 'paid_success'].contains(paymentStatus2);
+            final isDelivery = fulfillmentType1 == 'delivery' || fulfillmentType2 == 'delivery';
+
+            if (!isPaid || !isDelivery) continue;
+
+            final taskRef = _firestore.collection('seller_delivery_tasks').doc(orderId);
+            final taskDoc = await taskRef.get();
+            if (taskDoc.exists) continue;
+
+            final deliveryDetails = {
+              'buyerId': data['buyerId'],
+              'buyerName': data['buyerName'] ?? data['customerName'],
+              'buyerPhone': data['customerPhone'] ?? data['buyerPhone'],
+              'address': data['deliveryAddress'] ?? data['address'] ?? '',
+            };
+
+            await taskRef.set({
+              'orderId': orderId,
+              'sellerId': sellerId,
+              'status': 'pending_seller_action',
+              'createdAt': FieldValue.serverTimestamp(),
+              'deliveryOTP': data['deliveryOTP'] ?? null,
+              'deliveryDetails': deliveryDetails,
+              'productHandlingInstructions': {},
+              'sellerActions': [],
+              'deliveryUpdates': [],
+              'estimatedDeliveryTime': null,
+              'actualDeliveryMethod': null,
+              'driverDetails': null,
+            });
+            created++;
+          }
+          if (created > 0) {
+            print('🛠️ Auto-backfilled $created delivery task(s) for seller $sellerId');
+          }
+        } catch (e) {
+          print('⚠️ Auto-backfill skipped due to error: $e');
+        }
+      }
+
       // Filter tasks to only show those with paid orders
       List<Map<String, dynamic>> pendingTasks = [];
       List<Map<String, dynamic>> activeDeliveries = [];

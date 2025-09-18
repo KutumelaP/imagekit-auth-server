@@ -8,6 +8,8 @@ import 'package:image_picker/image_picker.dart';
 import 'dart:io';
 import '../services/imagekit_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import '../constants/app_constants.dart';
+import '../services/subcategory_suggestions_service.dart';
 
 class ProductEditScreen extends StatefulWidget {
   final String productId;
@@ -76,13 +78,8 @@ class _ProductEditScreenState extends State<ProductEditScreen> {
   bool isCustomizable = false;
   List<Map<String, dynamic>> addOns = [];
   List<Map<String, dynamic>> subtractions = [];
-
-  static const Map<String, List<String>> _categoryMap = {
-    'Food': ['Baked Goods','Fresh Produce','Dairy & Eggs','Meat & Poultry','Pantry Items','Snacks','Beverages','Frozen Foods','Organic Foods','Candy & Sweets','Condiments'],
-    'Electronics': ['Phones','Laptops','Tablets','Computers','Cameras','Headphones','Speakers','Gaming','Smart Home','Wearables','Accessories'],
-    'Clothing': ['T-Shirts','Jeans','Dresses','Shirts','Pants','Shorts','Skirts','Jackets','Sweaters','Hoodies','Shoes','Hats','Accessories','Underwear','Socks'],
-    'Other': ['Handmade','Vintage','Collectibles','Books','Toys','Home & Garden','Sports','Beauty','Health','Automotive','Tools','Miscellaneous'],
-  };
+  // Shared subcategory list (synced with product upload suggestions)
+  List<String> _subcategoryOptions = [];
 
   bool _isSaving = false;
 
@@ -93,15 +90,15 @@ class _ProductEditScreenState extends State<ProductEditScreen> {
     _nameController = TextEditingController(text: widget.initialData['name'] ?? '');
     _priceController = TextEditingController(text: widget.initialData['price']?.toString() ?? '');
     
-    // Validate category exists in map, otherwise reset to empty
+    // Validate category exists in shared map, otherwise reset to empty
     final initialCategory = widget.initialData['category'] as String? ?? '';
-    final validCategory = _categoryMap.containsKey(initialCategory) ? initialCategory : '';
+    final validCategory = AppConstants.categoryMap.containsKey(initialCategory) ? initialCategory : '';
     _categoryController = TextEditingController(text: validCategory);
     
     // Reset subcategory if parent category is invalid
     final initialSubcategory = widget.initialData['subcategory'] as String? ?? '';
     final validSubcategory = (validCategory.isNotEmpty && 
-        (_categoryMap[validCategory]?.contains(initialSubcategory) ?? false)) 
+        (AppConstants.categoryMap[validCategory]?.contains(initialSubcategory) ?? false)) 
         ? initialSubcategory : '';
     _subcategoryController = TextEditingController(text: validSubcategory);
     
@@ -132,6 +129,9 @@ class _ProductEditScreenState extends State<ProductEditScreen> {
         if (mounted) setState(() {});
       });
     }
+
+    // Load subcategory options in sync with product upload (suggestions + defaults)
+    _loadSubcategoryOptions(validCategory);
   }
 
   @override
@@ -144,6 +144,37 @@ class _ProductEditScreenState extends State<ProductEditScreen> {
     _stockController.dispose();
     _descriptionController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadSubcategoryOptions(String category) async {
+    try {
+      final String cat = category.trim();
+      // Built-in defaults from AppConstants
+      final builtIns = List<String>.from(AppConstants.categoryMap[cat] ?? const <String>[]);
+      // Suggestions collected during uploads
+      final suggestions = cat.isEmpty
+          ? const <String>[]
+          : await SubcategorySuggestionsService.fetchForCategory(cat);
+      final set = <String>{
+        ...builtIns.map((s) => s.trim()),
+        ...suggestions.map((s) => s.trim()),
+      }..removeWhere((s) => s.isEmpty);
+      final list = set.toList()..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+      if (mounted) {
+        setState(() {
+          _subcategoryOptions = list;
+          // If current subcategory empty or not in list, pick first option
+          final current = _subcategoryController.text.trim();
+          if (current.isEmpty || !_subcategoryOptions.contains(current)) {
+            if (_subcategoryOptions.isNotEmpty) {
+              _subcategoryController.text = _subcategoryOptions.first;
+            }
+          }
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _subcategoryOptions = List<String>.from(AppConstants.categoryMap[category] ?? const <String>[]));
+    }
   }
 
   Future<void> _saveChanges() async {
@@ -347,7 +378,7 @@ class _ProductEditScreenState extends State<ProductEditScreen> {
                         const SizedBox(height: 12),
                         DropdownButtonFormField<String>(
                           value: _categoryController.text.isNotEmpty ? _categoryController.text : null,
-                          items: _categoryMap.keys
+                          items: AppConstants.categoryMap.keys
                               .map((c) => DropdownMenuItem(value: c, child: Text(c)))
                               .toList(),
                           onChanged: (val) {
@@ -355,6 +386,7 @@ class _ProductEditScreenState extends State<ProductEditScreen> {
                               _categoryController.text = val ?? '';
                               _subcategoryController.clear();
                             });
+                            _loadSubcategoryOptions(val ?? '');
                           },
                       decoration: const InputDecoration(labelText: 'Category'),
                           validator: (v) => (v == null || v.trim().isEmpty) ? 'Category is required' : null,
@@ -362,7 +394,7 @@ class _ProductEditScreenState extends State<ProductEditScreen> {
                         const SizedBox(height: 12),
                         DropdownButtonFormField<String>(
                           value: _subcategoryController.text.isNotEmpty ? _subcategoryController.text : null,
-                          items: (_categoryMap[_categoryController.text] ?? const <String>[]) 
+                          items: (_subcategoryOptions) 
                               .map((s) => DropdownMenuItem(value: s, child: Text(s)))
                               .toList(),
                           onChanged: (val) => setState(() => _subcategoryController.text = val ?? ''),
