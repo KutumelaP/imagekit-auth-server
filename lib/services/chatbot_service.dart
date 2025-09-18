@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'voice_service.dart';
 
 /// Escalation detection for chatbot
 /// Returns an [EscalationResult] if the input requires escalation,
@@ -99,6 +100,10 @@ class ChatbotService {
 
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
+  
+  // Voice service for chatbot responses
+  final VoiceService _voiceService = VoiceService();
+  bool _voiceEnabled = true;
 
 
   bool isEscalation(String input) {
@@ -119,12 +124,16 @@ class ChatbotService {
   Stream<bool> get typingStream => _typingController.stream;
   List<ChatMessage> get messages => List.unmodifiable(_messages);
   bool get hasActiveConversation => _currentConversationId != null;
+  bool get voiceEnabled => _voiceEnabled;
 
   /// Initialize chatbot service
   Future<void> initialize() async {
     if (_isInitialized) return;
     
     try {
+      // Initialize voice service
+      await _voiceService.initialize();
+      
       // Load or create conversation for current user (lazy loading)
       await _loadOrCreateConversation();
       
@@ -360,6 +369,15 @@ Is there anything else I can help you with?''',
       // Always add to local list
       _messages.add(message);
       _messagesController.add(_messages);
+
+      // Voice announcement for bot messages
+      if (!message.isUser && _voiceEnabled && message.text.isNotEmpty) {
+        try {
+          await _voiceService.speak(message.text);
+        } catch (e) {
+          print('❌ Error speaking chatbot message: $e');
+        }
+      }
 
       if (_persistenceEnabled) {
         // Save to Firestore
@@ -1229,10 +1247,70 @@ Want help analyzing specific metrics?''';
 Need help with specific inventory tasks?''';
   }
 
+  /// Enable or disable voice announcements
+  void setVoiceEnabled(bool enabled) {
+    _voiceEnabled = enabled;
+  }
+
+  /// Toggle voice announcements
+  void toggleVoice() {
+    _voiceEnabled = !_voiceEnabled;
+  }
+
+  /// Speak a custom message
+  Future<void> speakMessage(String message) async {
+    if (_voiceEnabled && message.isNotEmpty) {
+      try {
+        await _voiceService.speak(message);
+      } catch (e) {
+        print('❌ Error speaking custom message: $e');
+      }
+    }
+  }
+
+  /// Stop current voice playback
+  Future<void> stopVoice() async {
+    try {
+      await _voiceService.stop();
+    } catch (e) {
+      print('❌ Error stopping voice: $e');
+    }
+  }
+
+  /// Pause current voice playback
+  Future<void> pauseVoice() async {
+    try {
+      await _voiceService.pause();
+    } catch (e) {
+      print('❌ Error pausing voice: $e');
+    }
+  }
+
+  /// Resume paused voice playback
+  Future<void> resumeVoice() async {
+    try {
+      await _voiceService.resume();
+    } catch (e) {
+      print('❌ Error resuming voice: $e');
+    }
+  }
+
+  /// Get voice service status
+  Map<String, dynamic> getVoiceStatus() {
+    return {
+      'voiceEnabled': _voiceEnabled,
+      'isPlaying': _voiceService.isPlaying,
+      'isPaused': _voiceService.isPaused,
+      'googleTtsAvailable': _voiceService.isGoogleTtsAvailable,
+      'currentText': _voiceService.currentText,
+    };
+  }
+
   /// Dispose resources
   void dispose() {
     _messagesController.close();
     _typingController.close();
+    _voiceService.dispose();
   }
 }
 

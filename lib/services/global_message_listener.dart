@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'awesome_notification_service.dart' as an;
-import 'notification_service.dart';
+import 'voice_service.dart';
 
 class GlobalMessageListener {
   static final GlobalMessageListener _instance = GlobalMessageListener._internal();
@@ -13,6 +13,14 @@ class GlobalMessageListener {
   final Map<String, StreamSubscription> _chatListeners = {};
   final Map<String, String> _lastMessageIds = {};
   final Map<String, bool> _chatInitialized = {};
+  
+  // Enhanced voice service for better announcements
+  final VoiceService _voiceService = VoiceService();
+
+  // Initialize the voice service
+  Future<void> initialize() async {
+    await _voiceService.initialize();
+  }
 
   // Start listening to all chats for the current user
   Future<void> startListening() async {
@@ -259,9 +267,9 @@ class GlobalMessageListener {
         message: messageText,
       );
 
-      // Immediate TTS announce if enabled
+      // Enhanced voice announcement if enabled
       try {
-        await NotificationService().speakPreview('You have a new message.');
+        await _voiceService.speak('You have a new message from $senderName.');
       } catch (_) {}
 
       print('🔔 Local system notification sent to ${currentUser.uid} for chat $chatId from $senderName');

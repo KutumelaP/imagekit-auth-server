@@ -24,9 +24,11 @@ import '../services/global_message_listener.dart';
 import '../widgets/notification_badge.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:flutter/services.dart'; // Added import for SystemUiOverlayStyle
+import 'package:flutter/foundation.dart';
 import '../widgets/embedded_support_chat.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import '../services/app_update_service.dart';
+import '../widgets/voice_assistant/enhanced_voice_assistant.dart';
 
 class SimpleHomeScreen extends StatefulWidget {
   const SimpleHomeScreen({super.key});
@@ -400,9 +402,11 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
 
   @override
   Widget build(BuildContext context) {
-    return Consumer<UserProvider>(
-      builder: (context, userProvider, child) {
-    return Scaffold(
+    return EnhancedVoiceAssistant().buildEnhancedAssistant(
+      showSettings: kDebugMode,
+      child: Consumer<UserProvider>(
+        builder: (context, userProvider, child) {
+      return Scaffold(
       backgroundColor: Colors.transparent, // Remove background to allow gradient
           floatingActionButton: userProvider.isSeller ? FloatingActionButton(
               onPressed: () {
@@ -433,8 +437,9 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
       ),
 
         );
-      },
-    );
+        },
+      ), // Close Consumer
+    ); // Close EnhancedVoiceAssistant
   }
 
   Widget _buildBody() {
