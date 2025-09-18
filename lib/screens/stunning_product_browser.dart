@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
+import 'package:geolocator/geolocator.dart';
 import 'dart:math' as math;
 import '../theme/app_theme.dart';
 import '../widgets/safe_network_image.dart';
@@ -14,11 +15,13 @@ import 'package:flutter/services.dart';
 class StunningProductBrowser extends StatefulWidget {
   final String storeId;
   final String storeName;
+  final Map<String, dynamic>? storeData; // Add store data including distance info
 
   const StunningProductBrowser({
     super.key,
     required this.storeId,
     required this.storeName,
+    this.storeData,
   });
 
   @override
@@ -45,6 +48,7 @@ class _StunningProductBrowserState extends State<StunningProductBrowser>
   bool isAscending = true;
   double minPrice = 0.0;
   double maxPrice = 50000.0; // Increased to accommodate higher-priced electronics
+  bool _locationEnabled = true;
   bool inStockOnly = false;
   bool isLoading = true;
   bool showFilters = false;
@@ -60,6 +64,7 @@ class _StunningProductBrowserState extends State<StunningProductBrowser>
     _initializeAnimations();
     _loadProducts();
     _scrollController.addListener(_onScroll);
+    _checkLocationPermission();
   }
 
   void _initializeAnimations() {
@@ -174,6 +179,24 @@ class _StunningProductBrowserState extends State<StunningProductBrowser>
     } catch (e) {
       print('❌ Error loading products: $e');
       setState(() => isLoading = false);
+    }
+  }
+
+  Future<void> _checkLocationPermission() async {
+    try {
+      final locationPermission = await Geolocator.checkPermission();
+      if (mounted) {
+        setState(() {
+          _locationEnabled = locationPermission == LocationPermission.whileInUse || 
+                           locationPermission == LocationPermission.always;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _locationEnabled = false;
+        });
+      }
     }
   }
 
@@ -353,6 +376,8 @@ class _StunningProductBrowserState extends State<StunningProductBrowser>
                           ),
                         ),
                         const SizedBox(height: 8),
+                        // Distance warning banner
+                        if (widget.storeData != null) _buildDistanceWarning(),
                         Text(
                           '${filteredProducts.length} products available',
                           style: AppTheme.bodyMedium.copyWith(
@@ -640,17 +665,19 @@ class _StunningProductBrowserState extends State<StunningProductBrowser>
                     top: 8,
                     right: 8,
                     child: GestureDetector(
-                      onTap: () => _addToCart(doc.id, data),
+                      onTap: (!_locationEnabled || isOutOfStock) ? null : () => _addToCart(doc.id, data),
                       child: Container(
                         padding: const EdgeInsets.all(8),
                         decoration: BoxDecoration(
-                          color: isOutOfStock 
+                          color: (!_locationEnabled || isOutOfStock)
                               ? Colors.grey.withOpacity(0.8)
                               : AppTheme.deepTeal.withOpacity(0.9),
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Icon(
-                          isOutOfStock ? Icons.remove_shopping_cart : Icons.add_shopping_cart,
+                          (!_locationEnabled || isOutOfStock) 
+                              ? Icons.location_off 
+                              : Icons.add_shopping_cart,
                           color: Colors.white,
                           size: 16,
                         ),
@@ -1010,6 +1037,50 @@ class _StunningProductBrowserState extends State<StunningProductBrowser>
     );
   }
 
+  Widget _buildDistanceWarning() {
+    if (widget.storeData == null) return const SizedBox.shrink();
+    
+    final withinDeliveryRange = widget.storeData!['withinDeliveryRange'] as bool? ?? true;
+    final showDistanceWarning = widget.storeData!['showDistanceWarning'] as bool? ?? false;
+    final distance = widget.storeData!['distance'] as double?;
+    final serviceRadius = widget.storeData!['serviceRadius'] as double?;
+    final hasNationalDelivery = widget.storeData!['hasNationalDelivery'] as bool? ?? false;
+    
+    // Don't show warning if within range or has national delivery
+    if (withinDeliveryRange || hasNationalDelivery) return const SizedBox.shrink();
+    
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: AppTheme.error.withOpacity(0.9),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.white.withOpacity(0.3)),
+      ),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.warning_amber_rounded,
+            color: Colors.white,
+            size: 16,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              distance != null && serviceRadius != null
+                  ? 'Store is ${distance.toStringAsFixed(1)}km away (max ${serviceRadius.toStringAsFixed(1)}km) - Delivery not available'
+                  : 'Store is too far away for delivery',
+              style: AppTheme.bodySmall.copyWith(
+                color: Colors.white,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _addToCart(String productId, Map<String, dynamic> data) async {
     try {
       final cartProvider = Provider.of<CartProvider>(context, listen: false);
@@ -1027,6 +1098,127 @@ class _StunningProductBrowserState extends State<StunningProductBrowser>
                 Navigator.pushNamed(context, '/login');
               },
             ),
+          ),
+        );
+        return;
+      }
+
+      // Check if location is disabled - block adding to cart
+      try {
+        final locationPermission = await Geolocator.checkPermission();
+        if (locationPermission == LocationPermission.denied || 
+            locationPermission == LocationPermission.deniedForever) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text('Location access is required to add items to cart. Please enable location permission to continue.'),
+              backgroundColor: AppTheme.error,
+              duration: const Duration(seconds: 5),
+              action: SnackBarAction(
+                label: 'Enable Location',
+                textColor: Colors.white,
+                onPressed: () {
+                  Navigator.pushNamed(context, '/');
+                },
+              ),
+            ),
+          );
+          return;
+        }
+        
+        // Test if we can actually get location
+        await Geolocator.getCurrentPosition(
+          desiredAccuracy: LocationAccuracy.medium,
+          timeLimit: const Duration(seconds: 3),
+        );
+      } catch (e) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Location access is required to add items to cart. Please enable location permission and try again.'),
+            backgroundColor: AppTheme.error,
+            duration: const Duration(seconds: 5),
+            action: SnackBarAction(
+              label: 'Enable Location',
+              textColor: Colors.white,
+              onPressed: () {
+                Navigator.pushNamed(context, '/');
+              },
+            ),
+          ),
+        );
+        return;
+      }
+
+      // Check distance validation if store data is available
+      if (widget.storeData != null) {
+        final withinDeliveryRange = widget.storeData!['withinDeliveryRange'] as bool? ?? true;
+        final showDistanceWarning = widget.storeData!['showDistanceWarning'] as bool? ?? false;
+        final distance = widget.storeData!['distance'] as double?;
+        final serviceRadius = widget.storeData!['serviceRadius'] as double?;
+        final hasNationalDelivery = widget.storeData!['hasNationalDelivery'] as bool? ?? false;
+        
+        print('📍 Distance validation for store ${widget.storeId}:');
+        print('   Within delivery range: $withinDeliveryRange');
+        print('   Show distance warning: $showDistanceWarning');
+        print('   Distance: $distance km');
+        print('   Service radius: $serviceRadius km');
+        print('   Has national delivery: $hasNationalDelivery');
+        
+        // BLOCK if no distance data (location not available)
+        if (distance == null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text('Location access is required to purchase from this store. Please enable location permission and try again.'),
+              backgroundColor: AppTheme.error,
+              duration: const Duration(seconds: 5),
+              action: SnackBarAction(
+                label: 'Enable Location',
+                textColor: Colors.white,
+                onPressed: () {
+                  Navigator.pushNamed(context, '/');
+                },
+              ),
+            ),
+          );
+          return;
+        }
+        
+        if (!withinDeliveryRange && !hasNationalDelivery) {
+          final distanceText = distance != null ? '${distance.toStringAsFixed(1)}km' : 'unknown distance';
+          final radiusText = serviceRadius != null ? '${serviceRadius.toStringAsFixed(1)}km' : 'unknown radius';
+          
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('This store is too far away ($distanceText) for delivery (max $radiusText). Please choose a closer store or use pickup options if available.'),
+              backgroundColor: AppTheme.error,
+              duration: const Duration(seconds: 5),
+              action: SnackBarAction(
+                label: 'View Stores',
+                textColor: Colors.white,
+                onPressed: () {
+                  Navigator.pushNamed(context, '/');
+                },
+              ),
+            ),
+          );
+          return;
+        }
+        
+        if (showDistanceWarning && distance != null && serviceRadius != null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Store is ${distance.toStringAsFixed(1)}km away (max ${serviceRadius.toStringAsFixed(1)}km). Delivery may take longer.'),
+              backgroundColor: AppTheme.warning,
+              duration: const Duration(seconds: 3),
+            ),
+          );
+        }
+      } else {
+        // BLOCK if no store data (shouldn't happen with proper routing)
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Store information is not available. Please try again.'),
+            backgroundColor: AppTheme.error,
+            duration: const Duration(seconds: 3),
           ),
         );
         return;

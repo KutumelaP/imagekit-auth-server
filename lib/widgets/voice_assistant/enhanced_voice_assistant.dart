@@ -254,9 +254,13 @@ class EnhancedVoiceAssistant {
                               : Colors.orange.shade300, // Baby Nathan's default color
                           child: AnimatedSwitcher(
                             duration: const Duration(milliseconds: 200),
-                            child: const Icon(
-                              Icons.mic,
-                              key: ValueKey('mic'),
+                            child: Icon(
+                              isListening
+                                ? Icons.mic
+                                : isProcessing
+                                  ? (kIsWeb ? Icons.mic : Icons.psychology) // Brain icon on mobile, mic on web
+                                  : Icons.mic_none,
+                              key: ValueKey(isListening ? 'listening' : isProcessing ? 'processing' : 'idle'),
                               color: Colors.white,
                               size: 28,
                             ),

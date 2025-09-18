@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:geolocator/geolocator.dart';
 
 class CheckoutValidationResult {
   final bool isValid;
@@ -37,7 +38,51 @@ class CheckoutValidationService {
         }
       }
       
-      // 1.5) Basic address validation for delivery
+      // 1.5) Location permission validation
+      print('🔍 Validation: Checking location permission...');
+      final locationPermission = await Geolocator.checkPermission();
+      if (locationPermission != LocationPermission.whileInUse && 
+          locationPermission != LocationPermission.always) {
+        print('❌ Validation: Location permission not granted - blocking checkout');
+        return CheckoutValidationResult.error('Location access is required to complete your order. Please enable location permission and try again.');
+      }
+      
+      // 1.6) Check if any items are from stores that are too far away
+      print('🔍 Validation: Checking for blocked stores in cart...');
+      try {
+        final userPos = await Geolocator.getCurrentPosition(
+          desiredAccuracy: LocationAccuracy.medium,
+          timeLimit: const Duration(seconds: 5),
+        );
+        
+        if (userPos != null) {
+          // Get all store IDs from cart items (this would need to be passed from the cart)
+          // For now, we'll check if there's a way to get blocked store info
+          // This is a placeholder - the actual implementation would need cart data
+          print('🔍 Validation: User location available for distance checking');
+        }
+      } catch (e) {
+        print('⚠️ Validation: Could not get user location for distance checking: $e');
+      }
+      
+      // Verify we can actually get location
+      try {
+        final testPosition = await Geolocator.getCurrentPosition(
+          desiredAccuracy: LocationAccuracy.medium,
+          timeLimit: const Duration(seconds: 5),
+        );
+        if (testPosition == null) {
+          print('❌ Validation: Cannot get location even with permission - blocking checkout');
+          return CheckoutValidationResult.error('Location access is required to complete your order. Please enable location permission and try again.');
+        }
+      } catch (e) {
+        print('❌ Validation: Location access failed: $e - blocking checkout');
+        return CheckoutValidationResult.error('Location access is required to complete your order. Please enable location permission and try again.');
+      }
+      
+      print('✅ Validation: Location permission and access verified');
+
+      // 1.6) Basic address validation for delivery
       print('🔍 Validation: isDelivery=$isDelivery, addressText="$addressText", length=${addressText.length}');
       
       if (isDelivery && (addressText.isEmpty || addressText.length < 5)) {

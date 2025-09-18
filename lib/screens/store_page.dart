@@ -219,6 +219,50 @@ class _StoreSelectionScreenState extends State<StoreSelectionScreen> {
     data['avgRating'] = review['avgRating'];
     data['reviewCount'] = review['reviewCount'];
 
+    // Calculate distance for specific store access
+    try {
+      // Check location permission first
+      final locationPermission = await Geolocator.checkPermission();
+      if (locationPermission == LocationPermission.denied || 
+          locationPermission == LocationPermission.deniedForever) {
+        print('🔍 DEBUG: Location permission denied - showing store but blocking purchases');
+        data['distance'] = null;
+        data['_blockCheckout'] = true;
+        data['_blockReason'] = 'Location access is required to purchase from this store';
+        return data;
+      }
+      
+      final userPos = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.medium,
+        timeLimit: const Duration(seconds: 5),
+      );
+      
+      final storeLat = data['latitude'] as double?;
+      final storeLng = data['longitude'] as double?;
+      
+      if (userPos != null && storeLat != null && storeLng != null) {
+        final distance = Geolocator.distanceBetween(
+          userPos.latitude,
+          userPos.longitude,
+          storeLat,
+          storeLng,
+        ) / 1000;
+        
+        data['distance'] = distance;
+        print('🔍 DEBUG: Specific store distance calculated: ${distance.toStringAsFixed(1)}km');
+      } else {
+        print('🔍 DEBUG: Could not calculate distance for specific store - missing coordinates');
+        data['distance'] = null;
+        data['_blockCheckout'] = true;
+        data['_blockReason'] = 'Location access is required to purchase from this store';
+      }
+    } catch (e) {
+      print('🔍 DEBUG: Error calculating distance for specific store: $e');
+      data['distance'] = null;
+      data['_blockCheckout'] = true;
+      data['_blockReason'] = 'Location access is required to purchase from this store';
+    }
+
     return data;
   }
 
@@ -240,6 +284,17 @@ class _StoreSelectionScreenState extends State<StoreSelectionScreen> {
             
             // Process this specific store through the same enrichment logic as the main loop
             final enrichedStore = await _enrichStoreData(widget.specificStoreId!, data);
+            
+            // Check if store is out of delivery range and mark for blocking
+            final withinDeliveryRange = enrichedStore['withinDeliveryRange'] as bool? ?? false;
+            final hasNationalDelivery = enrichedStore['hasNationalDelivery'] as bool? ?? false;
+            
+            if (!withinDeliveryRange && !hasNationalDelivery) {
+              print('⚠️ Store is out of delivery range - allowing browse but blocking checkout');
+              enrichedStore['_blockCheckout'] = true;
+              enrichedStore['_blockReason'] = 'Store is too far away for delivery';
+            }
+            
             return [enrichedStore];
           }
         }
@@ -904,6 +959,56 @@ Future<void> _contactStore(String storeId, String storeName) async {
 }
 
 void _showLeaveReviewDialog(String storeId) {
+  // Check if user is authenticated first
+  final user = FirebaseAuth.instance.currentUser;
+  if (user == null) {
+    // Show login prompt
+    showDialog(
+      context: context,
+      builder: (loginCtx) {
+        return AlertDialog(
+          title: const Text('Login Required'),
+          content: const Text('You need to be logged in to leave a review.'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(loginCtx),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                // Store the context before popping the dialog
+                final mainContext = context;
+                Navigator.pop(loginCtx);
+                print('🔍 DEBUG: Navigating to login for review...');
+                
+                // Check if main context is still valid
+                if (!mainContext.mounted) {
+                  print('🔍 DEBUG: Main context not mounted, cannot navigate to login');
+                  return;
+                }
+                
+                try {
+                  final result = await Navigator.pushNamed(mainContext, '/login');
+                  print('🔍 DEBUG: Login result: $result');
+                  if (result == true && mainContext.mounted) {
+                    print('🔍 DEBUG: Login successful, reopening review dialog...');
+                    _showLeaveReviewDialog(storeId);
+                  } else {
+                    print('🔍 DEBUG: Login failed or main context not mounted');
+                  }
+                } catch (e) {
+                  print('🔍 DEBUG: Error navigating to login: $e');
+                }
+              },
+              child: const Text('Login'),
+            ),
+          ],
+        );
+      },
+    );
+    return;
+  }
+
   double rating = 5.0;
   String comment = '';
 

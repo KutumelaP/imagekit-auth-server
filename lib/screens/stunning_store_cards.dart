@@ -12,6 +12,13 @@ import 'simple_store_profile_screen.dart';
 import '../widgets/safe_network_image.dart';
 import 'stunning_product_browser.dart';
 
+String _extractUsernameFromEmail(String? email) {
+  if (email == null || email.isEmpty) return 'Anonymous';
+  final parts = email.split('@');
+  if (parts.isEmpty) return 'Anonymous';
+  return parts[0];
+}
+
 class StunningStoreCard extends StatelessWidget {
   final Map<String, dynamic> store;
   final String category;
@@ -587,6 +594,47 @@ class StunningStoreCard extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        // Distance warning banner if store is out of range or location disabled
+        if (store['_blockCheckout'] == true) ...[
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: store['distance'] == null 
+                  ? AppTheme.error.withOpacity(0.1)
+                  : AppTheme.warning.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: store['distance'] == null 
+                    ? AppTheme.error.withOpacity(0.3)
+                    : AppTheme.warning.withOpacity(0.3)
+              ),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  store['distance'] == null ? Icons.location_off : Icons.info_outline,
+                  color: store['distance'] == null ? AppTheme.error : AppTheme.warning,
+                  size: 16,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    store['distance'] == null 
+                        ? 'Location access required - Browse only (checkout blocked)'
+                        : 'Store is ${store['distance']?.toStringAsFixed(1)}km away - Browse only (checkout blocked)',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: store['distance'] == null ? AppTheme.error : AppTheme.warning,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+        ],
         // Rating and Reviews - Always show, even if 0
         Row(
           children: [
@@ -796,30 +844,48 @@ class StunningStoreCard extends StatelessWidget {
         // Main Action Buttons Row
         Row(
           children: [
-            // View Products Button
+            // View Products Button - Disabled when location is off
             Expanded(
-              child: ElevatedButton.icon(
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => StunningProductBrowser(
-                        storeId: store['storeId'],
-                        storeName: store['storeName'] ?? 'Store',
+              child: Tooltip(
+                message: store['distance'] == null 
+                    ? 'Location access required to browse products'
+                    : store['_blockCheckout'] == true 
+                        ? 'Browse products (checkout blocked - ${store['distance']?.toStringAsFixed(1)}km away)'
+                        : 'View products from this store',
+                child: ElevatedButton.icon(
+                  onPressed: store['distance'] == null ? null : () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => StunningProductBrowser(
+                          storeId: store['storeId'],
+                          storeName: store['storeName'] ?? 'Store',
+                          storeData: store, // Pass store data for distance validation
+                        ),
                       ),
-                    ),
-                  );
-                },
-                icon: const Icon(Icons.shopping_bag, size: 16),
-                label: const Text('Products', style: TextStyle(fontSize: 12)),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppTheme.deepTeal,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+                    );
+                  },
+                  icon: Icon(
+                    store['distance'] == null ? Icons.location_off : Icons.shopping_bag, 
+                    size: 16
                   ),
-                  elevation: 0,
+                  label: Text(
+                    store['distance'] == null ? 'Location Required' : 'Browse Products', 
+                    style: const TextStyle(fontSize: 12)
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: store['distance'] == null 
+                        ? Colors.grey.withOpacity(0.6)
+                        : store['_blockCheckout'] == true 
+                            ? AppTheme.warning
+                            : AppTheme.deepTeal,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    elevation: 0,
+                  ),
                 ),
               ),
             ),
@@ -954,7 +1020,7 @@ class StunningStoreCard extends StatelessWidget {
                           'comment': dialogComment,
                           'timestamp': FieldValue.serverTimestamp(),
                           'userEmail': user.email,
-                          'userName': user.displayName ?? 'Anonymous',
+                          'userName': user.displayName ?? _extractUsernameFromEmail(user.email),
                         });
                         
                         print('DEBUG: Review submitted successfully');
@@ -984,9 +1050,32 @@ class StunningStoreCard extends StatelessWidget {
                                   child: const Text('Cancel'),
                                 ),
                                 ElevatedButton(
-                                  onPressed: () {
+                                  onPressed: () async {
+                                    // Store the context before popping the dialog
+                                    final mainContext = context;
                                     Navigator.pop(loginCtx);
-                                    Navigator.pushNamed(context, '/login');
+                                    print('🔍 DEBUG: Navigating to login for review...');
+                                    
+                                    // Check if main context is still valid
+                                    if (!mainContext.mounted) {
+                                      print('🔍 DEBUG: Main context not mounted, cannot navigate to login');
+                                      return;
+                                    }
+                                    
+                                    try {
+                                      // Navigate to login and wait for result using main context
+                                      final result = await Navigator.pushNamed(mainContext, '/login');
+                                      print('🔍 DEBUG: Login result: $result');
+                                      // If login was successful, reopen the review dialog
+                                      if (result == true && mainContext.mounted) {
+                                        print('🔍 DEBUG: Login successful, reopening review dialog...');
+                                        _showLeaveReviewDialog(mainContext, storeId);
+                                      } else {
+                                        print('🔍 DEBUG: Login failed or main context not mounted');
+                                      }
+                                    } catch (e) {
+                                      print('🔍 DEBUG: Error navigating to login: $e');
+                                    }
                                   },
                                   child: const Text('Login'),
                                 ),

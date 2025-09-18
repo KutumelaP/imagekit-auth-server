@@ -83,7 +83,19 @@ void main() async {
     if (kDebugMode) print('✅ Firebase initialized successfully');
   } catch (e) {
     if (kDebugMode) print('❌ Firebase initialization failed: $e');
-    // Continue anyway - app will show error state
+    
+    // Try to reinitialize Firebase after a delay
+    if (kDebugMode) print('🔄 Attempting Firebase reinitialization...');
+    try {
+      await Future.delayed(const Duration(seconds: 2));
+      await Firebase.initializeApp(
+        options: DefaultFirebaseOptions.currentPlatform,
+      );
+      if (kDebugMode) print('✅ Firebase reinitialized successfully');
+    } catch (e2) {
+      if (kDebugMode) print('❌ Firebase reinitialization also failed: $e2');
+      // Continue anyway - app will show error state
+    }
   }
   
   // ⚡ FAST LOAD: Run app after Firebase is ready
@@ -515,10 +527,7 @@ class MyApp extends StatelessWidget {
               final storeId = storePath.split('/')[0];
               if (kDebugMode) print('🏪 PWA Route: Opening product browser for store $storeId');
               return MaterialPageRoute(
-                builder: (_) => StunningProductBrowser(
-                  storeId: storeId,
-                  storeName: 'Store', // Will be updated when store data loads
-                ),
+                builder: (_) => StoreProductBrowserRouteLoader(storeId: storeId),
                 settings: RouteSettings(name: settings.name),
               );
             } else {
@@ -559,10 +568,7 @@ class MyApp extends StatelessWidget {
                 final storeId = storePath.split('/')[0];
                 if (kDebugMode) print('🏪 Hash Route: Opening product browser for store $storeId');
                 return MaterialPageRoute(
-                  builder: (_) => StunningProductBrowser(
-                    storeId: storeId,
-                    storeName: 'Store',
-                  ),
+                  builder: (_) => StoreProductBrowserRouteLoader(storeId: storeId),
                   settings: RouteSettings(name: hashRoute),
                 );
               } else {

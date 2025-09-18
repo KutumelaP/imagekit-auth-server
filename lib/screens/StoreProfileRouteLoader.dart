@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:geolocator/geolocator.dart';
-import 'dart:math';
 
 import 'simple_store_profile_screen.dart';
+import 'stunning_product_browser.dart';
 
 // Helper to enrich store data with fallback address and reviews aggregates
 Future<Map<String, dynamic>> _enrichStoreData(
@@ -297,4 +297,53 @@ double? _parseCoordinate(dynamic coord) {
 bool _isFoodCategory(String category) {
   final foodCategories = ['food', 'restaurants', 'groceries', 'fresh produce', 'bakery'];
   return foodCategories.any((food) => category.toLowerCase().contains(food.toLowerCase()));
+}
+
+/// Route loader for product browser with distance validation
+class StoreProductBrowserRouteLoader extends StatelessWidget {
+  final String storeId;
+  const StoreProductBrowserRouteLoader({required this.storeId});
+
+  @override
+  Widget build(BuildContext context) {
+    print('🔗 PRODUCT BROWSER LOADER: Building for storeId: $storeId');
+    
+    return FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      future: FirebaseFirestore.instance.collection('users').doc(storeId).get(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+        if (!snapshot.hasData || !snapshot.data!.exists) {
+          return const Scaffold(
+            body: Center(child: Text('Store not found')),
+          );
+        }
+        
+        final raw = snapshot.data!.data()!..putIfAbsent('storeId', () => storeId);
+        print('🔗 PRODUCT BROWSER LOADER: Store data loaded, enriching...');
+
+        return FutureBuilder<Map<String, dynamic>>(
+          future: _enrichStoreData(storeId, raw),
+          builder: (context, enrichSnap) {
+            if (enrichSnap.connectionState == ConnectionState.waiting) {
+              return const Scaffold(
+                body: Center(child: CircularProgressIndicator()),
+              );
+            }
+            final enriched = enrichSnap.data ?? raw;
+            final storeName = enriched['storeName'] as String? ?? 'Store';
+            
+            return StunningProductBrowser(
+              storeId: storeId,
+              storeName: storeName,
+              storeData: enriched, // Pass enriched store data with distance info
+            );
+          },
+        );
+      },
+    );
+  }
 }

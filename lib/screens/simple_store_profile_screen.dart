@@ -1566,6 +1566,7 @@ class _SimpleStoreProfileScreenState extends State<SimpleStoreProfileScreen>
           builder: (_) => StunningProductBrowser(
             storeId: storeId,
             storeName: storeName,
+            storeData: widget.store, // Pass the enriched store data with distance info
           ),
           settings: RouteSettings(name: '/store/$storeId/products'),
         ),

@@ -16,11 +16,52 @@ class VoiceConfig {
   
   const VoiceConfig({
     this.language = "en-US",
-    this.speechRate = 0.6, // Slower for baby speech
-    this.pitch = 1.8, // Very high pitch for baby voice
-    this.voiceName = "en-US-Wavenet-C", // Child-like voice for Nathan
+    this.speechRate = 0.8, // Slower for deeper male voice
+    this.pitch = 0.7, // Lower pitch for male voice
+    this.voiceName = "en-US-Neural2-D", // Ultra realistic Neural2 male voice
     this.audioEncoding = "MP3",
   });
+
+  /// Predefined Neural2 voice configurations for different personalities
+  static const VoiceConfig professionalMale = VoiceConfig(
+    language: "en-US",
+    speechRate: 0.8,
+    pitch: 0.7,
+    voiceName: "en-US-Neural2-D", // Deep, professional male
+    audioEncoding: "MP3",
+  );
+
+  static const VoiceConfig friendlyMale = VoiceConfig(
+    language: "en-US", 
+    speechRate: 0.9,
+    pitch: 0.8,
+    voiceName: "en-US-Neural2-F", // Friendly male voice
+    audioEncoding: "MP3",
+  );
+
+  static const VoiceConfig professionalFemale = VoiceConfig(
+    language: "en-US",
+    speechRate: 0.85,
+    pitch: 1.0,
+    voiceName: "en-US-Neural2-A", // Professional female voice
+    audioEncoding: "MP3",
+  );
+
+  static const VoiceConfig warmFemale = VoiceConfig(
+    language: "en-US",
+    speechRate: 0.9,
+    pitch: 1.1,
+    voiceName: "en-US-Neural2-C", // Warm, friendly female voice
+    audioEncoding: "MP3",
+  );
+
+  static const VoiceConfig energeticMale = VoiceConfig(
+    language: "en-US",
+    speechRate: 1.0,
+    pitch: 0.9,
+    voiceName: "en-US-Neural2-E", // Energetic male voice
+    audioEncoding: "MP3",
+  );
 
   /// Create a copy with some parameters changed
   VoiceConfig copyWith({
@@ -57,7 +98,7 @@ class VoiceService {
   bool _isPlaying = false;
   bool _isPaused = false;
   String? _currentText;
-  bool _useBabyVoice = true; // Nathan is always baby voice!
+  bool _useBabyVoice = false; // Nathan is now a professional assistant
   
   // Getters
   bool get isPlaying => _isPlaying;
@@ -65,6 +106,43 @@ class VoiceService {
   String? get currentText => _currentText;
   VoiceConfig get config => _config;
   bool get useBabyVoice => _useBabyVoice;
+
+  /// Switch to a different voice personality
+  Future<void> setVoicePersonality(VoiceConfig personality) async {
+    _config = personality;
+    if (kDebugMode) {
+      print('🎤 Voice personality changed to: ${personality.voiceName}');
+    }
+  }
+
+  /// Get available Neural2 voice personalities
+  static List<Map<String, dynamic>> get availablePersonalities => [
+    {
+      'name': 'Professional Male',
+      'description': 'Deep, authoritative voice perfect for business',
+      'config': VoiceConfig.professionalMale,
+    },
+    {
+      'name': 'Friendly Male', 
+      'description': 'Warm, approachable voice for customer service',
+      'config': VoiceConfig.friendlyMale,
+    },
+    {
+      'name': 'Professional Female',
+      'description': 'Clear, confident voice for presentations',
+      'config': VoiceConfig.professionalFemale,
+    },
+    {
+      'name': 'Warm Female',
+      'description': 'Gentle, caring voice for support and guidance',
+      'config': VoiceConfig.warmFemale,
+    },
+    {
+      'name': 'Energetic Male',
+      'description': 'Dynamic, enthusiastic voice for marketing',
+      'config': VoiceConfig.energeticMale,
+    },
+  ];
 
   /// Initialize the service with optional Google API key
   Future<void> initialize({String? googleApiKey}) async {
@@ -76,13 +154,13 @@ class VoiceService {
       _isPaused = false;
       _currentText = null;
       
-      // Configure local TTS with baby voice settings
+      // Configure local TTS with professional voice settings
       await _flutterTts.setLanguage(_config.language);
       await _flutterTts.setSpeechRate(_config.speechRate);
       await _flutterTts.setPitch(_config.pitch);
       await _flutterTts.awaitSpeakCompletion(true);
       
-      // Set Nathan's adorable baby voice
+      // Set Nathan's professional voice
       await _setBabyNathanVoice();
       
       // Set up completion listener for local TTS
@@ -132,27 +210,29 @@ class VoiceService {
     }
   }
 
-  /// Set baby Nathan voice with cute, high-pitched settings
+  /// Set Nathan voice with professional settings
   Future<void> _setBabyNathanVoice() async {
-    // Baby Nathan voice characteristics - male voice with very high pitch, slower speech
-    final babyVoices = [
-      // Try male child/baby voice options
-      {"name": "en-us-x-sfg#male_1-local", "locale": "en-US"}, // Young male voice
-      {"name": "child", "locale": "en-US"},
-      {"name": "baby", "locale": "en-US"},
-      {"name": "nathan", "locale": "en-US"},
-      {"name": "boy", "locale": "en-US"},
+    // Nathan voice characteristics - deep male voice
+    final maleVoices = [
+      // Try deep male voice options
+      {"name": "en-us-x-sfg#male_1-local", "locale": "en-US"}, // Deep male voice
+      {"name": "en-us-x-sfg#male_2-local", "locale": "en-US"}, // Alternative male voice
+      {"name": "en-us-x-sfg#male_3-local", "locale": "en-US"}, // Deep male voice
+      {"name": "male", "locale": "en-US"},
+      {"name": "man", "locale": "en-US"},
+      {"name": "adult", "locale": "en-US"},
+      {"name": "default", "locale": "en-US"},
     ];
 
     bool voiceSet = false;
     
-    // Try baby/child voice options
-    for (final voice in babyVoices) {
+    // Try deep male voice options
+    for (final voice in maleVoices) {
       try {
         await _flutterTts.setVoice(voice);
         voiceSet = true;
         if (kDebugMode) {
-          print('✅ Baby Nathan voice set: ${voice["name"]}');
+          print('✅ Nathan voice set: ${voice["name"]}');
         }
         break;
       } catch (e) {
@@ -161,9 +241,9 @@ class VoiceService {
       }
     }
     
-    // Set baby voice characteristics
-    await _flutterTts.setPitch(1.8); // Very high pitch for baby voice
-    await _flutterTts.setSpeechRate(0.6); // Slower speech like a baby
+    // Set deep male voice characteristics
+    await _flutterTts.setPitch(0.7); // Lower pitch for deep male voice
+    await _flutterTts.setSpeechRate(0.8); // Slower for deeper male voice
   }
 
   /// Update voice configuration
@@ -175,7 +255,7 @@ class VoiceService {
     await _flutterTts.setSpeechRate(_config.speechRate);
     await _flutterTts.setPitch(_config.pitch);
     
-    // Set Nathan's baby voice
+    // Set Nathan's professional voice
     await _setBabyNathanVoice();
     
     if (kDebugMode) {
@@ -207,11 +287,11 @@ class VoiceService {
     _isPlaying = true;
 
     try {
-      // Try Google WaveNet first for better baby voice quality
+      // Try Google WaveNet first for better voice quality
       if (preferGoogle && isGoogleTtsAvailable) {
         await _speakGoogleWaveNet(text);
       } else {
-        // Fallback to local TTS with Nathan's baby voice
+        // Fallback to local TTS with Nathan's voice
         await _flutterTts.stop();
         await _flutterTts.speak(text);
       }
@@ -293,7 +373,7 @@ class VoiceService {
     }
   }
 
-  /// Speak using Google WaveNet with child-like voice
+  /// Speak using Google Neural2 with ultra-realistic voice
   Future<void> _speakGoogleWaveNet(String text) async {
     try {
       final url = Uri.parse(
@@ -307,12 +387,12 @@ class VoiceService {
           "input": {"text": text},
           "voice": {
             "languageCode": _config.language,
-            "name": _config.voiceName // 👶 Voice selection from config
+            "name": _config.voiceName // Voice selection from config
           },
           "audioConfig": {
             "audioEncoding": _config.audioEncoding,
-            "speakingRate": _config.speechRate, // Slower for baby speech
-            "pitch": _config.pitch, // Higher pitch for baby voice
+            "speakingRate": _config.speechRate, // Deep male speech rate
+            "pitch": _config.pitch, // Deep male pitch
             "volumeGainDb": 0.0, // Normal volume
           }
         }),
@@ -326,7 +406,7 @@ class VoiceService {
         await _player.play(BytesSource(Uint8List.fromList(audioContent)));
         
         if (kDebugMode) {
-          print('✅ Google WaveNet TTS successful');
+          print('✅ Google Neural2 TTS successful');
         }
       } else {
         if (kDebugMode) {
@@ -432,7 +512,7 @@ class VoiceService {
     };
   }
 
-  /// Test different Google WaveNet voices to find the best baby voice
+  /// Test different Google WaveNet voices to find the best voice
   Future<void> testBabyVoices() async {
     if (!isGoogleTtsAvailable) {
       if (kDebugMode) {
@@ -441,11 +521,11 @@ class VoiceService {
       return;
     }
 
-    final testText = "Hi! I'm Nathan, your baby shopping assistant!";
+    final testText = "Hi! I'm Nathan, your shopping assistant!";
     final voices = [
       {"name": "en-US-Wavenet-A", "description": "Male voice"},
       {"name": "en-US-Wavenet-B", "description": "Male voice"},
-      {"name": "en-US-Wavenet-C", "description": "Child-like voice"},
+      {"name": "en-US-Wavenet-C", "description": "Professional voice"},
       {"name": "en-US-Wavenet-D", "description": "Young voice"},
       {"name": "en-US-Wavenet-E", "description": "Female voice"},
       {"name": "en-US-Wavenet-F", "description": "Female voice"},
@@ -472,8 +552,8 @@ class VoiceService {
             },
             "audioConfig": {
               "audioEncoding": "MP3",
-              "speakingRate": 0.6, // Slower for baby speech
-              "pitch": 1.8, // Higher pitch for baby voice
+              "speakingRate": 0.8, // Deep male speech rate
+              "pitch": 0.7, // Deep male pitch
             }
           }),
         );

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
+import 'package:geolocator/geolocator.dart';
 import '../providers/cart_provider.dart';
 import '../services/optimized_checkout_service.dart';
 import '../theme/app_theme.dart';
@@ -226,7 +227,80 @@ class _CartScreenState extends State<CartScreen> {
                         ),
                       ),
                       ActionButton(
-                        onPressed: cartItems.isNotEmpty ? () {
+                        onPressed: cartItems.isNotEmpty ? () async {
+                          // Check if any items are from blocked stores
+                          bool hasBlockedItems = false;
+                          String blockedStoreName = '';
+                          double blockedDistance = 0.0;
+                          double blockedServiceRadius = 20.0;
+                          
+                          for (var item in cartItems) {
+                            final storeId = item.sellerId;
+                            if (storeId.isNotEmpty) {
+                              // Check if this store is blocked due to distance
+                              try {
+                                final storeDoc = await FirebaseFirestore.instance
+                                    .collection('users')
+                                    .doc(storeId)
+                                    .get();
+                                
+                                if (storeDoc.exists) {
+                                  final storeData = storeDoc.data()!;
+                                  final storeLat = storeData['latitude'] as double?;
+                                  final storeLng = storeData['longitude'] as double?;
+                                  final serviceRadius = (storeData['serviceRadius'] as num?)?.toDouble() ?? 20.0;
+                                  
+                                  if (storeLat != null && storeLng != null) {
+                                    // Get user location
+                                    final userPos = await Geolocator.getCurrentPosition(
+                                      desiredAccuracy: LocationAccuracy.medium,
+                                      timeLimit: const Duration(seconds: 3),
+                                    );
+                                    
+                                    if (userPos != null) {
+                                      final distance = Geolocator.distanceBetween(
+                                        userPos.latitude,
+                                        userPos.longitude,
+                                        storeLat,
+                                        storeLng,
+                                      ) / 1000;
+                                      
+                                      if (distance > serviceRadius) {
+                                        hasBlockedItems = true;
+                                        blockedStoreName = storeData['storeName'] ?? 'Store';
+                                        blockedDistance = distance;
+                                        blockedServiceRadius = serviceRadius;
+                                        break;
+                                      }
+                                    }
+                                  }
+                                }
+                              } catch (e) {
+                                print('Error checking store distance: $e');
+                              }
+                            }
+                          }
+                          
+                          if (hasBlockedItems) {
+                            // Show error and prevent checkout
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('Cannot checkout: $blockedStoreName is ${blockedDistance.toStringAsFixed(1)}km away (max ${blockedServiceRadius.toStringAsFixed(1)}km). Please remove items from this store or choose a closer store.'),
+                                backgroundColor: AppTheme.error,
+                                duration: const Duration(seconds: 5),
+                                action: SnackBarAction(
+                                  label: 'View Stores',
+                                  textColor: Colors.white,
+                                  onPressed: () {
+                                    Navigator.pushNamed(context, '/');
+                                  },
+                                ),
+                              ),
+                            );
+                            return;
+                          }
+                          
+                          // Proceed with checkout if no blocked items
                           Navigator.pushNamed(
                             context,
                             '/checkout',

@@ -267,19 +267,8 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
       // Check if user is already a seller (user data already loaded above)
       final userProvider = Provider.of<UserProvider>(context, listen: false);
       
-      if (userProvider.isSeller) {
-        // User is already a seller, go directly to home
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (_) => const SimpleHomeScreen()),
-        );
-      } else {
-        // User is not a seller, show post-login options
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (_) => const PostLoginScreen()),
-        );
-      }
+      // Return success result instead of navigating away
+      Navigator.pop(context, true);
     } on FirebaseAuthException catch (e) {
       final message = ErrorHandler.handleAuthException(e);
       if (mounted) {
@@ -357,11 +346,8 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
       await userProvider.loadUserData();
       final cartProvider = Provider.of<CartProvider>(context, listen: false);
       await cartProvider.syncCartToFirestore();
-      if (userProvider.isSeller) {
-        Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const SimpleHomeScreen()));
-      } else {
-        Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const PostLoginScreen()));
-      }
+      // Return success result instead of navigating away
+      Navigator.pop(context, true);
     } catch (e) {
       if (mounted) ErrorHandler.showError(context, ErrorHandler.handleGeneralException(e));
     } finally {

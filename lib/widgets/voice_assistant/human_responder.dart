@@ -10,9 +10,9 @@ class HumanResponder {
   // Playful mini knowledge base for quick, human-like replies
   static const Map<String, List<String>> _playfulKb = {
     "greetings": [
-      "Hey there! Nathan here. Ready to help you shop!",
-      "Hi! Let’s find something awesome together.",
-      "Hello! Your shopping buddy Nathan here.",
+      "Hello! I'm Nathan, your shopping assistant. How can I help you today?",
+      "Good to see you! I'm here to help you find what you need.",
+      "Hi there! I'm Nathan, ready to assist with your shopping.",
     ],
     "orders": [
       "To cancel an order, tap the cancel button in 'My Orders'.",
@@ -29,9 +29,9 @@ class HumanResponder {
       "We deliver to your door or pickup points, with tracking included.",
     ],
     "small_talk": [
-      "I love helping people find good stuff. What are you shopping for today?",
-      "Tip: Following sellers helps you catch deals faster.",
-      "I’m always learning. Tell me what you need and I’ll help.",
+      "I'm here to help you find exactly what you're looking for. What can I assist you with today?",
+      "Pro tip: Following your favorite sellers helps you stay updated on new products and deals.",
+      "I'm continuously learning to better serve you. What would you like to explore today?",
     ],
   };
 
@@ -103,10 +103,10 @@ class HumanResponder {
     if (q.contains('can i trust') || q.contains('is this app safe') || q.contains('is this safe')) {
       _debug('intent => trust/safety');
       return _format(
-        lead: 'Yes—you’re in control and your data is protected',
+        lead: 'Absolutely—your security and privacy are our top priorities',
         steps: [
-          'Payments go through secure, industry-standard providers',
-          'Sellers are verified, and you can see ratings and reviews',
+          'All payments are processed through secure, industry-standard providers',
+          'Our sellers are thoroughly verified, and you can view detailed ratings and reviews',
         ],
       );
     }
@@ -116,10 +116,10 @@ class HumanResponder {
         (q.contains('month') || q.contains('monthly') || q.contains('per month') || q.contains('pay'))) {
       _debug('intent => pricing/monthly');
       return _format(
-        lead: 'Pricing depends on what you add to your cart',
+        lead: 'Our pricing is transparent and depends on the items you select',
         steps: [
-          "You'll see the total at checkout.",
-          "Want me to open Search to get started?",
+          "You'll see the complete total breakdown at checkout",
+          "Would you like me to help you explore our product catalog?",
         ],
       );
     }
@@ -136,12 +136,12 @@ class HumanResponder {
           return real;
         }
         _debug('store lookup EMPTY for "$keyword"');
-        return _format(
-          lead: "I couldn’t find any stores for that right now",
-          steps: [
-            "Try a slightly different name or check another category.",
-          ],
-        );
+          return _format(
+            lead: "I couldn't locate any stores matching that criteria at the moment",
+            steps: [
+              "Please try a different search term or browse our available categories",
+            ],
+          );
       }
       // Ask a targeted clarifier instead of generic FAQ tone
       final clarifier = _buildClarifier(q);
