@@ -60,8 +60,15 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
     _initializeAnimations();
     _initializeScreen();
     
+    // Initialize voice assistant immediately (synchronously)
+    _initializeVoiceAssistantSync();
+    
     // Defer non-essential operations to post-frame callback
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (kDebugMode) {
+        print('🎤 Post-frame callback started');
+      }
+      
       _setupMessageListener();
       _checkDriverStatus();
       
@@ -71,9 +78,6 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
       // Initialize user provider data
       final userProvider = Provider.of<UserProvider>(context, listen: false);
       userProvider.loadUserData();
-      
-      // Initialize voice assistant with user data
-      _initializeVoiceAssistant(userProvider);
       
       // Request location permission after UI is ready
       _requestLocationPermission();
@@ -401,12 +405,44 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
     }
   }
 
-  /// Initialize the voice assistant with user data
-  Future<void> _initializeVoiceAssistant(UserProvider userProvider) async {
+  /// Initialize voice assistant synchronously (immediate)
+  void _initializeVoiceAssistantSync() {
     try {
+      if (kDebugMode) {
+        print('🎤 _initializeVoiceAssistantSync called');
+      }
+      
+      // Initialize voice assistant without waiting for user data
+      _initializeVoiceAssistantAsync();
+      
+      if (kDebugMode) {
+        print('✅ Voice assistant sync initialization started');
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('❌ Error in sync voice assistant initialization: $e');
+      }
+    }
+  }
+
+  /// Initialize voice assistant asynchronously
+  Future<void> _initializeVoiceAssistantAsync() async {
+    try {
+      if (kDebugMode) {
+        print('🎤 _initializeVoiceAssistantAsync called');
+      }
+      
       final user = FirebaseAuth.instance.currentUser;
       if (user != null) {
+        if (kDebugMode) {
+          print('🎤 Starting voice assistant initialization for user: ${user.displayName} (${user.uid})');
+        }
+        
         final isNewUser = await _checkIfNewUser(user);
+        
+        if (kDebugMode) {
+          print('🎤 User is new: $isNewUser');
+        }
         
         await EnhancedVoiceAssistant().initialize(
           userId: user.uid,
@@ -419,12 +455,62 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
         EnhancedVoiceAssistant().setCurrentScreen('home');
         
         if (kDebugMode) {
-          print('🎤 Voice Assistant initialized for user: ${user.displayName}');
+          print('✅ Voice Assistant initialized successfully for user: ${user.displayName}');
+        }
+      } else {
+        if (kDebugMode) {
+          print('❌ No user found - cannot initialize voice assistant');
         }
       }
     } catch (e) {
       if (kDebugMode) {
         print('❌ Error initializing voice assistant: $e');
+        print('❌ Stack trace: ${StackTrace.current}');
+      }
+    }
+  }
+
+  /// Initialize the voice assistant with user data (legacy method)
+  Future<void> _initializeVoiceAssistant(UserProvider userProvider) async {
+    try {
+      if (kDebugMode) {
+        print('🎤 _initializeVoiceAssistant called');
+      }
+      
+      final user = FirebaseAuth.instance.currentUser;
+      if (user != null) {
+        if (kDebugMode) {
+          print('🎤 Starting voice assistant initialization for user: ${user.displayName} (${user.uid})');
+        }
+        
+        final isNewUser = await _checkIfNewUser(user);
+        
+        if (kDebugMode) {
+          print('🎤 User is new: $isNewUser');
+        }
+        
+        await EnhancedVoiceAssistant().initialize(
+          userId: user.uid,
+          userName: user.displayName ?? 'User',
+          isNewUser: isNewUser,
+          initialLanguage: 'en',
+        );
+        
+        // Set the current screen context
+        EnhancedVoiceAssistant().setCurrentScreen('home');
+        
+        if (kDebugMode) {
+          print('✅ Voice Assistant initialized successfully for user: ${user.displayName}');
+        }
+      } else {
+        if (kDebugMode) {
+          print('❌ No user found - cannot initialize voice assistant');
+        }
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('❌ Error initializing voice assistant: $e');
+        print('❌ Stack trace: ${StackTrace.current}');
       }
     }
   }

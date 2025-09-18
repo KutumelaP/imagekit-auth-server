@@ -9,6 +9,13 @@
 # packages, and plugins designed to encourage good coding practices.
 include: package:flutter_lints/flutter.yaml
 
+analyzer:
+  exclude:
+    - lib/screens/CheckoutScreen_backup.dart
+    - admin_dashboard/**
+    - functions/**
+    - imagekit-auth-server/**
+
 linter:
   rules:
     prefer_const_constructors: true

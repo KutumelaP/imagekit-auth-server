@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart';
 import 'voice_assistant_service.dart';
 
 /// Floating Voice Microphone Widget
@@ -111,14 +112,24 @@ class _FloatingVoiceMicState extends State<FloatingVoiceMic>
   }
 
   void _handleTap() {
+    if (kDebugMode) {
+      print('🎤 FloatingVoiceMic tapped - Current state: Listening: $_isListening, Processing: $_isProcessing');
+    }
+    
     HapticFeedback.lightImpact();
     _scaleController.forward().then((_) {
       _scaleController.reverse();
     });
     
     if (_isListening) {
+      if (kDebugMode) {
+        print('🎤 Stopping listening...');
+      }
       _voiceAssistant.stopListening();
     } else {
+      if (kDebugMode) {
+        print('🎤 Starting listening...');
+      }
       _voiceAssistant.startListening();
     }
     

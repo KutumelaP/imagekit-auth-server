@@ -3,8 +3,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/foundation.dart';
-import 'sound_service.dart';
-import 'voice_service.dart';
+import 'package:omniasa/services/sound_service.dart';
+import 'package:omniasa/services/voice_service.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 
 /// Enhanced notification service that integrates with the new VoiceService
@@ -62,14 +62,14 @@ class EnhancedVoiceNotificationService {
       if (kIsWeb) {
         await _initializeWebNotifications();
       } else {
-        print('📱 Mobile notifications initialized');
+        debugPrint('📱 Mobile notifications initialized');
       }
       
       // Load notification preferences
       await _loadNotificationPreferences();
       
-      // Initialize VoiceService
-      await _voiceService.initialize();
+      // Initialize VoiceService with retry logic
+      await _initializeVoiceServiceWithRetry();
       
       // Configure voice settings
       await _configureVoiceSettings();
@@ -82,12 +82,38 @@ class EnhancedVoiceNotificationService {
           await _setAppBadge(unread);
         }
       } catch (e) {
-        print('❌ Error initializing badge count: $e');
+        debugPrint('❌ Error initializing badge count: $e');
       }
       
-      print('✅ Enhanced Voice Notification Service initialized');
+      debugPrint('✅ Enhanced Voice Notification Service initialized');
     } catch (e) {
-      print('❌ Error initializing Enhanced Voice Notification Service: $e');
+      debugPrint('❌ Error initializing Enhanced Voice Notification Service: $e');
+      // Continue without voice service - app should still work
+    }
+  }
+
+  /// Initialize voice service with retry logic
+  Future<void> _initializeVoiceServiceWithRetry() async {
+    int retryCount = 0;
+    const maxRetries = 3;
+    
+    while (retryCount < maxRetries) {
+      try {
+        await _voiceService.initialize();
+        debugPrint('✅ Voice service initialized successfully');
+        return;
+      } catch (e) {
+        retryCount++;
+        debugPrint('❌ Voice service initialization attempt $retryCount failed: $e');
+        
+        if (retryCount < maxRetries) {
+          debugPrint('🔄 Retrying voice service initialization in 2 seconds...');
+          await Future.delayed(const Duration(seconds: 2));
+        } else {
+          debugPrint('❌ Voice service initialization failed after $maxRetries attempts');
+          // Continue without voice service
+        }
+      }
     }
   }
 
@@ -106,7 +132,7 @@ class EnhancedVoiceNotificationService {
     _preferGoogleTts = prefs.getBool('prefer_google_tts') ?? true;
     _speakUnreadSummaryOnOpen = prefs.getBool('speak_unread_summary') ?? true;
     
-    print('🔔 Enhanced notification preferences loaded');
+    debugPrint('🔔 Enhanced notification preferences loaded');
   }
 
   /// Configure voice settings
@@ -156,7 +182,7 @@ class EnhancedVoiceNotificationService {
       await prefs.setBool('speak_unread_summary', speakUnreadSummaryOnOpen);
     }
     
-    print('🔔 Enhanced notification preferences updated');
+    debugPrint('🔔 Enhanced notification preferences updated');
   }
 
   /// Update voice preferences
@@ -188,7 +214,7 @@ class EnhancedVoiceNotificationService {
     // Update VoiceService configuration
     await _configureVoiceSettings();
     
-    print('🔊 Voice preferences updated');
+    debugPrint('🔊 Voice preferences updated');
   }
 
   /// Send enhanced notification with voice announcement
@@ -235,9 +261,9 @@ class EnhancedVoiceNotificationService {
       // Update badge count
       await _updateBadgeForCurrentUser();
 
-      print('✅ Enhanced notification sent: $title');
+      debugPrint('✅ Enhanced notification sent: $title');
     } catch (e) {
-      print('❌ Error sending enhanced notification: $e');
+      debugPrint('❌ Error sending enhanced notification: $e');
     }
   }
 
@@ -249,10 +275,31 @@ class EnhancedVoiceNotificationService {
       // Process text to make it more natural
       final processedText = _processTextForSpeech(text);
       
-      // Use VoiceService with Google TTS preference
-      await _voiceService.speak(processedText, preferGoogle: _preferGoogleTts);
+      // Check if voice service is available before speaking
+      if (await _isVoiceServiceAvailable()) {
+        await _voiceService.speak(processedText, preferGoogle: _preferGoogleTts);
+      } else {
+        debugPrint('⚠️ Voice service not available - skipping speech');
+      }
     } catch (e) {
-      print('❌ Enhanced TTS speak failed: $e');
+      debugPrint('❌ Enhanced TTS speak failed: $e');
+      // Try to reinitialize voice service if there's a connection error
+      if (e.toString().contains('connection') || e.toString().contains('listening')) {
+        debugPrint('🔄 Attempting to reinitialize voice service...');
+        await _initializeVoiceServiceWithRetry();
+      }
+    }
+  }
+
+  /// Check if voice service is available and working
+  Future<bool> _isVoiceServiceAvailable() async {
+    try {
+      // Try to get voice service status
+      final status = _voiceService.getVoiceStatus();
+      return status['isPlaying'] != null; // Basic check if service is responsive
+    } catch (e) {
+      debugPrint('❌ Voice service availability check failed: $e');
+      return false;
     }
   }
 
@@ -406,13 +453,8 @@ class EnhancedVoiceNotificationService {
       final phrase = 'You have ${parts.join(' and ')}.';
       await _speakEnhanced(phrase);
     } catch (e) {
-      print('❌ Error speaking unread summary: $e');
+      debugPrint('❌ Error speaking unread summary: $e');
     }
-  }
-
-  /// Test voice functionality
-  Future<void> testVoice() async {
-    await _speakEnhanced('Voice service is working correctly!');
   }
 
   /// Get voice service status
@@ -426,7 +468,33 @@ class EnhancedVoiceNotificationService {
       'rate': _voiceRate,
       'pitch': _voicePitch,
       'preferGoogleTts': _preferGoogleTts,
+      'voiceAnnouncementsEnabled': _voiceAnnouncementsEnabled,
     };
+  }
+
+  /// Test voice functionality with error handling
+  Future<void> testVoice() async {
+    try {
+      if (await _isVoiceServiceAvailable()) {
+        await _speakEnhanced('Voice service is working correctly!');
+      } else {
+        debugPrint('❌ Voice service not available for testing');
+      }
+    } catch (e) {
+      debugPrint('❌ Voice test failed: $e');
+    }
+  }
+
+  /// Reinitialize voice service if needed
+  Future<void> reinitializeVoiceService() async {
+    try {
+      debugPrint('🔄 Reinitializing voice service...');
+      await _initializeVoiceServiceWithRetry();
+      await _configureVoiceSettings();
+      debugPrint('✅ Voice service reinitialized successfully');
+    } catch (e) {
+      debugPrint('❌ Failed to reinitialize voice service: $e');
+    }
   }
 
   // ... (Include other methods from the original NotificationService as needed)
@@ -462,8 +530,8 @@ class EnhancedVoiceNotificationService {
   Future<void> dispose() async {
     await _voiceService.dispose();
     await _notificationController.close();
-    _notifSub?.cancel();
-    _whatsappSub?.cancel();
-    _fcmSub?.cancel();
+    await _notifSub?.cancel();
+    await _whatsappSub?.cancel();
+    await _fcmSub?.cancel();
   }
 }

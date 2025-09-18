@@ -128,7 +128,7 @@ class NathanKnowledgeBase {
     'delivery_info': ['delivery', 'shipping', 'when will it arrive', 'delivery time', 'shipping cost', 'delivery options'],
     'payment_methods': ['payment', 'how to pay', 'payment options', 'payment methods', 'credit card', 'cash on delivery'],
     'product_quality': ['quality', 'is it good', 'product quality', 'reviews', 'ratings', 'is it worth it'],
-    'how_to_search': ['how to search', 'find products', 'search for', 'looking for', 'where to find'],
+    'how_to_search': ['how to search', 'find products', 'search for', 'looking for', 'where to find', 'browse products', 'browse', 'how do i browse'],
     'track_order': ['track order', 'order status', 'where is my order', 'track my purchase', 'delivery status'],
     'cancel_order': ['cancel order', 'cancel purchase', 'cancel my order', 'refund', 'return'],
     'forgot_password': ['forgot password', 'reset password', 'cant login', 'password reset', 'login problems'],

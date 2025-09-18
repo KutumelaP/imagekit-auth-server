@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:permission_handler/permission_handler.dart';
 import 'package:vibration/vibration.dart';
-import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import '../../services/voice_service.dart';
 import 'onboarding_voice_guide.dart';
@@ -52,6 +51,15 @@ class VoiceAssistantService {
   /// Initialize the voice assistant
   Future<void> initialize({String? userName, bool isNewUser = false}) async {
     try {
+      if (kDebugMode) {
+        print('🎤 Starting VoiceAssistantService initialization for $userName (New user: $isNewUser)');
+      }
+      
+      // Reset state
+      _isActive = false;
+      _isListening = false;
+      _isProcessing = false;
+      
       await _voiceService.initialize();
       _userName = userName;
       _isNewUser = isNewUser;
@@ -62,15 +70,22 @@ class VoiceAssistantService {
       _isActive = true;
       
       if (kDebugMode) {
-        print('✅ Voice Assistant initialized for ${isNewUser ? 'new' : 'existing'} user: $userName');
+        print('✅ Voice Assistant initialized successfully for ${isNewUser ? 'new' : 'existing'} user: $userName');
         print('🎤 Speech recognition enabled: $_speechEnabled');
+        print('🎤 Voice service available: ${_voiceService.isGoogleTtsAvailable}');
+        print('🎤 Assistant active: $_isActive');
       }
     } catch (e) {
+      _isActive = false;
       if (kDebugMode) {
         print('❌ Error initializing Voice Assistant: $e');
       }
+      rethrow;
     }
   }
+
+  /// Check if the voice assistant is ready to use
+  bool get isReady => _isActive && _speechEnabled;
 
   /// Initialize speech-to-text functionality
   Future<void> _initializeSpeechToText() async {
@@ -110,12 +125,17 @@ class VoiceAssistantService {
           _isListening = false;
           _listeningController.add(false);
           
-          // Handle specific error messages
+          // Handle specific error messages - be less chatty for common errors
           final errorMsg = error.errorMsg.toLowerCase();
           if (errorMsg.contains('network') || errorMsg.contains('connection')) {
             _voiceService.speak("Network issue detected. Please check your connection and try again.");
           } else if (errorMsg.contains('no match') || errorMsg.contains('not recognized')) {
-            _voiceService.speak("I didn't catch that. Could you speak more clearly?");
+            // Don't respond immediately for no match - user might still be speaking
+            if (kDebugMode) {
+              print('🎤 No match detected, staying quiet to avoid interrupting user');
+            }
+          } else if (errorMsg.contains('timeout') || errorMsg.contains('speech_timeout')) {
+            _voiceService.speak("I'm listening! Please speak a bit louder or closer to your device.");
           } else {
             _voiceService.speak("Sorry, there was an issue with voice recognition. Please try again.");
           }
@@ -124,12 +144,62 @@ class VoiceAssistantService {
       
       if (kDebugMode) {
         print('🎤 Speech-to-text initialized successfully: $_speechEnabled');
+        print('🎤 Available: ${_speechToText.isAvailable}');
+        print('🎤 Has permission: ${await _speechToText.hasPermission}');
       }
     } catch (e) {
       if (kDebugMode) {
         print('❌ Error initializing speech-to-text: $e');
       }
       _speechEnabled = false;
+      // Don't rethrow - allow voice assistant to work without speech recognition
+    }
+  }
+
+  /// Activate the voice assistant (public method)
+  Future<void> activate({String? userName, bool isNewUser = false}) async {
+    try {
+      await initialize(userName: userName, isNewUser: isNewUser);
+      if (kDebugMode) {
+        print('✅ Voice assistant activated: ${getStatus()}');
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('❌ Failed to activate voice assistant: $e');
+      }
+    }
+  }
+
+  /// Test the voice assistant functionality
+  Future<void> testVoiceAssistant() async {
+    try {
+      if (kDebugMode) {
+        print('🧪 Testing voice assistant...');
+        print('🧪 Status: ${getStatus()}');
+      }
+      
+      if (!_isActive) {
+        if (kDebugMode) {
+          print('🧪 Voice assistant not active - activating...');
+        }
+        final String userNameToUse = (_userName != null && _userName!.isNotEmpty) ? _userName! : 'Test User';
+        await activate(userName: userNameToUse, isNewUser: false);
+      }
+      
+      if (_isActive) {
+        if (kDebugMode) {
+          print('🧪 Voice assistant is active and ready!');
+        }
+        await _voiceService.speak('Voice assistant test successful!');
+      } else {
+        if (kDebugMode) {
+          print('🧪 Voice assistant test failed - not active');
+        }
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('🧪 Voice assistant test error: $e');
+      }
     }
   }
 
@@ -153,11 +223,49 @@ class VoiceAssistantService {
 
   /// Start listening for user input
   Future<void> startListening() async {
-    if (!_isActive || _isListening || _isProcessing) return;
+    if (kDebugMode) {
+      print('🎤 startListening called - Active: $_isActive, Listening: $_isListening, Processing: $_isProcessing');
+    }
+    
+    // Check if service is properly initialized
+    if (!_isActive) {
+      if (kDebugMode) {
+        print('❌ Voice assistant not active - attempting to initialize...');
+      }
+      // Try to initialize if not active
+      try {
+        // Use default values if userName is null
+        final userName = _userName ?? 'User';
+        await initialize(userName: userName, isNewUser: _isNewUser);
+        
+        if (!isReady) {
+          if (kDebugMode) {
+            debugPrint('❌ Voice assistant not ready after initialization');
+            debugPrint('❌ Status: ${getStatus()}');
+            debugPrint('❌ Speech enabled: $_speechEnabled');
+            debugPrint('❌ Active: $_isActive');
+          }
+          return;
+        }
+      } catch (e) {
+        if (kDebugMode) {
+          debugPrint('❌ Error initializing voice assistant: $e');
+          debugPrint('❌ Stack trace: ${StackTrace.current}');
+        }
+        return;
+      }
+    }
+    
+    if (_isListening || _isProcessing) {
+      if (kDebugMode) {
+        debugPrint('❌ Already listening or processing - Active: $_isActive, Listening: $_isListening, Processing: $_isProcessing');
+      }
+      return;
+    }
     
     // Web fallback strategy (only on web platform)
     if (kIsWeb) {
-      if (!_speechEnabled || !await _speechToText.isAvailable) {
+      if (!_speechEnabled || !_speechToText.isAvailable) {
         // Try audio recording fallback first (works on iOS Safari)
         if (await _canRecordAudio()) {
           await _startAudioRecording();
@@ -182,25 +290,32 @@ class VoiceAssistantService {
       await _speechToText.listen(
         onResult: (result) {
           _lastWords = result.recognizedWords;
-          // Only log final results to avoid spam
-          if (result.finalResult && kDebugMode) {
-            print('🎤 Final recognition: $_lastWords (confidence: ${result.confidence})');
+          
+          if (kDebugMode) {
+            if (result.finalResult) {
+              debugPrint('🎤 Final recognition: $_lastWords (confidence: ${result.confidence})');
+            } else {
+              debugPrint('🎤 Partial recognition: $_lastWords');
+            }
           }
           
           // Auto-stop when user finishes speaking and result is final
           if (result.finalResult && _lastWords.trim().isNotEmpty) {
-            // Small delay to ensure complete recognition
-            Future.delayed(const Duration(milliseconds: 500), () {
-              stopListening();
+            // Longer delay to capture complete thoughts
+            Future.delayed(const Duration(milliseconds: 800), () async {
+              if (kDebugMode) {
+                print('🎤 Auto-stopping after recognition: $_lastWords');
+              }
+              await stopListening();
             });
           }
         },
-        listenFor: const Duration(seconds: 60), // Longer maximum listening time
-        pauseFor: const Duration(seconds: 5),   // Longer pause to prevent cutoffs
-        partialResults: false, // Only final results to reduce interruptions
+        listenFor: const Duration(seconds: 15), // Give more time for complete sentences
+        pauseFor: const Duration(seconds: 1),   // Very short pause - keep listening
+        partialResults: true, // Enable partial results for better detection
         localeId: 'en_US',
-        cancelOnError: true,
-        listenMode: stt.ListenMode.confirmation, // Wait for user to finish
+        cancelOnError: false, // Don't cancel on errors, keep trying
+        listenMode: stt.ListenMode.dictation, // Best mode for complete sentences
       );
       
       if (kDebugMode) {
@@ -209,8 +324,8 @@ class VoiceAssistantService {
       
       // Provide haptic feedback to indicate listening started
       try {
-        if (await Vibration.hasVibrator() ?? false) {
-          Vibration.vibrate(duration: 100);
+        if (await Vibration.hasVibrator()) {
+          await Vibration.vibrate(duration: 100);
         }
       } catch (e) {
         // Vibration not available, ignore
@@ -231,19 +346,40 @@ class VoiceAssistantService {
 
   /// Stop listening and process input
   Future<void> stopListening() async {
-    if (!_isListening) return;
+    if (kDebugMode) {
+      print('🎤 stopListening called - isListening: $_isListening, lastWords: "$_lastWords"');
+    }
+    
+    // If we have recognized words but listening is already false, still process them
+    if (!_isListening && _lastWords.trim().isEmpty) {
+      if (kDebugMode) {
+        print('🎤 Not listening and no words to process');
+      }
+      return;
+    }
     
     try {
-      _isListening = false;
-      _listeningController.add(false);
+      // Ensure listening state is properly set
+      if (_isListening) {
+        _isListening = false;
+        _listeningController.add(false);
+        
+        // Stop speech recognition only if it's still running
+        await _speechToText.stop();
+        
+        if (kDebugMode) {
+          print('🎤 Speech recognition stopped');
+        }
+      }
       
-      // Stop speech recognition
-      await _speechToText.stop();
+      if (kDebugMode) {
+        print('🎤 Checking recognized words: "$_lastWords"');
+      }
       
       // Check if we have any recognized words
       if (_lastWords.trim().isEmpty) {
         if (kDebugMode) {
-          print('🎤 No speech detected');
+          print('🎤 No speech detected - _lastWords is empty');
         }
         await _voiceService.speak("I didn't hear anything. Please try again!");
         return;
@@ -253,7 +389,7 @@ class VoiceAssistantService {
       _processingController.add(true);
       
       if (kDebugMode) {
-        print('🎤 Processing: $_lastWords');
+        print('🎤 Processing recognized speech: "$_lastWords"');
       }
       
       // Process the recognized speech
@@ -261,6 +397,10 @@ class VoiceAssistantService {
       
       _isProcessing = false;
       _processingController.add(false);
+      
+      if (kDebugMode) {
+        print('🎤 Finished processing speech');
+      }
       
     } catch (e) {
       _isListening = false;
@@ -270,6 +410,7 @@ class VoiceAssistantService {
       
       if (kDebugMode) {
         print('❌ Error processing voice input: $e');
+        print('❌ Stack trace: ${StackTrace.current}');
       }
       
       await _voiceService.speak("Sorry, I had trouble understanding that. Please try again!");
@@ -279,15 +420,28 @@ class VoiceAssistantService {
   /// Process the recognized speech
   Future<void> _processRecognizedSpeech(String recognizedText) async {
     try {
+      if (kDebugMode) {
+        print('🎤 _processRecognizedSpeech called with: "$recognizedText"');
+      }
+      
       // Check if it's a common onboarding question first
       if (_isOnboardingQuestion(recognizedText)) {
+        if (kDebugMode) {
+          print('🎓 Detected onboarding question: $recognizedText');
+        }
         await OnboardingVoiceGuide.answerCommonQuestion(recognizedText);
         return;
       }
       
       // Use Nathan's intelligent conversation manager for smart responses
       if (_conversationManager.canHandleQuestion(recognizedText)) {
+        if (kDebugMode) {
+          print('🧠 Nathan can handle this question: $recognizedText');
+        }
         final smartResponse = _conversationManager.processUserInput(recognizedText);
+        if (kDebugMode) {
+          print('🧠 Nathan response: $smartResponse');
+        }
         await _speakResponse(smartResponse);
         
         if (kDebugMode) {
@@ -296,8 +450,15 @@ class VoiceAssistantService {
         return;
       }
       
+      if (kDebugMode) {
+        print('🎯 Using fallback response system for: $recognizedText');
+      }
+      
       // Fallback to basic response system
       final response = _getQuestionResponse(recognizedText);
+      if (kDebugMode) {
+        print('🎯 Fallback response: $response');
+      }
       await _speakResponse(response);
       
       if (kDebugMode) {
@@ -307,6 +468,7 @@ class VoiceAssistantService {
     } catch (e) {
       if (kDebugMode) {
         print('❌ Error processing recognized speech: $e');
+        print('❌ Stack trace: ${StackTrace.current}');
       }
       await _voiceService.speak("I'm sorry, I didn't understand that. Could you try asking in a different way?");
     }
@@ -318,13 +480,6 @@ class VoiceAssistantService {
     if (kDebugMode) {
       print('🎯 Voice Assistant context set to: $context');
     }
-  }
-
-  /// Generate appropriate response based on context and user state
-  Future<String> _generateResponse() async {
-    final responses = _getContextualResponses();
-    final random = Random();
-    return responses[random.nextInt(responses.length)];
   }
 
   /// Get contextual responses based on current state
@@ -349,7 +504,7 @@ class VoiceAssistantService {
       case 'seller':
         return _getSellerScreenResponses();
       default:
-        return _getGeneralResponses();
+        return _getDefaultResponses();
     }
   }
 
@@ -433,6 +588,15 @@ class VoiceAssistantService {
       "What would you like to know? I can help with browsing products, placing orders, tracking deliveries, or using the app.",
       "I'm your shopping assistant. Feel free to ask me anything about the marketplace or how to use the features.",
       "How can I help you today? I can guide you through shopping, orders, or explain how different features work.",
+    ];
+  }
+
+  /// Default responses when no specific context is set
+  List<String> _getDefaultResponses() {
+    return [
+      "Hi! I'm Nathan. I can help you browse stores, find products, check orders, and more.",
+      "Need help deciding? Ask me to show categories or deals!",
+      "You can say things like 'show my orders' or 'find sneakers'.",
     ];
   }
 
@@ -708,8 +872,8 @@ class VoiceAssistantService {
       
       // Provide haptic feedback
       try {
-        if (await Vibration.hasVibrator() ?? false) {
-          Vibration.vibrate(duration: 100);
+        if (await Vibration.hasVibrator()) {
+          await Vibration.vibrate(duration: 100);
         }
       } catch (e) {
         // Vibration not available, ignore
@@ -733,37 +897,6 @@ class VoiceAssistantService {
     }
   }
 
-  /// Process recorded audio using cloud speech recognition
-  Future<void> _processWebAudio(String base64Audio) async {
-    try {
-      _isProcessing = true;
-      _processingController.add(true);
-      
-      if (kDebugMode) {
-        print('🎤 Processing audio with cloud speech recognition...');
-      }
-      
-      // TODO: Send to Firebase Cloud Function for speech recognition
-      final transcript = "Demo speech recognition result";
-      
-      if (transcript.trim().isNotEmpty) {
-        // Process the recognized speech like normal
-        await _processRecognizedSpeech(transcript);
-      } else {
-        await _voiceService.speak("I didn't catch that. Could you try speaking again?");
-      }
-      
-    } catch (e) {
-      if (kDebugMode) {
-        print('❌ Error processing web audio: $e');
-      }
-      await _voiceService.speak("Sorry, I had trouble understanding that. Please try again.");
-    } finally {
-      _isProcessing = false;
-      _processingController.add(false);
-    }
-  }
-
   /// Show simple recording demo for web browsers
   Future<void> _showWebRecordingDemo() async {
     final BuildContext? context = _getCurrentContext();
@@ -777,7 +910,7 @@ class VoiceAssistantService {
     }
 
     // Show simple demo dialog
-    showDialog<void>(
+    unawaited(showDialog<void>(
       context: context,
       barrierDismissible: false,
       builder: (BuildContext context) {
@@ -799,7 +932,7 @@ class VoiceAssistantService {
           ),
         );
       },
-    );
+    ));
 
     // Auto-stop after 5 seconds
     await Future.delayed(const Duration(seconds: 5));
