@@ -3,6 +3,94 @@ import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
+/// Escalation detection for chatbot
+/// Returns an [EscalationResult] if the input requires escalation,
+/// otherwise returns null.
+
+class EscalationResult {
+  final String category; // e.g., "agent_request", "frustration"
+  final String matchedText;
+
+  EscalationResult({required this.category, required this.matchedText});
+
+  @override
+  String toString() =>
+      'EscalationResult(category: $category, matchedText: "$matchedText")';
+}
+
+class EscalationDetector {
+  // Keywords where user explicitly asks for a person/agent
+  static final _agentWords = [
+    r'agent',
+    r'human',
+    r'person',
+    r'consultant',
+    r'representative',
+    r'manager',
+    r'supervisor',
+    r'someone',
+    r'somebody',
+  ];
+
+  // Action phrases like "talk to" or "connect me to"
+  static final _actionPhrases = [
+    r'talk\s*to',
+    r'speak\s*to',
+    r'connect\s*me\s*to',
+    r'transfer\s*me\s*to',
+    r'i\s*want\s*to\s*(speak|talk)\s*to',
+    r'i\s*need\s*to\s*(speak|talk)\s*to',
+    r'can\s*i\s*(speak|talk)\s*to',
+    r'may\s*i\s*(speak|talk)\s*to',
+    r'is\s*there\s*(a\s*)?(person|human|agent)',
+  ];
+
+  // Words that show frustration or system not working
+  static final _frustrationWords = [
+    r"doesn't\s*work",
+    r'not\s*working',
+    r'not\s*helping',
+    r'still\s*not\s*working',
+    r'confused',
+    r'lost',
+    r'stuck',
+    r'frustrated',
+    r'angry',
+    r'upset',
+    r'disappointed',
+    r'unsatisfied',
+    r'not\s*satisfied',
+    r'useless',
+    r'pointless',
+    r'waste\s*of\s*time',
+  ];
+
+  /// Escalation patterns grouped by category
+  static final Map<String, RegExp> _patterns = {
+    'agent_request': RegExp(r'\b(' + _agentWords.join('|') + r')\b',
+        caseSensitive: false),
+    'action_phrase': RegExp(r'\b(' + _actionPhrases.join('|') + r')\b',
+        caseSensitive: false),
+    'frustration': RegExp(r'\b(' + _frustrationWords.join('|') + r')\b',
+        caseSensitive: false),
+  };
+
+  /// Detect escalation in [input].
+  /// Returns an [EscalationResult] or null if no escalation detected.
+  static EscalationResult? detect(String input) {
+    for (final entry in _patterns.entries) {
+      final match = entry.value.firstMatch(input);
+      if (match != null) {
+        return EscalationResult(
+          category: entry.key,
+          matchedText: match.group(0) ?? '',
+        );
+      }
+    }
+    return null;
+  }
+}
+
 /// AI-powered chatbot service for customer support automation
 class ChatbotService {
   static final ChatbotService _instance = ChatbotService._internal();
@@ -11,6 +99,11 @@ class ChatbotService {
 
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
+
+
+  bool isEscalation(String input) {
+    return EscalationDetector.detect(input) != null;
+  }
   
   // Stream controllers for real-time updates
   final StreamController<List<ChatMessage>> _messagesController = StreamController<List<ChatMessage>>.broadcast();
@@ -378,8 +471,8 @@ Is there anything else I can help you with?''',
       return 'help';
     }
     
-    // Escalation / talk to a human
-    if (input.contains(RegExp(r'\b(agent|human|escalat|complain|contact\s*support|talk\s*to\s*(a\s*)?person)\b'))) {
+    // Escalation / talk to a human - Enhanced detection
+    if (isEscalation(input)) {
       return 'escalation';
     }
     
