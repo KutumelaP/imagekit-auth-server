@@ -23,6 +23,9 @@
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+    
+    <!-- Microphone Permission for Speech Recognition -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
     <application
         android:label="OmniaSA"

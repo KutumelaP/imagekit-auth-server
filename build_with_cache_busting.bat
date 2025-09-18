@@ -38,3 +38,4 @@ echo   - Service worker will auto-clear old caches
 echo   - App version is now embedded in all requests
 echo.
 pause
+

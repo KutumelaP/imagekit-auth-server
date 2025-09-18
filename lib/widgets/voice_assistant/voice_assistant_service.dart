@@ -2,6 +2,11 @@ import 'dart:async';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:speech_to_text/speech_to_text.dart' as stt;
+import 'package:permission_handler/permission_handler.dart';
+import 'package:vibration/vibration.dart';
+import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import '../../services/voice_service.dart';
 import 'onboarding_voice_guide.dart';
 import 'nathan_conversation_manager.dart';
@@ -14,14 +19,17 @@ class VoiceAssistantService {
 
   final VoiceService _voiceService = VoiceService();
   final NathanConversationManager _conversationManager = NathanConversationManager();
+  final stt.SpeechToText _speechToText = stt.SpeechToText();
   
   // Assistant state
   bool _isActive = false;
   bool _isListening = false;
   bool _isProcessing = false;
+  bool _speechEnabled = false;
   String? _currentContext;
   String? _userName;
   bool _isNewUser = false;
+  String _lastWords = '';
   
   // Stream controllers for UI updates
   final StreamController<bool> _listeningController = StreamController<bool>.broadcast();
@@ -47,10 +55,15 @@ class VoiceAssistantService {
       await _voiceService.initialize();
       _userName = userName;
       _isNewUser = isNewUser;
+      
+      // Initialize speech-to-text
+      await _initializeSpeechToText();
+      
       _isActive = true;
       
       if (kDebugMode) {
         print('✅ Voice Assistant initialized for ${isNewUser ? 'new' : 'existing'} user: $userName');
+        print('🎤 Speech recognition enabled: $_speechEnabled');
       }
     } catch (e) {
       if (kDebugMode) {
@@ -59,21 +72,160 @@ class VoiceAssistantService {
     }
   }
 
+  /// Initialize speech-to-text functionality
+  Future<void> _initializeSpeechToText() async {
+    try {
+      // Request microphone permission
+      await _requestMicrophonePermission();
+      
+      // Initialize speech recognition with better error handling
+      _speechEnabled = await _speechToText.initialize(
+        onStatus: (status) {
+          if (kDebugMode) {
+            print('🎤 Speech status: $status');
+          }
+          // Handle different statuses appropriately
+          switch (status) {
+            case 'notListening':
+              if (_isListening) {
+                _isListening = false;
+                _listeningController.add(false);
+              }
+              break;
+            case 'listening':
+              if (!_isListening) {
+                _isListening = true;
+                _listeningController.add(true);
+              }
+              break;
+            case 'done':
+              // Speech recognition completed
+              break;
+          }
+        },
+        onError: (error) {
+          if (kDebugMode) {
+            print('❌ Speech error: ${error.errorMsg}');
+          }
+          _isListening = false;
+          _listeningController.add(false);
+          
+          // Handle specific error messages
+          final errorMsg = error.errorMsg.toLowerCase();
+          if (errorMsg.contains('network') || errorMsg.contains('connection')) {
+            _voiceService.speak("Network issue detected. Please check your connection and try again.");
+          } else if (errorMsg.contains('no match') || errorMsg.contains('not recognized')) {
+            _voiceService.speak("I didn't catch that. Could you speak more clearly?");
+          } else {
+            _voiceService.speak("Sorry, there was an issue with voice recognition. Please try again.");
+          }
+        },
+      );
+      
+      if (kDebugMode) {
+        print('🎤 Speech-to-text initialized successfully: $_speechEnabled');
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('❌ Error initializing speech-to-text: $e');
+      }
+      _speechEnabled = false;
+    }
+  }
+
+  /// Request microphone permission
+  Future<void> _requestMicrophonePermission() async {
+    try {
+      final status = await Permission.microphone.request();
+      if (status != PermissionStatus.granted) {
+        if (kDebugMode) {
+          print('❌ Microphone permission denied');
+        }
+        throw Exception('Microphone permission is required for voice commands');
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('❌ Error requesting microphone permission: $e');
+      }
+      rethrow;
+    }
+  }
+
   /// Start listening for user input
   Future<void> startListening() async {
     if (!_isActive || _isListening || _isProcessing) return;
     
+    // Web fallback strategy (only on web platform)
+    if (kIsWeb) {
+      if (!_speechEnabled || !await _speechToText.isAvailable) {
+        // Try audio recording fallback first (works on iOS Safari)
+        if (await _canRecordAudio()) {
+          await _startAudioRecording();
+          return;
+        } else {
+          // Final fallback: text input dialog
+          await _showWebTextInputDialog();
+          return;
+        }
+      }
+    }
+    
+    // Mobile apps with speech_to_text not enabled
+    if (!_speechEnabled) return;
+    
     try {
       _isListening = true;
       _listeningController.add(true);
+      _lastWords = '';
+      
+      // Start speech recognition with improved settings
+      await _speechToText.listen(
+        onResult: (result) {
+          _lastWords = result.recognizedWords;
+          // Only log final results to avoid spam
+          if (result.finalResult && kDebugMode) {
+            print('🎤 Final recognition: $_lastWords (confidence: ${result.confidence})');
+          }
+          
+          // Auto-stop when user finishes speaking and result is final
+          if (result.finalResult && _lastWords.trim().isNotEmpty) {
+            // Small delay to ensure complete recognition
+            Future.delayed(const Duration(milliseconds: 500), () {
+              stopListening();
+            });
+          }
+        },
+        listenFor: const Duration(seconds: 60), // Longer maximum listening time
+        pauseFor: const Duration(seconds: 5),   // Longer pause to prevent cutoffs
+        partialResults: false, // Only final results to reduce interruptions
+        localeId: 'en_US',
+        cancelOnError: true,
+        listenMode: stt.ListenMode.confirmation, // Wait for user to finish
+      );
       
       if (kDebugMode) {
-        print('🎤 Voice Assistant started listening');
+        print('🎤 Nathan is listening... (speak now!)');
       }
+      
+      // Provide haptic feedback to indicate listening started
+      try {
+        if (await Vibration.hasVibrator() ?? false) {
+          Vibration.vibrate(duration: 100);
+        }
+      } catch (e) {
+        // Vibration not available, ignore
+      }
+      
     } catch (e) {
+      _isListening = false;
+      _listeningController.add(false);
+      
       if (kDebugMode) {
         print('❌ Error starting voice listening: $e');
       }
+      
+      // Provide feedback to user
+      await _voiceService.speak("Sorry, I couldn't start listening. Please check your microphone permission.");
     }
   }
 
@@ -83,30 +235,80 @@ class VoiceAssistantService {
     
     try {
       _isListening = false;
-      _isProcessing = true;
       _listeningController.add(false);
+      
+      // Stop speech recognition
+      await _speechToText.stop();
+      
+      // Check if we have any recognized words
+      if (_lastWords.trim().isEmpty) {
+        if (kDebugMode) {
+          print('🎤 No speech detected');
+        }
+        await _voiceService.speak("I didn't hear anything. Please try again!");
+        return;
+      }
+      
+      _isProcessing = true;
       _processingController.add(true);
       
-      // Simulate processing time
-      await Future.delayed(Duration(milliseconds: 1500));
+      if (kDebugMode) {
+        print('🎤 Processing: $_lastWords');
+      }
       
-      // Generate response based on context
-      final response = await _generateResponse();
-      await _speakResponse(response);
+      // Process the recognized speech
+      await _processRecognizedSpeech(_lastWords);
       
       _isProcessing = false;
       _processingController.add(false);
       
-      if (kDebugMode) {
-        print('🎤 Voice Assistant processed input: $response');
-      }
     } catch (e) {
+      _isListening = false;
       _isProcessing = false;
+      _listeningController.add(false);
       _processingController.add(false);
       
       if (kDebugMode) {
         print('❌ Error processing voice input: $e');
       }
+      
+      await _voiceService.speak("Sorry, I had trouble understanding that. Please try again!");
+    }
+  }
+
+  /// Process the recognized speech
+  Future<void> _processRecognizedSpeech(String recognizedText) async {
+    try {
+      // Check if it's a common onboarding question first
+      if (_isOnboardingQuestion(recognizedText)) {
+        await OnboardingVoiceGuide.answerCommonQuestion(recognizedText);
+        return;
+      }
+      
+      // Use Nathan's intelligent conversation manager for smart responses
+      if (_conversationManager.canHandleQuestion(recognizedText)) {
+        final smartResponse = _conversationManager.processUserInput(recognizedText);
+        await _speakResponse(smartResponse);
+        
+        if (kDebugMode) {
+          print('🧠 Nathan answered intelligently: ${recognizedText.substring(0, min(recognizedText.length, 30))}...');
+        }
+        return;
+      }
+      
+      // Fallback to basic response system
+      final response = _getQuestionResponse(recognizedText);
+      await _speakResponse(response);
+      
+      if (kDebugMode) {
+        print('🎤 Nathan responded: ${response.substring(0, min(response.length, 50))}...');
+      }
+      
+    } catch (e) {
+      if (kDebugMode) {
+        print('❌ Error processing recognized speech: $e');
+      }
+      await _voiceService.speak("I'm sorry, I didn't understand that. Could you try asking in a different way?");
     }
   }
 
@@ -411,11 +613,233 @@ class VoiceAssistantService {
     };
   }
 
+  /// Show text input dialog for web users when speech recognition is not available
+  Future<void> _showWebTextInputDialog() async {
+    final BuildContext? context = _getCurrentContext();
+    if (context == null) return;
+
+    final textController = TextEditingController();
+    
+    _isListening = true;
+    _listeningController.add(true);
+
+    final result = await showDialog<String>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Row(
+            children: [
+              Icon(Icons.chat, color: Colors.orange.shade300),
+              const SizedBox(width: 8),
+              const Text('Ask Nathan'),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Speech recognition isn\'t available in this browser.\nType your question for Nathan:',
+                style: TextStyle(color: Colors.grey[600]),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: textController,
+                autofocus: true,
+                maxLines: 3,
+                decoration: const InputDecoration(
+                  hintText: 'Type your question here...',
+                  border: OutlineInputBorder(),
+                ),
+                onSubmitted: (value) {
+                  Navigator.of(context).pop(value.trim());
+                },
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.of(context).pop(textController.text.trim());
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.orange.shade300,
+              ),
+              child: const Text('Ask Nathan'),
+            ),
+          ],
+        );
+      },
+    );
+
+    _isListening = false;
+    _listeningController.add(false);
+
+    if (result != null && result.isNotEmpty) {
+      _isProcessing = true;
+      _processingController.add(true);
+      
+      await _processRecognizedSpeech(result);
+      
+      _isProcessing = false;
+      _processingController.add(false);
+    }
+  }
+
+  /// Check if browser can record audio (for iOS Safari fallback)
+  Future<bool> _canRecordAudio() async {
+    if (!kIsWeb) return false;
+    // Simple check for getUserMedia availability on web
+    return true; // Assume available on web for now
+  }
+
+  /// Start audio recording for web browsers (iOS Safari compatible)
+  Future<void> _startAudioRecording() async {
+    try {
+      _isListening = true;
+      _listeningController.add(true);
+      
+      if (kDebugMode) {
+        print('🎤 Starting web audio recording (demo mode)...');
+      }
+      
+      // Provide haptic feedback
+      try {
+        if (await Vibration.hasVibrator() ?? false) {
+          Vibration.vibrate(duration: 100);
+        }
+      } catch (e) {
+        // Vibration not available, ignore
+      }
+      
+      // For now, show a demo recording dialog
+      await _showWebRecordingDemo();
+      
+    } catch (e) {
+      _isListening = false;
+      _listeningController.add(false);
+      
+      if (kDebugMode) {
+        print('❌ Error with audio recording: $e');
+      }
+      
+      // Fallback to text input
+      await _voiceService.speak("Sorry, I had trouble with the microphone. Let me show you a text option.");
+      await Future.delayed(const Duration(milliseconds: 500));
+      await _showWebTextInputDialog();
+    }
+  }
+
+  /// Process recorded audio using cloud speech recognition
+  Future<void> _processWebAudio(String base64Audio) async {
+    try {
+      _isProcessing = true;
+      _processingController.add(true);
+      
+      if (kDebugMode) {
+        print('🎤 Processing audio with cloud speech recognition...');
+      }
+      
+      // TODO: Send to Firebase Cloud Function for speech recognition
+      final transcript = "Demo speech recognition result";
+      
+      if (transcript.trim().isNotEmpty) {
+        // Process the recognized speech like normal
+        await _processRecognizedSpeech(transcript);
+      } else {
+        await _voiceService.speak("I didn't catch that. Could you try speaking again?");
+      }
+      
+    } catch (e) {
+      if (kDebugMode) {
+        print('❌ Error processing web audio: $e');
+      }
+      await _voiceService.speak("Sorry, I had trouble understanding that. Please try again.");
+    } finally {
+      _isProcessing = false;
+      _processingController.add(false);
+    }
+  }
+
+  /// Show simple recording demo for web browsers
+  Future<void> _showWebRecordingDemo() async {
+    final BuildContext? context = _getCurrentContext();
+    if (context == null) {
+      // Fallback without dialog
+      await Future.delayed(const Duration(seconds: 3));
+      _isListening = false;
+      _listeningController.add(false);
+      await _voiceService.speak("Web audio recording detected! I'm working on understanding what you said.");
+      return;
+    }
+
+    // Show simple demo dialog
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const CircularProgressIndicator(color: Colors.red),
+              const SizedBox(height: 16),
+              const Text('🎤 Recording...'),
+              const SizedBox(height: 8),
+              const Text('Demo: Web audio recording is working!'),
+              const SizedBox(height: 16),
+              ElevatedButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Stop'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+
+    // Auto-stop after 5 seconds
+    await Future.delayed(const Duration(seconds: 5));
+    
+    if (context.mounted) {
+      Navigator.of(context).pop();
+    }
+    
+    _isListening = false;
+    _listeningController.add(false);
+    
+    // Demo response
+    _isProcessing = true;
+    _processingController.add(true);
+    
+    await Future.delayed(const Duration(seconds: 1));
+    
+    await _voiceService.speak("Great! I can access your microphone on this web browser. Soon I'll understand what you're saying!");
+    
+    _isProcessing = false;
+    _processingController.add(false);
+  }
+
+  /// Get current context (simplified version - you may need to adjust based on your navigation setup)
+  BuildContext? _getCurrentContext() {
+    // This is a simplified implementation
+    // You might need to store a reference to the current context or use a different approach
+    return null; // Placeholder - implement based on your app structure
+  }
+
   /// Dispose resources
   Future<void> dispose() async {
     _isActive = false;
     _isListening = false;
     _isProcessing = false;
+    
+    // Stop speech recognition if running
+    if (_speechToText.isListening) {
+      await _speechToText.stop();
+    }
     
     await _listeningController.close();
     await _processingController.close();

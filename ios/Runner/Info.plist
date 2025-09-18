@@ -52,7 +52,9 @@
 	<key>NSCameraUsageDescription</key>
 	<string>This app needs access to your camera to take photos for your store.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>This app needs access to your microphone to record videos for your store.</string>
+	<string>This app needs access to your microphone to record videos for your store and for voice commands with Nathan, your shopping assistant.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>This app uses speech recognition so Nathan, your voice assistant, can understand and respond to your questions.</string>
 	<key>NSFaceIDUsageDescription</key>
 	<string>Face ID is used to securely verify your identity for checkout and login.</string>
 </dict>

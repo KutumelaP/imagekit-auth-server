@@ -101,3 +101,4 @@ fixCommissionMinimum().then(() => {
   console.error('❌ Error:', error);
   process.exit(1);
 });
+

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:geolocator/geolocator.dart';
 import 'dart:math';
+
 import 'simple_store_profile_screen.dart';
 
 // Helper to enrich store data with fallback address and reviews aggregates

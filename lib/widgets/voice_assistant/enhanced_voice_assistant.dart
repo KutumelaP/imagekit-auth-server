@@ -276,27 +276,52 @@ class EnhancedVoiceAssistant {
               
               const SizedBox(height: 8),
               
-              // Enhanced voice mic button - Baby Nathan's mic
+              // Enhanced voice mic button - Baby Nathan's mic with animations
               StreamBuilder<bool>(
                 stream: _assistantService.listeningStream,
                 builder: (context, snapshot) {
                   final isListening = snapshot.data ?? false;
-                  return FloatingActionButton(
-                    heroTag: "enhanced_voice_mic",
-                    backgroundColor: isListening 
-                      ? Colors.red.shade400 // Recording color
-                      : Colors.orange.shade300, // Baby Nathan's default color
-                    child: Icon(
-                      isListening ? Icons.mic : Icons.mic_none, 
-                      color: Colors.white
-                    ),
-                    onPressed: () async {
-                      // Toggle voice listening
-                      if (isListening) {
-                        await _assistantService.stopListening();
-                      } else {
-                        await _assistantService.startListening();
-                      }
+                  return StreamBuilder<bool>(
+                    stream: _assistantService.processingStream,
+                    builder: (context, processingSnapshot) {
+                      final isProcessing = processingSnapshot.data ?? false;
+                      
+                      return _PulsingMicButton(
+                        isListening: isListening,
+                        isProcessing: isProcessing,
+                        child: FloatingActionButton(
+                          heroTag: "enhanced_voice_mic",
+                          backgroundColor: isListening 
+                            ? Colors.red.shade400 // Recording/listening color
+                            : isProcessing 
+                              ? Colors.blue.shade400 // Processing color
+                              : Colors.orange.shade300, // Baby Nathan's default color
+                          child: AnimatedSwitcher(
+                            duration: const Duration(milliseconds: 200),
+                            child: Icon(
+                              isListening 
+                                ? (kIsWeb ? Icons.keyboard : Icons.mic)
+                                : isProcessing 
+                                  ? Icons.psychology // Thinking icon
+                                  : (kIsWeb ? Icons.chat : Icons.mic_none),
+                              key: ValueKey(isListening ? 'listening' : isProcessing ? 'processing' : 'idle'),
+                              color: Colors.white,
+                              size: 28,
+                            ),
+                          ),
+                          onPressed: () async {
+                            // Prevent interaction during processing
+                            if (isProcessing) return;
+                            
+                            // Toggle voice listening
+                            if (isListening) {
+                              await _assistantService.stopListening();
+                            } else {
+                              await _assistantService.startListening();
+                            }
+                          },
+                        ),
+                      );
                     },
                   );
                 },
@@ -334,5 +359,91 @@ class EnhancedVoiceAssistant {
     _languageManager.dispose();
     _notificationSystem.dispose();
     _analyticsTracker.dispose();
+  }
+}
+
+/// Custom pulsing animation widget for the microphone button
+class _PulsingMicButton extends StatefulWidget {
+  final bool isListening;
+  final bool isProcessing;
+  final Widget child;
+
+  const _PulsingMicButton({
+    required this.isListening,
+    required this.isProcessing,
+    required this.child,
+  });
+
+  @override
+  State<_PulsingMicButton> createState() => _PulsingMicButtonState();
+}
+
+class _PulsingMicButtonState extends State<_PulsingMicButton>
+    with TickerProviderStateMixin {
+  late AnimationController _pulseController;
+  late Animation<double> _pulseAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _pulseController = AnimationController(
+      duration: const Duration(milliseconds: 1000),
+      vsync: this,
+    );
+    _pulseAnimation = Tween<double>(
+      begin: 1.0,
+      end: 1.2,
+    ).animate(CurvedAnimation(
+      parent: _pulseController,
+      curve: Curves.easeInOut,
+    ));
+  }
+
+  @override
+  void didUpdateWidget(_PulsingMicButton oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isListening && !oldWidget.isListening) {
+      _pulseController.repeat(reverse: true);
+    } else if (!widget.isListening && oldWidget.isListening) {
+      _pulseController.stop();
+      _pulseController.reset();
+    }
+  }
+
+  @override
+  void dispose() {
+    _pulseController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _pulseAnimation,
+      builder: (context, child) {
+        return Transform.scale(
+          scale: widget.isListening ? _pulseAnimation.value : 1.0,
+          child: Container(
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              boxShadow: widget.isListening ? [
+                BoxShadow(
+                  color: Colors.red.shade400.withOpacity(0.5),
+                  blurRadius: 20 * _pulseAnimation.value,
+                  spreadRadius: 5 * _pulseAnimation.value,
+                ),
+              ] : widget.isProcessing ? [
+                BoxShadow(
+                  color: Colors.blue.shade400.withOpacity(0.5),
+                  blurRadius: 15,
+                  spreadRadius: 3,
+                ),
+              ] : [],
+            ),
+            child: widget.child,
+          ),
+        );
+      },
+    );
   }
 }

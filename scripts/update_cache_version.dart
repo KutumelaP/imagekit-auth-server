@@ -126,3 +126,4 @@ Future<void> updateCacheManagementService(String version) async {
   await serviceFile.writeAsString(content);
   print('✅ Updated cache management service with version $version');
 }
+

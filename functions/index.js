@@ -5,6 +5,9 @@ const { create } = require('xmlbuilder2');
 const nodemailer = require('nodemailer');
 const path = require('path');
 const fs = require('fs');
+
+// Import speech recognition functions
+const { processAudioForSpeech, processAudioSimple } = require('./speechRecognition');
 // Helper: PHP-style urlencode (spaces as '+') for PayFast signature
 function pfEncode(value) {
   return encodeURIComponent(String(value))
@@ -4345,3 +4348,7 @@ exports.createReceivableEntry = functions.https.onCall(async (data, context) => 
     throw new functions.https.HttpsError('internal', 'Failed to create receivable entry: ' + e.message);
   }
 });
+
+// Export speech recognition functions
+exports.processAudioForSpeech = processAudioForSpeech;
+exports.processAudioSimple = processAudioSimple;

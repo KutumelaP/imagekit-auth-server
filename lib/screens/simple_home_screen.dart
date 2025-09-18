@@ -72,6 +72,9 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
       final userProvider = Provider.of<UserProvider>(context, listen: false);
       userProvider.loadUserData();
       
+      // Initialize voice assistant with user data
+      _initializeVoiceAssistant(userProvider);
+      
       // Request location permission after UI is ready
       _requestLocationPermission();
       
@@ -395,6 +398,64 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen>
           margin: EdgeInsets.only(bottom: 100.0), // Position above FAB
         ),
       );
+    }
+  }
+
+  /// Initialize the voice assistant with user data
+  Future<void> _initializeVoiceAssistant(UserProvider userProvider) async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user != null) {
+        final isNewUser = await _checkIfNewUser(user);
+        
+        await EnhancedVoiceAssistant().initialize(
+          userId: user.uid,
+          userName: user.displayName ?? 'User',
+          isNewUser: isNewUser,
+          initialLanguage: 'en',
+        );
+        
+        // Set the current screen context
+        EnhancedVoiceAssistant().setCurrentScreen('home');
+        
+        if (kDebugMode) {
+          print('🎤 Voice Assistant initialized for user: ${user.displayName}');
+        }
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('❌ Error initializing voice assistant: $e');
+      }
+    }
+  }
+
+  /// Check if user is new (registered within last 7 days)
+  Future<bool> _checkIfNewUser(User user) async {
+    try {
+      final userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .get();
+      
+      if (userDoc.exists) {
+        final userData = userDoc.data() as Map<String, dynamic>;
+        final createdAt = userData['createdAt'] as Timestamp?;
+        
+        if (createdAt != null) {
+          final daysSinceRegistration = DateTime.now()
+              .difference(createdAt.toDate())
+              .inDays;
+          return daysSinceRegistration <= 7;
+        }
+      }
+      
+      // If no data, assume new user
+      return true;
+    } catch (e) {
+      if (kDebugMode) {
+        print('❌ Error checking user registration date: $e');
+      }
+      return false;
     }
   }
 

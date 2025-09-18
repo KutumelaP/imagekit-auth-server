@@ -50,3 +50,4 @@ async function setupCacheClearConfig() {
 
 // Run the setup
 setupCacheClearConfig();
+

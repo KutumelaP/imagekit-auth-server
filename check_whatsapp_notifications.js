@@ -60,3 +60,4 @@ checkWhatsAppNotifications()
     console.error('\n💥 Check failed:', error);
     process.exit(1);
   });
+
