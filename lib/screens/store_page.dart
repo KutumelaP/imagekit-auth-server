@@ -1107,9 +1107,30 @@ void _showLeaveReviewDialog(String storeId) {
                                 child: const Text('Cancel'),
                               ),
                               ElevatedButton(
-                                onPressed: () {
+                                onPressed: () async {
+                                  // Store the context before popping the dialog
+                                  final mainContext = context;
                                   Navigator.pop(loginCtx);
-                                  Navigator.pushNamed(context, '/login');
+                                  print('🔍 DEBUG: Navigating to login for review (second dialog)...');
+                                  
+                                  // Check if main context is still valid
+                                  if (!mainContext.mounted) {
+                                    print('🔍 DEBUG: Main context not mounted, cannot navigate to login');
+                                    return;
+                                  }
+                                  
+                                  try {
+                                    final result = await Navigator.pushNamed(mainContext, '/login');
+                                    print('🔍 DEBUG: Login result (second dialog): $result');
+                                    if (result == true && mainContext.mounted) {
+                                      print('🔍 DEBUG: Login successful, reopening review dialog...');
+                                      _showLeaveReviewDialog(storeId);
+                                    } else {
+                                      print('🔍 DEBUG: Login failed or main context not mounted');
+                                    }
+                                  } catch (e) {
+                                    print('🔍 DEBUG: Error navigating to login (second dialog): $e');
+                                  }
                                 },
                                 child: const Text('Login'),
                               ),

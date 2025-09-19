@@ -36,6 +36,9 @@ class CheckoutV2ViewModel extends ChangeNotifier {
   bool sellerOffersPudo = false;
   bool sellerOffersPargo = false;
   bool isLoadingSellerInfo = true;
+  
+  // Seller's predefined delivery time estimate
+  String? sellerDeliveryTimeEstimate;
 
   // Seller store details for Store Pickup
   String? sellerStoreName;
@@ -87,6 +90,63 @@ class CheckoutV2ViewModel extends ChangeNotifier {
     } catch (_) {
       return null;
     }
+  }
+
+  /// Get delivery time estimate: use seller's predefined estimate first, then fallback to system calculation
+  int _getDeliveryTimeEstimate() {
+    // First, try to use seller's predefined delivery time estimate
+    if (sellerDeliveryTimeEstimate != null && sellerDeliveryTimeEstimate!.trim().isNotEmpty) {
+      final int? parsedMinutes = _parseSellerDeliveryEstimate(sellerDeliveryTimeEstimate!);
+      if (parsedMinutes != null && parsedMinutes > 0) {
+        print('✅ Using seller\'s predefined delivery estimate: $sellerDeliveryTimeEstimate (${parsedMinutes} minutes)');
+        return parsedMinutes;
+      }
+    }
+    
+    // Fallback to system calculation
+    print('📊 Using system-calculated delivery time (seller estimate not available or invalid)');
+    return DeliveryTimeUtils.calculateRealisticDeliveryTime(
+      distanceKm: distanceKm,
+      basePrepTimeMinutes: 15,
+      currentTime: DateTime.now(),
+    );
+  }
+
+  /// Parse seller's delivery time estimate string into minutes
+  /// Supports formats like: "30 min", "45 minutes", "1 hour", "1-2 hours", "30-45 min"
+  int? _parseSellerDeliveryEstimate(String estimate) {
+    if (estimate.trim().isEmpty) return null;
+    
+    final String normalized = estimate.toLowerCase().replaceAll(RegExp(r'[^\w\s-–]'), '');
+    
+    // Look for minute patterns (including range with en-dash)
+    final minuteMatch = RegExp(r'(\d+)(?:\s*[-–]\s*(\d+))?\s*(?:mins?|minutes?)').firstMatch(normalized);
+    if (minuteMatch != null) {
+      final int min1 = int.tryParse(minuteMatch.group(1) ?? '') ?? 0;
+      final int? min2 = int.tryParse(minuteMatch.group(2) ?? '');
+      return min2 != null ? ((min1 + min2) / 2).round() : min1;
+    }
+    
+    // Look for hour patterns (including range)
+    final hourMatch = RegExp(r'(\d+)(?:\s*[-–]\s*(\d+))?\s*(?:hours?|hrs?)').firstMatch(normalized);
+    if (hourMatch != null) {
+      final int hour1 = int.tryParse(hourMatch.group(1) ?? '') ?? 0;
+      final int? hour2 = int.tryParse(hourMatch.group(2) ?? '');
+      final int hours = hour2 != null ? ((hour1 + hour2) / 2).round() : hour1;
+      return hours * 60;
+    }
+    
+    // Look for plain numbers (assume minutes) - only if no units are present
+    if (!normalized.contains('hour') && !normalized.contains('hr') && !normalized.contains('min')) {
+      final numberMatch = RegExp(r'(\d+)(?:\s*[-–]\s*(\d+))?').firstMatch(normalized);
+      if (numberMatch != null) {
+        final int num1 = int.tryParse(numberMatch.group(1) ?? '') ?? 0;
+        final int? num2 = int.tryParse(numberMatch.group(2) ?? '');
+        return num2 != null ? ((num1 + num2) / 2).round() : num1;
+      }
+    }
+    
+    return null;
   }
 
   // Inputs
@@ -230,11 +290,8 @@ class CheckoutV2ViewModel extends ChangeNotifier {
     );
     deliveryFee = result.fee;
 
-    etaMinutes = DeliveryTimeUtils.calculateRealisticDeliveryTime(
-      distanceKm: distanceKm,
-      basePrepTimeMinutes: 15,
-      currentTime: DateTime.now(),
-    );
+    // Use seller's predefined delivery time estimate if available, otherwise calculate
+    etaMinutes = _getDeliveryTimeEstimate();
     notifyListeners();
   }
 
@@ -448,12 +505,8 @@ class CheckoutV2ViewModel extends ChangeNotifier {
       deliveryFee = result.fee;
       distanceKm = result.distanceKm;
       
-      // Calculate estimated delivery time
-      etaMinutes = DeliveryTimeUtils.calculateRealisticDeliveryTime(
-        distanceKm: distanceKm,
-        basePrepTimeMinutes: 15,
-        currentTime: DateTime.now(),
-      );
+      // Calculate estimated delivery time - use seller's predefined estimate if available
+      etaMinutes = _getDeliveryTimeEstimate();
       
       print('✅ Delivery fee calculated: R${deliveryFee!.toStringAsFixed(2)} for ${distanceKm}km');
       notifyListeners();
@@ -625,6 +678,9 @@ class CheckoutV2ViewModel extends ChangeNotifier {
             sellerDeliveryPreference = sellerData['deliveryMode'] ?? sellerData['deliveryPreference'] ?? 'system';
             sellerFeePerKm = (sellerData['sellerDeliveryFeePerKm'] ?? sellerData['deliveryFeePerKm'])?.toDouble();
             minOrderForDelivery = sellerData['minOrderForDelivery']?.toDouble();
+            
+            // Load seller's predefined delivery time estimate
+            sellerDeliveryTimeEstimate = sellerData['deliveryTimeEstimate']?.toString();
 
             // Store hours and open flag
             isStoreOpenFlag = sellerData['isStoreOpen'] ?? sellerData['storeOpen'] ?? true;
@@ -655,6 +711,7 @@ class CheckoutV2ViewModel extends ChangeNotifier {
             print('   - PAXI: $sellerOffersPaxi (paxiEnabled: ${sellerData['paxiEnabled']})');
             print('   - PUDO: $sellerOffersPudo (pudoEnabled: ${sellerData['pudoEnabled']})');
             print('   - PARGO: $sellerOffersPargo (pargoEnabled: ${sellerData['pargoEnabled']})');
+            print('   - Delivery Time Estimate: $sellerDeliveryTimeEstimate');
             print('📊 Available services: ${[
               if (sellerOffersDelivery) 'Delivery',
               if (sellerOffersPaxi) 'PAXI', 
