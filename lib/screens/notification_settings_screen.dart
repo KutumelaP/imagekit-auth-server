@@ -26,7 +26,7 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
   String _googleLanguage = 'en-US';
   String _googleVoiceName = 'en-US-Wavenet-C';
   double _rate = 0.45;
-  double _pitch = 1.0;
+  double _pitch = 0.7;
   double _volume = 1.0;
 
   @override
@@ -377,10 +377,19 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
                                 // Update language and reset voice to first valid option
                                 final allVoices = _enhanced.availableGoogleVoices;
                                 final fallbackPresets = const [
-                                  {'name': 'en-US-Wavenet-C', 'languageCodes': 'en-US', 'ssmlGender': 'MALE'},
+                                  // Neural2 voices (newest generation - ultra realistic)
+                                  {'name': 'en-US-Wavenet-C', 'languageCodes': 'en-US', 'ssmlGender': 'FEMALE'},
+                                  {'name': 'en-US-Neural2-D', 'languageCodes': 'en-US', 'ssmlGender': 'MALE'},
+                                  {'name': 'en-US-Neural2-E', 'languageCodes': 'en-US', 'ssmlGender': 'MALE'},
+                                  {'name': 'en-US-Neural2-A', 'languageCodes': 'en-US', 'ssmlGender': 'FEMALE'},
+                                  {'name': 'en-US-Neural2-C', 'languageCodes': 'en-US', 'ssmlGender': 'FEMALE'},
+                                  // WaveNet voices (high quality)
                                   {'name': 'en-US-Wavenet-D', 'languageCodes': 'en-US', 'ssmlGender': 'MALE'},
+                                  {'name': 'en-US-Wavenet-C', 'languageCodes': 'en-US', 'ssmlGender': 'MALE'},
                                   {'name': 'en-US-Wavenet-B', 'languageCodes': 'en-US', 'ssmlGender': 'MALE'},
-                                  {'name': 'en-GB-Wavenet-A', 'languageCodes': 'en-GB', 'ssmlGender': 'FEMALE'},
+                                  {'name': 'en-US-Wavenet-A', 'languageCodes': 'en-US', 'ssmlGender': 'FEMALE'},
+                                  // Other regions
+                                  {'name': 'en-GB-Wavenet-B', 'languageCodes': 'en-GB', 'ssmlGender': 'MALE'},
                                   {'name': 'en-AU-Wavenet-B', 'languageCodes': 'en-AU', 'ssmlGender': 'MALE'},
                                 ];
                                 final filtered = allVoices.isEmpty
@@ -398,10 +407,19 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
 
                             final allVoices = _enhanced.availableGoogleVoices;
                             final fallbackPresets = const [
-                              {'name': 'en-US-Wavenet-C', 'languageCodes': 'en-US', 'ssmlGender': 'MALE'},
+                              // Neural2 voices (newest generation - ultra realistic)
+                              {'name': 'en-US-Wavenet-C', 'languageCodes': 'en-US', 'ssmlGender': 'FEMALE'},
+                              {'name': 'en-US-Neural2-D', 'languageCodes': 'en-US', 'ssmlGender': 'MALE'},
+                              {'name': 'en-US-Neural2-E', 'languageCodes': 'en-US', 'ssmlGender': 'MALE'},
+                              {'name': 'en-US-Neural2-A', 'languageCodes': 'en-US', 'ssmlGender': 'FEMALE'},
+                              {'name': 'en-US-Neural2-C', 'languageCodes': 'en-US', 'ssmlGender': 'FEMALE'},
+                              // WaveNet voices (high quality)
                               {'name': 'en-US-Wavenet-D', 'languageCodes': 'en-US', 'ssmlGender': 'MALE'},
+                              {'name': 'en-US-Wavenet-C', 'languageCodes': 'en-US', 'ssmlGender': 'MALE'},
                               {'name': 'en-US-Wavenet-B', 'languageCodes': 'en-US', 'ssmlGender': 'MALE'},
-                              {'name': 'en-GB-Wavenet-A', 'languageCodes': 'en-GB', 'ssmlGender': 'FEMALE'},
+                              {'name': 'en-US-Wavenet-A', 'languageCodes': 'en-US', 'ssmlGender': 'FEMALE'},
+                              // Other regions
+                              {'name': 'en-GB-Wavenet-B', 'languageCodes': 'en-GB', 'ssmlGender': 'MALE'},
                               {'name': 'en-AU-Wavenet-B', 'languageCodes': 'en-AU', 'ssmlGender': 'MALE'},
                             ];
                             final filteredVoices = allVoices.isEmpty
@@ -433,21 +451,45 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
                               },
                             );
 
+                            final Widget voicePreviewBtn = ElevatedButton.icon(
+                              onPressed: () async {
+                                // Update voice config first
+                                await _enhanced.updateVoicePreferences(voiceName: _googleVoiceName);
+                                // Force Google TTS for preview
+                                await _enhanced.forceGoogleTts('Hello! This is how I sound with the ${_googleVoiceName} voice. How do you like it?');
+                              },
+                              icon: const Icon(Icons.play_arrow, size: 18),
+                              label: const Text('Preview Voice'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: AppTheme.deepTeal,
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                              ),
+                            );
+
                             if (narrow) {
                               return Column(
                                 children: [
                                   langDd,
                                   const SizedBox(height: 12),
                                   voiceDd,
+                                  const SizedBox(height: 12),
+                                  voicePreviewBtn,
                                 ],
                               );
                             }
 
-                            return Row(
+                            return Column(
                               children: [
-                                Expanded(child: langDd),
-                                const SizedBox(width: 12),
-                                Expanded(child: voiceDd),
+                                Row(
+                                  children: [
+                                    Expanded(child: langDd),
+                                    const SizedBox(width: 12),
+                                    Expanded(child: voiceDd),
+                                  ],
+                                ),
+                                const SizedBox(height: 12),
+                                voicePreviewBtn,
                               ],
                             );
                           },

@@ -29,6 +29,7 @@ import '../widgets/embedded_support_chat.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import '../services/app_update_service.dart';
 import '../widgets/voice_assistant/enhanced_voice_assistant.dart';
+// Fixed TestLlmDebugWidget compilation error
 
 class SimpleHomeScreen extends StatefulWidget {
   const SimpleHomeScreen({super.key});

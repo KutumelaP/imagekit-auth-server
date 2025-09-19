@@ -240,7 +240,11 @@ class EnhancedVoiceAssistant {
                   return StreamBuilder<bool>(
                     stream: _assistantService.processingStream,
                     builder: (context, processingSnapshot) {
-                      final isProcessing = processingSnapshot.data ?? false;
+final isProcessing = processingSnapshot.data ?? false;
+                      
+                      if (kDebugMode) {
+                        print('🔄 UI State - isListening: $isListening, isProcessing: $isProcessing');
+                      }
                       
                       return _PulsingMicButton(
                         isListening: isListening,
@@ -254,16 +258,18 @@ class EnhancedVoiceAssistant {
                               : Colors.orange.shade300, // Baby Nathan's default color
                           child: AnimatedSwitcher(
                             duration: const Duration(milliseconds: 200),
-                            child: Icon(
-                              isListening
-                                ? Icons.mic
-                                : isProcessing
-                                  ? (kIsWeb ? Icons.mic : Icons.psychology) // Brain icon on mobile, mic on web
-                                  : Icons.mic_none,
-                              key: ValueKey(isListening ? 'listening' : isProcessing ? 'processing' : 'idle'),
-                              color: Colors.white,
-                              size: 28,
-                            ),
+                            child: isProcessing
+                              ? const _ThinkingIcon(
+                                  key: ValueKey('thinking'),
+                                )
+                              : Icon(
+                                  isListening
+                                    ? Icons.mic
+                                    : Icons.mic_none,
+                                  key: ValueKey(isListening ? 'listening' : 'idle'),
+                                  color: Colors.white,
+                                  size: 28,
+                                ),
                           ),
                           onPressed: () async {
                             // Prevent interaction during processing
@@ -382,6 +388,84 @@ class _PulsingMicButtonState extends State<_PulsingMicButton>
               ] : [],
             ),
             child: widget.child,
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// Custom thinking icon with brain animation
+class _ThinkingIcon extends StatefulWidget {
+  const _ThinkingIcon({super.key});
+
+  @override
+  State<_ThinkingIcon> createState() => _ThinkingIconState();
+}
+
+class _ThinkingIconState extends State<_ThinkingIcon>
+    with TickerProviderStateMixin {
+  late AnimationController _rotationController;
+  late AnimationController _pulseController;
+  late Animation<double> _rotationAnimation;
+  late Animation<double> _pulseAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    
+    // Rotation animation for thinking effect
+    _rotationController = AnimationController(
+      duration: const Duration(milliseconds: 2000),
+      vsync: this,
+    );
+    _rotationAnimation = Tween<double>(
+      begin: 0.0,
+      end: 1.0,
+    ).animate(CurvedAnimation(
+      parent: _rotationController,
+      curve: Curves.easeInOut,
+    ));
+    
+    // Pulse animation
+    _pulseController = AnimationController(
+      duration: const Duration(milliseconds: 1000),
+      vsync: this,
+    );
+    _pulseAnimation = Tween<double>(
+      begin: 0.8,
+      end: 1.0,
+    ).animate(CurvedAnimation(
+      parent: _pulseController,
+      curve: Curves.easeInOut,
+    ));
+    
+    // Start animations
+    _rotationController.repeat();
+    _pulseController.repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _rotationController.dispose();
+    _pulseController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: Listenable.merge([_rotationAnimation, _pulseAnimation]),
+      builder: (context, child) {
+        return Transform.scale(
+          scale: _pulseAnimation.value,
+          child: Transform.rotate(
+            angle: _rotationAnimation.value * 2 * 3.14159,
+            child: const Icon(
+              Icons.psychology, // Brain/thinking icon
+              color: Colors.white,
+              size: 28,
+            ),
           ),
         );
       },

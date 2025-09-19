@@ -26,27 +26,43 @@ class ProductStoreLookupService {
       }
       if (byStore.isEmpty) return null;
 
-      // Build store entries with price range and store name
+      // Build store entries with price range, store name, and specific products
       final List<_StoreEntry> entries = [];
       for (final entry in byStore.entries) {
         final ownerId = entry.key;
         final items = entry.value;
         double minPrice = double.infinity;
         double maxPrice = 0.0;
+        final List<String> productNames = [];
+        
         for (final p in items) {
           final price = (p['price'] as num?)?.toDouble() ?? 0.0;
           if (price > 0) {
             if (price < minPrice) minPrice = price;
             if (price > maxPrice) maxPrice = price;
           }
+          
+          // Collect product names for this store
+          final productName = (p['name'] ?? '').toString().trim();
+          if (productName.isNotEmpty && !productNames.contains(productName)) {
+            productNames.add(productName);
+          }
         }
+        
         if (minPrice == double.infinity) {
           // No valid prices, skip
           continue;
         }
+        
         // Fetch store name
         String storeName = await _getStoreName(ownerId);
-        entries.add(_StoreEntry(ownerId: ownerId, name: storeName, minPrice: minPrice, maxPrice: maxPrice));
+        entries.add(_StoreEntry(
+          ownerId: ownerId, 
+          name: storeName, 
+          minPrice: minPrice, 
+          maxPrice: maxPrice,
+          products: productNames.take(2).toList(), // Take first 2 product names
+        ));
       }
 
       if (entries.isEmpty) return null;
@@ -60,20 +76,25 @@ class ProductStoreLookupService {
       final picks = entries.take(maxStores).toList();
       if (picks.isEmpty) return null;
 
-      String formatRange(double min, double max) {
-        // Return empty string to avoid speaking raw prices (pronunciation issues)
-        return '';
+
+      // Build specific store suggestions with products
+      final List<String> storeSuggestions = [];
+      for (final store in picks) {
+        if (store.products.isNotEmpty) {
+          final productList = store.products.join(' and ');
+          storeSuggestions.add('${store.name} (has $productList)');
+        } else {
+          storeSuggestions.add(store.name);
+        }
       }
 
-      final parts = picks.map((e) => e.name).toList();
-
       final leadOptions = [
-        "I found a few good matches",
-        "Here are some stores you might like",
-        "Nice—these look promising",
+        "I found some stores with $keyword",
+        "Here are stores that have $keyword",
+        "Great! These stores carry $keyword",
       ];
       final lead = leadOptions[(query.hashCode.abs()) % leadOptions.length];
-      final suggestion = parts.join(', ');
+      final suggestion = storeSuggestions.join(', ');
       return "$lead — $suggestion. Want me to open search for \"$keyword\"?";
     } catch (e) {
       // Fail silently; we can fallback to generic reply
@@ -139,7 +160,14 @@ class _StoreEntry {
   final String name;
   final double minPrice;
   final double maxPrice;
-  _StoreEntry({required this.ownerId, required this.name, required this.minPrice, required this.maxPrice});
+  final List<String> products;
+  _StoreEntry({
+    required this.ownerId, 
+    required this.name, 
+    required this.minPrice, 
+    required this.maxPrice,
+    required this.products,
+  });
 }
 
 

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../config/api_keys.dart';
@@ -78,11 +79,12 @@ class LlmService {
     required String userQuestion,
     required String baseAnswer,
     String? contextHint,
+    List<String>? relevantKnowledge,
     int maxTokens = 240,
   }) async {
     if (!isAvailable) return baseAnswer;
 
-    final systemInstruction = _buildSystemInstruction(contextHint);
+    final systemInstruction = _buildSystemInstruction(contextHint, relevantKnowledge);
     try {
       switch (_provider) {
         case LlmProvider.openai:
@@ -114,10 +116,11 @@ class LlmService {
   Future<String?> generateAnswer({
     required String userQuestion,
     String? contextHint,
+    List<String>? relevantKnowledge,
     int maxTokens = 200,
   }) async {
     if (!isAvailable) return null;
-    final systemInstruction = _buildDirectSystemInstruction(contextHint);
+    final systemInstruction = _buildDirectSystemInstruction(contextHint, relevantKnowledge);
     try {
       switch (_provider) {
         case LlmProvider.openai:
@@ -143,17 +146,29 @@ class LlmService {
     }
   }
 
-  String _buildDirectSystemInstruction(String? contextHint) {
+  String _buildDirectSystemInstruction(String? contextHint, List<String>? relevantKnowledge) {
     final buffer = StringBuffer();
     buffer.writeln('You are Nathan, a helpful assistant for the OmniaSA shopping app.');
-    buffer.writeln('Answer the user succinctly with concrete steps or options in the app.');
+    
+    // Add relevant knowledge context first
+    if (relevantKnowledge != null && relevantKnowledge.isNotEmpty) {
+      buffer.writeln('\nRelevant knowledge from our database:');
+      for (int i = 0; i < relevantKnowledge.length && i < 3; i++) {
+        buffer.writeln('- ${relevantKnowledge[i]}');
+      }
+      buffer.writeln('\nUse this knowledge to enhance your answer, but keep it natural and conversational.');
+    }
+    
+    buffer.writeln('\nAnswer the user succinctly with concrete steps or options in the app.');
     buffer.writeln('If the user asks about stores or products, guide them to:');
     buffer.writeln('- Use Search (what to type), categories (e.g., Food > Bakery), or filters.');
     buffer.writeln('- Mention how to find stores that carry an item (open a store, view products).');
     buffer.writeln('Constraints: Max 2 short sentences (< 60 words). No hallucinated store names.');
+    
     if (contextHint != null && contextHint.trim().isNotEmpty) {
-      buffer.writeln('Context: $contextHint');
+      buffer.writeln('Screen Context: $contextHint');
     }
+    
     return buffer.toString();
   }
 
@@ -162,6 +177,7 @@ class LlmService {
     required String userQuestion,
     required int maxTokens,
   }) async {
+    final startTime = DateTime.now();
     final uri = Uri.parse('https://api.openai.com/v1/chat/completions');
     final body = {
       'model': _openAiModel,
@@ -172,6 +188,17 @@ class LlmService {
       'temperature': 0.3,
       'max_tokens': maxTokens,
     };
+    
+    if (kDebugMode) {
+      print('🤖 ===== OPENAI REQUEST START =====');
+      print('🤖 Model: $_openAiModel');
+      print('🤖 User Question: $userQuestion');
+      print('🤖 Max Tokens: $maxTokens');
+      print('🤖 System Instruction: ${systemInstruction.substring(0, min(systemInstruction.length, 200))}...');
+      print('🤖 Request Body: ${jsonEncode(body)}');
+      print('🤖 Timestamp: ${startTime.toIso8601String()}');
+    }
+    
     final resp = await http
         .post(
           uri,
@@ -182,14 +209,31 @@ class LlmService {
           body: jsonEncode(body),
         )
         .timeout(const Duration(seconds: 8));
+    
+    final endTime = DateTime.now();
+    final duration = endTime.difference(startTime).inMilliseconds;
+    
+    if (kDebugMode) {
+      print('🤖 Response Status: ${resp.statusCode}');
+      print('🤖 Response Time: ${duration}ms');
+      print('🤖 Response Body: ${resp.body}');
+    }
+    
     if (resp.statusCode == 200) {
       final data = jsonDecode(resp.body) as Map<String, dynamic>;
       final choices = data['choices'] as List<dynamic>?;
       final content = choices?.first['message']?['content'] as String?;
-      if (content != null && content.trim().isNotEmpty) return content.trim();
+      if (content != null && content.trim().isNotEmpty) {
+        if (kDebugMode) {
+          print('🤖 Generated Content: ${content.substring(0, min(content.length, 200))}...');
+          print('🤖 ===== OPENAI REQUEST END =====');
+        }
+        return content.trim();
+      }
     }
     if (kDebugMode) {
       print('⚠️ OpenAI generate returned ${resp.statusCode}: ${resp.body}');
+      print('🤖 ===== OPENAI REQUEST END =====');
     }
     return null;
   }
@@ -240,7 +284,7 @@ class LlmService {
     return null;
   }
 
-  String _buildSystemInstruction(String? contextHint) {
+  String _buildSystemInstruction(String? contextHint, List<String>? relevantKnowledge) {
     final buffer = StringBuffer();
     buffer.writeln('You are Nathan, a friendly shopping assistant for OmniaSA.');
     buffer.writeln('Rewrite the draft answer to be concise, clear, and helpful.');
@@ -262,6 +306,7 @@ class LlmService {
     required String baseAnswer,
     required int maxTokens,
   }) async {
+    final startTime = DateTime.now();
     final uri = Uri.parse('https://api.openai.com/v1/chat/completions');
     final body = {
       'model': _openAiModel,
@@ -276,6 +321,16 @@ class LlmService {
       'max_tokens': maxTokens,
     };
 
+    if (kDebugMode) {
+      print('🔧 ===== OPENAI REFINE REQUEST START =====');
+      print('🔧 Model: $_openAiModel');
+      print('🔧 User Question: $userQuestion');
+      print('🔧 Base Answer: ${baseAnswer.substring(0, min(baseAnswer.length, 100))}...');
+      print('🔧 Max Tokens: $maxTokens');
+      print('🔧 System Instruction: ${systemInstruction.substring(0, min(systemInstruction.length, 200))}...');
+      print('🔧 Timestamp: ${startTime.toIso8601String()}');
+    }
+
     final resp = await http
         .post(
           uri,
@@ -287,16 +342,31 @@ class LlmService {
         )
         .timeout(const Duration(seconds: 8));
 
+    final endTime = DateTime.now();
+    final duration = endTime.difference(startTime).inMilliseconds;
+
+    if (kDebugMode) {
+      print('🔧 Response Status: ${resp.statusCode}');
+      print('🔧 Response Time: ${duration}ms');
+    }
+
     if (resp.statusCode == 200) {
       final data = jsonDecode(resp.body) as Map<String, dynamic>;
       final choices = data['choices'] as List<dynamic>?;
       if (choices != null && choices.isNotEmpty) {
         final content = choices.first['message']?['content'] as String?;
-        if (content != null && content.trim().isNotEmpty) return content.trim();
+        if (content != null && content.trim().isNotEmpty) {
+          if (kDebugMode) {
+            print('🔧 Refined Content: ${content.substring(0, min(content.length, 200))}...');
+            print('🔧 ===== OPENAI REFINE REQUEST END =====');
+          }
+          return content.trim();
+        }
       }
     }
     if (kDebugMode) {
       print('⚠️ OpenAI refine returned status ${resp.statusCode}: ${resp.body}');
+      print('🔧 ===== OPENAI REFINE REQUEST END =====');
     }
     return baseAnswer;
   }

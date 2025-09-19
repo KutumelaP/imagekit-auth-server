@@ -85,6 +85,34 @@ class NathanConversationManager {
     return response;
   }
 
+  /// Get relevant knowledge for LLM enhancement
+  List<String> getRelevantKnowledgeForLLM(String userQuestion) {
+    // Get knowledge based on current question and conversation history
+    return _knowledgeBase.getContextualKnowledge(_context.recentTopics, userQuestion);
+  }
+
+  /// Check if we should enhance response with LLM
+  bool shouldEnhanceWithLLM(String userQuestion) {
+    final normalizedQuestion = userQuestion.toLowerCase().trim();
+    
+    // Enhance for complex questions
+    if (normalizedQuestion.split(' ').length > 5) return true;
+    
+    // Enhance for questions that might need personalization
+    if (normalizedQuestion.contains('best') || 
+        normalizedQuestion.contains('recommend') || 
+        normalizedQuestion.contains('suggest') ||
+        normalizedQuestion.contains('which')) return true;
+    
+    // Enhance for follow-up questions
+    if (_isFollowUp(normalizedQuestion)) return true;
+    
+    // Enhance if we have rich conversation context
+    if (_context.recentTopics.length >= 2) return true;
+    
+    return false;
+  }
+
   /// Check if input is a greeting
   bool _isGreeting(String input) {
     const greetings = ['hello', 'hi', 'hey', 'good morning', 'good afternoon', 'good evening', 'greetings'];
@@ -115,9 +143,9 @@ class NathanConversationManager {
   /// Get personalized greeting
   String _getPersonalizedGreeting() {
     final greetings = [
-      "I'm Sarah, your shopping assistant. How can I help you today?",
+      "I'm Nathan, your shopping assistant. How can I help you today?",
       "Welcome to OmniaSA! I'm here to make your shopping experience amazing. What can I do for you?",
-      "I'm Sarah, and I'm excited to help you discover great products! What are you looking for?",
+      "I'm Nathan, and I'm excited to help you discover great products! What are you looking for?",
       "Hello! I'm your personal shopping companion. Ready to find something wonderful?",
     ];
     
@@ -294,7 +322,7 @@ class NathanConversationManager {
     return _knowledgeBase.getConversationStarters();
   }
 
-  /// Check if Sarah can handle the question confidently
+  /// Check if Nathan can handle the question confidently
   bool canHandleQuestion(String question) {
     return _knowledgeBase.canAnswerConfidently(question);
   }

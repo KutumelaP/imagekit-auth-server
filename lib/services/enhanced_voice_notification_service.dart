@@ -137,7 +137,16 @@ class EnhancedVoiceNotificationService {
     _voiceRate = prefs.getDouble('voice_rate') ?? 0.8;
     _voicePitch = prefs.getDouble('voice_pitch') ?? 1.0;
     _preferGoogleTts = prefs.getBool('prefer_google_tts') ?? true;
-    _voiceName = prefs.getString('voice_name') ?? 'en-US-Wavenet-C';
+    
+    // Force update to new voice configuration with slower speech
+    _voiceName = 'en-US-Wavenet-C';
+    _voiceRate = 1.0; // Normal human speech rate for Google TTS
+    _voicePitch = 0.9; // Warmer pitch
+    await prefs.setString('voice_name', 'en-US-Wavenet-C');
+    await prefs.setDouble('voice_rate', 1.0);
+    await prefs.setDouble('voice_pitch', 0.9);
+    debugPrint('🔄 Updated voice preference to en-US-Wavenet-C with slower speech rate');
+    
     _speakUnreadSummaryOnOpen = prefs.getBool('speak_unread_summary') ?? true;
     
     debugPrint('🔔 Enhanced notification preferences loaded');
@@ -509,6 +518,17 @@ class EnhancedVoiceNotificationService {
       await _voiceService.speak(processed, preferGoogle: true);
     } catch (e) {
       debugPrint('❌ Google TTS preview failed: $e');
+    }
+  }
+
+  /// Force Google TTS for testing
+  Future<void> forceGoogleTts(String text) async {
+    try {
+      await _initializeVoiceServiceWithRetry();
+      final processed = _processTextForSpeech(text);
+      await _voiceService.forceGoogleTts(processed);
+    } catch (e) {
+      debugPrint('❌ Force Google TTS failed: $e');
     }
   }
 

@@ -66,7 +66,7 @@ class NotificationService {
   String? _ttsLanguage; // e.g., 'en-US'
   String? _ttsVoiceName; // platform voice name
   String? _ttsVoiceLocale; // e.g., 'en-US'
-  double _ttsRate = 0.7;
+  double _ttsRate = 1.0;
   double _ttsPitch = 1.0;
   double _ttsVolume = 1.0;
 
@@ -121,7 +121,15 @@ class NotificationService {
     try {
       final prefs = await SharedPreferences.getInstance();
       _preferGoogleTtsForNotifications = prefs.getBool('prefer_google_tts') ?? true;
-      _googleVoiceName = prefs.getString('voice_name') ?? 'en-US-Wavenet-C';
+      
+      // Force update to new voice configuration
+      _googleVoiceName = 'en-US-Wavenet-C';
+      await prefs.setString('voice_name', 'en-US-Wavenet-C');
+      // Also clear any old speech rate settings
+      await prefs.setDouble('voice_rate', 1.0);
+      await prefs.setDouble('voice_pitch', 0.9);
+      print('🔄 Updated voice preference to en-US-Wavenet-C with slower speech rate');
+      
       _googleLanguage = prefs.getString('voice_language') ?? 'en-US';
       final rate = prefs.getDouble('voice_rate') ?? _ttsRate;
       final pitch = prefs.getDouble('voice_pitch') ?? _ttsPitch;
@@ -195,7 +203,7 @@ class NotificationService {
     _ttsLanguage = prefs.getString('tts_language') ?? 'en-US';
     _ttsVoiceName = prefs.getString('tts_voice_name');
     _ttsVoiceLocale = prefs.getString('tts_voice_locale');
-    _ttsRate = prefs.getDouble('tts_rate') ?? 0.7;
+    _ttsRate = prefs.getDouble('tts_rate') ?? 1.0;
     _ttsPitch = prefs.getDouble('tts_pitch') ?? 1.0;
     _ttsVolume = prefs.getDouble('tts_volume') ?? 1.0;
     _speakUnreadSummaryOnOpen = prefs.getBool('speak_unread_summary') ?? true;

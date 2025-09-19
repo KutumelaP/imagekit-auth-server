@@ -102,7 +102,7 @@ class NotificationTestService {
       js.context.callMethod('eval', ['''
         if (Notification.permission === 'granted') {
           new Notification('💬 New Message', {
-            body: 'Sarah: "Hi! Is your fresh bread still available for pickup today?"',
+            body: 'Nathan: "Hi! Is your fresh bread still available for pickup today?"',
             icon: '/icons/chat-icon.png',
             badge: '/icons/Icon-192.png',
             tag: 'test_chat',

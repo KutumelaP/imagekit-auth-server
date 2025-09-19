@@ -43,10 +43,10 @@ class VoiceLanguageManager {
       code: 'en',
       name: 'English',
       nativeName: 'English',
-      voiceName: 'en-US-Wavenet-C', // Child-like voice for Nathan
-      speechRate: 0.6, // Slower for baby speech
-      pitch: 1.8, // Very high pitch for baby voice
-      greeting: "Hello! I'm Nathan, your little shopping buddy! How can I help you today?",
+      voiceName: 'en-US-Wavenet-C', // Professional voice
+      speechRate: 1.0, // Normal human speech rate for Google TTS
+      pitch: 1.0, // Natural pitch
+      greeting: "Hello! I'm Nathan, your shopping assistant. How can I help you today?",
       helpMessage: "I can help you search for products, navigate the app, and answer questions. What would you like to do?",
     ),
     'zu': VoiceLanguage(
@@ -54,9 +54,9 @@ class VoiceLanguageManager {
       name: 'Zulu',
       nativeName: 'isiZulu',
       voiceName: 'zu-ZA-Wavenet-B', // Male voice for Nathan
-      speechRate: 0.6, // Slower for baby speech
-      pitch: 1.8, // Very high pitch for baby voice
-      greeting: "Sawubona! NginguNathan, umncedi wakho omncane wokuthenga! Ngingakusiza kanjani namuhla?",
+      speechRate: 0.8, // Professional speech rate
+      pitch: 0.7, // Lower pitch for male voice
+      greeting: "Sawubona! NginguNathan, umncedi wakho wokuthenga! Ngingakusiza kanjani namuhla?",
       helpMessage: "Ngingakusiza ukufuna imikhiqizo, ukuqondisa uhlelo, nokuphendula imibuzo. Ufuna ukwenzani?",
     ),
     'xh': VoiceLanguage(
@@ -64,9 +64,9 @@ class VoiceLanguageManager {
       name: 'Xhosa',
       nativeName: 'isiXhosa',
       voiceName: 'xh-ZA-Wavenet-B', // Male voice for Nathan
-      speechRate: 0.6, // Slower for baby speech
-      pitch: 1.8, // Very high pitch for baby voice
-      greeting: "Molo! NdinguNathan, umncedi wakho omncinci wokuthenga! Ndingakunceda njani namhlanje?",
+      speechRate: 0.8, // Professional speech rate
+      pitch: 0.7, // Lower pitch for male voice
+      greeting: "Molo! NdinguNathan, umncedi wakho wokuthenga! Ndingakunceda njani namhlanje?",
       helpMessage: "Ndingakunceda ukufuna iimveliso, ukuqondisa isicelo, nokuphendula imibuzo. Ufuna ukwenzani?",
     ),
     'af': VoiceLanguage(
@@ -74,9 +74,9 @@ class VoiceLanguageManager {
       name: 'Afrikaans',
       nativeName: 'Afrikaans',
       voiceName: 'af-ZA-Wavenet-B', // Male voice for Nathan
-      speechRate: 0.6, // Slower for baby speech
-      pitch: 1.8, // Very high pitch for baby voice
-      greeting: "Hallo! Ek is Nathan, jou klein inkopie-maatjie! Hoe kan ek jou vandag help?",
+      speechRate: 0.8, // Professional speech rate
+      pitch: 0.7, // Lower pitch for male voice
+      greeting: "Hallo! Ek is Nathan, jou inkopie-assistent! Hoe kan ek jou vandag help?",
       helpMessage: "Ek kan jou help om produkte te soek, die app te navigeer, en vrae te beantwoord. Wat wil jy doen?",
     ),
     'nso': VoiceLanguage(
@@ -84,9 +84,9 @@ class VoiceLanguageManager {
       name: 'Sepedi',
       nativeName: 'Sesotho sa Leboa',
       voiceName: 'nso-ZA-Wavenet-B', // Male voice for Nathan
-      speechRate: 0.6, // Slower for baby speech
-      pitch: 1.8, // Very high pitch for baby voice
-      greeting: "Dumela! Ke Nathan, morutiši wa gago wa go reka yo monnye! Nka go thuša bjang lehono?",
+      speechRate: 0.8, // Professional speech rate
+      pitch: 0.7, // Lower pitch for male voice
+      greeting: "Dumela! Ke Nathan, morutiši wa gago wa go reka! Nka go thuša bjang lehono?",
       helpMessage: "Nka go thuša go nyaka dithoto, go sepela ka app, le go araba dipotšišo. O nyaka go dira eng?",
     ),
   };

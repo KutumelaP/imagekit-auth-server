@@ -90,6 +90,8 @@ class VoiceAssistantService {
         print('🎤 Speech recognition enabled: $_speechEnabled');
         print('🎤 Voice service available: ${_voiceService.isGoogleTtsAvailable}');
         print('🎤 Assistant active: $_isActive');
+        print('🤖 LLM Service available: ${_llmService.isAvailable}');
+        print('🤖 LLM Provider: ${_llmService.provider}');
       }
     } catch (e) {
       _isActive = false;
@@ -422,13 +424,21 @@ class VoiceAssistantService {
       
       if (kDebugMode) {
         print('🎤 Processing recognized speech: "$_lastWords"');
+        print('💭 THINKING ICON should be visible now (processing=true)');
       }
+      
+      // Add a small delay to ensure the thinking icon is visible
+      await Future.delayed(const Duration(milliseconds: 300));
       
       // Process the recognized speech
       await _processRecognizedSpeech(_lastWords);
       
       _isProcessing = false;
       _processingController.add(false);
+      
+      if (kDebugMode) {
+        print('💭 THINKING ICON should be hidden now (processing=false)');
+      }
       
       if (kDebugMode) {
         print('🎤 Finished processing speech');
@@ -451,9 +461,13 @@ class VoiceAssistantService {
 
   /// Process the recognized speech
   Future<void> _processRecognizedSpeech(String recognizedText) async {
+    final startTime = DateTime.now();
     try {
       if (kDebugMode) {
-        print('🎤 _processRecognizedSpeech called with: "$recognizedText"');
+        print('🎤 ===== VOICE REQUEST START =====');
+        print('🎤 Request: "$recognizedText"');
+        print('🎤 Context: ${_currentContext ?? "none"}');
+        print('🎤 Timestamp: ${startTime.toIso8601String()}');
       }
       
       // Check if it's a common onboarding question first
@@ -462,6 +476,9 @@ class VoiceAssistantService {
           print('🎓 Detected onboarding question: $recognizedText');
         }
         await OnboardingVoiceGuide.answerCommonQuestion(recognizedText);
+        if (kDebugMode) {
+          print('🎓 Onboarding response completed');
+        }
         return;
       }
       
@@ -489,30 +506,61 @@ class VoiceAssistantService {
       String? humanAnswer = _humanResponder.generatePlayfulReply(
         recognizedText,
       );
+      if (kDebugMode) {
+        print('🎯 Human responder playful reply: ${humanAnswer ?? "none"}');
+      }
       if (humanAnswer == null) {
         humanAnswer = await _humanResponder.generateHelpfulAnswerAsync(
           recognizedText,
           context: _currentContext,
         );
+        if (kDebugMode) {
+          print('🎯 Human responder helpful answer: ${humanAnswer ?? "none"}');
+        }
       }
       // Try LLM direct answer if available and needed
       String? llmAnswer;
       if (humanAnswer == null && _llmService.isAvailable) {
         try {
+          if (kDebugMode) {
+            print('🤖 Using LLM to generate answer for: "${recognizedText}"');
+          }
+          
+          // Get relevant knowledge for LLM context
+          final relevantKnowledge = _conversationManager.getRelevantKnowledgeForLLM(recognizedText);
+          if (kDebugMode) {
+            print('🤖 Relevant knowledge pieces: ${relevantKnowledge.length}');
+            for (int i = 0; i < relevantKnowledge.length && i < 3; i++) {
+              print('🤖 Knowledge ${i + 1}: ${relevantKnowledge[i].substring(0, min(relevantKnowledge[i].length, 100))}...');
+            }
+          }
+          
           llmAnswer = await _llmService.generateAnswer(
             userQuestion: recognizedText,
             contextHint: _currentContext,
+            relevantKnowledge: relevantKnowledge,
           );
-        } catch (_) {}
+          if (kDebugMode && llmAnswer != null) {
+            print('🤖 LLM generated response with ${relevantKnowledge.length} knowledge pieces: ${llmAnswer.substring(0, llmAnswer.length > 100 ? 100 : llmAnswer.length)}...');
+          }
+        } catch (e) {
+          if (kDebugMode) {
+            print('❌ LLM generation failed: $e');
+          }
+        }
       }
       final response = humanAnswer ?? llmAnswer ?? _getQuestionResponse(recognizedText);
       if (kDebugMode) {
-        print('🎯 Fallback/LLM response: $response');
+        print('🎯 Final response selected: ${response.substring(0, min(response.length, 100))}...');
       }
       await _speakResponse(response, question: recognizedText);
       
+      final endTime = DateTime.now();
+      final duration = endTime.difference(startTime).inMilliseconds;
       if (kDebugMode) {
         print('🎤 Nathan responded: ${response.substring(0, min(response.length, 50))}...');
+        print('🎤 Processing time: ${duration}ms');
+        print('🎤 ===== VOICE REQUEST END =====');
       }
       
     } catch (e) {
@@ -667,12 +715,26 @@ class VoiceAssistantService {
     try {
       String finalText = response;
       finalText = _humanResponder.humanize(finalText, context: _currentContext);
+      
+      // Enhanced LLM refinement with knowledge context
       if (_llmService.isAvailable) {
-        finalText = await _llmService.refineAnswer(
-          userQuestion: (question != null && question.trim().isNotEmpty) ? question : _lastWords,
-          baseAnswer: response,
-          contextHint: _currentContext,
-        );
+        final userQuestion = (question != null && question.trim().isNotEmpty) ? question : _lastWords;
+        
+        // Check if we should enhance with LLM
+        if (_conversationManager.shouldEnhanceWithLLM(userQuestion)) {
+          final relevantKnowledge = _conversationManager.getRelevantKnowledgeForLLM(userQuestion);
+          
+          if (kDebugMode) {
+            print('🔧 Enhancing response with LLM using ${relevantKnowledge.length} knowledge pieces');
+          }
+          
+          finalText = await _llmService.refineAnswer(
+            userQuestion: userQuestion,
+            baseAnswer: response,
+            contextHint: _currentContext,
+            relevantKnowledge: relevantKnowledge,
+          );
+        }
         finalText = _humanResponder.humanize(finalText, context: _currentContext);
       }
       await _voiceService.speak(finalText);
@@ -969,7 +1031,26 @@ class VoiceAssistantService {
       await Future.delayed(const Duration(seconds: 3));
       _isListening = false;
       _listeningController.add(false);
+      
+      // Trigger processing state
+      _isProcessing = true;
+      _processingController.add(true);
+      
+      if (kDebugMode) {
+        print('💭 WEB THINKING ICON should be visible now (processing=true)');
+      }
+      
       await _voiceService.speak("Web audio recording detected! I'm working on understanding what you said.");
+      
+      // Simulate processing time
+      await Future.delayed(const Duration(seconds: 3));
+      
+      _isProcessing = false;
+      _processingController.add(false);
+      
+      if (kDebugMode) {
+        print('💭 WEB THINKING ICON should be hidden now (processing=false)');
+      }
       return;
     }
 
@@ -1012,12 +1093,20 @@ class VoiceAssistantService {
     _isProcessing = true;
     _processingController.add(true);
     
-    await Future.delayed(const Duration(seconds: 1));
+    if (kDebugMode) {
+      print('💭 WEB DIALOG THINKING ICON should be visible now (processing=true)');
+    }
+    
+    await Future.delayed(const Duration(seconds: 2));
     
     await _voiceService.speak("Great! I can access your microphone on this web browser. Soon I'll understand what you're saying!");
     
     _isProcessing = false;
     _processingController.add(false);
+    
+    if (kDebugMode) {
+      print('💭 WEB DIALOG THINKING ICON should be hidden now (processing=false)');
+    }
   }
 
   /// Get current context (simplified version - you may need to adjust based on your navigation setup)

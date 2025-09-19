@@ -119,6 +119,20 @@ class NathanKnowledgeBase {
       "I'm here to make shopping easy! I can help you search for products, explain how to use features, answer questions about orders and payments, guide new users, provide seller information, and help troubleshoot any issues. I'm like having a shopping expert in your pocket!",
       "Lots of things! I can help you navigate the app, find specific products, explain policies, track orders, discover deals, guide you through selling, answer technical questions, and provide shopping advice. I'm designed to be your complete shopping assistant!"
     ],
+
+    // Seller Payment Information
+    'seller_payment': [
+      "Sellers get paid through our weekly payout system! Once an order is completed, your earnings become available for payout. You can request a payout anytime (minimum R100) and it will be processed weekly to your registered bank account. Commission rates vary: 6% for pickup orders, 9% if you deliver, and 11% if we arrange courier delivery.",
+      "Payment for sellers works with weekly payouts! After each completed order, your earnings (minus commission) become available immediately. You can request payouts of R100 or more anytime, and they're processed weekly to your bank account. Commission is 6% for pickup, 9% for your delivery, or 11% for courier delivery - with caps to keep it fair!",
+      "Getting paid as a seller is transparent! Your earnings from completed orders are available right away. Request payouts of R100+ anytime through your seller dashboard, and we process them weekly to your bank account. Commission rates are: 6% pickup (min R5, max R30), 9% you deliver (max R40), or 11% courier delivery (max R50). You can also enable instant payouts for a small fee!"
+    ],
+
+    // Seller Delivery Information
+    'seller_delivery': [
+      "As a seller, you have flexible delivery options! You can choose to deliver products yourself within your local area, use our partner delivery services for wider reach, or offer pickup from your location. Set your delivery zones and costs in your seller settings, and customers will see your delivery options when they shop!",
+      "Delivery options for sellers are customizable! You can deliver personally to nearby areas, partner with local delivery services, or offer customer pickup. Set your delivery radius, costs, and timeframes in your seller dashboard. Customers will see your delivery options and can choose what works best for them!",
+      "Sellers control their own delivery! You can offer personal delivery within your area, use third-party delivery partners, or provide pickup options. Configure your delivery zones, pricing, and availability in your seller settings. This gives you flexibility while ensuring customers know exactly how they'll receive their orders!"
+    ],
   };
 
   /// Advanced question processing patterns
@@ -128,7 +142,7 @@ class NathanKnowledgeBase {
     'delivery_info': ['delivery', 'shipping', 'when will it arrive', 'delivery time', 'shipping cost', 'delivery options'],
     'payment_methods': ['payment', 'how to pay', 'payment options', 'payment methods', 'credit card', 'cash on delivery'],
     'product_quality': ['quality', 'is it good', 'product quality', 'reviews', 'ratings', 'is it worth it'],
-    'how_to_search': ['how to search', 'find products', 'search for', 'looking for', 'where to find', 'browse products', 'browse', 'how do i browse'],
+    'how_to_search': ['how to search', 'find products', 'search for', 'looking for', 'where to find'],
     'track_order': ['track order', 'order status', 'where is my order', 'track my purchase', 'delivery status'],
     'cancel_order': ['cancel order', 'cancel purchase', 'cancel my order', 'refund', 'return'],
     'forgot_password': ['forgot password', 'reset password', 'cant login', 'password reset', 'login problems'],
@@ -140,6 +154,8 @@ class NathanKnowledgeBase {
     'who_are_you': ['who are you', 'what are you', 'tell me about yourself', 'introduce yourself'],
     'who_created_you': ['who created you', 'who developed you', 'who made you', 'who built you', 'who programmed you', 'who designed you'],
     'what_can_you_do': ['what can you do', 'how can you help', 'what help', 'your abilities', 'help me'],
+    'seller_payment': ['how do sellers get paid', 'seller payment', 'when do sellers get paid', 'seller earnings', 'how do i get paid as seller', 'seller money', 'payment for sellers'],
+    'seller_delivery': ['how do sellers deliver', 'seller delivery', 'how to deliver as seller', 'delivery options for sellers', 'how do i deliver products', 'seller shipping'],
   };
 
   /// Smart question answering
@@ -164,7 +180,7 @@ class NathanKnowledgeBase {
       final randomAnswer = answers[Random().nextInt(answers.length)];
       
       if (kDebugMode) {
-        print('🧠 Sarah answered: $bestMatch (score: $highestScore)');
+        print('🧠 Nathan answered: $bestMatch (score: $highestScore)');
       }
       
       return randomAnswer;
@@ -246,7 +262,7 @@ class NathanKnowledgeBase {
     ];
   }
 
-  /// Check if Sarah can answer a question confidently
+  /// Check if Nathan can answer a question confidently
   bool canAnswerConfidently(String question) {
     final normalizedQuestion = question.toLowerCase().trim();
     
@@ -293,5 +309,112 @@ class NathanKnowledgeBase {
     }
     
     return related;
+  }
+
+  /// Extract relevant knowledge for LLM context
+  List<String> extractRelevantKnowledge(String userQuestion) {
+    final normalizedQuestion = userQuestion.toLowerCase().trim();
+    final relevantAnswers = <String>[];
+    
+    // Find multiple matching patterns and collect relevant knowledge
+    final matchedTopics = <String>[];
+    
+    for (final entry in _questionPatterns.entries) {
+      final score = _calculateMatchScore(normalizedQuestion, entry.value);
+      if (score > 0) {
+        matchedTopics.add(entry.key);
+      }
+    }
+    
+    // Sort by relevance and take top matches
+    matchedTopics.sort((a, b) {
+      final scoreA = _calculateMatchScore(normalizedQuestion, _questionPatterns[a]!);
+      final scoreB = _calculateMatchScore(normalizedQuestion, _questionPatterns[b]!);
+      return scoreB.compareTo(scoreA);
+    });
+    
+    // Extract knowledge from top matches
+    for (int i = 0; i < matchedTopics.length && i < 3; i++) {
+      final topic = matchedTopics[i];
+      final answers = _knowledgeBase[topic];
+      if (answers != null && answers.isNotEmpty) {
+        // Take the first answer as it's usually the most comprehensive
+        relevantAnswers.add(answers.first);
+      }
+    }
+    
+    // If no specific matches, add general helpful info
+    if (relevantAnswers.isEmpty) {
+      _addGeneralKnowledge(normalizedQuestion, relevantAnswers);
+    }
+    
+    if (kDebugMode) {
+      print('🧠 Extracted ${relevantAnswers.length} relevant knowledge pieces for: "$userQuestion"');
+    }
+    
+    return relevantAnswers;
+  }
+
+  /// Add general knowledge based on question type
+  void _addGeneralKnowledge(String question, List<String> knowledge) {
+    // Add general app info for basic questions
+    if (question.contains('app') || question.contains('omniasa')) {
+      knowledge.add(_knowledgeBase['about_omniasa']?.first ?? '');
+    }
+    
+    // Add help info for vague questions
+    if (question.contains('help') || question.contains('what')) {
+      knowledge.add(_knowledgeBase['what_can_you_do']?.first ?? '');
+    }
+    
+    // Add shopping guidance for product questions
+    if (question.contains('product') || question.contains('buy') || question.contains('find')) {
+      knowledge.add(_knowledgeBase['how_to_shop']?.first ?? '');
+    }
+    
+    // Add safety info for security questions
+    if (question.contains('safe') || question.contains('secure') || question.contains('trust')) {
+      knowledge.add(_knowledgeBase['is_it_safe']?.first ?? '');
+    }
+  }
+
+  /// Get contextual knowledge based on conversation history
+  List<String> getContextualKnowledge(List<String> recentTopics, String currentQuestion) {
+    final knowledge = <String>[];
+    
+    // Add knowledge from recent conversation topics
+    for (final topic in recentTopics.take(2)) {
+      switch (topic) {
+        case 'shopping':
+          knowledge.add("Previous topic: Shopping - Remember, you can browse categories, use search, and add items to cart.");
+          break;
+        case 'selling':
+          knowledge.add("Previous topic: Selling - Remember, seller registration and product uploads were discussed.");
+          break;
+        case 'orders':
+          knowledge.add("Previous topic: Orders - Remember, tracking and order management were mentioned.");
+          break;
+      }
+    }
+    
+    // Add current question knowledge
+    knowledge.addAll(extractRelevantKnowledge(currentQuestion));
+    
+    return knowledge;
+  }
+
+  /// Get knowledge summary for a specific topic
+  String getTopicSummary(String topic) {
+    final answers = _knowledgeBase[topic];
+    if (answers != null && answers.isNotEmpty) {
+      // Return a concise version of the first answer
+      final fullAnswer = answers.first;
+      if (fullAnswer.length > 150) {
+        final sentences = fullAnswer.split('. ');
+        return sentences.first + '.';
+      }
+      return fullAnswer;
+    }
+    return '';
   }
 }
