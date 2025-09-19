@@ -8,6 +8,9 @@
 build/
 *.lock
 
+# API Keys (Security)
+lib/config/dev_api_keys.dart
+
 # Android
 android/gradle/
 android/local.properties

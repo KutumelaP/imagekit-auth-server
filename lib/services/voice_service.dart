@@ -18,8 +18,8 @@ class VoiceConfig {
   const VoiceConfig({
     this.language = "en-US",
     this.speechRate = 1.0, // Normal human speech rate
-    this.pitch = 1.0, // Natural pitch
-    this.voiceName = "en-US-Wavenet-C", // Professional voice
+    this.pitch = 0.8, // Lower pitch for deeper male voice
+    this.voiceName = "en-US-Wavenet-D", // Deep male voice
     this.audioEncoding = "MP3",
   });
 
@@ -27,8 +27,8 @@ class VoiceConfig {
   static const VoiceConfig professionalMale = VoiceConfig(
     language: "en-US",
     speechRate: 1.0, // Normal human speech rate
-    pitch: 1.0, // Natural pitch
-    voiceName: "en-US-Wavenet-C", // Natural professional voice
+    pitch: 0.8, // Lower pitch for deeper male voice
+    voiceName: "en-US-Wavenet-D", // Deep professional male voice
     audioEncoding: "MP3",
   );
 
@@ -159,8 +159,8 @@ class VoiceService {
       _config = const VoiceConfig(
         language: "en-US",
         speechRate: 1.0, // Normal human speech rate for Google TTS
-        pitch: 1.0, // Natural pitch
-        voiceName: "en-US-Wavenet-C", // Professional voice
+        pitch: 0.8, // Lower pitch for deeper male voice
+        voiceName: "en-US-Wavenet-D", // Deep male voice
         audioEncoding: "MP3",
       );
       
@@ -285,7 +285,7 @@ class VoiceService {
       }
       
       // Set natural, human-like voice characteristics
-      await _flutterTts.setPitch(0.9); // Warmer pitch
+      await _flutterTts.setPitch(0.7); // Deeper pitch for male voice
       await _flutterTts.setSpeechRate(0.4); // Much slower for natural conversation
       await _flutterTts.setVolume(0.8); // Slightly softer volume
       
@@ -333,8 +333,8 @@ class VoiceService {
     _config = const VoiceConfig(
       language: "en-US",
       speechRate: 1.0, // Normal human speech rate
-      pitch: 1.0, // Natural pitch
-      voiceName: "en-US-Wavenet-C", // Professional voice
+      pitch: 0.8, // Lower pitch for deeper male voice
+      voiceName: "en-US-Wavenet-D", // Deep male voice
       audioEncoding: "MP3",
     );
     
