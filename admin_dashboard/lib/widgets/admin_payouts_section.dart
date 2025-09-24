@@ -426,6 +426,11 @@ class _AdminPayoutsSectionState extends State<AdminPayoutsSection> {
           );
         }),
         const SizedBox(height: 16),
+        // Receivables overview (Outstanding and Critical)
+        _buildReceivablesOverviewCards(),
+        const SizedBox(height: 12),
+        _buildReceivablesTable(),
+        const SizedBox(height: 24),
         // Financial Flow Overview
         _buildFinancialFlowHeader(),
         const SizedBox(height: 24),
@@ -715,6 +720,217 @@ class _AdminPayoutsSectionState extends State<AdminPayoutsSection> {
         );
       },
     );
+  }
+
+  // === Receivables (platform_receivables) ===
+  Widget _buildReceivablesOverviewCards() {
+    return FutureBuilder<Map<String, dynamic>>(
+      future: _getReceivablesSummary(),
+      builder: (context, snap) {
+        final total = (snap.data?['totalOutstanding'] as double?) ?? 0.0;
+        final sellers = (snap.data?['sellersWithDebt'] as int?) ?? 0;
+        final critical = (snap.data?['criticalAccounts'] as int?) ?? 0;
+        return Row(
+          children: [
+            Expanded(
+              child: _buildFinancialCard(
+                'Outstanding Receivables (${sellers} sellers)',
+                'R${total.toStringAsFixed(2)}',
+                Icons.receipt_long,
+                Colors.red,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _buildFinancialCard(
+                'Critical Accounts',
+                critical.toString(),
+                Icons.priority_high,
+                Colors.deepOrange,
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<Map<String, dynamic>> _getReceivablesSummary() async {
+    try {
+      final q = await _firestore.collection('platform_receivables').get();
+      double total = 0.0;
+      int sellers = 0;
+      int critical = 0;
+      for (final d in q.docs) {
+        final m = d.data();
+        final amount = (m['amount'] as num?)?.toDouble() ?? 0.0;
+        final isSettled = m['settled'] == true;
+        if (amount > 0 && !isSettled) {
+          total += amount;
+          sellers += 1;
+          if (m['critical'] == true || (m['ageDays'] as num?)?.toInt() != null && ((m['ageDays'] as num).toInt()) > 30) {
+            critical += 1;
+          }
+        }
+      }
+      return {
+        'totalOutstanding': total,
+        'sellersWithDebt': sellers,
+        'criticalAccounts': critical,
+      };
+    } catch (e) {
+      debugPrint('Receivables summary error: $e');
+      return {
+        'totalOutstanding': 0.0,
+        'sellersWithDebt': 0,
+        'criticalAccounts': 0,
+      };
+    }
+  }
+
+  Widget _buildReceivablesTable() {
+    return FutureBuilder<List<Map<String, dynamic>>>(
+      future: _getReceivablesList(),
+      builder: (context, snap) {
+        final items = snap.data ?? const [];
+        if (snap.connectionState == ConnectionState.waiting) {
+          return Card(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Row(children: const [SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)), SizedBox(width: 12), Text('Loading receivables…')]),
+            ),
+          );
+        }
+        return Card(
+          child: items.isEmpty
+              ? const Padding(
+                  padding: EdgeInsets.all(24),
+                  child: Text('No outstanding receivables'),
+                )
+              : ListView.separated(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: items.length,
+                  separatorBuilder: (_, __) => const Divider(height: 1),
+                  itemBuilder: (context, i) {
+                    final r = items[i];
+                    final id = r['id'] as String;
+                    final sellerId = (r['sellerId'] ?? '') as String;
+                    final amount = (r['amount'] as double?) ?? 0.0;
+                    final updated = r['updatedAt'] as DateTime?;
+                    final critical = r['critical'] == true;
+                    return ListTile(
+                      leading: Icon(
+                        critical ? Icons.report : Icons.receipt_long,
+                        color: critical ? Colors.red : Colors.blueGrey,
+                      ),
+                      title: Text(
+                        'Seller: ${sellerId.isEmpty ? 'Unknown' : sellerId}',
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                      subtitle: Wrap(
+                        spacing: 12,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          Text('Amount: R${amount.toStringAsFixed(2)}'),
+                          if (updated != null) Text('Updated: ${_formatDate(updated)}'),
+                          if (critical)
+                            const Chip(
+                              label: Text('CRITICAL'),
+                              backgroundColor: Color(0xFFFFE0E0),
+                              labelStyle: TextStyle(color: Colors.red, fontWeight: FontWeight.w600),
+                            ),
+                        ],
+                      ),
+                      trailing: Wrap(spacing: 8, children: [
+                        IconButton(
+                          tooltip: 'Contact seller',
+                          onPressed: () {
+                            final email = _sellerEmails[sellerId];
+                            if (email == null || email.isEmpty) {
+                              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Seller email not available')));
+                              return;
+                            }
+                            final body = Uri.encodeComponent('Hi,\n\nYour account shows an outstanding balance of R${amount.toStringAsFixed(2)}. Kindly settle to proceed with payouts.');
+                            final subj = Uri.encodeComponent('Outstanding balance');
+                            html.window.open('mailto:$email?subject=$subj&body=$body', '_blank');
+                          },
+                          icon: const Icon(Icons.email_outlined),
+                        ),
+                        IconButton(
+                          tooltip: 'Mark settled',
+                          onPressed: () async {
+                            final ok = await showDialog<bool>(
+                                  context: context,
+                                  builder: (_) => AlertDialog(
+                                    title: const Text('Mark receivable as settled'),
+                                    content: Text('Confirm marking R${amount.toStringAsFixed(2)} as settled for seller $sellerId?'),
+                                    actions: [
+                                      TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+                                      FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Confirm')),
+                                    ],
+                                  ),
+                                ) ??
+                                false;
+                            if (!ok) return;
+                            try {
+                              await _firestore.collection('platform_receivables').doc(id).set({
+                                'settled': true,
+                                'settledAt': FieldValue.serverTimestamp(),
+                              }, SetOptions(merge: true));
+                              if (mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Receivable marked settled')));
+                                setState(() {}); // refresh
+                              }
+                            } catch (e) {
+                              if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed: $e')));
+                            }
+                          },
+                          icon: const Icon(Icons.done_all),
+                        ),
+                      ]),
+                    );
+                  },
+                ),
+        );
+      },
+    );
+  }
+
+  Future<List<Map<String, dynamic>>> _getReceivablesList() async {
+    try {
+      final q = await _firestore.collection('platform_receivables').orderBy('updatedAt', descending: true).get().catchError((_) async {
+        // Fallback if no index/field
+        return await _firestore.collection('platform_receivables').get();
+      });
+      final list = <Map<String, dynamic>>[];
+      final sellerIds = <String>{};
+      for (final d in q.docs) {
+        final m = d.data();
+        final amount = (m['amount'] as num?)?.toDouble() ?? 0.0;
+        final isSettled = m['settled'] == true;
+        if (amount <= 0 || isSettled) continue;
+        final sellerId = (m['sellerId'] ?? '').toString();
+        sellerIds.add(sellerId);
+        list.add({
+          'id': d.id,
+          'sellerId': sellerId,
+          'amount': amount,
+          'critical': m['critical'] == true,
+          'updatedAt': m['updatedAt'] is Timestamp ? (m['updatedAt'] as Timestamp).toDate() : null,
+        });
+      }
+      // Try to enrich with emails (best-effort)
+      if (sellerIds.isNotEmpty) {
+        try {
+          await _fetchSellerEmails(q.docs.where((e) => sellerIds.contains(e.data()['sellerId']?.toString())).toList());
+        } catch (_) {}
+      }
+      return list;
+    } catch (e) {
+      debugPrint('Receivables list error: $e');
+      return [];
+    }
   }
 
   Widget _buildFinancialFlowHeader() {

@@ -48,6 +48,53 @@ class _SellerOrdersListScreenState extends State<SellerOrdersListScreen>
   late Animation<Offset> _slideAnimation;
   late Animation<double> _pulseAnimation;
 
+  // Helpers to robustly extract addresses from heterogenous order shapes
+  String _pickNonEmpty(dynamic v) {
+    if (v == null) return '';
+    final s = v.toString().trim();
+    return s.isEmpty ? '' : s;
+  }
+
+  String _extractDeliveryAddress(Map<String, dynamic> order) {
+    try {
+      final f = (order['fulfillment'] is Map) ? Map<String, dynamic>.from(order['fulfillment'] as Map) : const {};
+      final candidates = <String>[
+        _pickNonEmpty(order['deliveryAddress']),
+        _pickNonEmpty(order['address']),
+        _pickNonEmpty(order['shippingAddress']),
+        _pickNonEmpty(f['address']),
+        _pickNonEmpty(f['deliveryAddress']),
+        _pickNonEmpty((f['delivery'] is Map) ? (f['delivery']['address']) : null),
+        _pickNonEmpty((f['destination'] is Map) ? (f['destination']['address']) : null),
+        _pickNonEmpty((order['delivery'] is Map) ? (order['delivery']['address']) : null),
+      ];
+      return candidates.firstWhere((e) => e.isNotEmpty, orElse: () => '');
+    } catch (_) {
+      return '';
+    }
+  }
+
+  String _extractPickupAddress(Map<String, dynamic> order) {
+    try {
+      final p = (order['pickupPoint'] is Map) ? Map<String, dynamic>.from(order['pickupPoint'] as Map) : const {};
+      final name = _pickNonEmpty(order['pickupPointName']) == '' ? _pickNonEmpty(p['name']) : _pickNonEmpty(order['pickupPointName']);
+      final addr = <String>[
+        _pickNonEmpty(order['pickupPointAddress']),
+        _pickNonEmpty(p['address']),
+        _pickNonEmpty(p['fullAddress']),
+        _pickNonEmpty(p['formattedAddress']),
+        _pickNonEmpty(p['street']),
+        _pickNonEmpty((order['fulfillment'] is Map) ? (order['fulfillment']['pickupPoint']?['address']) : null),
+        _pickNonEmpty((order['fulfillment'] is Map) ? (order['fulfillment']['pickupPoint']?['fullAddress']) : null),
+        _pickNonEmpty((order['fulfillment'] is Map) ? (order['fulfillment']['pickupPoint']?['formattedAddress']) : null),
+        _pickNonEmpty((order['fulfillment'] is Map) ? (order['fulfillment']['pickupPoint']?['street']) : null),
+      ].firstWhere((e) => e.isNotEmpty, orElse: () => '');
+      return name.isNotEmpty && addr.isNotEmpty ? '$name — $addr' : (addr.isNotEmpty ? addr : name);
+    } catch (_) {
+      return '';
+    }
+  }
+
   // Stats
   int _totalOrders = 0;
   double _totalRevenue = 0.0;
@@ -1216,6 +1263,10 @@ class _SellerOrdersListScreenState extends State<SellerOrdersListScreen>
       final formattedOrderNumber = order['formattedOrderNumber'] ?? OrderUtils.formatOrderNumber(orderNumber);
       final items = order['items'] as List<dynamic>? ?? [];
       final itemCount = items.length;
+      // Precompute fulfillment and address strings for UI rendering
+      final String __fulfillmentType = (order['fulfillmentType']?.toString().toLowerCase() ?? 'pickup');
+      final String __deliveryAddr = _extractDeliveryAddress(order);
+      final String __pickupAddr = _extractPickupAddress(order);
     
     return GestureDetector(
       onTap: () {
@@ -1247,9 +1298,12 @@ class _SellerOrdersListScreenState extends State<SellerOrdersListScreen>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Container(
+                Row(
+                  children: [
+                    Container(
                   padding: EdgeInsets.all(8),
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
@@ -1265,22 +1319,34 @@ class _SellerOrdersListScreenState extends State<SellerOrdersListScreen>
                     size: 18,
                   ),
                 ),
-                SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    'Order #$formattedOrderNumber',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w700,
-                      color: AppTheme.deepTeal,
-                      fontSize: 16,
+                    SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'Order #$formattedOrderNumber',
+                        maxLines: 1,
+                        softWrap: false,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          color: AppTheme.deepTeal,
+                          fontSize: 16,
+                        ),
+                      ),
                     ),
-                  ),
+                  ],
                 ),
-                Row(children: [
-                  _buildStatusBadge(status),
-                  const SizedBox(width: 6),
-                  _buildFulfillmentBadge(order['fulfillmentType']?.toString() ?? 'pickup', order['pickupPointName']?.toString() ?? ''),
-                ]),
+                SizedBox(height: 6),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [
+                    _buildStatusBadge(status),
+                    _buildFulfillmentBadge(
+                      order['fulfillmentType']?.toString() ?? 'pickup',
+                      order['pickupPointName']?.toString() ?? '',
+                    ),
+                  ],
+                ),
               ],
             ),
             SizedBox(height: 12),
@@ -1327,6 +1393,69 @@ class _SellerOrdersListScreenState extends State<SellerOrdersListScreen>
                 ),
               ],
             ),
+            if (__fulfillmentType == 'delivery' && __deliveryAddr.isNotEmpty) ...[
+              SizedBox(height: 8),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    padding: EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: AppTheme.info.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Icon(
+                      Icons.location_on,
+                      size: 14,
+                      color: AppTheme.info,
+                    ),
+                  ),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      __deliveryAddr,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: AppTheme.deepTeal,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ] else if (__pickupAddr.isNotEmpty) ...[
+              SizedBox(height: 8),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    padding: EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: AppTheme.primaryPurple.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Icon(
+                      Icons.store_mall_directory,
+                      size: 14,
+                      color: AppTheme.primaryPurple,
+                    ),
+                  ),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      __pickupAddr,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: AppTheme.deepTeal,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
             SizedBox(height: 12),
             Row(
               children: [
@@ -1516,8 +1645,7 @@ class _SellerOrdersListScreenState extends State<SellerOrdersListScreen>
     final Color badgeColor = isDelivery ? AppTheme.info : AppTheme.primaryPurple;
     final String label = isDelivery ? 'DELIVERY' : 'PICKUP';
     final String sub = (!isDelivery && pickupName.isNotEmpty) ? ' • $pickupName' : '';
-    return Flexible(
-      child: Container(
+    return Container(
         padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         decoration: BoxDecoration(
           color: badgeColor.withOpacity(0.1),
@@ -1529,22 +1657,19 @@ class _SellerOrdersListScreenState extends State<SellerOrdersListScreen>
           children: [
             Icon(isDelivery ? Icons.local_shipping : Icons.store, size: 12, color: badgeColor),
             SizedBox(width: 4),
-            Flexible(
-              child: Text(
-                '$label$sub',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: badgeColor,
-                  fontSize: 10,
-                  fontWeight: FontWeight.bold,
-                ),
+            Text(
+              '$label$sub',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: badgeColor,
+                fontSize: 10,
+                fontWeight: FontWeight.bold,
               ),
             ),
           ],
         ),
-      ),
-    );
+      );
   }
 
   Widget _buildDetailItem(IconData icon, String text, Color color) {

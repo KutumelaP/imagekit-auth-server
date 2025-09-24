@@ -160,29 +160,44 @@ class RealTimeNotificationService extends ChangeNotifier {
   }
 
   /// Setup Firestore listeners for different collections
-  void _setupFirestoreListeners() {
+  Future<void> _setupFirestoreListeners() async {
     // Check if user is authenticated and is admin before setting up listeners
     final user = _auth?.currentUser;
     if (user == null) {
       debugPrint('⚠️ User not authenticated - skipping Firestore listeners setup');
       return;
     }
-    
-    // Verify admin status before setting up listeners
-    user.getIdTokenResult().then((idTokenResult) {
-      final isAdmin = idTokenResult.claims?['admin'] == true || 
-                     idTokenResult.claims?['role'] == 'admin';
-      
-      if (!isAdmin) {
-        debugPrint('⚠️ User is not admin - skipping Firestore listeners setup');
-        return;
+
+    bool isAdmin = false;
+    try {
+      final idTokenResult = await user.getIdTokenResult();
+      isAdmin = idTokenResult.claims?['admin'] == true || 
+                idTokenResult.claims?['role'] == 'admin';
+    } catch (e) {
+      debugPrint('⚠️ Failed to read custom claims: $e');
+    }
+
+    // Fallback to Firestore user profile role if custom claim missing
+    if (!isAdmin) {
+      try {
+        final userDoc = await _firestore!.collection('users').doc(user.uid).get();
+        isAdmin = (userDoc.data()?['role']?.toString().toLowerCase() == 'admin');
+      } catch (e) {
+        debugPrint('⚠️ Failed to read user role from Firestore: $e');
       }
-      
-      // Setup listeners only for admin users
-      _setupAdminListeners();
-    }).catchError((e) {
-      debugPrint('❌ Error verifying admin status: $e');
-    });
+    }
+
+    if (!isAdmin) {
+      debugPrint('⚠️ User is not admin - skipping Firestore listeners setup');
+      return;
+    }
+
+    // Setup listeners only for admin users
+    _setupAdminListeners();
+
+    // Mark as "live" for the UI even if WebSocket is not connected
+    _isConnected = true;
+    notifyListeners();
   }
   
   /// Setup admin-only Firestore listeners
@@ -226,6 +241,16 @@ class RealTimeNotificationService extends ChangeNotifier {
           .snapshots()
           .listen(_handleNewReviews, onError: (e) {
             debugPrint('❌ Error listening to reviews: $e');
+          }),
+    );
+
+    // Listen for admin notifications
+    _firestoreListeners.add(
+      _firestore!.collection('admin_notifications')
+          .orderBy('createdAt', descending: true)
+          .snapshots()
+          .listen(_handleAdminNotifications, onError: (e) {
+            debugPrint('❌ Error listening to admin notifications: $e');
           }),
     );
 
@@ -412,6 +437,98 @@ class RealTimeNotificationService extends ChangeNotifier {
     }
   }
 
+  /// Handle admin notifications from Firestore
+  void _handleAdminNotifications(QuerySnapshot snapshot) {
+    for (var change in snapshot.docChanges) {
+      if (change.type == DocumentChangeType.added || change.type == DocumentChangeType.modified) {
+        final data = change.doc.data() as Map<String, dynamic>;
+        final notification = AdminNotification(
+          id: change.doc.id,
+          title: data['title'] ?? 'Admin Notification',
+          message: data['body'] ?? '',
+          type: _mapNotificationType(data['type']),
+          priority: _mapNotificationPriority(data['metadata']),
+          timestamp: data['createdAt'] != null 
+              ? (data['createdAt'] as Timestamp).toDate()
+              : DateTime.now(),
+          data: data['metadata'],
+          isRead: data['read'] ?? false,
+          actionUrl: _getActionUrl(data['type'], data['metadata']),
+        );
+        
+        if (change.type == DocumentChangeType.added) {
+          _addNotification(notification);
+        } else if (change.type == DocumentChangeType.modified) {
+          // Update existing notification
+          final index = _notifications.indexWhere((n) => n.id == change.doc.id);
+          if (index != -1) {
+            _notifications[index] = notification;
+            notifyListeners();
+          } else {
+            _addNotification(notification);
+          }
+        }
+      }
+    }
+  }
+
+  /// Map notification type from Firestore to enum
+  NotificationType _mapNotificationType(String? type) {
+    switch (type) {
+      case 'weekly_summary':
+        return NotificationType.systemAlert;
+      case 'payment_alert':
+        return NotificationType.paymentFailed;
+      case 'new_order':
+        return NotificationType.newOrder;
+      case 'seller_registration':
+        return NotificationType.sellerRegistration;
+      case 'review_submitted':
+        return NotificationType.reviewSubmitted;
+      case 'refund_requested':
+        return NotificationType.refundRequested;
+      case 'user_reported':
+        return NotificationType.userReported;
+      default:
+        return NotificationType.systemAlert;
+    }
+  }
+
+  /// Map notification priority from metadata
+  NotificationPriority _mapNotificationPriority(Map<String, dynamic>? metadata) {
+    if (metadata == null) return NotificationPriority.medium;
+    
+    final criticalAccounts = metadata['criticalAccounts'] as int? ?? 0;
+    final totalOutstanding = metadata['totalOutstanding'] as int? ?? 0;
+    
+    if (criticalAccounts > 0 || totalOutstanding > 100) {
+      return NotificationPriority.critical;
+    } else if (totalOutstanding > 50) {
+      return NotificationPriority.high;
+    } else if (totalOutstanding > 10) {
+      return NotificationPriority.medium;
+    } else {
+      return NotificationPriority.low;
+    }
+  }
+
+  /// Get action URL based on notification type
+  String? _getActionUrl(String? type, Map<String, dynamic>? metadata) {
+    switch (type) {
+      case 'weekly_summary':
+        // Route to Payouts for financial reconciliation
+        return '/payouts';
+      case 'payment_alert':
+        return '/payments';
+      case 'new_order':
+        return '/orders';
+      case 'seller_registration':
+        return '/sellers';
+      default:
+        return null;
+    }
+  }
+
   /// Add notification to the list and notify listeners
   void _addNotification(AdminNotification notification) {
     _notifications.insert(0, notification); // Add to beginning for chronological order
@@ -438,6 +555,16 @@ class RealTimeNotificationService extends ChangeNotifier {
       _notifications[index] = _notifications[index].copyWith(isRead: true);
       await _storeNotifications();
       notifyListeners();
+      
+      // Update in Firestore if it's from admin_notifications collection
+      try {
+        await _firestore?.collection('admin_notifications')
+            .doc(notificationId)
+            .update({'read': true});
+        debugPrint('✅ Marked notification as read in Firestore: $notificationId');
+      } catch (e) {
+        debugPrint('⚠️ Failed to update notification in Firestore: $e');
+      }
     }
   }
 

@@ -17,6 +17,8 @@ class _ProductEditDialogState extends State<ProductEditDialog> {
   late TextEditingController _priceController;
   late TextEditingController _stockController;
   late TextEditingController _sellerController;
+  late TextEditingController _prepTimeController;
+  bool _madeToOrder = false;
   String _status = 'active';
 
   @override
@@ -29,6 +31,8 @@ class _ProductEditDialogState extends State<ProductEditDialog> {
     _stockController = TextEditingController(text: data?['stock']?.toString() ?? '');
     _sellerController = TextEditingController(text: data?['sellerName'] ?? data?['sellerId'] ?? '');
     _status = data?['status'] ?? 'active';
+    _prepTimeController = TextEditingController(text: (data?['prepTimeMinutes']?.toString() ?? ''));
+    _madeToOrder = (data?['madeToOrder'] as bool?) ?? false;
   }
 
   @override
@@ -38,6 +42,7 @@ class _ProductEditDialogState extends State<ProductEditDialog> {
     _priceController.dispose();
     _stockController.dispose();
     _sellerController.dispose();
+    _prepTimeController.dispose();
     super.dispose();
   }
 
@@ -78,6 +83,18 @@ class _ProductEditDialogState extends State<ProductEditDialog> {
                 decoration: const InputDecoration(labelText: 'Seller (name or ID)'),
                 validator: (v) => v == null || v.isEmpty ? 'Enter seller' : null,
               ),
+              const SizedBox(height: 8),
+              TextFormField(
+                controller: _prepTimeController,
+                decoration: const InputDecoration(labelText: 'Prep Time (minutes)'),
+                keyboardType: TextInputType.number,
+              ),
+              CheckboxListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Made to order'),
+                value: _madeToOrder,
+                onChanged: (v) => setState(() => _madeToOrder = v ?? false),
+              ),
               DropdownButtonFormField<String>(
                 value: _status,
                 decoration: const InputDecoration(labelText: 'Status'),
@@ -107,6 +124,8 @@ class _ProductEditDialogState extends State<ProductEditDialog> {
                 'quantity': int.tryParse(_stockController.text.trim()) ?? 0, // Keep both fields synchronized
                 'sellerName': _sellerController.text.trim(),
                 'status': _status,
+                'prepTimeMinutes': int.tryParse(_prepTimeController.text.trim()) ?? null,
+                'madeToOrder': _madeToOrder,
               });
               Navigator.of(context).pop();
             }

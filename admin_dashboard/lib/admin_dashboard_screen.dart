@@ -105,9 +105,22 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           try {
             // Verify user has admin privileges before initializing notifications
             final idTokenResult = await user.getIdTokenResult();
-            final isAdmin = idTokenResult.claims?['admin'] == true || 
+            bool isAdmin = idTokenResult.claims?['admin'] == true || 
                            idTokenResult.claims?['role'] == 'admin';
-            
+
+            // Fallback to Firestore user profile role if custom claims are missing
+            if (!isAdmin) {
+              try {
+                final userDoc = await FirebaseFirestore.instance
+                    .collection('users')
+                    .doc(user.uid)
+                    .get();
+                isAdmin = (userDoc.data()?['role']?.toString().toLowerCase() == 'admin');
+              } catch (e) {
+                debugPrint('⚠️ Failed to read user role from Firestore: $e');
+              }
+            }
+
             if (isAdmin) {
               debugPrint('🔔 Initializing notifications for admin user: ${user.email}');
               await _notificationService.initialize(
@@ -168,20 +181,24 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
   Widget _buildMobileLayout(Map<String, dynamic> userData, ConnectionState connectionState) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text(_getCurrentSectionTitle()),
-        backgroundColor: Theme.of(context).colorScheme.primary,
-        foregroundColor: AdminTheme.angel,
-      ),
+      appBar: _buildAppBar(userData),
       drawer: _buildMobileDrawer(),
-      body: _buildMainContent(userData, connectionState),
+      body: Stack(
+        children: [
+          _buildMainContent(userData, connectionState),
+          if (_showNotificationPanel) _buildNotificationPanel(),
+        ],
+      ),
     );
   }
 
   Widget _buildTabletLayout(Map<String, dynamic> userData, ConnectionState connectionState) {
-          return Scaffold(
-      body: Row(
-                children: [
+    return Scaffold(
+      appBar: _buildAppBar(userData),
+      body: Stack(
+        children: [
+          Row(
+            children: [
           // Compact Sidebar
           Container(
             width: 60,
@@ -195,14 +212,20 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               child: _buildMainContent(userData, connectionState),
                     ),
                   ),
-                ],
-            ),
-          );
+            ],
+          ),
+          if (_showNotificationPanel) _buildNotificationPanel(),
+        ],
+      ),
+    );
         }
 
   Widget _buildDesktopLayout(Map<String, dynamic> userData, ConnectionState connectionState) {
-        return Scaffold(
-      body: Row(
+    return Scaffold(
+      appBar: _buildAppBar(userData),
+      body: Stack(
+        children: [
+          Row(
             children: [
           // Enhanced Sidebar
                     Container(
@@ -236,6 +259,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               ),
             ),
           ),
+        ],
+      ),
+          if (_showNotificationPanel) _buildNotificationPanel(),
         ],
       ),
     );

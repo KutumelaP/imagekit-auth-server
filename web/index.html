@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <base href="$FLUTTER_BASE_HREF">
+  <base href="/">
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
   <meta name="description" content="OmniaSA - Local marketplace for food, goods, and services across South Africa">
@@ -13,10 +13,10 @@
   <meta name="format-detection" content="telephone=no">
   <meta name="msapplication-tap-highlight" content="no">
 
-  <link rel="apple-touch-icon" href="icons/Icon-192.png">
-  <link rel="apple-touch-icon" sizes="152x152" href="icons/Icon-192.png">
-  <link rel="apple-touch-icon" sizes="180x180" href="icons/Icon-192.png">
-  <link rel="apple-touch-icon" sizes="167x167" href="icons/Icon-192.png">
+  <link rel="apple-touch-icon" href="icons/Icon-192.png?v=1.0.0+3">
+  <link rel="apple-touch-icon" sizes="152x152" href="icons/Icon-192.png?v=1.0.0+3">
+  <link rel="apple-touch-icon" sizes="180x180" href="icons/Icon-192.png?v=1.0.0+3">
+  <link rel="apple-touch-icon" sizes="167x167" href="icons/Icon-192.png?v=1.0.0+3">
   <link rel="icon" type="image/png" href="favicon.png"/>
 
   <title>OmniaSA</title>
@@ -204,6 +204,15 @@
     function showOverlay(el){ el.style.display='block'; el.style.visibility='visible'; el.style.pointerEvents='auto'; }
     function hideOverlay(el){ el.style.display='none'; el.style.visibility='hidden'; el.style.pointerEvents='none'; }
 
+    // Detect if running as an installed PWA (iOS and others)
+    function isStandalone(){
+      try {
+        var m = window.matchMedia && window.matchMedia('(display-mode: standalone)').matches;
+        var ios = (window.navigator.standalone === true);
+        return !!(m || ios);
+      } catch (_) { return false; }
+    }
+
     (function(){
       function isPaymentRoute(){
         try{
@@ -224,8 +233,14 @@
       window.addEventListener('hashchange', hideOverlays);
     })();
 
-    // Show banner after Flutter app loads (after splash screen) - for both iOS and Android
+    // Show banner after Flutter app loads (after splash screen) - gated to avoid installed PWA
     document.addEventListener('DOMContentLoaded', ()=>{
+      // If already installed, don't show and remember
+      if (isStandalone()) {
+        try { localStorage.setItem('pwa_installed','1'); } catch(_) {}
+        var b=document.getElementById('pwa-suggestion-banner'); if(b) hideOverlay(b);
+        return;
+      }
       // Wait for Flutter to be ready
       if (window.flutter_inappwebview) {
         // If using Flutter WebView, wait for it to be ready
@@ -268,6 +283,12 @@
 
     function showBanner() {
       if ((location.hash||'').indexOf('/paymentWebview') !== -1) return; // Never show on payment
+      if (isStandalone()) return; // Don't show inside installed PWA
+      try {
+        if (localStorage.getItem('pwa_banner_never') === '1') return;
+        var until = parseInt(localStorage.getItem('pwa_banner_cooldown_until')||'0',10);
+        if (!isNaN(until) && Date.now() < until) return;
+      } catch(_) {}
       let banner = document.getElementById('pwa-suggestion-banner');
       if (banner) {
         updateBannerButton(); // Update button text based on platform
@@ -294,11 +315,18 @@
     
     document.getElementById('pwa-dismiss-banner')?.addEventListener('click', ()=>{
       let b=document.getElementById('pwa-suggestion-banner'); if(b) hideOverlay(b);
-      sessionStorage.setItem('pwa_reminder_dismissed','1');
+      // Cooldown for 7 days
+      try { localStorage.setItem('pwa_banner_cooldown_until', String(Date.now() + 7*24*60*60*1000)); } catch(_) {}
     });
     document.getElementById('pwa-never-again')?.addEventListener('click', ()=>{
       let b=document.getElementById('pwa-suggestion-banner'); if(b) hideOverlay(b);
       localStorage.setItem('pwa_banner_never','1');
+    });
+
+    // On Android, mark as installed when event fires (iOS doesn't fire this)
+    window.addEventListener('appinstalled', function(){
+      try { localStorage.setItem('pwa_installed','1'); localStorage.setItem('pwa_banner_never','1'); } catch(_) {}
+      let b=document.getElementById('pwa-suggestion-banner'); if(b) hideOverlay(b);
     });
   </script>
 </body>

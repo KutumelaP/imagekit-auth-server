@@ -1,265 +1,239 @@
-// Production-ready offline shell for marketplace
-// Version based on app version and timestamp for automatic cache busting
-const APP_VERSION = '1.0.0+3'; // Should match pubspec.yaml
-const BUILD_TIMESTAMP = Date.now(); // Unique per build
-const CACHE_VERSION = `${APP_VERSION}-${BUILD_TIMESTAMP}`;
+'use strict';
+const MANIFEST = 'flutter-app-manifest';
+const TEMP = 'flutter-temp-cache';
+const CACHE_NAME = 'flutter-app-cache';
 
-const STATIC_CACHE = `mzansi-static-${CACHE_VERSION}`;
-const RUNTIME_PAGES = `mzansi-pages-${CACHE_VERSION}`;
-const RUNTIME_ASSETS = `mzansi-assets-${CACHE_VERSION}`;
-const RUNTIME_API = `mzansi-api-${CACHE_VERSION}`;
-const CORE = [
-  '/',
-  '/index.html',
-  '/manifest.json',
-  '/flutter_bootstrap.js',
-  '/flutter.js',
-  '/flutter_init.js'
-];
+const RESOURCES = {".well-known/apple-app-site-association": "7f2c371192a52373dde9f3e3dbb023f7",
+".well-known/assetlinks.json": "fdcb1cb0c161234946ce67c34ec154b5",
+"app-release.apk": "69b47457b7a6413f3ffb5fe4fcd43e26",
+"assets/AssetManifest.bin": "383ca4d2bf6366a8f4824ce43bf83cb6",
+"assets/AssetManifest.bin.json": "2ef38d1229f8c70a05513e5b35407a38",
+"assets/AssetManifest.json": "87dde8478f5af7aec766317e8ffc5e53",
+"assets/assets/app_icon_fixed.png": "5da031c2161d6dcf62c6d419d90bcbc4",
+"assets/assets/fonts/DancingScript-VariableFont_wght.ttf": "6c13f0a369bac247a279351b7338eaf0",
+"assets/assets/fonts/OFL.txt": "6dc416454d13ea7df5dc67abc37f34ce",
+"assets/assets/fonts/README.txt": "ed7e1c5918abc8801d59f1c0ee0f8341",
+"assets/assets/images/clothing.jpg": "1c7f48dc138e2358973274779fd6fbc0",
+"assets/assets/images/electronics.jpg": "6fb6801c2099acbe415b31671783508a",
+"assets/assets/images/food.jpg": "e7aeee598379ac3179f3d30f36bd8416",
+"assets/assets/images/other.jpg": "1ebb6b08baa9b3f251940b8b41bc100d",
+"assets/assets/logo.png": "6fc453c9340b7bb9280b72be25fb0c91",
+"assets/assets/sounds/notification.mp3": "feb29173be911eeaa2c1312491acc565",
+"assets/assets/splash_logo.png": "f0f8c4683d3b454283b909bb9da418f5",
+"assets/assets/svg/clothing.svg": "7d5bb036fb35ced645fe4e5afb11bf55",
+"assets/assets/svg/electronics.svg": "373c7012c668a0e016023763a5c5edf8",
+"assets/assets/svg/food.svg": "bb89a1c67723195671163351317be9d1",
+"assets/assets/svg/other.svg": "b6fdd036df347b7161fdf5def28be3cf",
+"assets/FontManifest.json": "a42c0dfbd5e2b7d8b7eae5ff2b08e107",
+"assets/fonts/MaterialIcons-Regular.otf": "4775ab361548f9f4ad23d41d413cdff4",
+"assets/NOTICES": "3e869c346d9936d4c1110e1e9102555a",
+"assets/packages/awesome_notifications/test/assets/images/test_image.png": "c27a71ab4008c83eba9b554775aa12ca",
+"assets/packages/cupertino_icons/assets/CupertinoIcons.ttf": "d7d83bd9ee909f8a9b348f56ca7b68c6",
+"assets/packages/golden_toolkit/fonts/Roboto-Regular.ttf": "ac3f799d5bbaf5196fab15ab8de8431c",
+"assets/packages/wakelock_plus/assets/no_sleep.js": "7748a45cd593f33280669b29c2c8919a",
+"assets/shaders/ink_sparkle.frag": "ecc85a2e95f5e9f53123dcaf8cb9b6ce",
+"canvaskit/canvaskit.js": "728b2d477d9b8c14593d4f9b82b484f3",
+"canvaskit/canvaskit.js.symbols": "bdcd3835edf8586b6d6edfce8749fb77",
+"canvaskit/canvaskit.wasm": "7a3f4ae7d65fc1de6a6e7ddd3224bc93",
+"canvaskit/chromium/canvaskit.js": "8191e843020c832c9cf8852a4b909d4c",
+"canvaskit/chromium/canvaskit.js.symbols": "b61b5f4673c9698029fa0a746a9ad581",
+"canvaskit/chromium/canvaskit.wasm": "f504de372e31c8031018a9ec0a9ef5f0",
+"canvaskit/skwasm.js": "ea559890a088fe28b4ddf70e17e60052",
+"canvaskit/skwasm.js.symbols": "e72c79950c8a8483d826a7f0560573a1",
+"canvaskit/skwasm.wasm": "39dd80367a4e71582d234948adc521c0",
+"clear_sw.html": "30df8780658c11368d5b5e9524ee9cb3",
+"debug.html": "00bb2c151595478ec99f522c70045963",
+"debug_splash.html": "997622646132bfd3dd5fa395beb28803",
+"download-apk.php": "9c5ac1e180e3c4a7c9b8939d0bc9b27c",
+"download.html": "d18f06e88fd3d213a8c16d4e7db5b33e",
+"favicon.png": "ed131d3cf116a64f521276ae3efb25b6",
+"fcm-test.html": "5efde58e2d7542fd6b57e4bfc8d5da68",
+"firebase-messaging-sw.js": "b744f8e73bf7909cfd3c3761b10d8cc2",
+"flutter.js": "83d881c1dbb6d6bcd6b42e274605b69c",
+"flutter_bootstrap.js": "453eed5a02ea7ee71f7851d8fe8f1af9",
+"flutter_init.js": "41bd9ea849fc6fa1dc49b9b407c29f7e",
+"flutter_test.html": "60491efee18bf1e1bc58a124f4d2840e",
+"icons/Icon-192.png": "e8b0226e1a0276a0992a39b6f88b0b1c",
+"icons/Icon-512.png": "a0efd1e8d4cbef420f5954191af194bb",
+"icons/Icon-maskable-192.png": "e8b0226e1a0276a0992a39b6f88b0b1c",
+"icons/Icon-maskable-512.png": "a0efd1e8d4cbef420f5954191af194bb",
+"index.html": "0da3f55e7c234ea0a828aa9e536d85b0",
+"/": "0da3f55e7c234ea0a828aa9e536d85b0",
+"main.dart.js": "9c5bb34f39ae1535c7714215fc2abeaa",
+"manifest.json": "9708949d53885762b4e833e0865c42c8",
+"performance_optimizer.js": "aa7403accdeed60b3653ed5adb443520",
+"product_schema_template.html": "08c6fc91656e87765034e4ef62ced0d1",
+"reset-password.html": "a9f714856aa42db80500ece644eeb62e",
+"sitemap.xml": "b265011db74cdeebb4daee8bc313659b",
+"version.json": "0626ac86625bf006426b13ab20bdf9a0",
+"web.config": "baa6b3dc9e7eb354498203570bd82a49"};
+// The application shell files that are downloaded before a service worker can
+// start.
+const CORE = ["main.dart.js",
+"index.html",
+"flutter_bootstrap.js",
+"assets/AssetManifest.bin.json",
+"assets/FontManifest.json"];
 
-// Preload critical resources for faster loading
-const CRITICAL_RESOURCES = [
-  '/main.dart.js',
-  '/canvaskit/canvaskit.js',
-  '/canvaskit/profiling/canvaskit.js',
-  '/canvaskit/skwasm.js'
-];
-
-self.addEventListener('install', (event) => {
+// During install, the TEMP cache is populated with the application shell files.
+self.addEventListener("install", (event) => {
   self.skipWaiting();
-  event.waitUntil(
-    caches.open(STATIC_CACHE).then((cache) => {
-      // Cache core files first
-      const corePromise = cache.addAll(CORE);
-      
-      // Preload critical resources in background
-      const criticalPromise = Promise.all(
-        CRITICAL_RESOURCES.map(url => 
-          fetch(url).then(response => {
-            if (response.ok) {
-              return cache.put(url, response);
-            }
-          }).catch(() => null)
-        )
-      );
-      
-      return Promise.all([corePromise, criticalPromise]);
-    }).catch(() => null)
+  return event.waitUntil(
+    caches.open(TEMP).then((cache) => {
+      return cache.addAll(
+        CORE.map((value) => new Request(value, {'cache': 'reload'})));
+    })
   );
 });
-
-self.addEventListener('activate', (event) => {
-  event.waitUntil((async () => {
-    // Clean up old caches - more aggressive cleanup
-    const keys = await caches.keys();
-    const validCaches = [STATIC_CACHE, RUNTIME_PAGES, RUNTIME_ASSETS, RUNTIME_API];
-    
-    // Delete all caches that don't match current version
-    await Promise.all(
-      keys.filter((k) => !validCaches.includes(k))
-          .map((k) => {
-            console.log('🗑️ Deleting old cache:', k);
-            return caches.delete(k);
-          })
-    );
-    
-    // Clear browser storage on version change
+// During activate, the cache is populated with the temp files downloaded in
+// install. If this service worker is upgrading from one with a saved
+// MANIFEST, then use this to retain unchanged resource files.
+self.addEventListener("activate", function(event) {
+  return event.waitUntil(async function() {
     try {
-      const currentCacheKey = `app_cache_version_${CACHE_VERSION}`;
-      const lastVersion = await getStoredVersion();
-      
-      if (lastVersion && lastVersion !== CACHE_VERSION) {
-        console.log('🔄 Version change detected, clearing browser storage');
-        await clearBrowserStorage();
-      }
-      
-      await setStoredVersion(CACHE_VERSION);
-    } catch (e) {
-      console.warn('⚠️ Error managing version storage:', e);
-    }
-    
-    await self.clients.claim();
-    
-    // Enable navigation preload for faster page loads
-    if (self.registration.navigationPreload) {
-      await self.registration.navigationPreload.enable();
-    }
-    
-    // Notify clients of update
-    self.clients.matchAll().then(clients => {
-      clients.forEach(client => {
-        client.postMessage({
-          type: 'CACHE_UPDATED',
-          version: CACHE_VERSION
-        });
-      });
-    });
-  })());
-});
-
-function isHTMLRequest(request) {
-  return request.mode === 'navigate' ||
-         (request.headers.get('accept') || '').includes('text/html');
-}
-
-function isStaticAsset(url) {
-  return /\.(?:js|css|json|png|jpg|jpeg|gif|svg|webp|ico|woff2?|ttf|otf)$/.test(url.pathname) ||
-         url.pathname.startsWith('/canvaskit/');
-}
-
-function isApi(url) {
-  return url.hostname.endsWith('firebaseio.com') ||
-         url.hostname.endsWith('googleapis.com') ||
-         url.hostname.includes('imagekit.io');
-}
-
-self.addEventListener('fetch', (event) => {
-  const req = event.request;
-  if (req.method !== 'GET') return;
-  const url = new URL(req.url);
-
-  // Network-first for HTML (pages) to reduce reload artifacts, fallback to cache
-  if (isHTMLRequest(req)) {
-    event.respondWith((async () => {
-      try {
-        const net = await fetch(req, { cache: 'no-store' });
-        const cache = await caches.open(RUNTIME_PAGES);
-        cache.put(req, net.clone());
-        return net;
-      } catch (e) {
-        const cache = await caches.open(RUNTIME_PAGES);
-        const cached = await cache.match(req) || await caches.match('/index.html');
-        return cached || new Response('', { status: 503 });
-      }
-    })());
-    return;
-  }
-
-  // Stale-while-revalidate for static assets
-  if (url.origin === location.origin && isStaticAsset(url)) {
-    event.respondWith((async () => {
-      const cache = await caches.open(RUNTIME_ASSETS);
-      const cached = await cache.match(req);
-      const fetchPromise = fetch(req).then((response) => {
-        cache.put(req, response.clone());
-        return response;
-      }).catch(() => null);
-      return cached || fetchPromise || fetch(req);
-    })());
-    return;
-  }
-
-  // Enhanced API caching with smarter retry logic
-  if (isApi(url)) {
-    event.respondWith((async () => {
-      const cache = await caches.open(RUNTIME_API);
-      try {
-        const net = await fetch(req, { 
-          cache: 'no-cache',
-          timeout: 8000 // 8 second timeout for API calls
-        });
-        if (net.status === 200) {
-          cache.put(req, net.clone());
+      var contentCache = await caches.open(CACHE_NAME);
+      var tempCache = await caches.open(TEMP);
+      var manifestCache = await caches.open(MANIFEST);
+      var manifest = await manifestCache.match('manifest');
+      // When there is no prior manifest, clear the entire cache.
+      if (!manifest) {
+        await caches.delete(CACHE_NAME);
+        contentCache = await caches.open(CACHE_NAME);
+        for (var request of await tempCache.keys()) {
+          var response = await tempCache.match(request);
+          await contentCache.put(request, response);
         }
-        return net;
-      } catch (e) {
-        const cached = await cache.match(req);
-        if (cached) {
-          // Add offline indicator header
-          const response = cached.clone();
-          response.headers.set('X-Served-By', 'sw-cache');
+        await caches.delete(TEMP);
+        // Save the manifest to make future upgrades efficient.
+        await manifestCache.put('manifest', new Response(JSON.stringify(RESOURCES)));
+        // Claim client to enable caching on first launch
+        self.clients.claim();
+        return;
+      }
+      var oldManifest = await manifest.json();
+      var origin = self.location.origin;
+      for (var request of await contentCache.keys()) {
+        var key = request.url.substring(origin.length + 1);
+        if (key == "") {
+          key = "/";
+        }
+        // If a resource from the old manifest is not in the new cache, or if
+        // the MD5 sum has changed, delete it. Otherwise the resource is left
+        // in the cache and can be reused by the new service worker.
+        if (!RESOURCES[key] || RESOURCES[key] != oldManifest[key]) {
+          await contentCache.delete(request);
+        }
+      }
+      // Populate the cache with the app shell TEMP files, potentially overwriting
+      // cache files preserved above.
+      for (var request of await tempCache.keys()) {
+        var response = await tempCache.match(request);
+        await contentCache.put(request, response);
+      }
+      await caches.delete(TEMP);
+      // Save the manifest to make future upgrades efficient.
+      await manifestCache.put('manifest', new Response(JSON.stringify(RESOURCES)));
+      // Claim client to enable caching on first launch
+      self.clients.claim();
+      return;
+    } catch (err) {
+      // On an unhandled exception the state of the cache cannot be guaranteed.
+      console.error('Failed to upgrade service worker: ' + err);
+      await caches.delete(CACHE_NAME);
+      await caches.delete(TEMP);
+      await caches.delete(MANIFEST);
+    }
+  }());
+});
+// The fetch handler redirects requests for RESOURCE files to the service
+// worker cache.
+self.addEventListener("fetch", (event) => {
+  if (event.request.method !== 'GET') {
+    return;
+  }
+  var origin = self.location.origin;
+  var key = event.request.url.substring(origin.length + 1);
+  // Redirect URLs to the index.html
+  if (key.indexOf('?v=') != -1) {
+    key = key.split('?v=')[0];
+  }
+  if (event.request.url == origin || event.request.url.startsWith(origin + '/#') || key == '') {
+    key = '/';
+  }
+  // If the URL is not the RESOURCE list then return to signal that the
+  // browser should take over.
+  if (!RESOURCES[key]) {
+    return;
+  }
+  // If the URL is the index.html, perform an online-first request.
+  if (key == '/') {
+    return onlineFirst(event);
+  }
+  event.respondWith(caches.open(CACHE_NAME)
+    .then((cache) =>  {
+      return cache.match(event.request).then((response) => {
+        // Either respond with the cached resource, or perform a fetch and
+        // lazily populate the cache only if the resource was successfully fetched.
+        return response || fetch(event.request).then((response) => {
+          if (response && Boolean(response.ok)) {
+            cache.put(event.request, response.clone());
+          }
           return response;
-        }
-        return new Response(JSON.stringify({
-          error: 'Network unavailable',
-          message: 'Please check your internet connection'
-        }), { 
-          status: 503,
-          headers: { 'Content-Type': 'application/json' }
         });
-      }
-    })());
+      })
+    })
+  );
+});
+self.addEventListener('message', (event) => {
+  // SkipWaiting can be used to immediately activate a waiting service worker.
+  // This will also require a page refresh triggered by the main worker.
+  if (event.data === 'skipWaiting') {
+    self.skipWaiting();
+    return;
+  }
+  if (event.data === 'downloadOffline') {
+    downloadOffline();
     return;
   }
 });
-
-// Allow app to trigger SW update immediately
-self.addEventListener('message', (event) => {
-  if (!event.data) return;
-  if (event.data === 'SKIP_WAITING' || (event.data && event.data.type === 'SKIP_WAITING')) {
-    self.skipWaiting();
+// Download offline will check the RESOURCES for all files not in the cache
+// and populate them.
+async function downloadOffline() {
+  var resources = [];
+  var contentCache = await caches.open(CACHE_NAME);
+  var currentContent = {};
+  for (var request of await contentCache.keys()) {
+    var key = request.url.substring(origin.length + 1);
+    if (key == "") {
+      key = "/";
+    }
+    currentContent[key] = true;
   }
-  
-  if (event.data && event.data.type === 'CLEAR_CACHE') {
-    // Force clear all caches
-    caches.keys().then(keys => {
-      return Promise.all(keys.map(key => caches.delete(key)));
-    }).then(() => {
-      self.clients.matchAll().then(clients => {
-        clients.forEach(client => {
-          client.postMessage({ type: 'CACHE_CLEARED' });
+  for (var resourceKey of Object.keys(RESOURCES)) {
+    if (!currentContent[resourceKey]) {
+      resources.push(resourceKey);
+    }
+  }
+  return contentCache.addAll(resources);
+}
+// Attempt to download the resource online before falling back to
+// the offline cache.
+function onlineFirst(event) {
+  return event.respondWith(
+    fetch(event.request).then((response) => {
+      return caches.open(CACHE_NAME).then((cache) => {
+        cache.put(event.request, response.clone());
+        return response;
+      });
+    }).catch((error) => {
+      return caches.open(CACHE_NAME).then((cache) => {
+        return cache.match(event.request).then((response) => {
+          if (response != null) {
+            return response;
+          }
+          throw error;
         });
       });
-    });
-  }
-});
-
-// Helper functions for version storage management
-async function getStoredVersion() {
-  try {
-    const db = await openDB();
-    const tx = db.transaction(['versions'], 'readonly');
-    const store = tx.objectStore('versions');
-    const result = await store.get('current_version');
-    return result?.version;
-  } catch (e) {
-    return null;
-  }
+    })
+  );
 }
-
-async function setStoredVersion(version) {
-  try {
-    const db = await openDB();
-    const tx = db.transaction(['versions'], 'readwrite');
-    const store = tx.objectStore('versions');
-    await store.put({ id: 'current_version', version: version, timestamp: Date.now() });
-  } catch (e) {
-    console.warn('Failed to store version:', e);
-  }
-}
-
-async function openDB() {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open('mzansi_cache_db', 1);
-    
-    request.onerror = () => reject(request.error);
-    request.onsuccess = () => resolve(request.result);
-    
-    request.onupgradeneeded = (event) => {
-      const db = event.target.result;
-      if (!db.objectStoreNames.contains('versions')) {
-        db.createObjectStore('versions', { keyPath: 'id' });
-      }
-    };
-  });
-}
-
-async function clearBrowserStorage() {
-  try {
-    // Clear localStorage
-    if (typeof localStorage !== 'undefined') {
-      localStorage.clear();
-    }
-    
-    // Clear sessionStorage  
-    if (typeof sessionStorage !== 'undefined') {
-      sessionStorage.clear();
-    }
-    
-    console.log('✅ Browser storage cleared');
-  } catch (e) {
-    console.warn('⚠️ Error clearing browser storage:', e);
-  }
-}
-
-

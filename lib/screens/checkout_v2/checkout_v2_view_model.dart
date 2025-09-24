@@ -92,7 +92,8 @@ class CheckoutV2ViewModel extends ChangeNotifier {
     }
   }
 
-  /// Get delivery time estimate: use seller's predefined estimate first, then fallback to system calculation
+  /// Get delivery time estimate: use seller's predefined estimate first, then fallback to system calculation.
+  /// If products include per-item prep times, use the maximum prep time as base.
   int _getDeliveryTimeEstimate() {
     // First, try to use seller's predefined delivery time estimate
     if (sellerDeliveryTimeEstimate != null && sellerDeliveryTimeEstimate!.trim().isNotEmpty) {
@@ -104,10 +105,25 @@ class CheckoutV2ViewModel extends ChangeNotifier {
     }
     
     // Fallback to system calculation
-    print('📊 Using system-calculated delivery time (seller estimate not available or invalid)');
+    // Determine base prep time: prefer max of item prep times if present
+    int basePrep = 15;
+    try {
+      if (cartItems.isNotEmpty) {
+        final prepTimes = cartItems
+            .map((it) => it['prepTimeMinutes'])
+            .where((v) => v != null)
+            .map((v) => (v is num) ? v.toInt() : int.tryParse(v.toString()) ?? 0)
+            .where((v) => v > 0)
+            .toList();
+        if (prepTimes.isNotEmpty) {
+          basePrep = prepTimes.reduce((a, b) => a > b ? a : b);
+        }
+      }
+    } catch (_) {}
+    print('📊 Using system-calculated delivery time. Base prep: '+basePrep.toString()+' min');
     return DeliveryTimeUtils.calculateRealisticDeliveryTime(
       distanceKm: distanceKm,
-      basePrepTimeMinutes: 15,
+      basePrepTimeMinutes: basePrep,
       currentTime: DateTime.now(),
     );
   }

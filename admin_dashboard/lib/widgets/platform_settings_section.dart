@@ -20,6 +20,9 @@ class _PlatformSettingsSectionState extends State<PlatformSettingsSection> {
   final _eftBankNameController = TextEditingController();
   final _eftAccountNumberController = TextEditingController();
   final _eftBranchCodeController = TextEditingController();
+  // Prep time defaults
+  final _defaultPrepTimeController = TextEditingController();
+  bool _defaultMadeToOrder = false;
   bool _registrationEnabled = true;
   bool _moderationEnabled = true;
   bool _saving = false;
@@ -67,6 +70,8 @@ class _PlatformSettingsSectionState extends State<PlatformSettingsSection> {
         _eftBranchCodeController.text = data['eftBranchCode'] ?? '';
         _autoDriverAssignmentEnabled = data['autoDriverAssignmentEnabled'] == true;
         _autoPudoRoutingEnabled = data['autoPudoRoutingEnabled'] == true;
+        _defaultPrepTimeController.text = (data['defaultPrepTimeMinutes']?.toString() ?? '');
+        _defaultMadeToOrder = data['defaultMadeToOrder'] == true;
       });
     }
   }
@@ -90,6 +95,8 @@ class _PlatformSettingsSectionState extends State<PlatformSettingsSection> {
         'eftBankName': _eftBankNameController.text.trim(),
         'eftAccountNumber': _eftAccountNumberController.text.trim(),
         'eftBranchCode': _eftBranchCodeController.text.trim(),
+        'defaultPrepTimeMinutes': int.tryParse(_defaultPrepTimeController.text.trim()) ?? null,
+        'defaultMadeToOrder': _defaultMadeToOrder,
       }, SetOptions(merge: true));
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Settings saved.')));
     } catch (e) {
@@ -283,6 +290,28 @@ class _PlatformSettingsSectionState extends State<PlatformSettingsSection> {
                               title: const Text('Force PUDO Door visible (debug)', softWrap: false, overflow: TextOverflow.ellipsis),
                               value: _forcePudoDoorVisible,
                               onChanged: (v) => setState(() => _forcePudoDoorVisible = v),
+                            ),
+                          ),
+                          // Default Prep Time + Made to order (used by main app if product lacks values)
+                          SizedBox(
+                            width: 220,
+                            child: TextField(
+                              controller: _defaultPrepTimeController,
+                              decoration: InputDecoration(
+                                labelText: 'Default Prep Time (minutes)',
+                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                              ),
+                              keyboardType: TextInputType.number,
+                            ),
+                          ),
+                          SizedBox(
+                            width: 240,
+                            child: SwitchListTile(
+                              dense: true,
+                              contentPadding: EdgeInsets.zero,
+                              title: const Text('Default: Made to order', softWrap: false, overflow: TextOverflow.ellipsis),
+                              value: _defaultMadeToOrder,
+                              onChanged: (v) => setState(() => _defaultMadeToOrder = v),
                             ),
                           ),
                           SizedBox(
