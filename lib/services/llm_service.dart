@@ -178,15 +178,13 @@ class LlmService {
     required int maxTokens,
   }) async {
     final startTime = DateTime.now();
-    final uri = Uri.parse('https://api.openai.com/v1/chat/completions');
+    // Call Firebase Functions proxy to avoid exposing keys in clients
+    final uri = Uri.parse('https://us-central1-marketplace-8d6bd.cloudfunctions.net/openaiChat');
     final body = {
       'model': _openAiModel,
-      'messages': [
-        {'role': 'system', 'content': systemInstruction},
-        {'role': 'user', 'content': userQuestion},
-      ],
-      'temperature': 0.3,
-      'max_tokens': maxTokens,
+      'systemInstruction': systemInstruction,
+      'userQuestion': userQuestion,
+      'maxTokens': maxTokens,
     };
     
     if (kDebugMode) {
@@ -202,13 +200,10 @@ class LlmService {
     final resp = await http
         .post(
           uri,
-          headers: {
-            'Authorization': 'Bearer ${_openAiKey!}',
-            'Content-Type': 'application/json',
-          },
+          headers: {'Content-Type': 'application/json'},
           body: jsonEncode(body),
         )
-        .timeout(const Duration(seconds: 8));
+        .timeout(const Duration(seconds: 12));
     
     final endTime = DateTime.now();
     final duration = endTime.difference(startTime).inMilliseconds;
@@ -221,8 +216,7 @@ class LlmService {
     
     if (resp.statusCode == 200) {
       final data = jsonDecode(resp.body) as Map<String, dynamic>;
-      final choices = data['choices'] as List<dynamic>?;
-      final content = choices?.first['message']?['content'] as String?;
+      final content = data['content'] as String?;
       if (content != null && content.trim().isNotEmpty) {
         if (kDebugMode) {
           print('🤖 Generated Content: ${content.substring(0, min(content.length, 200))}...');
@@ -243,6 +237,7 @@ class LlmService {
     required String userQuestion,
     required int maxTokens,
   }) async {
+    // For parity, optionally proxy Gemini too (leave direct for now if key not set)
     final uri = Uri.parse(
       'https://generativelanguage.googleapis.com/v1/models/$_geminiModel:generateContent?key=${_geminiKey!}',
     );

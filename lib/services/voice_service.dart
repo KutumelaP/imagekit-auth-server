@@ -549,8 +549,9 @@ class VoiceService {
       _log('🎤 Text Length: ${text.length} | KeySet=${_googleApiKey != null && _googleApiKey!.isNotEmpty}');
       _log('🎤 Google TTS requests: $_googleTtsRequests | ${startTime.toIso8601String()}');
 
+      // Use Cloud Functions proxy to avoid exposing API key
       final url = Uri.parse(
-        'https://texttospeech.googleapis.com/v1/text:synthesize?key=$_googleApiKey',
+        'https://us-central1-marketplace-8d6bd.cloudfunctions.net/googleTtsSynthesize',
       );
 
       final requestBody = {

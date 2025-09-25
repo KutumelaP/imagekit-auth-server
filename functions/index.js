@@ -32,6 +32,92 @@ const db = admin.firestore();
 const axios = require('axios');
 // const puppeteer = require('puppeteer'); // Moved to lazy load
 
+// === Secure AI Proxies (no client secrets) ===
+// OpenAI Chat proxy: builds messages server-side; reads API key from environment/secrets
+exports.openaiChat = functions.runWith({ timeoutSeconds: 30, memory: '256MB' }).https.onCall(async (data, context) => {
+  try {
+    const OPENAI_API_KEY = process.env.OPENAI_API_KEY || process.env.openai_api_key;
+    if (!OPENAI_API_KEY) {
+      console.warn('[openaiChat] Missing OPENAI_API_KEY');
+      return { error: 'server_misconfigured' };
+    }
+
+    const model = String(data?.model || 'gpt-4o-mini');
+    const systemInstruction = String(data?.systemInstruction || 'You are a helpful assistant for the OmniaSA marketplace. Keep answers short, clear, and helpful.');
+    const userQuestion = String(data?.userQuestion || '');
+    const baseAnswer = typeof data?.baseAnswer === 'string' ? data.baseAnswer : '';
+    const maxTokens = Number(data?.maxTokens || 240);
+
+    const messages = [
+      { role: 'system', content: systemInstruction },
+    ];
+    if (baseAnswer) {
+      messages.push({ role: 'user', content: `User question: ${userQuestion}\nDraft answer: ${baseAnswer}` });
+    } else {
+      messages.push({ role: 'user', content: userQuestion });
+    }
+
+    const body = {
+      model,
+      messages,
+      temperature: 0.3,
+      max_tokens: maxTokens,
+    };
+
+    const resp = await axios.post('https://api.openai.com/v1/chat/completions', body, {
+      headers: {
+        'Authorization': `Bearer ${OPENAI_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      timeout: 12000,
+    });
+
+    const choices = resp?.data?.choices || [];
+    const content = choices.length ? (choices[0]?.message?.content || '') : '';
+    return { content };
+  } catch (e) {
+    console.error('[openaiChat] error', e?.response?.status, e?.response?.data || e?.message);
+    return { error: 'upstream_error', status: e?.response?.status || 500 };
+  }
+});
+
+// Google Cloud Text-to-Speech proxy: returns base64 audioContent
+exports.googleTtsSynthesize = functions.runWith({ timeoutSeconds: 30, memory: '256MB' }).https.onCall(async (data, context) => {
+  try {
+    const GOOGLE_TTS_API_KEY = process.env.GOOGLE_TTS_API_KEY || process.env.google_tts_api_key;
+    if (!GOOGLE_TTS_API_KEY) {
+      console.warn('[googleTtsSynthesize] Missing GOOGLE_TTS_API_KEY');
+      return { error: 'server_misconfigured' };
+    }
+
+    const text = String(data?.text || '').trim();
+    if (!text) return { error: 'no_text' };
+    const languageCode = String(data?.languageCode || 'en-US');
+    const voiceName = String(data?.voiceName || 'en-US-Wavenet-D');
+    const speakingRate = Number(data?.speakingRate ?? 1.0);
+    const pitch = Number(data?.pitch ?? 0.0);
+
+    const url = `https://texttospeech.googleapis.com/v1/text:synthesize?key=${GOOGLE_TTS_API_KEY}`;
+    const body = {
+      input: { text },
+      voice: { languageCode, name: voiceName },
+      audioConfig: {
+        audioEncoding: 'MP3',
+        speakingRate,
+        pitch,
+        volumeGainDb: 0.0,
+      },
+    };
+
+    const resp = await axios.post(url, body, { headers: { 'Content-Type': 'application/json' }, timeout: 12000 });
+    const audioContent = resp?.data?.audioContent || '';
+    return { audioContent };
+  } catch (e) {
+    console.error('[googleTtsSynthesize] error', e?.response?.status, e?.response?.data || e?.message);
+    return { error: 'upstream_error', status: e?.response?.status || 500 };
+  }
+});
+
 // Import scheduled functions
 const { dailyPaymentAlerts, weeklyPaymentSummary } = require('./scheduled_payment_alerts');
 exports.dailyPaymentAlerts = dailyPaymentAlerts;
