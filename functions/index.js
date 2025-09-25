@@ -34,7 +34,7 @@ const axios = require('axios');
 
 // === Secure AI Proxies (no client secrets) ===
 // OpenAI Chat proxy: builds messages server-side; reads API key from environment/secrets
-exports.openaiChat = functions.runWith({ timeoutSeconds: 30, memory: '256MB' }).https.onCall(async (data, context) => {
+exports.openaiChat = functions.runWith({ timeoutSeconds: 30, memory: '256MB', secrets: ['OPENAI_API_KEY'] }).https.onCall(async (data, context) => {
   try {
     const OPENAI_API_KEY = process.env.OPENAI_API_KEY || process.env.openai_api_key;
     if (!OPENAI_API_KEY) {
@@ -82,7 +82,7 @@ exports.openaiChat = functions.runWith({ timeoutSeconds: 30, memory: '256MB' }).
 });
 
 // Google Cloud Text-to-Speech proxy: returns base64 audioContent
-exports.googleTtsSynthesize = functions.runWith({ timeoutSeconds: 30, memory: '256MB' }).https.onCall(async (data, context) => {
+exports.googleTtsSynthesize = functions.runWith({ timeoutSeconds: 30, memory: '256MB', secrets: ['GOOGLE_TTS_API_KEY'] }).https.onCall(async (data, context) => {
   try {
     const GOOGLE_TTS_API_KEY = process.env.GOOGLE_TTS_API_KEY || process.env.google_tts_api_key;
     if (!GOOGLE_TTS_API_KEY) {
