@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../providers/cart_provider.dart';
+import '../models/cart_item.dart';
 import '../theme/app_theme.dart';
 import 'safe_network_image.dart';
 
@@ -14,6 +17,9 @@ class ModernProductCard extends StatefulWidget {
   final bool showAddToCart;
   final VoidCallback? onTap;
   final Color? accentColor;
+  // Optional prep-time display
+  final int? prepTimeMinutes;
+  final bool? madeToOrder;
 
   const ModernProductCard({
     Key? key,
@@ -28,6 +34,8 @@ class ModernProductCard extends StatefulWidget {
     this.showAddToCart = true,
     this.onTap,
     this.accentColor,
+    this.prepTimeMinutes,
+    this.madeToOrder,
   }) : super(key: key);
 
   @override
@@ -116,7 +124,11 @@ class _ModernProductCardState extends State<ModernProductCard>
           price: widget.price,
           imageUrl: widget.imageUrl,
           sellerName: widget.sellerName,
+          sellerId: cartProvider.currentStoreId ?? '',
+          storeCategory: 'other',
           quantity: 1,
+          prepTimeMinutes: widget.prepTimeMinutes,
+          madeToOrder: widget.madeToOrder,
         ),
       );
       
@@ -188,11 +200,11 @@ class _ModernProductCardState extends State<ModernProductCard>
                                           color: Theme.of(context).colorScheme.onSurface.withOpacity(0.1),
                                           borderRadius: BorderRadius.circular(12),
                                         ),
-                                        child: const Icon(
-                                          Icons.image_not_supported,
-                                          color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
-                                          size: 40,
-                                        ),
+                                            child: Icon(
+                                              Icons.image_not_supported,
+                                              color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
+                                              size: 40,
+                                            ),
                                       ),
                               ),
                               
@@ -333,6 +345,46 @@ class _ModernProductCardState extends State<ModernProductCard>
                                         ),
                                     ],
                                   ),
+                                  const SizedBox(height: 4),
+                                  // Prep time chip (if available)
+                                  if ((widget.prepTimeMinutes ?? 0) > 0)
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                      decoration: BoxDecoration(
+                                        color: Theme.of(context).colorScheme.primary.withOpacity(0.08),
+                                        borderRadius: BorderRadius.circular(12),
+                                        border: Border.all(color: Theme.of(context).colorScheme.primary.withOpacity(0.2)),
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          const Icon(Icons.timer, size: 12, color: AppTheme.deepTeal),
+                                          const SizedBox(width: 4),
+                                          Text(
+                                            '${widget.prepTimeMinutes} min prep',
+                                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                              color: AppTheme.deepTeal,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                          if (widget.madeToOrder == true) ...[
+                                            const SizedBox(width: 6),
+                                            Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                              decoration: BoxDecoration(
+                                                color: Colors.orange.withOpacity(0.1),
+                                                borderRadius: BorderRadius.circular(8),
+                                                border: Border.all(color: Colors.orange.withOpacity(0.2)),
+                                              ),
+                                              child: Text(
+                                                'Made to order',
+                                                style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.orange[800], fontSize: 10, fontWeight: FontWeight.w600),
+                                              ),
+                                            ),
+                                          ],
+                                        ],
+                                      ),
+                                    ),
                                   
                                   const Spacer(),
                                   

@@ -13,6 +13,9 @@ class CartItem {
   // Customization fields
   final List<Map<String, dynamic>>? customizations;
   final double? customPrice; // Calculated price with customizations
+  // Optional per-product prep time in minutes
+  final int? prepTimeMinutes;
+  final bool? madeToOrder;
 
   CartItem({
     required this.id,
@@ -27,6 +30,8 @@ class CartItem {
     this.availableStock,
     this.customizations,
     this.customPrice,
+    this.prepTimeMinutes,
+    this.madeToOrder,
   }) : addedAt = addedAt ?? DateTime.now();
 
   // Get final price (custom price if available, otherwise base price)
@@ -45,6 +50,8 @@ class CartItem {
     int? availableStock,
     List<Map<String, dynamic>>? customizations,
     double? customPrice,
+    int? prepTimeMinutes,
+    bool? madeToOrder,
   }) {
     return CartItem(
       id: id ?? this.id,
@@ -59,6 +66,8 @@ class CartItem {
       availableStock: availableStock ?? this.availableStock,
       customizations: customizations ?? this.customizations,
       customPrice: customPrice ?? this.customPrice,
+      prepTimeMinutes: prepTimeMinutes ?? this.prepTimeMinutes,
+      madeToOrder: madeToOrder ?? this.madeToOrder,
     );
   }
 
@@ -76,6 +85,8 @@ class CartItem {
       'availableStock': availableStock,
       'customizations': customizations,
       'customPrice': customPrice,
+      'prepTimeMinutes': prepTimeMinutes,
+      'madeToOrder': madeToOrder,
     };
   }
 
@@ -95,6 +106,8 @@ class CartItem {
           ? List<Map<String, dynamic>>.from(map['customizations'])
           : null,
       customPrice: map['customPrice']?.toDouble(),
+      prepTimeMinutes: (map['prepTimeMinutes'] is num) ? (map['prepTimeMinutes'] as num).toInt() : int.tryParse('${map['prepTimeMinutes'] ?? ''}'),
+      madeToOrder: map['madeToOrder'] as bool?,
     );
   }
 

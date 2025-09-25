@@ -601,14 +601,44 @@ class ProductionOrderService {
       }
       
       // Seller notification
-      await WhatsAppIntegrationService.sendNewOrderNotificationToSeller(
-        orderId: orderId,
-        sellerPhone: '+27606304683', // Get from seller data
-        buyerName: _getFullCustomerName(customerFirstName, customerLastName),
-        orderTotal: total,
-        items: items,
-        deliveryAddress: 'Customer address',
-      );
+      try {
+        String sellerPhone = '';
+        if (sellerId.isNotEmpty) {
+          final sellerDoc = await _firestore.collection('users').doc(sellerId).get();
+          final data = sellerDoc.data() ?? {};
+          // Prefer explicit contact number, then phone, then WhatsApp-related fields
+          sellerPhone = (data['contact'] ?? data['phone'] ?? data['pudoContactPhone'] ?? data['whatsapp'] ?? data['whatsappNumber'] ?? data['businessPhone'] ?? data['tel'] ?? data['mobile'] ?? '').toString();
+        }
+
+        // Basic normalization to South African E.164 where possible
+        String normalizeSa(String raw) {
+          final digits = raw.replaceAll(RegExp(r'[^0-9+]'), '');
+          if (digits.startsWith('+')) return digits;
+          if (digits.startsWith('0') && digits.length >= 10) {
+            // 0XXXXXXXXX -> +27XXXXXXXXX
+            return '+27' + digits.substring(1);
+          }
+          if (digits.startsWith('27')) return '+' + digits;
+          return digits; // best effort
+        }
+
+        sellerPhone = normalizeSa(sellerPhone);
+
+        if (sellerPhone.isNotEmpty) {
+          await WhatsAppIntegrationService.sendNewOrderNotificationToSeller(
+            orderId: orderId,
+            sellerPhone: sellerPhone,
+            buyerName: _getFullCustomerName(customerFirstName, customerLastName),
+            orderTotal: total,
+            items: items,
+            deliveryAddress: 'Customer address',
+          );
+        } else {
+          print('⚠️ No seller phone/contact found for sellerId=$sellerId; skipping WhatsApp.');
+        }
+      } catch (e) {
+        print('⚠️ Seller WhatsApp notification failed: $e');
+      }
 
       // System app notifications (in-app/badge)
       try {

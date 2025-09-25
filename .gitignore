@@ -174,3 +174,4 @@ out/
 # Temporary files
 *.tmp
 *.temp
+\nweb/main.dart.js

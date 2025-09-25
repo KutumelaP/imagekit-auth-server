@@ -275,6 +275,11 @@ final isProcessing = processingSnapshot.data ?? false;
                             // Prevent interaction during processing
                             if (isProcessing) return;
                             
+                            // Prime iOS Safari audio on first user gesture
+                            await _voiceService.primePlaybackIfNeeded();
+                            // Start a short silent play to fully unlock autoplay before we listen
+                            try { await _voiceService.speak(' ', preferGoogle: false); } catch (_) {}
+                            
                             // Toggle voice listening
                             if (isListening) {
                               await _assistantService.stopListening();

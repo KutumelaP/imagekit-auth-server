@@ -70,6 +70,9 @@ class _ProductEditScreenState extends State<ProductEditScreen> {
   late TextEditingController _imageUrlController;
   late TextEditingController _stockController;
   late TextEditingController _descriptionController;
+  // Prep time fields
+  late TextEditingController _prepTimeController;
+  bool _madeToOrder = false;
   String _status = 'active';
   File? _pickedImage;
   final ImagePicker _picker = ImagePicker();
@@ -105,6 +108,8 @@ class _ProductEditScreenState extends State<ProductEditScreen> {
     _imageUrlController = TextEditingController(text: widget.initialData['imageUrl'] ?? '');
     _stockController = TextEditingController(text: (widget.initialData['quantity'] ?? widget.initialData['stock'] ?? '').toString());
     _descriptionController = TextEditingController(text: widget.initialData['description'] ?? '');
+    _prepTimeController = TextEditingController(text: (widget.initialData['prepTimeMinutes']?.toString() ?? ''));
+    _madeToOrder = (widget.initialData['madeToOrder'] as bool?) ?? false;
     _status = (widget.initialData['status'] as String?)?.toLowerCase() == 'draft' ? 'draft' : 'active';
     
     // Initialize customization fields
@@ -124,6 +129,7 @@ class _ProductEditScreenState extends State<ProductEditScreen> {
       _imageUrlController,
       _stockController,
       _descriptionController,
+      _prepTimeController,
     ]) {
       c.addListener(() {
         if (mounted) setState(() {});
@@ -143,6 +149,7 @@ class _ProductEditScreenState extends State<ProductEditScreen> {
     _imageUrlController.dispose();
     _stockController.dispose();
     _descriptionController.dispose();
+    _prepTimeController.dispose();
     super.dispose();
   }
 
@@ -208,6 +215,9 @@ class _ProductEditScreenState extends State<ProductEditScreen> {
         'status': _status,
         'timestamp': FieldValue.serverTimestamp(),
         'customizable': isCustomizable,
+        // Prep time fields
+        'prepTimeMinutes': int.tryParse(_prepTimeController.text.trim()),
+        'madeToOrder': _madeToOrder,
       };
       
       // Add customizations if enabled
@@ -321,6 +331,27 @@ class _ProductEditScreenState extends State<ProductEditScreen> {
                       children: [
                         const Text('Pricing & Inventory', style: TextStyle(fontWeight: FontWeight.w600, color: AppTheme.deepTeal)),
                         const SizedBox(height: 12),
+                        // Prep Time & Made-to-order
+                        Row(
+                          children: [
+                            Expanded(
+                              child: TextFormField(
+                                controller: _prepTimeController,
+                                decoration: const InputDecoration(labelText: 'Prep Time (minutes)', hintText: 'e.g. 45'),
+                                keyboardType: TextInputType.number,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            // Expanded(
+                            //   child: CheckboxListTile(
+                            //     contentPadding: EdgeInsets.zero,
+                            //     title: const Text('Made to order'),
+                            //     value: _madeToOrder,
+                            //     onChanged: (v) => setState(() => _madeToOrder = v ?? false),
+                            //   ),
+                            // ),
+                          ],
+                        ),
                     TextFormField(
                       controller: _priceController,
                           decoration: const InputDecoration(prefixText: 'R ', labelText: 'Price'),
@@ -689,6 +720,14 @@ class _ProductEditScreenState extends State<ProductEditScreen> {
     if (qty != initialQty) return true;
     if (desc != (widget.initialData['description'] ?? '')) return true;
     if (_status != ((widget.initialData['status'] as String?)?.toLowerCase() == 'draft' ? 'draft' : 'active')) return true;
+    // Detect changes in prep time and madeToOrder
+    final int? initPrep = (widget.initialData['prepTimeMinutes'] is num)
+        ? (widget.initialData['prepTimeMinutes'] as num).toInt()
+        : int.tryParse('${widget.initialData['prepTimeMinutes'] ?? ''}');
+    final int? currPrep = int.tryParse(_prepTimeController.text.trim());
+    if ((currPrep ?? 0) != (initPrep ?? 0)) return true;
+    final bool initMadeToOrder = widget.initialData['madeToOrder'] == true;
+    if (_madeToOrder != initMadeToOrder) return true;
     if (_pickedImage != null) return true;
     return false;
   }

@@ -584,6 +584,7 @@ class _StunningProductBrowserState extends State<StunningProductBrowser>
 
   Widget _buildProductGrid(bool isMobile, bool isTablet) {
     final crossAxisCount = isMobile ? 2 : (isTablet ? 3 : 4);
+    // Restore original aspect ratio (do not make cards longer)
     final childAspectRatio = isMobile ? 0.75 : 0.8;
     
     return SliverPadding(
@@ -659,29 +660,113 @@ class _StunningProductBrowserState extends State<StunningProductBrowser>
                       ),
                     ),
                   ),
-                  
+                  // Prep time and Made-to-order badges overlay on image
+                  Positioned(
+                    left: 8,
+                    bottom: 8,
+                    child: Builder(builder: (context) {
+                      final int? prep = (data['prepTimeMinutes'] is num)
+                          ? (data['prepTimeMinutes'] as num).toInt()
+                          : int.tryParse('${data['prepTimeMinutes'] ?? ''}');
+                      final bool madeToOrder = data['madeToOrder'] == true;
+                      if ((prep == null || prep <= 0) && !madeToOrder) {
+                        return const SizedBox.shrink();
+                      }
+                      return ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 240),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (madeToOrder)
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: Colors.orange.withOpacity(0.92),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: const Text(
+                                  'Made to order',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                            if (madeToOrder && (prep != null && prep > 0)) const SizedBox(height: 6),
+                            if (prep != null && prep > 0)
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                    decoration: BoxDecoration(
+                                      color: Colors.black.withOpacity(0.55),
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(color: Colors.white.withOpacity(0.2)),
+                                    ),
+                                    child: const Icon(Icons.timer, size: 12, color: Colors.white),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                    decoration: BoxDecoration(
+                                      color: AppTheme.deepTeal.withOpacity(0.85),
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: Text(
+                                      '$prep min prep',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                          ],
+                        ),
+                      );
+                    }),
+                  ),
+
                   // Add to Cart Button
                   Positioned(
                     top: 8,
                     right: 8,
-                    child: GestureDetector(
-                      onTap: (!_locationEnabled || isOutOfStock) ? null : () => _addToCart(doc.id, data),
-                      child: Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: (!_locationEnabled || isOutOfStock)
-                              ? Colors.grey.withOpacity(0.8)
-                              : AppTheme.deepTeal.withOpacity(0.9),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Icon(
-                          (!_locationEnabled || isOutOfStock) 
-                              ? Icons.location_off 
-                              : Icons.add_shopping_cart,
-                          color: Colors.white,
-                          size: 16,
-                        ),
-                      ),
+                    child: Builder(
+                      builder: (context) {
+                        // Bypass location requirement on store page (and for PAXI/Pargo-enabled stores)
+                        final bool paxiEnabled = (widget.storeData?['paxiEnabled'] == true);
+                        final bool pargoEnabled = (widget.storeData?['pargoEnabled'] == true) || (widget.storeData?['pudoEnabled'] == true);
+                        final bool bypassLocation = paxiEnabled || pargoEnabled || (widget.storeData != null);
+
+                        final bool disabled = (!bypassLocation && !_locationEnabled) || isOutOfStock;
+
+                        return GestureDetector(
+                          onTap: disabled ? null : () => _addToCart(doc.id, data),
+                          child: Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: disabled
+                                  ? Colors.grey.withOpacity(0.8)
+                                  : AppTheme.deepTeal.withOpacity(0.9),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Icon(
+                              disabled ? Icons.shopping_cart_outlined : Icons.add_shopping_cart,
+                              color: Colors.white,
+                              size: 16,
+                            ),
+                          ),
+                        );
+                      },
                     ),
                   ),
                   
@@ -733,6 +818,9 @@ class _StunningProductBrowserState extends State<StunningProductBrowser>
                     ),
                     const SizedBox(height: 4),
                     _buildConditionIndicator(data),
+                    const SizedBox(height: 6),
+                    // Moved prep/made-to-order badges onto image to save space
+                    const SizedBox.shrink(),
                     const Spacer(),
                     Row(
                       children: [
@@ -1041,7 +1129,6 @@ class _StunningProductBrowserState extends State<StunningProductBrowser>
     if (widget.storeData == null) return const SizedBox.shrink();
     
     final withinDeliveryRange = widget.storeData!['withinDeliveryRange'] as bool? ?? true;
-    final showDistanceWarning = widget.storeData!['showDistanceWarning'] as bool? ?? false;
     final distance = widget.storeData!['distance'] as double?;
     final serviceRadius = widget.storeData!['serviceRadius'] as double?;
     final hasNationalDelivery = widget.storeData!['hasNationalDelivery'] as bool? ?? false;
@@ -1103,84 +1190,24 @@ class _StunningProductBrowserState extends State<StunningProductBrowser>
         return;
       }
 
-      // Check if location is disabled - block adding to cart
-      try {
-        final locationPermission = await Geolocator.checkPermission();
-        if (locationPermission == LocationPermission.denied || 
-            locationPermission == LocationPermission.deniedForever) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: const Text('Location access is required to add items to cart. Please enable location permission to continue.'),
-              backgroundColor: AppTheme.error,
-              duration: const Duration(seconds: 5),
-              action: SnackBarAction(
-                label: 'Enable Location',
-                textColor: Colors.white,
-                onPressed: () {
-                  Navigator.pushNamed(context, '/');
-                },
-              ),
-            ),
-          );
-          return;
-        }
-        
-        // Test if we can actually get location
-        await Geolocator.getCurrentPosition(
-          desiredAccuracy: LocationAccuracy.medium,
-          timeLimit: const Duration(seconds: 3),
-        );
-      } catch (e) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text('Location access is required to add items to cart. Please enable location permission and try again.'),
-            backgroundColor: AppTheme.error,
-            duration: const Duration(seconds: 5),
-            action: SnackBarAction(
-              label: 'Enable Location',
-              textColor: Colors.white,
-              onPressed: () {
-                Navigator.pushNamed(context, '/');
-              },
-            ),
-          ),
-        );
-        return;
-      }
+      // Do NOT block add-to-cart due to location on store page.
+      // If distance checks are needed, they are handled below using store data.
 
       // Check distance validation if store data is available
       if (widget.storeData != null) {
         final withinDeliveryRange = widget.storeData!['withinDeliveryRange'] as bool? ?? true;
-        final showDistanceWarning = widget.storeData!['showDistanceWarning'] as bool? ?? false;
         final distance = widget.storeData!['distance'] as double?;
         final serviceRadius = widget.storeData!['serviceRadius'] as double?;
         final hasNationalDelivery = widget.storeData!['hasNationalDelivery'] as bool? ?? false;
         
         print('📍 Distance validation for store ${widget.storeId}:');
         print('   Within delivery range: $withinDeliveryRange');
-        print('   Show distance warning: $showDistanceWarning');
+        //print('   Show distance warning: $showDistanceWarning');
         print('   Distance: $distance km');
         print('   Service radius: $serviceRadius km');
         print('   Has national delivery: $hasNationalDelivery');
         
-        // BLOCK if no distance data (location not available)
-        if (distance == null) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: const Text('Location access is required to purchase from this store. Please enable location permission and try again.'),
-              backgroundColor: AppTheme.error,
-              duration: const Duration(seconds: 5),
-              action: SnackBarAction(
-                label: 'Enable Location',
-                textColor: Colors.white,
-                onPressed: () {
-                  Navigator.pushNamed(context, '/');
-                },
-              ),
-            ),
-          );
-          return;
-        }
+        // Do not block when distance is unknown; allow add-to-cart.
         
         if (!withinDeliveryRange && !hasNationalDelivery) {
           final distanceText = distance != null ? '${distance.toStringAsFixed(1)}km' : 'unknown distance';
@@ -1203,7 +1230,7 @@ class _StunningProductBrowserState extends State<StunningProductBrowser>
           return;
         }
         
-        if (showDistanceWarning && distance != null && serviceRadius != null) {
+        if ((widget.storeData!['showDistanceWarning'] as bool? ?? false) && distance != null && serviceRadius != null) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text('Store is ${distance.toStringAsFixed(1)}km away (max ${serviceRadius.toStringAsFixed(1)}km). Delivery may take longer.'),

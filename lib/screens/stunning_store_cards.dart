@@ -594,38 +594,26 @@ class StunningStoreCard extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Distance warning banner if store is out of range or location disabled
-        if (store['_blockCheckout'] == true) ...[
+        // Remove location-required banner; only show gentle distance info if available
+        if (store['_blockCheckout'] == true && store['distance'] != null) ...[
           Container(
             width: double.infinity,
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             decoration: BoxDecoration(
-              color: store['distance'] == null 
-                  ? AppTheme.error.withOpacity(0.1)
-                  : AppTheme.warning.withOpacity(0.1),
+              color: AppTheme.warning.withOpacity(0.08),
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(
-                color: store['distance'] == null 
-                    ? AppTheme.error.withOpacity(0.3)
-                    : AppTheme.warning.withOpacity(0.3)
-              ),
+              border: Border.all(color: AppTheme.warning.withOpacity(0.25)),
             ),
             child: Row(
               children: [
-                Icon(
-                  store['distance'] == null ? Icons.location_off : Icons.info_outline,
-                  color: store['distance'] == null ? AppTheme.error : AppTheme.warning,
-                  size: 16,
-                ),
+                Icon(Icons.info_outline, color: AppTheme.warning, size: 16),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    store['distance'] == null 
-                        ? 'Location access required - Browse only (checkout blocked)'
-                        : 'Store is ${store['distance']?.toStringAsFixed(1)}km away - Browse only (checkout blocked)',
+                    'Store is ${store['distance']?.toStringAsFixed(1)}km away. Delivery may be unavailable; pickup or alternative options might apply.',
                     style: TextStyle(
                       fontSize: 12,
-                      color: store['distance'] == null ? AppTheme.error : AppTheme.warning,
+                      color: AppTheme.warning,
                       fontWeight: FontWeight.w500,
                     ),
                   ),
@@ -853,7 +841,7 @@ class StunningStoreCard extends StatelessWidget {
                         ? 'Browse products (checkout blocked - ${store['distance']?.toStringAsFixed(1)}km away)'
                         : 'View products from this store',
                 child: ElevatedButton.icon(
-                  onPressed: store['distance'] == null ? null : () {
+                  onPressed: () {
                     Navigator.push(
                       context,
                       MaterialPageRoute(
@@ -866,17 +854,15 @@ class StunningStoreCard extends StatelessWidget {
                     );
                   },
                   icon: Icon(
-                    store['distance'] == null ? Icons.location_off : Icons.shopping_bag, 
+                    Icons.shopping_bag, 
                     size: 16
                   ),
                   label: Text(
-                    store['distance'] == null ? 'Location Required' : 'Browse Products', 
+                    'Browse Products', 
                     style: const TextStyle(fontSize: 12)
                   ),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: store['distance'] == null 
-                        ? Colors.grey.withOpacity(0.6)
-                        : store['_blockCheckout'] == true 
+                    backgroundColor: store['_blockCheckout'] == true 
                             ? AppTheme.warning
                             : AppTheme.deepTeal,
                     foregroundColor: Colors.white,

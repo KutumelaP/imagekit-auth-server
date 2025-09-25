@@ -219,48 +219,40 @@ class _StoreSelectionScreenState extends State<StoreSelectionScreen> {
     data['avgRating'] = review['avgRating'];
     data['reviewCount'] = review['reviewCount'];
 
-    // Calculate distance for specific store access
+    // Calculate distance if available, but never block checkout due to location on store page
     try {
-      // Check location permission first
       final locationPermission = await Geolocator.checkPermission();
       if (locationPermission == LocationPermission.denied || 
           locationPermission == LocationPermission.deniedForever) {
-        print('🔍 DEBUG: Location permission denied - showing store but blocking purchases');
+        print('🔍 DEBUG: Location permission denied - continuing without distance');
         data['distance'] = null;
-        data['_blockCheckout'] = true;
-        data['_blockReason'] = 'Location access is required to purchase from this store';
-        return data;
-      }
-      
-      final userPos = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.medium,
-        timeLimit: const Duration(seconds: 5),
-      );
-      
-      final storeLat = data['latitude'] as double?;
-      final storeLng = data['longitude'] as double?;
-      
-      if (userPos != null && storeLat != null && storeLng != null) {
-        final distance = Geolocator.distanceBetween(
-          userPos.latitude,
-          userPos.longitude,
-          storeLat,
-          storeLng,
-        ) / 1000;
-        
-        data['distance'] = distance;
-        print('🔍 DEBUG: Specific store distance calculated: ${distance.toStringAsFixed(1)}km');
       } else {
-        print('🔍 DEBUG: Could not calculate distance for specific store - missing coordinates');
-        data['distance'] = null;
-        data['_blockCheckout'] = true;
-        data['_blockReason'] = 'Location access is required to purchase from this store';
+        final userPos = await Geolocator.getCurrentPosition(
+          desiredAccuracy: LocationAccuracy.medium,
+          timeLimit: const Duration(seconds: 5),
+        );
+
+        final storeLat = data['latitude'] as double?;
+        final storeLng = data['longitude'] as double?;
+
+        if (userPos != null && storeLat != null && storeLng != null) {
+          final distance = Geolocator.distanceBetween(
+            userPos.latitude,
+            userPos.longitude,
+            storeLat,
+            storeLng,
+          ) / 1000;
+
+          data['distance'] = distance;
+          print('🔍 DEBUG: Specific store distance calculated: ${distance.toStringAsFixed(1)}km');
+        } else {
+          print('🔍 DEBUG: Could not calculate distance for specific store - missing coordinates');
+          data['distance'] = null;
+        }
       }
     } catch (e) {
       print('🔍 DEBUG: Error calculating distance for specific store: $e');
       data['distance'] = null;
-      data['_blockCheckout'] = true;
-      data['_blockReason'] = 'Location access is required to purchase from this store';
     }
 
     return data;
@@ -286,10 +278,10 @@ class _StoreSelectionScreenState extends State<StoreSelectionScreen> {
             final enrichedStore = await _enrichStoreData(widget.specificStoreId!, data);
             
             // Check if store is out of delivery range and mark for blocking
-            final withinDeliveryRange = enrichedStore['withinDeliveryRange'] as bool? ?? false;
+            final withinDeliveryRange = enrichedStore['withinDeliveryRange'] as bool?;
             final hasNationalDelivery = enrichedStore['hasNationalDelivery'] as bool? ?? false;
             
-            if (!withinDeliveryRange && !hasNationalDelivery) {
+            if (withinDeliveryRange == false && !hasNationalDelivery) {
               print('⚠️ Store is out of delivery range - allowing browse but blocking checkout');
               enrichedStore['_blockCheckout'] = true;
               enrichedStore['_blockReason'] = 'Store is too far away for delivery';

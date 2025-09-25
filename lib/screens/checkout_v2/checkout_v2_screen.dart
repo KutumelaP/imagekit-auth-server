@@ -690,6 +690,26 @@ class _SmartSummary extends StatelessWidget {
               ),
             ),
           ],
+
+          // Explicit prep time row (max across items)
+          if (vm.cartItems.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Builder(builder: (context) {
+              try {
+                final prepTimes = vm.cartItems
+                    .map((it) => it['prepTimeMinutes'])
+                    .where((v) => v != null)
+                    .map((v) => (v is num) ? v.toInt() : int.tryParse(v.toString()) ?? 0)
+                    .where((v) => v > 0)
+                    .toList();
+                if (prepTimes.isEmpty) return const SizedBox.shrink();
+                final maxPrep = prepTimes.reduce((a, b) => a > b ? a : b);
+                return _SummaryRow('Prep time (max item)', '$maxPrep min');
+              } catch (_) {
+                return const SizedBox.shrink();
+              }
+            }),
+          ],
           
           if (vm.error != null) ...[
             const SizedBox(height: 12),

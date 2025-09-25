@@ -28,6 +28,7 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen> {
   Map<String, dynamic>? _orderData;
   String? _error;
   bool _whatsappSent = false;
+  bool _sellerWhatsappSent = false;
 
   @override
   void initState() {
@@ -67,6 +68,9 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen> {
           _orderData = orderData;
           _isLoading = false;
         });
+        // Also notify the seller via WhatsApp with basic order details
+        // Run in microtask to avoid blocking UI
+        Future.microtask(() => _sendSellerWhatsAppNotification(orderData));
         
         // Note: WhatsApp notification will be sent when user clicks the button
         // This matches the behavior of COD/EFT which send automatically during order creation
@@ -334,116 +338,111 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen> {
     }
   }
 
-  Future<void> _checkAndSendWhatsAppNotification(Map<String, dynamic> orderData) async {
-    // This method is now deprecated - use _sendWhatsAppNotificationForOrder instead
-    // Keeping for backward compatibility but redirecting to the universal method
-    await _sendWhatsAppNotificationForOrder(orderData);
-  }
-
-  Future<void> _checkAndSendWhatsAppNotificationOLD(Map<String, dynamic> orderData) async {
-    if (_whatsappSent) return; // Already sent
-    
+  /// Send WhatsApp notification to the seller with concise order details
+  Future<void> _sendSellerWhatsAppNotification(Map<String, dynamic> orderData) async {
+    if (_sellerWhatsappSent) return;
     try {
-      // Check if this is a PayFast payment
-      final payment = orderData['payment'] as Map<String, dynamic>?;
-      final paymentMethod = payment?['method'] ?? payment?['gateway'];
-      
-      if (paymentMethod == 'payfast' && orderData['paymentStatus'] == 'paid') {
-        final user = FirebaseAuth.instance.currentUser;
-        if (user == null) return;
-        
-        // Get user phone number
-        final userDoc = await FirebaseFirestore.instance
-            .collection('users')
-            .doc(user.uid)
-            .get();
-        
-        if (!userDoc.exists) return;
-        
-        final userData = userDoc.data();
-        if (userData == null) return;
-        final phoneNumber = userData['phoneNumber'] ?? userData['phone'];
-        
-        if (phoneNumber != null && phoneNumber.isNotEmpty) {
-          // Get correct order ID (order number)
-          final orderId = orderData['orderId'] ?? widget.orderId ?? 'Unknown';
-          
-          // Get total price from correct field
-          final pricing = orderData['pricing'] as Map<String, dynamic>?;
-          final totalPrice = (pricing?['grandTotal'] ?? orderData['totalPrice'] ?? orderData['totalAmount'] ?? 0.0) as double;
-          
-          // Get store name from multiple possible sources
-          String sellerName = 'OmniaSA Store';
-          
-          // Try to get from fulfillment pickup point
-          final fulfillment = orderData['fulfillment'] as Map<String, dynamic>?;
-          final pickupPoint = fulfillment?['pickupPoint'] as Map<String, dynamic>?;
-          if (pickupPoint != null && pickupPoint['name'] != null && pickupPoint['name'].toString().trim().isNotEmpty) {
-            sellerName = pickupPoint['name'].toString().trim();
-          } else {
-            // Try to get from items
-            final items = orderData['items'] as List<dynamic>?;
-            if (items != null && items.isNotEmpty) {
-              final firstItem = items[0] as Map<String, dynamic>?;
-              if (firstItem != null && firstItem['sellerName'] != null && firstItem['sellerName'].toString().trim().isNotEmpty) {
-                sellerName = firstItem['sellerName'].toString().trim();
-              }
-            }
-            
-            // If still generic, try to fetch from seller document
-            if (sellerName == 'OmniaSA Store' || sellerName == 'Unknown Store') {
-              final sellerId = orderData['sellerId'];
-              if (sellerId != null) {
-                try {
-                  final sellerDoc = await FirebaseFirestore.instance
-                      .collection('users')
-                      .doc(sellerId)
-                      .get();
-                  if (sellerDoc.exists) {
-                    final sellerData = sellerDoc.data();
-                    if (sellerData != null) {
-                      sellerName = sellerData['businessName'] ?? sellerData['name'] ?? sellerName;
-                    }
-                  }
-                } catch (e) {
-                  print('⚠️ Could not fetch seller name: $e');
-                }
-              }
-            }
+      // Resolve sellerId from order or first item
+      String? sellerId = orderData['sellerId']?.toString();
+      if (sellerId == null || sellerId.isEmpty) {
+        final rawItems = orderData['items'];
+        if (rawItems is List && rawItems.isNotEmpty) {
+          final first = rawItems.first;
+          if (first is Map) {
+            sellerId = (first['sellerId'] ?? first['storeOwnerId'] ?? first['ownerId'] ?? first['seller'])?.toString();
           }
-          
-          // Get delivery OTP from correct location
-          final deliveryOTP = fulfillment?['deliveryOTP'] ?? orderData['deliveryOTP'] ?? 'N/A';
-          
-          print('📱 Sending WhatsApp for order: $orderId, store: $sellerName, total: R${totalPrice.toStringAsFixed(2)}');
-          
-          // Send WhatsApp notification using the service
-          final success = await WhatsAppIntegrationService.sendOrderConfirmation(
-            orderId: orderId,
-            buyerPhone: phoneNumber,
-            sellerName: sellerName,
-            totalAmount: totalPrice,
-            deliveryOTP: deliveryOTP.toString(),
-          );
-          
-          if (success) {
-            setState(() {
-              _whatsappSent = true;
-            });
-            print('✅ WhatsApp confirmation sent for PayFast order: $orderId');
-          } else {
-            print('❌ WhatsApp send failed for order: $orderId');
-          }
-        } else {
-          print('⚠️ No phone number found for user');
         }
+      }
+
+      String sellerPhone = '';
+      if (sellerId != null && sellerId.isNotEmpty) {
+        try {
+          final sellerDoc = await FirebaseFirestore.instance.collection('users').doc(sellerId).get();
+          final data = sellerDoc.data() ?? {};
+          sellerPhone = (data['contact'] ?? data['phone'] ?? data['pudoContactPhone'] ?? data['whatsapp'] ?? data['whatsappNumber'] ?? data['businessPhone'] ?? data['tel'] ?? data['mobile'] ?? data['phoneNumber'] ?? '').toString();
+        } catch (e) {
+          print('⚠️ Could not fetch seller doc for sellerId=$sellerId: $e');
+        }
+      }
+
+      if (sellerPhone.isEmpty) {
+        print('⚠️ No seller phone/contact found; skipping seller WhatsApp.');
+        return;
+      }
+
+      // Prepare items list (name + quantity)
+      final List<Map<String, dynamic>> items = [];
+      final rawItems = orderData['items'];
+      if (rawItems is List) {
+        for (final it in rawItems) {
+          if (it is Map) {
+            items.add({
+              'name': (it['name'] ?? 'Item').toString(),
+              'quantity': (it['quantity'] ?? 1),
+            });
+          }
+        }
+      }
+
+      // Resolve buyer name
+      String buyerName = '';
+      final buyer = orderData['buyerDetails'] as Map<String, dynamic>?;
+      if (buyer != null) {
+        buyerName = (buyer['fullName'] ?? '').toString();
+        if (buyerName.trim().isEmpty) {
+          final firstName = (buyer['firstName'] ?? '').toString();
+          final lastName = (buyer['lastName'] ?? '').toString();
+          buyerName = [firstName, lastName].where((s) => s.trim().isNotEmpty).join(' ').trim();
+        }
+      }
+      if (buyerName.trim().isEmpty) {
+        buyerName = (orderData['buyerName'] ?? orderData['name'] ?? 'Customer').toString();
+      }
+
+      // Totals
+      final pricing = orderData['pricing'] as Map<String, dynamic>?;
+      final double total = ((pricing?['grandTotal'] ?? orderData['totalPrice'] ?? orderData['totalAmount'] ?? 0.0) as num).toDouble();
+
+      // Order identifier
+      final String orderId = (orderData['orderNumber'] ?? orderData['orderId'] ?? widget.orderId ?? '').toString();
+
+      // Delivery or pickup address display
+      String deliveryAddress = '';
+      final fulfillment = orderData['fulfillment'] as Map<String, dynamic>?;
+      final fType = (fulfillment?['type'] ?? '').toString().toLowerCase();
+      if (fType == 'delivery') {
+        deliveryAddress = (orderData['deliveryAddress'] ?? orderData['address'] ?? fulfillment?['address'] ?? '').toString();
+        if (deliveryAddress.trim().isEmpty) deliveryAddress = 'Customer address';
       } else {
-        print('⚠️ Not a paid PayFast order: method=$paymentMethod, status=${orderData['paymentStatus']}');
+        final pickupPoint = fulfillment?['pickupPoint'] as Map<String, dynamic>?;
+        final pickupName = (orderData['pickupPointName'] ?? pickupPoint?['name'] ?? '').toString();
+        final pickupAddr = (orderData['pickupPointAddress'] ?? pickupPoint?['address'] ?? pickupPoint?['fullAddress'] ?? pickupPoint?['formattedAddress'] ?? pickupPoint?['street'] ?? '').toString();
+        deliveryAddress = pickupAddr.isNotEmpty
+            ? (pickupName.isNotEmpty ? '$pickupName — $pickupAddr' : pickupAddr)
+            : 'Store pickup';
+      }
+
+      print('📲 Sending seller WhatsApp: sellerPhone=$sellerPhone, orderId=$orderId, buyer=$buyerName, total=$total, addr=$deliveryAddress, items=${items.length}');
+      final ok = await WhatsAppIntegrationService.sendNewOrderNotificationToSeller(
+        orderId: orderId,
+        sellerPhone: sellerPhone,
+        buyerName: buyerName,
+        orderTotal: total,
+        items: items,
+        deliveryAddress: deliveryAddress,
+      );
+      if (ok) {
+        setState(() { _sellerWhatsappSent = true; });
+        print('✅ Seller WhatsApp notification sent');
+      } else {
+        print('❌ Seller WhatsApp notification failed');
       }
     } catch (e) {
-      print('❌ Error sending WhatsApp notification: $e');
+      print('❌ Error sending seller WhatsApp notification: $e');
     }
   }
+
+  
 
   @override
   Widget build(BuildContext context) {

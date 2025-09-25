@@ -88,6 +88,16 @@ class VoiceService {
   factory VoiceService() => _instance;
   VoiceService._internal();
 
+  // Verbose diagnostic logging toggle (shows in release too)
+  static bool debugLogging = true;
+  void _log(String message) {
+    if (debugLogging) {
+      // Keep simple print so it shows in web console (Safari/Chrome)
+      // ignore: avoid_print
+      print(message);
+    }
+  }
+
   final FlutterTts _flutterTts = FlutterTts();
   final AudioPlayer _player = AudioPlayer();
   
@@ -100,6 +110,7 @@ class VoiceService {
   bool _isPaused = false;
   String? _currentText;
   bool _useBabyVoice = false; // Nathan is now a professional assistant
+  static bool _webAudioPrimed = false;
   
   // API usage tracking
   int _googleTtsRequests = 0;
@@ -118,6 +129,24 @@ class VoiceService {
     _config = personality;
     if (kDebugMode) {
       print('🎤 Voice personality changed to: ${personality.voiceName}');
+    }
+  }
+
+  /// Prime/unlock web audio on iOS Safari by speaking a zero-volume blip on user gesture
+  Future<void> primePlaybackIfNeeded() async {
+    if (!kIsWeb || _webAudioPrimed) return;
+    try {
+      _log('🔓 Attempting to prime web audio...');
+      // Use local TTS with zero volume for a very short utterance to unlock playback
+      await _flutterTts.setVolume(0.0);
+      await _flutterTts.speak(' '); // minimal utterance
+      await Future.delayed(const Duration(milliseconds: 50));
+      await _flutterTts.stop();
+      await _flutterTts.setVolume(0.8);
+      _webAudioPrimed = true;
+      _log('🔓 Web audio primed');
+    } catch (e) {
+      _log('⚠️ Failed to prime web audio: $e');
     }
   }
 
@@ -154,6 +183,7 @@ class VoiceService {
   Future<void> initialize({String? googleApiKey}) async {
     try {
       _googleApiKey = googleApiKey ?? ApiKeys.googleTtsKey;
+      _log('🔧 VoiceService.init → isWeb=$kIsWeb, googleKeySet=${_googleApiKey != null && _googleApiKey!.isNotEmpty}');
       
       // Force update voice configuration to normal human speech rate
       _config = const VoiceConfig(
@@ -177,7 +207,8 @@ class VoiceService {
       await _flutterTts.setLanguage(_config.language);
       await _flutterTts.setSpeechRate(_config.speechRate);
       await _flutterTts.setPitch(_config.pitch);
-      await _flutterTts.awaitSpeakCompletion(true);
+      // Safari/Web can hang when awaiting completion; don't await on web
+      await _flutterTts.awaitSpeakCompletion(kIsWeb ? false : true);
       
       // Set Nathan's professional voice
       await _setBabyNathanVoice();
@@ -187,9 +218,7 @@ class VoiceService {
         _isPlaying = false;
         _isPaused = false;
         _currentText = null;
-        if (kDebugMode) {
-          print('✅ Local TTS completed');
-        }
+        _log('✅ Local TTS completed');
       });
 
       // Set up error handler
@@ -197,14 +226,21 @@ class VoiceService {
         _isPlaying = false;
         _isPaused = false;
         _currentText = null;
-        if (kDebugMode) {
-          print('❌ TTS Error: $msg');
-        }
+        _log('❌ TTS Error: $msg');
       });
       _flutterTts.setStartHandler(() {
-        if (kDebugMode) {
-          print('▶️ Local TTS started');
-        }
+        _log('▶️ Local TTS started');
+      });
+
+      // AudioPlayer diagnostics
+      _player.onPlayerStateChanged.listen((state) {
+        _log('🎧 AudioPlayer state: $state');
+      });
+      _player.onDurationChanged.listen((d) {
+        _log('⏱️ Audio duration: ${d.inMilliseconds}ms');
+      });
+      _player.onPositionChanged.listen((p) {
+        _log('➡️ Audio position: ${p.inMilliseconds}ms');
       });
 
       // Test TTS availability
@@ -213,15 +249,11 @@ class VoiceService {
         throw Exception('No TTS languages available');
       }
 
-      if (kDebugMode) {
-        print('✅ VoiceService initialized successfully');
-        print('🔊 Google TTS available: $isGoogleTtsAvailable');
-        print('🔊 Voice config: ${_config.voiceName}');
-      }
+      _log('✅ VoiceService initialized successfully');
+      _log('🔊 Google TTS available: $isGoogleTtsAvailable');
+      _log('🔊 Voice config: ${_config.voiceName}');
     } catch (e) {
-      if (kDebugMode) {
-        print('❌ Error initializing VoiceService: $e');
-      }
+      _log('❌ Error initializing VoiceService: $e');
       // Don't rethrow - allow app to continue without voice
       _isPlaying = false;
       _isPaused = false;
@@ -286,7 +318,7 @@ class VoiceService {
       
       // Set natural, human-like voice characteristics
       await _flutterTts.setPitch(0.7); // Deeper pitch for male voice
-      await _flutterTts.setSpeechRate(0.4); // Much slower for natural conversation
+      await _flutterTts.setSpeechRate(0.7); // Faster, more natural conversation pace
       await _flutterTts.setVolume(0.8); // Slightly softer volume
       
       // Try to set additional natural speech parameters if available
@@ -304,7 +336,7 @@ class VoiceService {
       }
       // Fallback to natural settings
       await _flutterTts.setPitch(0.9);
-      await _flutterTts.setSpeechRate(0.4);
+      await _flutterTts.setSpeechRate(0.7);
       await _flutterTts.setVolume(0.8);
     }
   }
@@ -397,17 +429,13 @@ class VoiceService {
     final startTime = DateTime.now();
     
     if (text.trim().isEmpty) {
-      if (kDebugMode) {
-        print('⚠️ Empty text provided to speak');
-      }
+      _log('⚠️ Empty text provided to speak');
       return;
     }
 
     // Check if TTS is available
     if (!await _isTtsAvailable()) {
-      if (kDebugMode) {
-        print('❌ TTS not available - skipping speech');
-      }
+      _log('❌ TTS not available - skipping speech');
       return;
     }
 
@@ -418,57 +446,40 @@ class VoiceService {
     _isPlaying = true;
 
     try {
-      if (kDebugMode) {
-        print('🎤 ===== TTS REQUEST START =====');
-        print('🎤 Text: ${text.substring(0, min(text.length, 100))}...');
-        print('🎤 Text Length: ${text.length} characters');
-        print('🎤 Prefer Google: $preferGoogle');
-        print('🎤 Google TTS Available: $isGoogleTtsAvailable');
-        print('🎤 Voice Config: ${_config.voiceName}');
-        print('🎤 Speech Rate: ${_config.speechRate}');
-        print('🎤 Pitch: ${_config.pitch}');
-        print('🎤 Timestamp: ${startTime.toIso8601String()}');
-      }
+      _log('🎤 ===== TTS REQUEST START =====');
+      _log('🎤 Text: ${text.substring(0, min(text.length, 100))}...');
+      _log('🎤 Text Length: ${text.length}');
+      _log('🎤 Prefer Google: $preferGoogle | GoogleAvail: $isGoogleTtsAvailable | isWeb: $kIsWeb');
+      _log('🎤 Voice: ${_config.voiceName} | rate=${_config.speechRate} | pitch=${_config.pitch}');
+      _log('🎤 Timestamp: ${startTime.toIso8601String()}');
 
-      // Try Google WaveNet first for better voice quality
-      if (preferGoogle && isGoogleTtsAvailable) {
-        if (kDebugMode) {
-          print('🎤 Using Google TTS with voice: ${_config.voiceName}');
-        }
+      // Try Google WaveNet first for better voice quality when supported (including web)
+      final bool useGoogle = preferGoogle && isGoogleTtsAvailable;
+      if (useGoogle) {
+        _log('🎤 Using Google TTS with voice: ${_config.voiceName}');
         await _speakGoogleWaveNet(text);
       } else {
-        if (kDebugMode) {
-          print('🎤 Using Flutter TTS (preferGoogle: $preferGoogle, isGoogleTtsAvailable: $isGoogleTtsAvailable)');
-        }
+        _log('🎤 Using Flutter TTS (preferGoogle=$preferGoogle, googleAvail=$isGoogleTtsAvailable)');
         // Fallback to local TTS with Nathan's voice
         await _flutterTts.stop();
         final enhancedText = _enhanceTextForSpeech(text);
-        if (kDebugMode) {
-          print('🎤 Enhanced text for local TTS: ${enhancedText.substring(0, min(enhancedText.length, 100))}...');
-        }
+        _log('🎤 Enhanced text (local TTS): ${enhancedText.substring(0, min(enhancedText.length, 100))}...');
         await _flutterTts.speak(enhancedText);
       }
       
       final endTime = DateTime.now();
       final duration = endTime.difference(startTime).inMilliseconds;
-      
-      if (kDebugMode) {
-        print('🎤 Nathan speaking: ${text.substring(0, text.length > 50 ? 50 : text.length)}...');
-        print('🎤 TTS Processing Time: ${duration}ms');
-        print('🎤 ===== TTS REQUEST END =====');
-      }
+      _log('🎤 Nathan speaking: ${text.substring(0, text.length > 60 ? 60 : text.length)}...');
+      _log('🎤 TTS Processing Time: ${duration}ms');
+      _log('🎤 ===== TTS REQUEST END =====');
     } catch (e) {
-      if (kDebugMode) {
-        print('❌ Error in speak method: $e');
-      }
+      _log('❌ Error in speak method: $e');
       _isPlaying = false;
       _currentText = null;
       
       // Try to reinitialize if there's a connection error
       if (e.toString().contains('connection') || e.toString().contains('listening')) {
-        if (kDebugMode) {
-          print('🔄 Attempting to reinitialize TTS due to connection error');
-        }
+        _log('🔄 Attempting to reinitialize TTS due to connection error');
         await _reinitializeTts();
       }
     }
@@ -490,9 +501,7 @@ class VoiceService {
   /// Reinitialize TTS if there's a connection issue
   Future<void> _reinitializeTts() async {
     try {
-      if (kDebugMode) {
-        print('🔄 Reinitializing TTS...');
-      }
+      _log('🔄 Reinitializing TTS...');
       
       // Reset state
       _isPlaying = false;
@@ -503,7 +512,7 @@ class VoiceService {
       await _flutterTts.setLanguage(_config.language);
       await _flutterTts.setSpeechRate(_config.speechRate);
       await _flutterTts.setPitch(_config.pitch);
-      await _flutterTts.awaitSpeakCompletion(true);
+      await _flutterTts.awaitSpeakCompletion(kIsWeb ? false : true);
       
       // Set up handlers again
       _flutterTts.setCompletionHandler(() {
@@ -521,13 +530,9 @@ class VoiceService {
         }
       });
       
-      if (kDebugMode) {
-        print('✅ TTS reinitialized successfully');
-      }
+      _log('✅ TTS reinitialized successfully');
     } catch (e) {
-      if (kDebugMode) {
-        print('❌ Failed to reinitialize TTS: $e');
-      }
+      _log('❌ Failed to reinitialize TTS: $e');
     }
   }
 
@@ -539,16 +544,10 @@ class VoiceService {
       _googleTtsRequests++;
       _lastGoogleTtsRequest = DateTime.now();
       
-      if (kDebugMode) {
-        print('🎤 ===== GOOGLE TTS REQUEST START =====');
-        print('🎤 Voice: ${_config.voiceName}');
-        print('🎤 Speech Rate: ${_config.speechRate}');
-        print('🎤 Pitch: ${_config.pitch}');
-        print('🎤 Text Length: ${text.length} characters');
-        print('🎤 API Key available: ${_googleApiKey != null && _googleApiKey!.isNotEmpty}');
-        print('🎤 Google TTS requests this session: $_googleTtsRequests');
-        print('🎤 Timestamp: ${startTime.toIso8601String()}');
-      }
+      _log('🎤 ===== GOOGLE TTS REQUEST START =====');
+      _log('🎤 Voice: ${_config.voiceName} | rate=${_config.speechRate} | pitch=${_config.pitch}');
+      _log('🎤 Text Length: ${text.length} | KeySet=${_googleApiKey != null && _googleApiKey!.isNotEmpty}');
+      _log('🎤 Google TTS requests: $_googleTtsRequests | ${startTime.toIso8601String()}');
 
       final url = Uri.parse(
         'https://texttospeech.googleapis.com/v1/text:synthesize?key=$_googleApiKey',
@@ -568,9 +567,7 @@ class VoiceService {
         }
       };
 
-      if (kDebugMode) {
-        print('🎤 Google TTS Request Body: ${jsonEncode(requestBody)}');
-      }
+      _log('🎤 Google TTS Request Body (trunc): ${jsonEncode(requestBody).substring(0, 200)}...');
 
       final response = await http.post(
         url,
@@ -581,49 +578,46 @@ class VoiceService {
       final endTime = DateTime.now();
       final duration = endTime.difference(startTime).inMilliseconds;
 
-      if (kDebugMode) {
-        print('🎤 Google TTS Response Status: ${response.statusCode}');
-        print('🎤 Google TTS Response Time: ${duration}ms');
-        print('🎤 Response Body Length: ${response.body.length} characters');
-      }
+      _log('🎤 Google TTS Response Status: ${response.statusCode} in ${duration}ms (len=${response.body.length})');
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         final audioContent = base64Decode(data['audioContent']);
         
-        if (kDebugMode) {
-          print('🎤 Google TTS Success - Audio Content Length: ${audioContent.length} bytes');
-        }
+        _log('🎤 Google TTS Success - Audio bytes: ${audioContent.length}');
         
         // Play the audio using AudioPlayer
         try {
           if (kIsWeb) {
-            // For web, create a data URL and play it
-            final base64Audio = data['audioContent'];
-            final audioUrl = 'data:audio/mp3;base64,$base64Audio';
-            
-            if (kDebugMode) {
-              print('🎤 Playing web audio with data URL');
+            // Web path: try BytesSource first (plugin builds a Blob under the hood), then data URL fallback
+            try {
+              _log('🎤 Playing web audio via BytesSource');
+              await _player.play(BytesSource(Uint8List.fromList(audioContent)));
+            } catch (e) {
+              _log('⚠️ Web BytesSource failed: $e');
+              final base64Audio = data['audioContent'];
+              final audioUrl = 'data:audio/mp3;base64,$base64Audio';
+              try {
+                _log('🎤 Playing web audio via data URL');
+                await _player.play(UrlSource(audioUrl));
+              } catch (e2) {
+                _log('⚠️ Web data URL blocked: $e2 → prime+retry');
+                await primePlaybackIfNeeded();
+                await Future.delayed(const Duration(milliseconds: 60));
+                await _player.play(UrlSource(audioUrl));
+              }
             }
-            
-            await _player.play(UrlSource(audioUrl));
           } else {
             // For mobile, use BytesSource
-            if (kDebugMode) {
-              print('🎤 Playing mobile audio with BytesSource');
-            }
+            _log('🎤 Playing mobile audio via BytesSource');
             await _player.play(BytesSource(Uint8List.fromList(audioContent)));
           }
           
-          if (kDebugMode) {
-            print('✅ Google Neural2 TTS successful with voice: ${_config.voiceName}');
-            print('🎤 ===== GOOGLE TTS REQUEST END =====');
-          }
+          _log('✅ Google TTS playback started | voice=${_config.voiceName}');
+          _log('🎤 ===== GOOGLE TTS REQUEST END =====');
         } catch (playError) {
-          if (kDebugMode) {
-            print('❌ Audio playback error: $playError');
-            print('🔄 Falling back to Flutter TTS due to audio playback issue');
-          }
+          _log('❌ Audio playback error: $playError');
+          _log('🔄 Falling back to Flutter TTS due to audio playback issue');
           // Fallback to Flutter TTS if audio playback fails
           await _flutterTts.stop();
           final enhancedText = _enhanceTextForSpeech(text);
@@ -632,9 +626,7 @@ class VoiceService {
       } else {
         // Handle different error types
         final errorBody = response.body;
-        if (kDebugMode) {
-          print("❌ Google TTS failed with status ${response.statusCode}: $errorBody");
-        }
+        _log("❌ Google TTS failed: ${response.statusCode} → ${errorBody.substring(0, errorBody.length > 240 ? 240 : errorBody.length)}...");
         
         // Track failures
         _googleTtsFailures++;
@@ -656,30 +648,22 @@ class VoiceService {
         }
         
         // Fallback to local TTS
-        if (kDebugMode) {
-          print('🔄 Falling back to local TTS due to Google TTS error');
-        }
+        _log('🔄 Falling back to local TTS due to Google TTS error');
         await _flutterTts.stop();
         final enhancedText = _enhanceTextForSpeech(text);
         await _flutterTts.speak(enhancedText);
         
-        if (kDebugMode) {
-          print('🎤 ===== GOOGLE TTS REQUEST END =====');
-        }
+        _log('🎤 ===== GOOGLE TTS REQUEST END =====');
       }
     } catch (e) {
-      if (kDebugMode) {
-        print("❌ Google TTS error: $e");
-        print('🔄 Falling back to local TTS due to exception');
-      }
+      _log("❌ Google TTS error: $e");
+      _log('🔄 Falling back to local TTS due to exception');
       // Fallback to local TTS
       await _flutterTts.stop();
       final enhancedText = _enhanceTextForSpeech(text);
       await _flutterTts.speak(enhancedText);
       
-      if (kDebugMode) {
-        print('🎤 ===== GOOGLE TTS REQUEST END =====');
-      }
+      _log('🎤 ===== GOOGLE TTS REQUEST END =====');
     }
   }
 
