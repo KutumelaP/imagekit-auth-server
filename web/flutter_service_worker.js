@@ -76,7 +76,7 @@ const RESOURCES = {".well-known/apple-app-site-association": "7f2c371192a52373dd
 "clear_sw.html": "30df8780658c11368d5b5e9524ee9cb3",
 "debug.html": "00bb2c151595478ec99f522c70045963",
 "debug_splash.html": "997622646132bfd3dd5fa395beb28803",
-"download-apk.php": "9c5ac1e180e3c4a7c9b8939d0bc9b27c",
+// removed PHP proxy; direct GitHub link used from download.html
 "download.html": "9d464f8906fb78559c5b5d12b482beb7",
 "favicon.png": "ed131d3cf116a64f521276ae3efb25b6",
 "fcm-test.html": "5efde58e2d7542fd6b57e4bfc8d5da68",
@@ -91,7 +91,7 @@ const RESOURCES = {".well-known/apple-app-site-association": "7f2c371192a52373dd
 "icons/Icon-maskable-512.png": "a0efd1e8d4cbef420f5954191af194bb",
 "index.html": "c4d2adf2348c916fec36d2d5c8b3c759",
 "/": "c4d2adf2348c916fec36d2d5c8b3c759",
-"main.dart.js": "25a74efbd2e598adb68766b0d2e4ff02",
+"main.dart.js": "cebb0568cc54c5654db95f4711f88ea7",
 "manifest.json": "9708949d53885762b4e833e0865c42c8",
 "performance_optimizer.js": "aa7403accdeed60b3653ed5adb443520",
 "product_schema_template.html": "08c6fc91656e87765034e4ef62ced0d1",

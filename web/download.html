@@ -192,13 +192,13 @@
             
         // Start download after a brief delay for UX
         setTimeout(() => {
-            // Use PHP proxy to download APK from GitHub
-            window.location.href = 'download-apk.php';
-            
+            // Direct download from GitHub (raw asset on main)
+            window.location.href = 'https://raw.githubusercontent.com/KutumelaP/imagekit-auth-server/main/app-release-latest.apk';
+
             // Show success message
             setTimeout(() => {
                 spinner.style.display = 'none';
-                status.textContent = 'Download started! The APK file will download directly.';
+                status.textContent = 'Download started! The APK file will download directly from GitHub.';
                 status.style.color = '#28a745';
             }, 1000);
         }, 500);
