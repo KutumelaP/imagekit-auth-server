@@ -31,3 +31,4 @@ for %%A in ("web\main.dart.js") do echo main.dart.js: %%~zA bytes
 echo.
 echo Build completed successfully!
 pause
+

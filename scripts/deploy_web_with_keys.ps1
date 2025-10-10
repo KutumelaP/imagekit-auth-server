@@ -40,3 +40,5 @@ if ($LASTEXITCODE -ne 0) { throw "Firebase deploy failed." }
 Write-Host "✅ Deploy complete." -ForegroundColor Green
 
 
+
+

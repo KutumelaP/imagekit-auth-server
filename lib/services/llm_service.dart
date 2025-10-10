@@ -67,6 +67,13 @@ class LlmService {
       if (kDebugMode) {
         print('✅ LlmService initialized: provider=$_provider');
       }
+      // If no client keys are present, default to using OpenAI via server proxy
+      if (_provider == LlmProvider.none) {
+        _provider = LlmProvider.openai;
+        if (kDebugMode) {
+          print('🤖 LlmService: defaulting to OpenAI via proxy (no client key required)');
+        }
+      }
     } catch (e) {
       _provider = LlmProvider.none;
       if (kDebugMode) {
@@ -178,13 +185,16 @@ class LlmService {
     required int maxTokens,
   }) async {
     final startTime = DateTime.now();
-    // Call Firebase Functions proxy to avoid exposing keys in clients
-    final uri = Uri.parse('https://us-central1-marketplace-8d6bd.cloudfunctions.net/openaiChat');
+    // Call Firebase Functions HTTP proxy to avoid exposing keys in clients
+    final uri = Uri.parse('https://us-central1-marketplace-8d6bd.cloudfunctions.net/openaiChatHttp');
     final body = {
       'model': _openAiModel,
-      'systemInstruction': systemInstruction,
-      'userQuestion': userQuestion,
-      'maxTokens': maxTokens,
+      'messages': [
+        {'role': 'system', 'content': systemInstruction},
+        {'role': 'user', 'content': userQuestion},
+      ],
+      'temperature': 0.3,
+      'max_tokens': maxTokens,
     };
     
     if (kDebugMode) {
@@ -216,7 +226,20 @@ class LlmService {
     
     if (resp.statusCode == 200) {
       final data = jsonDecode(resp.body) as Map<String, dynamic>;
-      final content = data['content'] as String?;
+      
+      // Handle both proxy response format and direct OpenAI format
+      String? content;
+      if (data.containsKey('content')) {
+        // Proxy response format: {"content": "..."}
+        content = data['content'] as String?;
+      } else if (data.containsKey('choices')) {
+        // Direct OpenAI format: {"choices": [{"message": {"content": "..."}}]}
+        final choices = data['choices'] as List<dynamic>?;
+        if (choices != null && choices.isNotEmpty) {
+          content = choices.first['message']?['content'] as String?;
+        }
+      }
+      
       if (content != null && content.trim().isNotEmpty) {
         if (kDebugMode) {
           print('🤖 Generated Content: ${content.substring(0, min(content.length, 200))}...');

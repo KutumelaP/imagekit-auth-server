@@ -182,8 +182,9 @@ class VoiceService {
   /// Initialize the service with optional Google API key
   Future<void> initialize({String? googleApiKey}) async {
     try {
+      // We now use server proxy; no client key needed on web. Keep key for mobile fallback.
       _googleApiKey = googleApiKey ?? ApiKeys.googleTtsKey;
-      _log('🔧 VoiceService.init → isWeb=$kIsWeb, googleKeySet=${_googleApiKey != null && _googleApiKey!.isNotEmpty}');
+      _log('🔧 VoiceService.init → isWeb=$kIsWeb, using proxy=true, googleKeySetForMobile=${_googleApiKey != null && _googleApiKey!.isNotEmpty}');
       
       // Force update voice configuration to normal human speech rate
       _config = const VoiceConfig(
@@ -549,9 +550,9 @@ class VoiceService {
       _log('🎤 Text Length: ${text.length} | KeySet=${_googleApiKey != null && _googleApiKey!.isNotEmpty}');
       _log('🎤 Google TTS requests: $_googleTtsRequests | ${startTime.toIso8601String()}');
 
-      // Use Cloud Functions proxy to avoid exposing API key
+      // Use Cloud Functions HTTP proxy (CORS-enabled)
       final url = Uri.parse(
-        'https://us-central1-marketplace-8d6bd.cloudfunctions.net/googleTtsSynthesize',
+        'https://us-central1-marketplace-8d6bd.cloudfunctions.net/googleTtsSynthesizeHttp',
       );
 
       final requestBody = {
@@ -737,7 +738,8 @@ class VoiceService {
 
   /// Check if Google TTS is available
   bool get isGoogleTtsAvailable {
-    return _googleApiKey != null && _googleApiKey!.isNotEmpty;
+    // With proxy, treat as available on all platforms
+    return true;
   }
 
   /// Get voice service status

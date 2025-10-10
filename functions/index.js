@@ -34,6 +34,136 @@ const axios = require('axios');
 
 // === Secure AI Proxies (no client secrets) ===
 // OpenAI Chat proxy: builds messages server-side; reads API key from environment/secrets
+// HTTP variants (CORS-friendly)
+exports.openaiChatHttp = functions
+  .runWith({ timeoutSeconds: 30, memory: '256MB', secrets: ['OPENAI_API_KEY'] })
+  .https.onRequest(async (req, res) => {
+    // Basic CORS
+    res.set('Access-Control-Allow-Origin', '*');
+    res.set('Access-Control-Allow-Headers', 'Content-Type');
+    if (req.method === 'OPTIONS') {
+      res.status(204).send('');
+      return;
+    }
+    try {
+      const OPENAI_API_KEY = process.env.OPENAI_API_KEY || process.env.openai_api_key;
+      if (!OPENAI_API_KEY) {
+        console.warn('[openaiChat] Missing OPENAI_API_KEY');
+        res.status(500).json({ error: 'server_misconfigured' });
+        return;
+      }
+
+      const data = typeof req.body === 'object' ? req.body : {};
+      const model = String(data.model || 'gpt-4o-mini');
+      const maxTokens = Number(data.maxTokens || 240);
+      const temperature = Number(data.temperature || 0.3);
+
+      // Handle both old format (systemInstruction/userQuestion) and new format (messages array)
+      let messages;
+      if (data.messages && Array.isArray(data.messages)) {
+        // New format: direct OpenAI messages array
+        messages = data.messages;
+      } else {
+        // Old format: build messages from systemInstruction/userQuestion
+        const systemInstruction = String(
+          data.systemInstruction ||
+            'You are a helpful assistant for the OmniaSA marketplace. Keep answers short, clear, and helpful.'
+        );
+        const userQuestion = String(data.userQuestion || '');
+        const baseAnswer = typeof data.baseAnswer === 'string' ? data.baseAnswer : '';
+
+        messages = [{ role: 'system', content: systemInstruction }];
+        if (baseAnswer) {
+          messages.push({ role: 'user', content: `User question: ${userQuestion}\nDraft answer: ${baseAnswer}` });
+        } else {
+          messages.push({ role: 'user', content: userQuestion });
+        }
+      }
+
+      const body = {
+        model,
+        messages,
+        temperature,
+        max_tokens: maxTokens,
+      };
+
+      const resp = await axios.post('https://api.openai.com/v1/chat/completions', body, {
+        headers: {
+          Authorization: `Bearer ${OPENAI_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        timeout: 12000,
+      });
+
+      const choices = resp?.data?.choices || [];
+      const content = choices.length ? choices[0]?.message?.content || '' : '';
+      res.json({ content });
+    } catch (e) {
+      console.error('[openaiChat] error', e?.response?.status, e?.response?.data || e?.message);
+      res.status(e?.response?.status || 500).json({ error: 'upstream_error' });
+    }
+  });
+
+// Google Cloud Text-to-Speech proxy: returns base64 audioContent
+exports.googleTtsSynthesizeHttp = functions
+  .runWith({ timeoutSeconds: 30, memory: '256MB', secrets: ['GOOGLE_TTS_API_KEY'] })
+  .https.onRequest(async (req, res) => {
+    // Basic CORS
+    res.set('Access-Control-Allow-Origin', '*');
+    res.set('Access-Control-Allow-Headers', 'Content-Type');
+    if (req.method === 'OPTIONS') {
+      res.status(204).send('');
+      return;
+    }
+    try {
+      const GOOGLE_TTS_API_KEY = process.env.GOOGLE_TTS_API_KEY || process.env.google_tts_api_key;
+      if (!GOOGLE_TTS_API_KEY) {
+        console.warn('[googleTtsSynthesize] Missing GOOGLE_TTS_API_KEY');
+        res.status(500).json({ error: 'server_misconfigured' });
+        return;
+      }
+
+      const data = typeof req.body === 'object' ? req.body : {};
+      // Support both direct Google TTS body and simplified {text, ...}
+      let payload;
+      if (data.input && data.voice && data.audioConfig) {
+        payload = data;
+      } else {
+        const text = String(data.text || '').trim();
+        if (!text) {
+          res.status(400).json({ error: 'no_text' });
+          return;
+        }
+        const languageCode = String(data.languageCode || 'en-US');
+        const voiceName = String(data.voiceName || 'en-US-Wavenet-D');
+        const speakingRate = Number(data.speakingRate ?? 1.0);
+        const pitch = Number(data.pitch ?? 0.0);
+        payload = {
+          input: { text },
+          voice: { languageCode, name: voiceName },
+          audioConfig: {
+            audioEncoding: 'MP3',
+            speakingRate,
+            pitch,
+            volumeGainDb: 0.0,
+          },
+        };
+      }
+
+      const url = `https://texttospeech.googleapis.com/v1/text:synthesize?key=${GOOGLE_TTS_API_KEY}`;
+      const resp = await axios.post(url, payload, {
+        headers: { 'Content-Type': 'application/json' },
+        timeout: 12000,
+      });
+      const audioContent = resp?.data?.audioContent || '';
+      res.json({ audioContent });
+    } catch (e) {
+      console.error('[googleTtsSynthesize] error', e?.response?.status, e?.response?.data || e?.message);
+      res.status(e?.response?.status || 500).json({ error: 'upstream_error' });
+    }
+  });
+
+// Preserve callable variants to avoid breaking existing clients
 exports.openaiChat = functions.runWith({ timeoutSeconds: 30, memory: '256MB', secrets: ['OPENAI_API_KEY'] }).https.onCall(async (data, context) => {
   try {
     const OPENAI_API_KEY = process.env.OPENAI_API_KEY || process.env.openai_api_key;
@@ -48,32 +178,20 @@ exports.openaiChat = functions.runWith({ timeoutSeconds: 30, memory: '256MB', se
     const baseAnswer = typeof data?.baseAnswer === 'string' ? data.baseAnswer : '';
     const maxTokens = Number(data?.maxTokens || 240);
 
-    const messages = [
-      { role: 'system', content: systemInstruction },
-    ];
+    const messages = [{ role: 'system', content: systemInstruction }];
     if (baseAnswer) {
       messages.push({ role: 'user', content: `User question: ${userQuestion}\nDraft answer: ${baseAnswer}` });
     } else {
       messages.push({ role: 'user', content: userQuestion });
     }
 
-    const body = {
-      model,
-      messages,
-      temperature: 0.3,
-      max_tokens: maxTokens,
-    };
-
+    const body = { model, messages, temperature: 0.3, max_tokens: maxTokens };
     const resp = await axios.post('https://api.openai.com/v1/chat/completions', body, {
-      headers: {
-        'Authorization': `Bearer ${OPENAI_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
+      headers: { Authorization: `Bearer ${OPENAI_API_KEY}`, 'Content-Type': 'application/json' },
       timeout: 12000,
     });
-
     const choices = resp?.data?.choices || [];
-    const content = choices.length ? (choices[0]?.message?.content || '') : '';
+    const content = choices.length ? choices[0]?.message?.content || '' : '';
     return { content };
   } catch (e) {
     console.error('[openaiChat] error', e?.response?.status, e?.response?.data || e?.message);
@@ -81,7 +199,6 @@ exports.openaiChat = functions.runWith({ timeoutSeconds: 30, memory: '256MB', se
   }
 });
 
-// Google Cloud Text-to-Speech proxy: returns base64 audioContent
 exports.googleTtsSynthesize = functions.runWith({ timeoutSeconds: 30, memory: '256MB', secrets: ['GOOGLE_TTS_API_KEY'] }).https.onCall(async (data, context) => {
   try {
     const GOOGLE_TTS_API_KEY = process.env.GOOGLE_TTS_API_KEY || process.env.google_tts_api_key;
@@ -89,26 +206,18 @@ exports.googleTtsSynthesize = functions.runWith({ timeoutSeconds: 30, memory: '2
       console.warn('[googleTtsSynthesize] Missing GOOGLE_TTS_API_KEY');
       return { error: 'server_misconfigured' };
     }
-
     const text = String(data?.text || '').trim();
     if (!text) return { error: 'no_text' };
     const languageCode = String(data?.languageCode || 'en-US');
     const voiceName = String(data?.voiceName || 'en-US-Wavenet-D');
     const speakingRate = Number(data?.speakingRate ?? 1.0);
     const pitch = Number(data?.pitch ?? 0.0);
-
     const url = `https://texttospeech.googleapis.com/v1/text:synthesize?key=${GOOGLE_TTS_API_KEY}`;
     const body = {
       input: { text },
       voice: { languageCode, name: voiceName },
-      audioConfig: {
-        audioEncoding: 'MP3',
-        speakingRate,
-        pitch,
-        volumeGainDb: 0.0,
-      },
+      audioConfig: { audioEncoding: 'MP3', speakingRate, pitch, volumeGainDb: 0.0 },
     };
-
     const resp = await axios.post(url, body, { headers: { 'Content-Type': 'application/json' }, timeout: 12000 });
     const audioContent = resp?.data?.audioContent || '';
     return { audioContent };

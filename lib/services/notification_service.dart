@@ -10,8 +10,7 @@ import 'sound_service.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:omniasa/services/voice_service.dart';
 import 'package:omniasa/utils/web_env.dart';
-import 'package:flutter_app_badger/flutter_app_badger.dart'
-  if (dart.library.html) 'package:omniasa/utils/badger_stub.dart';
+import 'package:flutter_app_badger/flutter_app_badger.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 
 

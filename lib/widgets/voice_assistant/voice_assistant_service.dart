@@ -34,6 +34,7 @@ class VoiceAssistantService {
   String? _userName;
   bool _isNewUser = false;
   String _lastWords = '';
+  String _lastPartialWords = '';
   
   // Stream controllers for UI updates
   final StreamController<bool> _listeningController = StreamController<bool>.broadcast();
@@ -132,7 +133,26 @@ class VoiceAssistantService {
               }
               break;
             case 'done':
-              // Speech recognition completed
+              // Speech recognition completed. If we have partial but no final, promote partial.
+              if (_lastWords.trim().isEmpty && _lastPartialWords.trim().isNotEmpty) {
+                _lastWords = _lastPartialWords;
+              }
+              // If we have something captured but final callback didn't trigger processing, process now.
+              if (!_isProcessing && _lastWords.trim().isNotEmpty) {
+                // Ensure we aren't marked as listening
+                _isListening = false;
+                _listeningController.add(false);
+                // Process directly without calling stop() again
+                _isProcessing = true;
+                _processingController.add(true);
+                unawaited(_processRecognizedSpeech(_lastWords).whenComplete(() {
+                  _isProcessing = false;
+                  _processingController.add(false);
+                }));
+              } else if (_lastWords.trim().isEmpty) {
+                // Nothing heard
+                unawaited(_voiceService.speak("I didn't hear anything. Please try again!"));
+              }
               break;
           }
         },
@@ -323,7 +343,11 @@ class VoiceAssistantService {
       // Start speech recognition with improved settings
       await _speechToText.listen(
         onResult: (result) {
-          _lastWords = result.recognizedWords;
+          if (result.finalResult) {
+            _lastWords = result.recognizedWords;
+          } else {
+            _lastPartialWords = result.recognizedWords;
+          }
           
           if (kDebugMode) {
             if (result.finalResult) {
@@ -347,7 +371,7 @@ class VoiceAssistantService {
         listenFor: const Duration(seconds: 25), // Longer window to reduce timeouts
         pauseFor: const Duration(seconds: 3),   // Allow a bit more pause before timeout
         partialResults: true, // Enable partial results for better detection
-        localeId: 'en_US',
+        localeId: (await _speechToText.systemLocale())?.localeId,
         cancelOnError: false, // Don't cancel on errors, keep trying
         listenMode: stt.ListenMode.dictation, // Best mode for complete sentences
       );
@@ -483,7 +507,8 @@ class VoiceAssistantService {
       }
       
       // Use Nathan's intelligent conversation manager for smart responses
-      if (_conversationManager.canHandleQuestion(recognizedText)) {
+      final bool canHandle = _conversationManager.canHandleQuestion(recognizedText);
+      if (canHandle) {
         if (kDebugMode) {
           print('🧠 Nathan can handle this question: $recognizedText');
         }
@@ -498,58 +523,46 @@ class VoiceAssistantService {
         }
         return;
       }
-      
+
       if (kDebugMode) {
-        print('🎯 Using fallback response system for: $recognizedText');
+        print('🎯 Nathan cannot confidently answer. Trying LLM fallback first.');
       }
-      // Try playful quick reply first, then structured helpful answer (no API)
-      String? humanAnswer = _humanResponder.generatePlayfulReply(
-        recognizedText,
-      );
-      if (kDebugMode) {
-        print('🎯 Human responder playful reply: ${humanAnswer ?? "none"}');
-      }
-      if (humanAnswer == null) {
-        humanAnswer = await _humanResponder.generateHelpfulAnswerAsync(
-          recognizedText,
-          context: _currentContext,
-        );
-        if (kDebugMode) {
-          print('🎯 Human responder helpful answer: ${humanAnswer ?? "none"}');
-        }
-      }
-      // Try LLM direct answer if available and needed
+      // Prefer LLM when Nathan can't handle confidently
       String? llmAnswer;
-      if (humanAnswer == null && _llmService.isAvailable) {
+      if (_llmService.isAvailable) {
         try {
-          if (kDebugMode) {
-            print('🤖 Using LLM to generate answer for: "${recognizedText}"');
-          }
-          
-          // Get relevant knowledge for LLM context
           final relevantKnowledge = _conversationManager.getRelevantKnowledgeForLLM(recognizedText);
           if (kDebugMode) {
-            print('🤖 Relevant knowledge pieces: ${relevantKnowledge.length}');
-            for (int i = 0; i < relevantKnowledge.length && i < 3; i++) {
-              print('🤖 Knowledge ${i + 1}: ${relevantKnowledge[i].substring(0, min(relevantKnowledge[i].length, 100))}...');
-            }
+            print('🤖 Using LLM with ${relevantKnowledge.length} knowledge pieces for: "$recognizedText"');
           }
-          
           llmAnswer = await _llmService.generateAnswer(
             userQuestion: recognizedText,
             contextHint: _currentContext,
             relevantKnowledge: relevantKnowledge,
           );
-          if (kDebugMode && llmAnswer != null) {
-            print('🤖 LLM generated response with ${relevantKnowledge.length} knowledge pieces: ${llmAnswer.substring(0, llmAnswer.length > 100 ? 100 : llmAnswer.length)}...');
-          }
         } catch (e) {
           if (kDebugMode) {
-            print('❌ LLM generation failed: $e');
+            print('❌ LLM fallback failed: $e');
           }
         }
       }
-      final response = humanAnswer ?? llmAnswer ?? _getQuestionResponse(recognizedText);
+
+      // If LLM not available or returned null, try HumanResponder fallbacks
+      String? humanAnswer;
+      if (llmAnswer == null) {
+        if (kDebugMode) {
+          print('🎯 LLM unavailable or no result. Using HumanResponder fallback.');
+        }
+        humanAnswer = _humanResponder.generatePlayfulReply(recognizedText);
+        if (humanAnswer == null) {
+          humanAnswer = await _humanResponder.generateHelpfulAnswerAsync(
+            recognizedText,
+            context: _currentContext,
+          );
+        }
+      }
+
+      final response = llmAnswer ?? humanAnswer ?? _getQuestionResponse(recognizedText);
       if (kDebugMode) {
         print('🎯 Final response selected: ${response.substring(0, min(response.length, 100))}...');
       }
@@ -785,19 +798,55 @@ class VoiceAssistantService {
       return;
     }
     
-    // Use Nathan's intelligent conversation manager for smart responses
-    if (_conversationManager.canHandleQuestion(question)) {
+    if (kDebugMode) {
+      print('✍️ handleUserQuestion: "$question"');
+    }
+
+    // Prefer knowledge-base response when confident
+    final bool canHandle = _conversationManager.canHandleQuestion(question);
+    if (canHandle) {
       final smartResponse = _conversationManager.processUserInput(question);
-      await _speakResponse(smartResponse, question: question);
-      
       if (kDebugMode) {
-        print('🧠 Nathan answered intelligently: ${question.substring(0, min(question.length, 30))}...');
+        print('🧠 Nathan KB response: ${smartResponse.substring(0, min(smartResponse.length, 100))}');
       }
+      await _speakResponse(smartResponse, question: question);
       return;
     }
-    
-    // Fallback to basic response system
-    final response = _getQuestionResponse(question);
+
+    // LLM fallback first when not confident
+    String? llmAnswer;
+    if (_llmService.isAvailable) {
+      try {
+        final knowledge = _conversationManager.getRelevantKnowledgeForLLM(question);
+        if (kDebugMode) {
+          print('🤖 LLM fallback for text input with ${knowledge.length} knowledge items');
+        }
+        llmAnswer = await _llmService.generateAnswer(
+          userQuestion: question,
+          contextHint: _currentContext,
+          relevantKnowledge: knowledge,
+        );
+      } catch (e) {
+        if (kDebugMode) print('❌ LLM fallback failed (text): $e');
+      }
+    }
+
+    String? humanAnswer;
+    if (llmAnswer == null) {
+      if (kDebugMode) print('🎯 HumanResponder fallback (text path)');
+      humanAnswer = _humanResponder.generatePlayfulReply(question);
+      if (humanAnswer == null) {
+        humanAnswer = await _humanResponder.generateHelpfulAnswerAsync(
+          question,
+          context: _currentContext,
+        );
+      }
+    }
+
+    final response = llmAnswer ?? humanAnswer ?? _getQuestionResponse(question);
+    if (kDebugMode) {
+      print('✅ Text response selected: ${response.substring(0, min(response.length, 120))}');
+    }
     await _speakResponse(response, question: question);
   }
   

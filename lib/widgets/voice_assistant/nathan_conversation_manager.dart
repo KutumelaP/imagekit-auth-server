@@ -115,7 +115,11 @@ class NathanConversationManager {
 
   /// Check if input is a greeting
   bool _isGreeting(String input) {
-    const greetings = ['hello', 'hi', 'hey', 'good morning', 'good afternoon', 'good evening', 'greetings'];
+    const greetings = [
+      'hello','hi','hey','good morning','good afternoon','good evening','greetings',
+      // slang-adjacent
+      'yo','hiya','sup','whats up','what\'s up','howzit','how\'s it'
+    ];
     return greetings.any((greeting) => input.contains(greeting));
   }
 
@@ -143,36 +147,42 @@ class NathanConversationManager {
   /// Get personalized greeting
   String _getPersonalizedGreeting() {
     final greetings = [
-      "I'm Nathan, your shopping assistant. How can I help you today?",
-      "Welcome to OmniaSA! I'm here to make your shopping experience amazing. What can I do for you?",
-      "I'm Nathan, and I'm excited to help you discover great products! What are you looking for?",
-      "Hello! I'm your personal shopping companion. Ready to find something wonderful?",
+      "I'm Nathan, here to help. What can I do for you today?",
+      "Welcome to OmniaSA — I can answer questions or help you find items.",
+      "I'm Nathan. Need help finding a product or understanding a feature?",
+      "Hello! I'm here to assist — ask me anything, big or small.",
     ];
-    
     return greetings[Random().nextInt(greetings.length)];
   }
 
   /// Check if input is thanking
   bool _isThanking(String input) {
-    const thanks = ['thank', 'thanks', 'appreciate', 'grateful', 'awesome', 'great', 'perfect'];
+    const thanks = [
+      'thank','thanks','appreciate','grateful','awesome','great','perfect',
+      // shorthand
+      'thx','ty','cheers'
+    ];
     return thanks.any((thank) => input.contains(thank));
   }
 
   /// Handle thanks
   String _handleThanks() {
     final responses = [
-      "You're so welcome! I'm always happy to help you shop and explore OmniaSA!",
-      "My pleasure! That's what I'm here for. Is there anything else you'd like to know?",
-      "Glad I could help! I love making shopping easier for you. What else can I assist with?",
-      "You're very welcome! I'm always here when you need shopping guidance or have questions!",
+      "You're welcome! Happy to help.",
+      "Anytime — let me know if you need anything else.",
+      "Glad it helped. Want to check anything else?",
+      "You're welcome. I'm here if you need more info.",
     ];
-    
     return responses[Random().nextInt(responses.length)];
   }
 
   /// Check if input is a complaint
   bool _isComplaint(String input) {
-    const complaints = ['not working', 'broken', 'error', 'problem', 'issue', 'bug', 'wrong', 'bad', 'terrible', 'horrible'];
+    const complaints = [
+      'not working','broken','error','problem','issue','bug','wrong','bad','terrible','horrible',
+      // added
+      'scam','fake','doesn\'t work','late','refund'
+    ];
     return complaints.any((complaint) => input.contains(complaint));
   }
 
@@ -212,7 +222,7 @@ class NathanConversationManager {
       
       if (relatedQuestions.isNotEmpty) {
         final response = _knowledgeBase.answerQuestion(input);
-        return "$response\n\nYou might also want to know: ${relatedQuestions.take(2).join(' or ')}";
+        return "$response\n\nSome people also ask about: ${relatedQuestions.take(2).join(' or ')}";
       }
     }
     
@@ -230,7 +240,20 @@ class NathanConversationManager {
     
     // Add related suggestions for shopping questions
     if (input.contains('buy') || input.contains('shop') || input.contains('purchase')) {
-      response += "\n\nBy the way, you can always ask me to help you find specific products or explain how any feature works!";
+      final variants = [
+        "You can ask me to find a product or explain any feature.",
+        "I can help you compare items or show delivery options.",
+        "Tip: you can favorite items to review them later.",
+      ];
+      response += "\n\n${variants[Random().nextInt(variants.length)]}";
+    }
+    // Occasionally include time-sensitive nudge
+    if (Random().nextInt(4) == 0) {
+      final proactive = [
+        "Did you know we offer same-day delivery in some areas?",
+        "You can favorite items to quickly compare them later.",
+      ];
+      response += "\n${proactive[Random().nextInt(proactive.length)]}";
     }
     
     return response;
